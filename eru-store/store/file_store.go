@@ -23,39 +23,45 @@ func getStoreSaveFilePath() string {
 	log.Print("filePath = ", filePath)
 	return fmt.Sprint(wd, filePath)
 }
-
-func (store *FileStore) LoadStore(fp string) (err error) {
+func (store *FileStore) GetStoreByteArray(fp string) (b []byte, err error) {
+	log.Print("GetStoreByteArray from filestore")
+	if fp == "" {
+		fp = getStoreSaveFilePath()
+	}
+	storeData, err := ioutil.ReadFile(fp)
+	log.Println(string(storeData))
+	return storeData, err
+}
+func (store *FileStore) LoadStore(fp string, ms StoreI) (err error) {
 	log.Print("loading filestore")
 	if fp == "" {
 		fp = getStoreSaveFilePath()
 	}
 	storeData, err := ioutil.ReadFile(fp)
+	log.Println(string(storeData))
 	if err != nil {
 		log.Print(err)
 		log.Print("creating new blank config file at ", fp)
-		store.SaveStore(fp)
+		store.SaveStore(fp, nil)
 		return err
 	}
-
-	// Marshalling the store
-	//store = new(FileStore)
-	err = json.Unmarshal(storeData, store)
+	err = json.Unmarshal(storeData, ms)
 	if err != nil {
+		log.Print("error json.Unmarshal(storeData, ms)")
 		log.Print(err)
 		return err
 	}
 	return nil
 }
 
-func (store *FileStore) SaveStore(fp string) error {
-	log.Print("saving filestore")
+func (store *FileStore) SaveStore(fp string, ms StoreI) error {
+	log.Println("saving filestore")
 	if fp == "" {
 		fp = getStoreSaveFilePath()
 	}
-	log.Print(fp)
 	var err error
 	var storeData []byte
-	storeData, err = json.Marshal(store)
+	storeData, err = json.Marshal(ms)
 
 	// Check for error during marshaling
 	if err != nil {

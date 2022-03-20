@@ -1,0 +1,20 @@
+FROM golang:1.17.3-alpine3.15
+
+WORKDIR /build
+
+# source files copied to build folder
+COPY . .
+
+# Build eru-files
+RUN GOOS=linux CGO_ENABLED=0 go build -a -ldflags '-s -w -extldflags "-static"' -o app .
+
+FROM alpine:3.15.0
+WORKDIR /build
+COPY --from=0 /build .
+
+WORKDIR /app
+COPY --from=0 /build/app .
+RUN mkdir -p /app/config
+
+CMD ["./app", "run"]
+

@@ -28,7 +28,14 @@ func getStoreDbPath() string {
 func (store *DbStore) SetDbType(dbtype string) {
 	store.DbType = strings.ToLower(dbtype)
 }
-func (store *DbStore) LoadStore(dbString string) (err error) {
+
+func (store *DbStore) GetStoreByteArray(fp string) (b []byte, err error) {
+	//TODO to implement this function
+	log.Print("GetStoreByteArray from dbstore")
+	return nil, nil
+}
+
+func (store *DbStore) LoadStore(dbString string, ms StoreI) (err error) {
 	log.Print("loading dbstore")
 	if dbString == "" {
 		dbString = getStoreDbPath()
@@ -39,14 +46,14 @@ func (store *DbStore) LoadStore(dbString string) (err error) {
 	if err != nil {
 		log.Print(err)
 		log.Print("creating blank db store")
-		store.SaveStore("")
+		store.SaveStore("", nil)
 		return err
 	}
 	rows, err := db.Queryx("select * from eruconfig limit 1")
 	if err != nil {
 		log.Print(err)
 		log.Print("creating blank db store")
-		store.SaveStore("")
+		store.SaveStore("", nil)
 		return err
 	}
 	mapping := make(map[string]interface{})
@@ -55,18 +62,18 @@ func (store *DbStore) LoadStore(dbString string) (err error) {
 		if err != nil {
 			log.Print(err)
 			log.Print("creating blank db store")
-			store.SaveStore("")
+			store.SaveStore("", nil)
 			return err
 		}
 		storeData := mapping["config"]
 		storeUpdateTime := mapping["create_date"]
 		// Marshalling the store
 		//store = new(FileStore)
-		err = json.Unmarshal(storeData.([]byte), store)
+		err = json.Unmarshal(storeData.([]byte), ms)
 		if err != nil {
 			log.Print(err)
 			log.Print("creating blank db store")
-			store.SaveStore("")
+			store.SaveStore("", nil)
 			return err
 		}
 		store.UpdateTime = storeUpdateTime.(time.Time)
@@ -76,14 +83,14 @@ func (store *DbStore) LoadStore(dbString string) (err error) {
 	if err != nil {
 		log.Print(err)
 		log.Print("creating blank db store")
-		store.SaveStore("")
+		store.SaveStore("", nil)
 		return err
 	}
 	//loadEnvironmentVariable(store)
 	return nil
 }
 
-func (store *DbStore) SaveStore(dbString string) (err error) {
+func (store *DbStore) SaveStore(dbString string, ms StoreI) (err error) {
 	log.Print("saving dbstore")
 	if dbString == "" {
 		dbString = getStoreDbPath()
@@ -94,7 +101,7 @@ func (store *DbStore) SaveStore(dbString string) (err error) {
 	if err != nil {
 		log.Print(err)
 		log.Print("creating blank db store")
-		store.SaveStore("")
+		store.SaveStore("", nil)
 		return err
 	}
 	tx := db.MustBegin()
