@@ -156,6 +156,9 @@ func (ms *ModuleStore) SaveProject(projectId string, realStore ModuleStoreI, per
 		if project.RsaKeyPairs == nil {
 			project.RsaKeyPairs = make(map[string]erursa.RsaKeyPair)
 		}
+		if project.AesKeys == nil {
+			project.AesKeys = make(map[string]eruaes.AesKey)
+		}
 		ms.Projects[projectId] = project
 		if persist == true {
 			log.Print("SaveStore called from SaveProject")
