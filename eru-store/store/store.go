@@ -5,6 +5,7 @@ type StoreI interface {
 	GetStoreByteArray(fp string) (b []byte, err error)
 	SaveStore(fp string, ms StoreI) (err error)
 	SetDbType(dbtype string)
+	SetStoreTableName(tablename string)
 
 	//SaveProject(projectId string, realStore StoreI) error
 	//RemoveProject(projectId string, realStore StoreI) error
@@ -17,6 +18,10 @@ type Store struct {
 }
 
 func (store *Store) SetDbType(dbtype string) {
+	//do nothing
+}
+
+func (store *Store) SetStoreTableName(tablename string) {
 	//do nothing
 }
 

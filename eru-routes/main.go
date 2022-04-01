@@ -1,14 +1,14 @@
 package main
 
 import (
-	"github.com/eru-tech/eru/eru-files/file_server"
-	"github.com/eru-tech/eru/eru-files/module_store"
+	"github.com/eru-tech/eru/eru-routes/module_server"
+	"github.com/eru-tech/eru/eru-routes/module_store"
 	"github.com/eru-tech/eru/eru-server/server"
 	"log"
 	"os"
 )
 
-var port = "8082"
+var port = "8083"
 
 func main() {
 	log.Println("inside main of eru-files")
@@ -16,7 +16,7 @@ func main() {
 	if envPort != "" {
 		port = envPort
 	}
-	store, e := file_server.StartUp()
+	store, e := module_server.StartUp()
 	if e != nil {
 		log.Println(e)
 		log.Println("Failed to Start Server - error while setting up config store")
@@ -25,7 +25,7 @@ func main() {
 	sh := new(module_store.StoreHolder)
 	sh.Store = store
 	sr, _, e := server.Init()
-	file_server.AddFileRoutes(sr, sh)
+	module_server.AddModuleRoutes(sr, sh)
 	if e != nil {
 		log.Print(e)
 	}

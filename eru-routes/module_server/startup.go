@@ -1,15 +1,16 @@
-package file_server
+package module_server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/eru-tech/eru/eru-files/module_store"
+	"github.com/eru-tech/eru/eru-routes/module_store"
 	"log"
 	"os"
 	"strings"
 )
 
-const StoreTableName = "erufiles_config"
+const StoreTableName = "eruapis_config"
 
 func StartUp() (module_store.ModuleStoreI, error) {
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
@@ -36,7 +37,8 @@ func StartUp() (module_store.ModuleStoreI, error) {
 	}
 	storeBytes, err := myStore.GetStoreByteArray("")
 	if err == nil {
-		module_store.UnMarshalStore(storeBytes, myStore)
+		err = json.Unmarshal(storeBytes, myStore)
+		//module_store.UnMarshalStore(storeBytes, myStore)
 	}
 	//s.Store = myStore
 	return myStore, err

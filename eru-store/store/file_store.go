@@ -29,7 +29,19 @@ func (store *FileStore) GetStoreByteArray(fp string) (b []byte, err error) {
 		fp = getStoreSaveFilePath()
 	}
 	storeData, err := ioutil.ReadFile(fp)
-	log.Println(string(storeData))
+	if err != nil {
+		log.Println(err)
+		err = store.SaveStore(fp, store)
+		if err == nil {
+			storeData, err = json.Marshal(store)
+			if err != nil {
+				log.Print("error json.Marshal(store)")
+				log.Print(err)
+				return nil, err
+			}
+		}
+	}
+	//log.Println(string(storeData))
 	return storeData, err
 }
 func (store *FileStore) LoadStore(fp string, ms StoreI) (err error) {
@@ -61,8 +73,9 @@ func (store *FileStore) SaveStore(fp string, ms StoreI) error {
 	}
 	var err error
 	var storeData []byte
+	log.Println("before json.Marshal")
 	storeData, err = json.Marshal(ms)
-
+	log.Println("after json.Marshal")
 	// Check for error during marshaling
 	if err != nil {
 		log.Print("marshaling error = ", err)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 	"log"
 	"os"
 	"strings"
@@ -14,10 +15,11 @@ import (
 
 type DbStore struct {
 	Store
-	DbType     string
-	UpdateTime time.Time
-	storeType  string
-	conStr     string
+	DbType         string
+	UpdateTime     time.Time
+	StoreTableName string
+	storeType      string
+	conStr         string
 }
 
 func getStoreDbPath() string {
@@ -29,10 +31,60 @@ func (store *DbStore) SetDbType(dbtype string) {
 	store.DbType = strings.ToLower(dbtype)
 }
 
-func (store *DbStore) GetStoreByteArray(fp string) (b []byte, err error) {
+func (store *DbStore) SetStoreTableName(tablename string) {
+	store.StoreTableName = strings.ToLower(tablename)
+}
+
+func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 	//TODO to implement this function
 	log.Print("GetStoreByteArray from dbstore")
-	return nil, nil
+	if dbString == "" {
+		dbString = getStoreDbPath()
+		if dbString == "" {
+			return nil, errors.New("No value found for environment variable STORE_DB_PATH")
+		}
+	}
+	log.Print("Creating DB connection for GetStoreByteArray")
+	log.Println(store.DbType)
+	db, err := sqlx.Open(store.DbType, dbString)
+	if err != nil {
+		log.Print(err)
+		log.Print("creating blank db store")
+		store.SaveStore("", nil)
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.Queryx(fmt.Sprint("select * from ", store.StoreTableName, " limit 1"))
+	if err != nil {
+		log.Print(err)
+		log.Print("creating blank db store")
+		store.SaveStore("", nil)
+		return nil, err
+	}
+	mapping := make(map[string]interface{})
+	var storeData interface{}
+	for rows.Next() {
+		err = rows.MapScan(mapping)
+		if err != nil {
+			log.Print(err)
+			log.Print("creating blank db store")
+			store.SaveStore("", nil)
+			return nil, err
+		}
+		storeData = mapping["config"]
+		storeUpdateTime := mapping["create_date"]
+		// Marshalling the store
+		//store = new(FileStore)
+		store.UpdateTime = storeUpdateTime.(time.Time)
+
+	}
+	if storeData == nil {
+		log.Print("no config data retrived from db")
+		log.Print("creating blank db store")
+		store.SaveStore("", nil)
+		return nil, err
+	}
+	return storeData.([]byte), err
 }
 
 func (store *DbStore) LoadStore(dbString string, ms StoreI) (err error) {
@@ -49,7 +101,7 @@ func (store *DbStore) LoadStore(dbString string, ms StoreI) (err error) {
 		store.SaveStore("", nil)
 		return err
 	}
-	rows, err := db.Queryx("select * from eruconfig limit 1")
+	rows, err := db.Queryx(fmt.Sprint("select * from ", store.StoreTableName, " limit 1"))
 	if err != nil {
 		log.Print(err)
 		log.Print("creating blank db store")
@@ -101,13 +153,13 @@ func (store *DbStore) SaveStore(dbString string, ms StoreI) (err error) {
 	if err != nil {
 		log.Print(err)
 		log.Print("creating blank db store")
-		store.SaveStore("", nil)
+		store.SaveStore("", nil) //TODO - seems recursive call in case of error
 		return err
 	}
 	tx := db.MustBegin()
 	ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond) //TODO: to get context as argument
 	defer cancel()
-	storeData, err := json.Marshal(store)
+	storeData, err := json.Marshal(ms)
 	if err != nil {
 		log.Print("Error in json.Marshal")
 		log.Print(err)
@@ -115,7 +167,8 @@ func (store *DbStore) SaveStore(dbString string, ms StoreI) (err error) {
 		return err
 	}
 	strStoreData := strings.Replace(string(storeData), "'", "''", -1)
-	query := fmt.Sprint("update eruconfig set create_date=current_timestamp , config = '", strStoreData, "' returning create_date")
+	//log.Println(strStoreData)
+	query := fmt.Sprint("update ", store.StoreTableName, " set create_date=current_timestamp , config = '", strStoreData, "' returning create_date")
 	//log.Print(query)
 	stmt, err := tx.PreparexContext(ctx, query)
 	if err != nil {

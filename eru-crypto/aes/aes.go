@@ -18,7 +18,7 @@ func GenerateKey(bits int) (aesKey AesKey, err error) {
 	aesKey.Bits = bits
 	bytes := make([]byte, bits/8) //generate a random xx byte key for AES-256
 	if _, err := rand.Read(bytes); err != nil {
-		panic(err.Error())
+		log.Println(err.Error())
 	}
 	aesKey.Key = hex.EncodeToString(bytes)
 	return

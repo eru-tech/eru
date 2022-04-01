@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log"
 	"reflect"
 	"strings"
 )
@@ -36,33 +35,50 @@ func GetSha512(s string) string {
 }
 
 func ValidateStruct(s interface{}, parentKey string) error {
+
 	if parentKey != "" {
 		parentKey = parentKey + "."
 	}
-	f := reflect.ValueOf(&s)
-	log.Println(reflect.TypeOf(&s))
-	//log.Println("f.NumField() = ",f.NumField())
+	f := reflect.ValueOf(s)
 	var errs []string
+
 	for i := 0; i < f.NumField(); i++ {
+		isError := false
+		isRequired := false
 		projectTags := f.Type().Field(i).Tag.Get("eru")
 		if strings.Contains(projectTags, "required") {
+			isRequired = true
+			if f.Field(i).IsZero() {
+				errs = append(errs, fmt.Sprint(parentKey, f.Type().Field(i).Name))
+				isError = true
+			}
+		}
+		if !isError {
 			switch f.Field(i).Kind().String() {
-			case "int":
-				log.Print("int")
-				if f.Field(i).Interface() == 0 {
-					errs = append(errs, fmt.Sprint(parentKey, f.Type().Field(i).Name))
-				}
-			case "string":
-				if f.Field(i).Interface() == "" {
-					errs = append(errs, fmt.Sprint(parentKey, f.Type().Field(i).Name))
-				}
 			case "struct":
 				e := ValidateStruct(f.Field(i).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name))
 				if e != nil {
 					errs = append(errs, e.Error())
 				}
+			case "slice":
+				ff := f.Field(i)
+				if ff.Len() == 0 && isRequired {
+					errs = append(errs, fmt.Sprint(parentKey, f.Type().Field(i).Name))
+				} else {
+					if ff.Len() > 0 {
+
+						if ff.Index(0).Kind().String() == "struct" || ff.Index(0).Kind().String() == "slice" {
+							for ii := 0; ii < ff.Len(); ii++ {
+								e := ValidateStruct(ff.Index(ii).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name, "[", ii, "]"))
+								if e != nil {
+									errs = append(errs, e.Error())
+								}
+							}
+						}
+					}
+				}
 			default:
-				log.Print("default")
+				//do nothing
 			}
 		}
 	}
