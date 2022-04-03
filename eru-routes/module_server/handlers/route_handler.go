@@ -4,14 +4,19 @@ import (
 	//"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
-	"log"
-
 	"github.com/eru-tech/eru/eru-routes/module_store"
+	"github.com/eru-tech/eru/eru-routes/routes"
+	"github.com/gorilla/mux"
 	"net/http"
 	//"strconv"
 	"strings"
 )
+
+var httpClient = http.Client{
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
 
 func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -24,12 +29,6 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		routeName := vars["routename"]
 
-		v := make(map[string]interface{})
-		//v["host"] = host
-		//v["url"] = url
-		//v["project"]=projectId
-		//v["routename"]=routeName
-
 		// Lookup a route based on host and url
 		route, err := s.GetAndValidateRoute(routeName, projectId, host, url, r.Method)
 		if err != nil {
@@ -37,18 +36,31 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-		_ = route
-		resp1, err := testmyip()
-		//_=resp1
-		v["newrequest"] = resp1
-		resp2, err := modifyrequest(r)
-		//log.Println(resp2)
-		v["modifiedrequest"] = resp2
+		//v["host"] = host1
+		//v["path"] = path1
 
-		//v["route"] = route
+		err = transformRequest(r, route, url)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
 
+		response, err := httpClient.Do(r)
+		defer response.Body.Close()
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		var respBody map[string]interface{}
+		if err = json.NewDecoder(response.Body).Decode(&respBody); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(v)
+		_ = json.NewEncoder(w).Encode(respBody)
 
 		/*
 
@@ -178,48 +190,23 @@ func extractHostUrl(request *http.Request) (string, string) {
 	return strings.Split(request.Host, ":")[0], request.URL.Path
 }
 
-func testmyip() (interface{}, error) {
-
-	ipResp, err := http.Get("https://eov00o10w5.execute-api.ap-south-1.amazonaws.com/default/testmyip")
+func transformRequest(request *http.Request, route routes.Route, url string) (err error) {
+	scheme, host, port, path, err := route.GetTargetSchemeHostPortPath(url)
 	if err != nil {
-		log.Print(err)
-		return nil, err
+		return
 	}
-	defer ipResp.Body.Close()
-	var ipRespBody map[string]interface{}
-	if err = json.NewDecoder(ipResp.Body).Decode(&ipRespBody); err != nil {
-		log.Print(err)
-		return nil, err
-	}
-	return ipRespBody, err
-}
 
-var httpClient = http.Client{
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	},
-}
-
-func modifyrequest(request *http.Request) (interface{}, error) {
 	// http: Request.RequestURI can't be set in client requests.
 	// http://golang.org/src/pkg/net/http/client.go
 	request.RequestURI = ""
-	request.Host = "eov00o10w5.execute-api.ap-south-1.amazonaws.com"
-	request.URL.Host = fmt.Sprintf("%s", "eov00o10w5.execute-api.ap-south-1.amazonaws.com")
-	request.URL.Path = "/default/testmyip"
-	request.URL.Scheme = "https"
-	response, err := httpClient.Do(request)
-	defer response.Body.Close()
-	var respBody map[string]interface{}
-	if err != nil {
-		log.Println(err)
-		return nil, err
+	request.Host = host
+	request.URL.Host = fmt.Sprint(host, ":", port)
+	request.URL.Path = path
+	request.URL.Scheme = scheme
+	//log.Println(request.URL)
+	for _, h := range route.RequestHeaders {
+		request.Header.Set(h.Key, h.Value)
 	}
 
-	if err = json.NewDecoder(response.Body).Decode(&respBody); err != nil {
-		log.Print(err)
-		return nil, err
-	}
-	//log.Println(respBody)
-	return respBody, nil
+	return
 }

@@ -13,7 +13,6 @@ const MatchTypeExact = "EXACT"
 type Route struct {
 	RouteName         string `eru:"required"`
 	Url               string `eru:"required"`
-	finalUrl          string
 	MatchType         string `eru:"required"`
 	RewriteUrl        string
 	TargetHosts       []TargetHost `eru:"required"`
@@ -30,6 +29,7 @@ type TargetHost struct {
 	Host       string `eru:"required"`
 	Port       string
 	Method     string `eru:"required"`
+	Scheme     string `eru:"required"`
 	Allocation int64
 }
 
@@ -38,14 +38,20 @@ type Headers struct {
 	Value string `eru:"required"`
 }
 
-func (route *Route) MakeFinalUrl(url string) (err error) {
+func (route *Route) GetTargetSchemeHostPortPath(url string) (scheme string, host string, port string, path string, err error) {
+	targetHost, err := route.getTargetHost()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	scheme = targetHost.Scheme
+	port = targetHost.Port
+	host = targetHost.Host
 	switch route.MatchType {
 	case MatchTypePrefix:
-		route.finalUrl = route.RewriteUrl + strings.TrimPrefix(strings.Split(url, route.RouteName)[1], route.Url)
-		log.Println(route.finalUrl)
+		path = fmt.Sprint(route.RewriteUrl, strings.TrimPrefix(strings.Split(url, route.RouteName)[1], route.Url))
 	case MatchTypeExact:
-		route.finalUrl = route.RewriteUrl
-		log.Println(route.finalUrl)
+		path = route.RewriteUrl
 	default:
 		//do nothing
 	}
@@ -97,5 +103,14 @@ func (route *Route) Validate(host string, url string, method string) (err error)
 		err = errors.New("URL mismatch")
 		return
 	}
+	return
+}
+
+func (route *Route) getTargetHost() (targetHost TargetHost, err error) {
+	//TODO Random selection of target based on allocation
+	if len(route.TargetHosts) > 0 {
+		return route.TargetHosts[0], err
+	}
+	err = errors.New(fmt.Sprint("No Target Host defined for this route :", route.RouteName))
 	return
 }

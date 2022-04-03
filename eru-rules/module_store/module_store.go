@@ -3,10 +3,10 @@ package module_store
 import (
 	"errors"
 	"fmt"
-	"github.com/eru-tech/eru/eru-routes/module_model"
-	"github.com/eru-tech/eru/eru-routes/routes"
+	"github.com/eru-tech/eru/eru-rules/module_model"
 	"github.com/eru-tech/eru/eru-store/store"
 	"log"
+	"time"
 )
 
 type StoreHolder struct {
@@ -18,9 +18,6 @@ type ModuleStoreI interface {
 	RemoveProject(projectId string, realStore ModuleStoreI) error
 	GetProjectConfig(projectId string) (*module_model.Project, error)
 	GetProjectList() []map[string]interface{}
-	SaveRoute(routeObj routes.Route, projectId string, realStore ModuleStoreI, persist bool) error
-	RemoveRoute(routeName string, projectId string, realStore ModuleStoreI) error
-	GetAndValidateRoute(routeName string, projectId string, host string, url string, method string) (route routes.Route, err error)
 }
 
 type ModuleStore struct {
@@ -44,8 +41,8 @@ func (ms *ModuleStore) SaveProject(projectId string, realStore ModuleStoreI, per
 		if ms.Projects == nil {
 			ms.Projects = make(map[string]*module_model.Project)
 		}
-		if project.Routes == nil {
-			project.Routes = make(map[string]routes.Route)
+		if project.DMNs == nil {
+			project.DMNs = make(map[string]module_model.DMN)
 		}
 		ms.Projects[projectId] = project
 		if persist == true {
@@ -84,53 +81,10 @@ func (ms *ModuleStore) GetProjectList() []map[string]interface{} {
 	for k := range ms.Projects {
 		project := make(map[string]interface{})
 		project["projectName"] = k
-		//project["lastUpdateDate"] = time.Now()
+		project["createdBy"] = "user 1"
+		project["lastUpdateDate"] = time.Now()
 		projects[i] = project
 		i++
 	}
 	return projects
-}
-
-func (ms *ModuleStore) SaveRoute(routeObj routes.Route, projectId string, realStore ModuleStoreI, persist bool) error {
-	log.Println("inside SaveRoute")
-	prj, err := ms.GetProjectConfig(projectId)
-	if err != nil {
-		log.Print(err)
-		return err
-	}
-	err = prj.AddRoute(routeObj)
-	if persist == true {
-		return realStore.SaveStore("", realStore)
-	}
-	return nil
-}
-
-func (ms *ModuleStore) RemoveRoute(routeName string, projectId string, realStore ModuleStoreI) error {
-	if prg, ok := ms.Projects[projectId]; ok {
-		if _, ok := prg.Routes[routeName]; ok {
-			delete(prg.Routes, routeName)
-			log.Print("SaveStore called from RemoveRoute")
-			return realStore.SaveStore("", realStore)
-		} else {
-			return errors.New(fmt.Sprint("Route ", routeName, " does not exists"))
-		}
-	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
-	}
-}
-
-func (ms *ModuleStore) GetAndValidateRoute(routeName string, projectId string, host string, url string, method string) (route routes.Route, err error) {
-	if prg, ok := ms.Projects[projectId]; ok {
-		if route, ok = prg.Routes[routeName]; !ok {
-			return route, errors.New(fmt.Sprint("Route ", routeName, " does not exists"))
-		}
-	} else {
-		return route, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
-	}
-	err = route.Validate(host, url, method)
-	if err != nil {
-		return
-	}
-	return
-
 }
