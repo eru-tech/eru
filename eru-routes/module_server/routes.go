@@ -20,6 +20,6 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodGet).Path("/{project}/config").HandlerFunc(module_handlers.ProjectConfigHandler(sh.Store))
 
 	// Adding routing handler to track all incoming requests
-	serverRouter.PathPrefix("/{project}/route/{routename}/").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.PathPrefix("/{project}/route/{routename}").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 
 }

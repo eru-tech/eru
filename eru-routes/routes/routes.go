@@ -20,6 +20,7 @@ type Route struct {
 	AllowedMethods    []string
 	EnableCache       bool
 	RequestHeaders    []Headers
+	QueryParams       []Headers
 	ResponseHeaders   []Headers
 	TransformRequest  string
 	TransformResponse string
@@ -74,7 +75,8 @@ func (route *Route) Validate(host string, url string, method string) (err error)
 		err = errors.New("Host not allowed")
 		return
 	}
-
+	log.Println(route.AllowedMethods)
+	log.Println(method)
 	if len(route.AllowedMethods) > 0 {
 		safeMethod = false
 		for i := 0; i < len(route.AllowedMethods); i++ {

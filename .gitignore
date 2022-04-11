@@ -23,4 +23,5 @@ config.json
 /.idea/vcs.xml
 /eru-files/app
 /eru-files/setEnvVar.sh
+/eru-rules/setEnvVar.sh
 /eru-sample/

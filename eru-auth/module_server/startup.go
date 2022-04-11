@@ -1,16 +1,15 @@
 package module_server
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/eru-tech/eru/eru-routes/module_store"
+	"github.com/eru-tech/eru/eru-auth/module_store"
 	"log"
 	"os"
 	"strings"
 )
 
-const StoreTableName = "eruroutes_config"
+const StoreTableName = "eruauth_config"
 
 func StartUp() (module_store.ModuleStoreI, error) {
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
@@ -36,9 +35,10 @@ func StartUp() (module_store.ModuleStoreI, error) {
 		return nil, errors.New(fmt.Sprint("Invalid STORE_TYPE ", storeType))
 	}
 	storeBytes, err := myStore.GetStoreByteArray("")
+	log.Println(string(storeBytes))
 	if err == nil {
-		err = json.Unmarshal(storeBytes, myStore)
-		//module_store.UnMarshalStore(storeBytes, myStore)
+		//err = json.Unmarshal(storeBytes, myStore)
+		module_store.UnMarshalStore(storeBytes, myStore)
 	}
 	//s.Store = myStore
 	return myStore, err

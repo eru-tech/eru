@@ -7,6 +7,8 @@ import (
 	"github.com/eru-tech/eru/eru-routes/module_store"
 	"github.com/eru-tech/eru/eru-routes/routes"
 	"github.com/gorilla/mux"
+	"io"
+	"log"
 	"net/http"
 	//"strconv"
 	"strings"
@@ -45,22 +47,31 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-
 		response, err := httpClient.Do(r)
 		defer response.Body.Close()
 		if err != nil {
+			log.Println("---")
+			log.Println(err)
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-		var respBody map[string]interface{}
-		if err = json.NewDecoder(response.Body).Decode(&respBody); err != nil {
+		for k, v := range response.Header {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(response.StatusCode)
+		_, err = io.Copy(w, response.Body)
+		if err != nil {
+			log.Println("================")
+			log.Println(err)
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(respBody)
+
+		//w.WriteHeader(http.StatusOK)
+		//w.Header().Set("Content")
+		//_ = json.NewEncoder(w).Encode(respBody)
 
 		/*
 
@@ -198,15 +209,21 @@ func transformRequest(request *http.Request, route routes.Route, url string) (er
 
 	// http: Request.RequestURI can't be set in client requests.
 	// http://golang.org/src/pkg/net/http/client.go
+	if port != "" {
+		port = fmt.Sprint(":", port)
+	}
 	request.RequestURI = ""
 	request.Host = host
-	request.URL.Host = fmt.Sprint(host, ":", port)
+	request.URL.Host = fmt.Sprint(host, port)
 	request.URL.Path = path
 	request.URL.Scheme = scheme
-	//log.Println(request.URL)
 	for _, h := range route.RequestHeaders {
 		request.Header.Set(h.Key, h.Value)
 	}
-
+	params := request.URL.Query()
+	for _, p := range route.QueryParams {
+		params.Set(p.Key, p.Value)
+	}
+	request.URL.RawQuery = params.Encode()
 	return
 }
