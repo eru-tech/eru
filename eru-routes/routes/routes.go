@@ -24,6 +24,7 @@ type Route struct {
 	ResponseHeaders   []Headers
 	TransformRequest  string
 	TransformResponse string
+	IsPublic          bool
 }
 
 type TargetHost struct {
@@ -96,12 +97,18 @@ func (route *Route) Validate(host string, url string, method string) (err error)
 		return
 	}
 
+	if strings.HasPrefix(strings.ToUpper(url), "/PUBLIC") && !route.IsPublic {
+		err = errors.New("route is not public")
+		return
+	}
+
 	if route.MatchType == MatchTypePrefix && !strings.HasPrefix(strings.ToUpper(strings.Split(url, route.RouteName)[1]), strings.ToUpper(route.Url)) {
 		err = errors.New("URL Prefix mismatch")
 		return
 	}
 
 	if route.MatchType == MatchTypeExact && !strings.EqualFold(strings.Split(url, route.RouteName)[1], route.Url) {
+		log.Println(url, " - ", route.RouteName, " - ", route.Url)
 		err = errors.New("URL mismatch")
 		return
 	}
