@@ -53,8 +53,11 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+		log.Println(r.Host)
+		log.Println(r.URL)
 		response, err := httpClient.Do(r)
 		log.Println("httpClient.Do err = ", err)
+		log.Println("httpClient.Do err = ", response.Body)
 		defer response.Body.Close()
 		if err != nil {
 			log.Println("---")
@@ -64,6 +67,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		for k, v := range response.Header {
+			log.Println(k, " = ", v)
 			w.Header()[k] = v
 		}
 		w.WriteHeader(response.StatusCode)
