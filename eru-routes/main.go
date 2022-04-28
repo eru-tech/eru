@@ -11,8 +11,8 @@ import (
 var port = "8083"
 
 func main() {
-	log.Println("inside main of eru-files")
-	envPort := os.Getenv("ERUFILESPORT")
+	log.Println("inside main of eru-routes")
+	envPort := os.Getenv("ERUROUTESPORT")
 	if envPort != "" {
 		port = envPort
 	}

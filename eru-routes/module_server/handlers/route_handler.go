@@ -27,6 +27,9 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		// Extract the host and url from incoming request
 		host, url := extractHostUrl(r)
+		log.Println("host = ", host)
+		log.Println("url = ", url)
+
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		routeName := vars["routename"]
@@ -34,20 +37,24 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		// Lookup a route based on host and url
 		route, err := s.GetAndValidateRoute(routeName, projectId, host, url, r.Method)
 		if err != nil {
+			log.Println(err)
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+		log.Println(route)
 		//v["host"] = host1
 		//v["path"] = path1
 
 		err = transformRequest(r, route, url)
 		if err != nil {
+			log.Println(err)
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 		response, err := httpClient.Do(r)
+		log.Println("httpClient.Do err = ", err)
 		defer response.Body.Close()
 		if err != nil {
 			log.Println("---")
