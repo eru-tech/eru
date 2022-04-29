@@ -3,6 +3,7 @@ package module_server
 import (
 	module_handlers "github.com/eru-tech/eru/eru-routes/module_server/handlers"
 	"github.com/eru-tech/eru/eru-routes/module_store"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"net/http"
 )
@@ -22,5 +23,6 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	// Adding routing handler to track all incoming requests
 	serverRouter.PathPrefix("/{project}/route/{routename}").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.PathPrefix("/public/{project}/route/{routename}").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.PathPrefix("/").HandlerFunc(server_handlers.EchoHandler)
 
 }
