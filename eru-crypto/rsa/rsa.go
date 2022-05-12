@@ -4,7 +4,6 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -100,7 +99,25 @@ func GenerateKeyPair(bits int) (rsaKeyPair RsaKeyPair, err error) {
 	return
 }
 
-func Encrypt(plainBytes []byte, publicKeyStr string) (encryptedBytes []byte, err error) {
+func EncryptWithCert(plainBytes []byte, publicCert string) (encryptedBytes []byte, err error) {
+	log.Println(string(plainBytes))
+	log.Println(publicCert)
+	block, _ := pem.Decode([]byte(publicCert))
+	if block == nil {
+		err = errors.New("failed to parse PEM block containing the key")
+		log.Println(err)
+		return
+	}
+
+	var cert *x509.Certificate
+	cert, _ = x509.ParseCertificate(block.Bytes)
+	rsaPublicKey := cert.PublicKey.(*rsa.PublicKey)
+	return Encrypt(plainBytes, rsaPublicKey)
+}
+
+func EncryptWithKey(plainBytes []byte, publicKeyStr string) (encryptedBytes []byte, err error) {
+	log.Println("publicKeyStr")
+	log.Println(publicKeyStr)
 	block, _ := pem.Decode([]byte(publicKeyStr))
 	if block == nil {
 		err = errors.New("failed to parse PEM block containing the key")
@@ -114,7 +131,12 @@ func Encrypt(plainBytes []byte, publicKeyStr string) (encryptedBytes []byte, err
 		log.Println(err)
 		return
 	}
-	encryptedBytes, err = rsa.EncryptOAEP(
+	return Encrypt(plainBytes, rsaPublicKey)
+}
+
+func Encrypt(plainBytes []byte, rsaPublicKey *rsa.PublicKey) (encryptedBytes []byte, err error) {
+
+	/*encryptedBytes, err = rsa.EncryptOAEP(
 		sha256.New(),
 		rand.Reader,
 		rsaPublicKey,
@@ -123,6 +145,25 @@ func Encrypt(plainBytes []byte, publicKeyStr string) (encryptedBytes []byte, err
 	if err != nil {
 		log.Println(err)
 		return
+	}
+	return
+
+	*/
+	encryptedBytes = make([]byte, 0, len(plainBytes))
+	for i := 0; i < len(plainBytes); i += 117 {
+		if i+117 < len(plainBytes) {
+			partial, err1 := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, plainBytes[i:i+117])
+			if err1 != nil {
+				log.Println(err1)
+			}
+			encryptedBytes = append(encryptedBytes, partial...)
+		} else {
+			partial, err1 := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, plainBytes[i:])
+			if err1 != nil {
+				log.Println(err1)
+			}
+			encryptedBytes = append(encryptedBytes, partial...)
+		}
 	}
 	return
 }

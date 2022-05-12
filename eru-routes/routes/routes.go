@@ -3,6 +3,7 @@ package routes
 import (
 	"errors"
 	"fmt"
+	erujwt "github.com/eru-tech/eru/eru-crypto/jwt"
 	"log"
 	"strings"
 )
@@ -10,6 +11,14 @@ import (
 const MatchTypePrefix = "PREFIX"
 const MatchTypeExact = "EXACT"
 
+type TokenSecret struct {
+	HeaderKey  string
+	SecretAlgo string
+	SecretKey  string
+	JwkUrl     string
+	Audience   []string
+	Issuer     []string
+}
 type Route struct {
 	RouteName         string `eru:"required"`
 	Url               string `eru:"required"`
@@ -21,10 +30,13 @@ type Route struct {
 	EnableCache       bool
 	RequestHeaders    []Headers
 	QueryParams       []Headers
+	FormData          []Headers
 	ResponseHeaders   []Headers
 	TransformRequest  string
 	TransformResponse string
 	IsPublic          bool
+	TokenSecret       TokenSecret `json:"-"`
+	PostBody          map[string]interface{}
 }
 
 type TargetHost struct {
@@ -36,8 +48,13 @@ type TargetHost struct {
 }
 
 type Headers struct {
-	Key   string `eru:"required"`
-	Value string `eru:"required"`
+	Key        string `eru:"required"`
+	Value      string `eru:"required"`
+	IsTemplate bool
+}
+
+func (route *Route) FetchClaimsFromToken(strToken string) (claims interface{}, err error) {
+	return erujwt.DecryptTokenJWK(strToken, route.TokenSecret.JwkUrl)
 }
 
 func (route *Route) GetTargetSchemeHostPortPath(url string) (scheme string, host string, port string, path string, err error) {

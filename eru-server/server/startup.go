@@ -20,7 +20,7 @@ func Launch(serverRouter *mux.Router, port string) {
 	//log.Print(s)
 	//r := s.GetRouter()
 	http.Handle("/", r)
-	fmt.Println("Starting file_server at port ", port)
+	fmt.Println("Starting eru_routes at port ", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatal(err)
 	}

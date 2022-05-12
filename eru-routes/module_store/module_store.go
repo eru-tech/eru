@@ -15,6 +15,7 @@ type StoreHolder struct {
 type ModuleStoreI interface {
 	store.StoreI
 	SaveProject(projectId string, realStore ModuleStoreI, persist bool) error
+	SaveProjectConfig(projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error
 	RemoveProject(projectId string, realStore ModuleStoreI) error
 	GetProjectConfig(projectId string) (*module_model.Project, error)
 	GetProjectList() []map[string]interface{}
@@ -56,6 +57,15 @@ func (ms *ModuleStore) SaveProject(projectId string, realStore ModuleStoreI, per
 		}
 	} else {
 		return errors.New(fmt.Sprint("Project ", projectId, " already exists"))
+	}
+}
+
+func (ms *ModuleStore) SaveProjectConfig(projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error {
+	if _, ok := ms.Projects[projectId]; ok {
+		ms.Projects[projectId].ProjectConfig = projectConfig
+		return realStore.SaveStore("", realStore)
+	} else {
+		return errors.New(fmt.Sprint("Project ", projectId, " not found"))
 	}
 }
 
@@ -124,6 +134,7 @@ func (ms *ModuleStore) GetAndValidateRoute(routeName string, projectId string, h
 		if route, ok = prg.Routes[routeName]; !ok {
 			return route, errors.New(fmt.Sprint("Route ", routeName, " does not exists"))
 		}
+		route.TokenSecret = prg.ProjectConfig.TokenSecret
 	} else {
 		return route, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 	}

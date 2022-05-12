@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/eru-tech/eru/eru-routes/module_model"
 	"github.com/eru-tech/eru/eru-routes/module_store"
 	"github.com/eru-tech/eru/eru-routes/routes"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -24,6 +25,41 @@ func ProjectSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		} else {
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("project ", projectID, " created successfully")})
+		}
+	}
+}
+
+func ProjectConfigSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		log.Print(projectId)
+
+		prjConfigFromReq := json.NewDecoder(r.Body)
+		prjConfigFromReq.DisallowUnknownFields()
+
+		var projectCOnfig module_model.ProjectConfig
+
+		if err := prjConfigFromReq.Decode(&projectCOnfig); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err := utils.ValidateStruct(projectCOnfig, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+
+		err := s.SaveProjectConfig(projectId, projectCOnfig, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("project config for ", projectId, " saved successfully")})
 		}
 	}
 }
