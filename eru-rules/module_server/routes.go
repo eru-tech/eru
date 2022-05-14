@@ -16,6 +16,10 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodGet).Path("/project/list").HandlerFunc(module_handlers.ProjectListHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/config").HandlerFunc(module_handlers.ProjectConfigHandler(sh.Store))
 
+	storeRouter.Methods(http.MethodPost).Path("/{project}/datatype/save").HandlerFunc(module_handlers.DataTypeSaveHandler(sh.Store))
+	storeRouter.Methods(http.MethodDelete).Path("/{project}/datatype/remove/{datatypename}").HandlerFunc(module_handlers.DataTypeRemoveHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/datatype/list").HandlerFunc(module_handlers.DataTypeListHandler(sh.Store))
+
 	// routes for file events
 	rulesRouter := serverRouter.PathPrefix("/rules/{project}").Subrouter()
 	_ = rulesRouter

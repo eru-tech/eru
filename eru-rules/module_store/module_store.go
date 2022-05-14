@@ -18,6 +18,9 @@ type ModuleStoreI interface {
 	RemoveProject(projectId string, realStore ModuleStoreI) error
 	GetProjectConfig(projectId string) (*module_model.Project, error)
 	GetProjectList() []map[string]interface{}
+	SaveDataType(projectId string, dataType module_model.DataType, realStore ModuleStoreI, persist bool) error
+	RemoveDataType(projectId string, dataTypeName string, realStore ModuleStoreI) error
+	GetDataTypeList(projectId string) (map[string]module_model.DataType, error)
 }
 
 type ModuleStore struct {
@@ -43,6 +46,9 @@ func (ms *ModuleStore) SaveProject(projectId string, realStore ModuleStoreI, per
 		}
 		if project.DMNs == nil {
 			project.DMNs = make(map[string]module_model.DMN)
+		}
+		if project.DataTypes == nil {
+			project.DataTypes = make(map[string]module_model.DataType)
 		}
 		ms.Projects[projectId] = project
 		if persist == true {
@@ -87,4 +93,48 @@ func (ms *ModuleStore) GetProjectList() []map[string]interface{} {
 		i++
 	}
 	return projects
+}
+
+func (ms *ModuleStore) SaveDataType(projectId string, dataType module_model.DataType, realStore ModuleStoreI, persist bool) error {
+	err := ms.checkProjectExists(projectId)
+	if err != nil {
+		return err
+	}
+	ms.Projects[projectId].DataTypes[dataType.Name] = dataType
+	if persist == true {
+		log.Print("SaveStore called from SaveDataType")
+		return realStore.SaveStore("", realStore)
+	} else {
+		return nil
+	}
+}
+
+func (ms *ModuleStore) RemoveDataType(projectId string, dataTypeName string, realStore ModuleStoreI) error {
+	err := ms.checkProjectExists(projectId)
+	if err != nil {
+		return err
+	}
+	if _, ok := ms.Projects[projectId].DataTypes[dataTypeName]; ok {
+		delete(ms.Projects[projectId].DataTypes, dataTypeName)
+		log.Print("SaveStore called from RemoveDataType")
+		return realStore.SaveStore("", realStore)
+	} else {
+		return errors.New(fmt.Sprint("Datatype ", dataTypeName, " does not exists"))
+	}
+}
+
+func (ms *ModuleStore) GetDataTypeList(projectId string) (map[string]module_model.DataType, error) {
+	err := ms.checkProjectExists(projectId)
+	if err != nil {
+		return nil, err
+	}
+	return ms.Projects[projectId].DataTypes, nil
+}
+
+func (ms *ModuleStore) checkProjectExists(projectId string) error {
+	_, ok := ms.Projects[projectId]
+	if !ok {
+		return errors.New(fmt.Sprint("project ", projectId, " not found"))
+	}
+	return nil
 }
