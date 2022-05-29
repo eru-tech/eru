@@ -7,6 +7,7 @@ import (
 	"github.com/eru-tech/eru/eru-routes/routes"
 	"github.com/eru-tech/eru/eru-store/store"
 	"log"
+	"strings"
 )
 
 type StoreHolder struct {
@@ -22,6 +23,9 @@ type ModuleStoreI interface {
 	SaveRoute(routeObj routes.Route, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveRoute(routeName string, projectId string, realStore ModuleStoreI) error
 	GetAndValidateRoute(routeName string, projectId string, host string, url string, method string) (route routes.Route, err error)
+	GetAndValidateFunc(funcName string, projectId string, host string, url string, method string) (funcGroup routes.FuncGroup, err error)
+	SaveFunc(funcObj routes.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
+	RemoveFunc(funcName string, projectId string, realStore ModuleStoreI) error
 }
 
 type ModuleStore struct {
@@ -47,6 +51,9 @@ func (ms *ModuleStore) SaveProject(projectId string, realStore ModuleStoreI, per
 		}
 		if project.Routes == nil {
 			project.Routes = make(map[string]routes.Route)
+		}
+		if project.FuncGroups == nil {
+			project.FuncGroups = make(map[string]routes.FuncGroup)
 		}
 		ms.Projects[projectId] = project
 		if persist == true {
@@ -138,10 +145,90 @@ func (ms *ModuleStore) GetAndValidateRoute(routeName string, projectId string, h
 	} else {
 		return route, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 	}
+	log.Println("host url method")
+	log.Println(host)
+	log.Println(url)
+	log.Println(method)
 	err = route.Validate(host, url, method)
 	if err != nil {
 		return
 	}
+	log.Println("No error for route.Validate")
 	return
+}
 
+func (ms *ModuleStore) GetAndValidateFunc(funcName string, projectId string, host string, url string, method string) (funcGroup routes.FuncGroup, err error) {
+	log.Println("inside GetAndValidateFunc")
+	if prg, ok := ms.Projects[projectId]; ok {
+		if funcGroup, ok = prg.FuncGroups[funcName]; !ok {
+			return funcGroup, errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
+		}
+		funcGroup.TokenSecret = prg.ProjectConfig.TokenSecret
+	} else {
+		return funcGroup, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+	}
+	var errArray []string
+	for k, v := range funcGroup.FuncSteps {
+		fs := funcGroup.FuncSteps[k]
+		err = ms.loadRoutesForFunction(fs, v.RouteName, projectId, host, v.Path, method)
+		if err != nil {
+			log.Println(err)
+			errArray = append(errArray, err.Error())
+		}
+	}
+	if len(errArray) > 0 {
+		return funcGroup, errors.New(strings.Join(errArray, " , "))
+	}
+	return
+}
+
+func (ms *ModuleStore) loadRoutesForFunction(funcStep *routes.FuncStep, routeName string, projectId string, host string, url string, method string) (err error) {
+	log.Println("inside loadRoutesForFunction for route = ", funcStep.RouteName)
+	var errArray []string
+	r, err := ms.GetAndValidateRoute(routeName, projectId, host, url, method)
+	if err != nil {
+		return
+	}
+	funcStep.Route = r
+	for ck, cv := range funcStep.FuncSteps {
+		log.Println("inside funcStep.FuncSteps - child iteration")
+		fs := funcStep.FuncSteps[ck]
+		err = ms.loadRoutesForFunction(fs, cv.RouteName, projectId, host, cv.Path, method)
+		if err != nil {
+			log.Println(err)
+			errArray = append(errArray, err.Error())
+		}
+	}
+	if len(errArray) > 0 {
+		return errors.New(strings.Join(errArray, " , "))
+	}
+	return
+}
+
+func (ms *ModuleStore) SaveFunc(funcObj routes.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error {
+	log.Println("inside SaveFunc")
+	prj, err := ms.GetProjectConfig(projectId)
+	if err != nil {
+		log.Print(err)
+		return err
+	}
+	err = prj.AddFunc(funcObj)
+	if persist == true {
+		return realStore.SaveStore("", realStore)
+	}
+	return nil
+}
+
+func (ms *ModuleStore) RemoveFunc(funcName string, projectId string, realStore ModuleStoreI) error {
+	if prg, ok := ms.Projects[projectId]; ok {
+		if _, ok := prg.FuncGroups[funcName]; ok {
+			delete(prg.FuncGroups, funcName)
+			log.Print("SaveStore called from RemoveFunc")
+			return realStore.SaveStore("", realStore)
+		} else {
+			return errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
+		}
+	} else {
+		return errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+	}
 }

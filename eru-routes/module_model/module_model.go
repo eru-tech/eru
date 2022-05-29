@@ -15,23 +15,26 @@ type ProjectConfig struct {
 }
 
 type Project struct {
-	ProjectId     string                  `eru:"required"`
-	Routes        map[string]routes.Route `eru:"required"`
+	ProjectId     string                      `eru:"required"`
+	Routes        map[string]routes.Route     `eru:"required"`
+	FuncGroups    map[string]routes.FuncGroup `eru:"required"`
 	ProjectConfig ProjectConfig
 }
 
-type TemplateVars struct {
-	Headers          map[string]interface{}
-	FormData         map[string]interface{}
-	Params           map[string]interface{}
-	Vars             map[string]interface{}
-	Body             interface{}
-	Token            interface{}
-	FormDataKeyArray []string
+func (prg *Project) AddRoute(routeObj routes.Route) error {
+	if prg.Routes == nil {
+		prg.Routes = make(map[string]routes.Route)
+	}
+	prg.Routes[routeObj.RouteName] = routeObj
+	log.Println(prg)
+	return nil
 }
 
-func (prg *Project) AddRoute(routeObj routes.Route) error {
-	prg.Routes[routeObj.RouteName] = routeObj
+func (prg *Project) AddFunc(funcObj routes.FuncGroup) error {
+	if prg.FuncGroups == nil {
+		prg.FuncGroups = make(map[string]routes.FuncGroup)
+	}
+	prg.FuncGroups[funcObj.FuncGroupName] = funcObj
 	log.Println(prg)
 	return nil
 }

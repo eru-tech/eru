@@ -24,20 +24,31 @@ func HelloHandler(w http.ResponseWriter, r *http.Request) {
 
 func EchoHandler(w http.ResponseWriter, r *http.Request) {
 
-	for k, v := range r.Header {
-		log.Println(k, " = ", v)
-		//w.Header()[k] = v
-	}
+	err := r.ParseMultipartForm((1 << 20) * 10)
+	log.Println(err)
+	formData := r.MultipartForm
+	/*
+		for k, v := range r.Header {
+			log.Println(k, " = ", v)
+			//w.Header()[k] = v
+		}*/
 	//w.WriteHeader(200)
 	res := make(map[string]interface{})
+	res["FormData"] = formData
 	res["Host"] = r.Host
 	res["Header"] = r.Header
 	res["URL"] = r.URL
-	res["Body"] = r.Body
+	tmplBodyFromReq := json.NewDecoder(r.Body)
+	tmplBodyFromReq.DisallowUnknownFields()
+	var tmplBody interface{}
+	if err := tmplBodyFromReq.Decode(&tmplBody); err != nil {
+		log.Println(err)
+	}
+	res["Body"] = tmplBody
 	res["Method"] = r.Method
 	res["MultipartForm"] = r.MultipartForm
 	res["RequestURI"] = r.RequestURI
-	log.Println(res)
+	//log.Println(res)
 	FormatResponse(w, 200)
 	_ = json.NewEncoder(w).Encode(res)
 

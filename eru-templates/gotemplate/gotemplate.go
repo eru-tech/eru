@@ -35,49 +35,29 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		},
 		"marshalJSON": func(j interface{}) ([]byte, error) {
 			d, err := json.Marshal(j)
-			log.Println(string(d))
 			return d, err
 		},
 		"unmarshalJSON": func(b []byte) (d interface{}, err error) {
-			log.Println("inside unmarshalJSON")
-			log.Println(string(b))
-			//d = make(map[string]interface{})
 			err = json.Unmarshal(b, &d)
-			log.Println(d)
-			log.Println(err)
 			return
 		},
 		"b64Encode": func(str []byte) (string, error) {
-			log.Println(string(str))
-			log.Println(b64.StdEncoding.EncodeToString(str))
 			return b64.StdEncoding.EncodeToString(str), nil
 		},
 		"b64Decode": func(str string) (string, error) {
-			log.Println("inside b64Decode")
-			log.Println(str)
 			decodeBytes, err := b64.StdEncoding.DecodeString(str)
 			if err != nil {
 				log.Println(err)
 				return "", err
 			}
-			log.Println(string(decodeBytes))
 			return string(decodeBytes), nil
 		},
 		"aesEncryptECB": func(pb []byte, k []byte) ([]byte, error) {
-			log.Println("aes key")
-			log.Println(k)
-			log.Println(string(pb))
-			log.Println("len(pb) = ", len(pb))
 			dst, err := eruaes.EncryptECB(pb, k)
-			log.Println("len(dst) = ", len(dst))
 			return dst, err
 		},
 		"len": func(j interface{}) (int, error) {
-			log.Println("printing len")
-			log.Println(j)
 			strJ, err := json.Marshal(j)
-			log.Println(len(strJ))
-			log.Println(err)
 			return len(strJ), err
 
 		},
@@ -101,12 +81,10 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return aesObj.Key, nil
 		},
 		"shaHash": func(b string, bits int) (string, error) {
-			log.Println(b)
 			switch bits {
 			case 256:
 				return hex.EncodeToString(erusha.NewSHA256([]byte(b))), nil
 			case 512:
-				log.Println(hex.EncodeToString(erusha.NewSHA512([]byte(b))))
 				return hex.EncodeToString(erusha.NewSHA512([]byte(b))), nil
 			default:
 				return "", errors.New(fmt.Sprint("SHA function not defined for ", bits, "bits"))
@@ -117,28 +95,32 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return nil
 		},
 		"concatMapKeyVal": func(vars map[string]interface{}, keys []string, seprator string) string {
-			log.Println("inside concatMapKeyVal")
-			log.Println(vars)
-			log.Println(keys)
 			str := ""
 			for _, k := range keys {
 				str = fmt.Sprint(str, k, "=", vars[k], "|")
 			}
-			log.Println(str)
 			return str
 		},
 		"overwriteMap": func(orgMap map[string]interface{}, b []byte) (d interface{}, err error) {
-			log.Println("inside overwriteMap")
-			log.Println(string(b))
-			log.Println(orgMap)
 			newMap := make(map[string]interface{})
 			err = json.Unmarshal(b, &newMap)
-			log.Println(newMap)
 			for k, v := range newMap {
 				orgMap[k] = v
 			}
-			log.Println(orgMap)
 			d, err = json.Marshal(orgMap)
+			return
+		},
+		"logobject": func(v interface{}) (err error) {
+			vobj, err := json.Marshal(v)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			log.Println(string(vobj))
+			return
+		},
+		"logstring": func(str interface{}) (err error) {
+			log.Println(str)
 			return
 		},
 	}
@@ -153,10 +135,11 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 	}
 	switch outputFormat {
 	case "string":
-		log.Println("buf.String()")
-		log.Println(buf.String())
 		return buf.String(), nil
 	case "json":
+		log.Println("buf.String()")
+		log.Println("-------------------")
+		//log.Println(buf.String())
 		if err = json.Unmarshal([]byte(buf.String()), &output); err != nil {
 			return nil, errors.New(fmt.Sprintf("Unable to marhsal templated output to JSON : ", buf.String(), " ", err))
 		} else {
