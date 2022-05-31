@@ -24,7 +24,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		// Lookup a routes in a function based on host and url
 
-		funcGroup, err := s.GetAndValidateFunc(funcName, projectId, host, url, r.Method)
+		funcGroup, err := s.GetAndValidateFunc(funcName, projectId, host, url, r.Method, r.Header)
 		if err != nil {
 			log.Println(err)
 			w.WriteHeader(http.StatusBadRequest)

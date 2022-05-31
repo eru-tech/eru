@@ -7,6 +7,7 @@ import (
 	"github.com/eru-tech/eru/eru-routes/routes"
 	"github.com/eru-tech/eru/eru-store/store"
 	"log"
+	"net/http"
 	"strings"
 )
 
@@ -22,8 +23,8 @@ type ModuleStoreI interface {
 	GetProjectList() []map[string]interface{}
 	SaveRoute(routeObj routes.Route, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveRoute(routeName string, projectId string, realStore ModuleStoreI) error
-	GetAndValidateRoute(routeName string, projectId string, host string, url string, method string) (route routes.Route, err error)
-	GetAndValidateFunc(funcName string, projectId string, host string, url string, method string) (funcGroup routes.FuncGroup, err error)
+	GetAndValidateRoute(routeName string, projectId string, host string, url string, method string, headers http.Header) (route routes.Route, err error)
+	GetAndValidateFunc(funcName string, projectId string, host string, url string, method string, headers http.Header) (funcGroup routes.FuncGroup, err error)
 	SaveFunc(funcObj routes.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveFunc(funcName string, projectId string, realStore ModuleStoreI) error
 }
@@ -136,7 +137,7 @@ func (ms *ModuleStore) RemoveRoute(routeName string, projectId string, realStore
 	}
 }
 
-func (ms *ModuleStore) GetAndValidateRoute(routeName string, projectId string, host string, url string, method string) (route routes.Route, err error) {
+func (ms *ModuleStore) GetAndValidateRoute(routeName string, projectId string, host string, url string, method string, headers http.Header) (route routes.Route, err error) {
 	if prg, ok := ms.Projects[projectId]; ok {
 		if route, ok = prg.Routes[routeName]; !ok {
 			return route, errors.New(fmt.Sprint("Route ", routeName, " does not exists"))
@@ -145,19 +146,14 @@ func (ms *ModuleStore) GetAndValidateRoute(routeName string, projectId string, h
 	} else {
 		return route, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 	}
-	log.Println("host url method")
-	log.Println(host)
-	log.Println(url)
-	log.Println(method)
-	err = route.Validate(host, url, method)
+	err = route.Validate(host, url, method, headers)
 	if err != nil {
 		return
 	}
-	log.Println("No error for route.Validate")
 	return
 }
 
-func (ms *ModuleStore) GetAndValidateFunc(funcName string, projectId string, host string, url string, method string) (funcGroup routes.FuncGroup, err error) {
+func (ms *ModuleStore) GetAndValidateFunc(funcName string, projectId string, host string, url string, method string, headers http.Header) (funcGroup routes.FuncGroup, err error) {
 	log.Println("inside GetAndValidateFunc")
 	if prg, ok := ms.Projects[projectId]; ok {
 		if funcGroup, ok = prg.FuncGroups[funcName]; !ok {
@@ -170,7 +166,7 @@ func (ms *ModuleStore) GetAndValidateFunc(funcName string, projectId string, hos
 	var errArray []string
 	for k, v := range funcGroup.FuncSteps {
 		fs := funcGroup.FuncSteps[k]
-		err = ms.loadRoutesForFunction(fs, v.RouteName, projectId, host, v.Path, method)
+		err = ms.loadRoutesForFunction(fs, v.RouteName, projectId, host, v.Path, method, headers)
 		if err != nil {
 			log.Println(err)
 			errArray = append(errArray, err.Error())
@@ -182,10 +178,10 @@ func (ms *ModuleStore) GetAndValidateFunc(funcName string, projectId string, hos
 	return
 }
 
-func (ms *ModuleStore) loadRoutesForFunction(funcStep *routes.FuncStep, routeName string, projectId string, host string, url string, method string) (err error) {
+func (ms *ModuleStore) loadRoutesForFunction(funcStep *routes.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header) (err error) {
 	log.Println("inside loadRoutesForFunction for route = ", funcStep.RouteName)
 	var errArray []string
-	r, err := ms.GetAndValidateRoute(routeName, projectId, host, url, method)
+	r, err := ms.GetAndValidateRoute(routeName, projectId, host, url, method, headers)
 	if err != nil {
 		return
 	}
@@ -193,7 +189,7 @@ func (ms *ModuleStore) loadRoutesForFunction(funcStep *routes.FuncStep, routeNam
 	for ck, cv := range funcStep.FuncSteps {
 		log.Println("inside funcStep.FuncSteps - child iteration")
 		fs := funcStep.FuncSteps[ck]
-		err = ms.loadRoutesForFunction(fs, cv.RouteName, projectId, host, cv.Path, method)
+		err = ms.loadRoutesForFunction(fs, cv.RouteName, projectId, host, cv.Path, method, headers)
 		if err != nil {
 			log.Println(err)
 			errArray = append(errArray, err.Error())

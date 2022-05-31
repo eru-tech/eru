@@ -25,7 +25,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		routeName := vars["routename"]
 
 		// Lookup a route based on host and url
-		route, err := s.GetAndValidateRoute(routeName, projectId, host, url, r.Method)
+		route, err := s.GetAndValidateRoute(routeName, projectId, host, url, r.Method, r.Header)
 		if err != nil {
 			log.Println(err)
 			w.WriteHeader(http.StatusBadRequest)

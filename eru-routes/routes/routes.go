@@ -36,6 +36,7 @@ type Route struct {
 	TargetHosts       []TargetHost `eru:"required"`
 	AllowedHosts      []string
 	AllowedMethods    []string
+	RequiredHeaders   []Headers
 	EnableCache       bool
 	RequestHeaders    []Headers
 	QueryParams       []Headers
@@ -115,9 +116,17 @@ func (route *Route) GetTargetSchemeHostPortPath(url string) (scheme string, host
 	return
 }
 
-func (route *Route) Validate(host string, url string, method string) (err error) {
+func (route *Route) Validate(host string, url string, method string, headers http.Header) (err error) {
 	safeHost := true
 	safeMethod := true
+
+	for _, v := range route.RequiredHeaders {
+		if headers.Get(v.Key) != v.Value {
+			err = errors.New(fmt.Sprint("Wrong Value for Header Key : ", v.Key))
+			return
+		}
+	}
+
 	if len(route.AllowedHosts) > 0 {
 		safeHost = false
 		for i := 0; i < len(route.AllowedHosts); i++ {
@@ -131,8 +140,8 @@ func (route *Route) Validate(host string, url string, method string) (err error)
 		err = errors.New("Host not allowed")
 		return
 	}
-	log.Println(route.AllowedMethods)
-	log.Println(method)
+	//log.Println(route.AllowedMethods)
+	//log.Println(method)
 	if len(route.AllowedMethods) > 0 {
 		safeMethod = false
 		for i := 0; i < len(route.AllowedMethods); i++ {
