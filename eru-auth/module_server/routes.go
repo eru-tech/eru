@@ -9,11 +9,11 @@ import (
 
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	//store routes specific to files
-	serverRouter.Path("/auth/google/login").HandlerFunc(module_handlers.OauthGoogleLogin())
-	serverRouter.Path("/auth/google/callback").HandlerFunc(module_handlers.OauthGoogleCallback())
-	serverRouter.Path("/auth/openid/login").HandlerFunc(module_handlers.OpenIdLoginHandler(sh.Store))
-	serverRouter.Path("/auth/openid/callback").HandlerFunc(module_handlers.OpenIdCallbackHandler(sh.Store))
-	serverRouter.Path("/auth/openid/getloginflow/{loginchallenge}").HandlerFunc(module_handlers.GetLoginFlowHandlerandler(sh.Store))
+	//serverRouter.Path("/auth/google/login").HandlerFunc(module_handlers.OauthGoogleLogin())
+	//serverRouter.Path("/auth/google/callback").HandlerFunc(module_handlers.OauthGoogleCallback())
+	//serverRouter.Path("/auth/openid/login").HandlerFunc(module_handlers.OpenIdLoginHandler(sh.Store))
+	//serverRouter.Path("/auth/openid/callback").HandlerFunc(module_handlers.OpenIdCallbackHandler(sh.Store))
+	//serverRouter.Path("/auth/openid/getloginflow/{loginchallenge}").HandlerFunc(module_handlers.GetLoginFlowHandlerandler(sh.Store))
 
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 
