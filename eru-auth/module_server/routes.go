@@ -3,11 +3,13 @@ package module_server
 import (
 	module_handlers "github.com/eru-tech/eru/eru-auth/module_server/handlers"
 	"github.com/eru-tech/eru/eru-auth/module_store"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"net/http"
 )
 
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
+	server_handlers.ServerName = "eruauth"
 	//store routes specific to files
 	//serverRouter.Path("/auth/google/login").HandlerFunc(module_handlers.OauthGoogleLogin())
 	//serverRouter.Path("/auth/google/callback").HandlerFunc(module_handlers.OauthGoogleCallback())

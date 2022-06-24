@@ -101,42 +101,44 @@ func UnMarshalStore(b []byte, msi ModuleStoreI) error {
 			}
 
 			var auths map[string]*json.RawMessage
-			err = json.Unmarshal(*prjObjs["Auth"], &auths)
-			if err != nil {
-				log.Print("error json.Unmarshal(*prgObjs[\"Auth\"], &auths)")
-				log.Print(err)
-				return err
-			}
-			log.Println(auths)
-			for authKey, authJson := range auths {
-				log.Println("authKey === ", authKey)
-				var authObj map[string]*json.RawMessage
-				err = json.Unmarshal(*authJson, &authObj)
+			if _, ok = prjObjs["Auth"]; ok {
+				err = json.Unmarshal(*prjObjs["Auth"], &auths)
 				if err != nil {
-					log.Print("error json.Unmarshal(*authJson, &authObj)")
+					log.Print("error json.Unmarshal(*prgObjs[\"Auth\"], &auths)")
 					log.Print(err)
 					return err
 				}
-				var authType string
-				if at, ok := authObj["AuthType"]; ok {
-					err = json.Unmarshal(*at, &authType)
+				log.Println(auths)
+				for authKey, authJson := range auths {
+					log.Println("authKey === ", authKey)
+					var authObj map[string]*json.RawMessage
+					err = json.Unmarshal(*authJson, &authObj)
 					if err != nil {
+						log.Print("error json.Unmarshal(*authJson, &authObj)")
+						log.Print(err)
+						return err
+					}
+					var authType string
+					if at, ok := authObj["AuthType"]; ok {
+						err = json.Unmarshal(*at, &authType)
+						if err != nil {
+							log.Println(err)
+							return err
+						}
+					}
+					log.Println("authType = ", authType)
+					authI := authtype.GetAuth(authType)
+					err = authI.MakeFromJson(authJson)
+					if err == nil {
+						err = msi.SaveAuth(authI, prj, nil, false)
+						if err != nil {
+							log.Println(err)
+							return err
+						}
+					} else {
 						log.Println(err)
 						return err
 					}
-				}
-				log.Println("authType = ", authType)
-				authI := authtype.GetAuth(authType)
-				err = authI.MakeFromJson(authJson)
-				if err == nil {
-					err = msi.SaveAuth(authI, prj, nil, false)
-					if err != nil {
-						log.Println(err)
-						return err
-					}
-				} else {
-					log.Println(err)
-					return err
 				}
 			}
 		}
