@@ -1,0 +1,446 @@
+package auth
+
+import (
+	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"github.com/eru-tech/eru/eru-crypto/jwt"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"golang.org/x/oauth2"
+	"log"
+	"math/rand"
+	"net/http"
+	"strings"
+	"time"
+)
+
+type LoginSuccess struct {
+	AccessToken  string
+	RefreshToken string
+	IdToken      string
+	Expiry       time.Time
+	ExpiresIn    float64
+}
+
+type HydraConfig struct {
+	PublicHost   string
+	PublicPort   string
+	PublicScheme string
+	AdminHost    string
+	AdminPort    string
+	AdminScheme  string
+	AuthURL      string
+	TokenURL     string
+	HydraClients map[string]HydraClient
+}
+
+type hydraAcceptLoginRequest struct {
+	Remember    bool   `json:"remember"`
+	RememberFor int    `json:"remember_for"`
+	Subject     string `json:"subject"`
+}
+
+type hydraAcceptConsentRequest struct {
+	Remember    bool                             `json:"remember"`
+	RememberFor int                              `json:"remember_for"`
+	GrantScope  []string                         `json:"grant_scope"`
+	HandledAt   time.Time                        `json:"handled_at"`
+	Session     hydraAcceptConsentRequestSession `json:"session"`
+}
+
+type hydraAcceptConsentRequestSession struct {
+	IdToken interface{} `json:"id_token"`
+}
+
+type HydraClient struct {
+	ClientId                string   `json:"client_id"`
+	ClientSecret            string   `json:"client_secret"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+	RedirectURIs            []string `json:"redirect_uris"`
+	GrantTypes              []string `json:"grant_types"`
+	ResponseTypes           []string `json:"response_types"`
+	Scope                   string   `json:"scope"`
+}
+
+func (kratosHydraAuth *KratosHydraAuth) ensureLoginChallenge(r *http.Request) (loginChallenge string, cookies []*http.Cookie, err error) {
+	//ctx := context.Background()
+	// fetch flowID from url query parameters
+	loginChallenge = r.URL.Query().Get("login_challenge")
+
+	if loginChallenge == "" {
+		log.Println("inside loginChallenge == \"\"")
+		b := make([]byte, 32)
+		_, err = rand.Read(b)
+		if err != nil {
+			log.Println("generate state failed: %v", err)
+			return
+		}
+		state := base64.StdEncoding.EncodeToString(b)
+		//setSessionValue(w, r, "oauth2State", state)
+
+		// start oauth2 authorization code flow
+		hydraClientId := ""
+		for _, v := range kratosHydraAuth.Hydra.HydraClients {
+			hydraClientId = v.ClientId
+			break
+		}
+		outhConfig, ocErr := kratosHydraAuth.Hydra.getOauthConfig(hydraClientId)
+		if ocErr != nil {
+			log.Println("generate state failed: %v", err)
+			err = ocErr
+			return
+		}
+		redirectTo := outhConfig.AuthCodeURL(state)
+
+		log.Println("redirect to hydra, url: %s", redirectTo)
+		res, headers, respCookies, statusCode, err := utils.CallHttp("GET", redirectTo, nil, nil, nil, nil, nil)
+		log.Println(res)
+		log.Println(headers)
+		cookies = respCookies
+		log.Println(cookies)
+		log.Println(statusCode)
+		log.Println(err)
+		if statusCode >= 300 && statusCode < 400 {
+			redirectLocation := headers["Location"][0]
+			log.Println(redirectLocation)
+			params := strings.Split(redirectLocation, "?")[1]
+			log.Println(params)
+			loginChallenge = strings.Split(params, "=")[1]
+		}
+	}
+	return
+}
+
+func (kratosHydraAuth *KratosHydraAuth) VerifyToken(tokenType string, token string) (res interface{}, err error) {
+	switch tokenType {
+	case "id":
+		log.Println("calling VerifyIdToken")
+		return kratosHydraAuth.Hydra.verifyIdToken(token)
+	case "access":
+		log.Println("calling VerifyAccessToken")
+		return kratosHydraAuth.Hydra.verifyAccessToken(token)
+	case "refresh":
+		log.Println("calling VerifyRefreshToken")
+		return kratosHydraAuth.Hydra.verifyRefreshToken(token)
+	default:
+		//do nothing
+	}
+	return nil, errors.New(fmt.Sprint("tokenType Mismatch : ", tokenType))
+}
+
+func (hydraConfig HydraConfig) verifyIdToken(token string) (res interface{}, err error) {
+	jwkUrl := fmt.Sprint(hydraConfig.getPublicUrl(), "/.well-known/jwks.json")
+	claims, err := jwt.DecryptTokenJWK(token, jwkUrl)
+	if err != nil {
+		return nil, err
+	}
+	return claims, nil
+}
+
+func (hydraConfig HydraConfig) verifyAccessToken(token string) (res interface{}, err error) {
+	dummyMap := make(map[string]string)
+	formData := make(map[string]string)
+	formData["token"] = token
+	headers := http.Header{}
+	headers.Add("content-type", "application/x-www-form-urlencoded")
+	res, _, _, _, err = utils.CallHttp("POST", fmt.Sprint(hydraConfig.getAminUrl(), "/oauth2/introspect"), headers, formData, nil, dummyMap, dummyMap)
+	if err != nil {
+		log.Print("error in http.Get verifyAccessToken")
+		log.Print(err)
+		return nil, err
+	}
+	log.Println(res)
+
+	if verifiedToken, ok := res.(map[string]interface{}); !ok {
+		err = errors.New("Verified token response not in expected format")
+		return nil, err
+	} else {
+		if isActive, isActiveOk := verifiedToken["active"]; !isActiveOk {
+			err = errors.New("Verified token response not in expected format")
+			return nil, err
+		} else {
+			if isActive.(bool) {
+				return verifiedToken, nil
+			} else {
+				err = errors.New("Invalid Token")
+				return nil, err
+			}
+		}
+	}
+}
+
+func (hydraConfig HydraConfig) verifyRefreshToken(token string) (res interface{}, err error) {
+	return hydraConfig.verifyAccessToken(token)
+}
+
+func (hydraConfig HydraConfig) getOauthConfig(clientId string) (oauth2Config *oauth2.Config, err error) {
+	if hc, ok := hydraConfig.HydraClients[clientId]; ok {
+		return &oauth2.Config{
+			RedirectURL:  hc.RedirectURIs[0],
+			ClientID:     clientId,
+			ClientSecret: hc.ClientSecret,
+			Scopes:       strings.Split(hc.Scope, " "),
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  hydraConfig.AuthURL,
+				TokenURL: hydraConfig.TokenURL,
+			},
+		}, nil
+	} else {
+		return nil, errors.New(fmt.Sprint(clientId, "not found"))
+	}
+}
+func (hydraConfig HydraConfig) RemoveHydraClient(clientId string) (err error) {
+	log.Println("inside RemoveHydraClient")
+	if _, ok := hydraConfig.HydraClients[clientId]; ok {
+		_, _, _, err = hydraConfig.deleteHydraClient(clientId)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	} else {
+		err = errors.New(fmt.Sprint("hydra client not found : ", clientId))
+		return
+	}
+	return nil
+}
+func (hydraConfig HydraConfig) SaveHydraClient(hydraClient HydraClient) (err error) {
+	_, _, _, err = hydraConfig.getHydraClient(hydraClient.ClientId)
+	if err != nil {
+		log.Println("calling create api for hydraclient : ", hydraClient.ClientId)
+		_, _, _, err = hydraConfig.createHydraClient(hydraClient)
+	} else {
+		log.Println("calling update api for hydraclient : ", hydraClient.ClientId)
+		_, _, _, err = hydraConfig.updateHydraClient(hydraClient.ClientId, hydraClient)
+	}
+	return
+}
+
+func (hydraConfig HydraConfig) getHydraClient(clientId string) (resp interface{}, headers map[string][]string, statusCode int, err error) {
+	dummyMap := make(map[string]string)
+	resp, headers, _, statusCode, err = utils.CallHttp("GET", fmt.Sprint(hydraConfig.getAminUrl(), "/clients/", clientId), nil, nil, nil, dummyMap, dummyMap)
+	if err != nil {
+		log.Print("error in http.Get getHydraClient")
+		log.Print(err)
+		return nil, nil, 0, err
+	}
+	return resp, headers, statusCode, checkResponseError(resp)
+}
+func (hydraConfig HydraConfig) createHydraClient(hydraClient HydraClient) (resp interface{}, headers http.Header, statusCode int, err error) {
+	dummyMap := make(map[string]string)
+	headers = http.Header{}
+	headers.Add("Content-Type", "application/json")
+	resp, headers, _, statusCode, err = utils.CallHttp("POST", fmt.Sprint(hydraConfig.getAminUrl(), "/clients"), headers, dummyMap, nil, dummyMap, hydraClient)
+	if err != nil {
+		log.Print("error in http.Post createHydraClient")
+		log.Print(err)
+		return nil, nil, 0, err
+	}
+	return resp, headers, statusCode, checkResponseError(resp)
+}
+func (hydraConfig HydraConfig) updateHydraClient(clientId string, hydraClient HydraClient) (resp interface{}, headers http.Header, statusCode int, err error) {
+	dummyMap := make(map[string]string)
+	headers = http.Header{}
+	headers.Add("Content-Type", "application/json")
+	resp, headers, _, statusCode, err = utils.CallHttp("PUT", fmt.Sprint(hydraConfig.getAminUrl(), "/clients/", clientId), headers, dummyMap, nil, dummyMap, hydraClient)
+	if err != nil {
+		log.Print("error in http.Post updateHydraClient")
+		log.Print(err)
+		return nil, nil, 0, err
+	}
+	return resp, headers, statusCode, checkResponseError(resp)
+}
+func (hydraConfig HydraConfig) deleteHydraClient(clientId string) (resp interface{}, headers http.Header, statusCode int, err error) {
+	log.Println("inside deleteHydraClient")
+	dummyMap := make(map[string]string)
+	headers = http.Header{}
+	headers.Add("Content-Type", "application/json")
+	resp, headers, _, statusCode, err = utils.CallHttp("DELETE", fmt.Sprint(hydraConfig.getAminUrl(), "/clients/", clientId), headers, dummyMap, nil, dummyMap, dummyMap)
+	if err != nil {
+		log.Print("error in http.Post deleteHydraClient")
+		log.Print(err)
+		return nil, nil, 0, err
+	}
+	if resp != nil {
+		return resp, headers, statusCode, checkResponseError(resp)
+	}
+	return resp, headers, statusCode, nil
+}
+func checkResponseError(resp interface{}) (err error) {
+	if respMap, ok := resp.(map[string]interface{}); !ok {
+		err = errors.New("resp.(map[string]interface{}) conversion failed")
+		log.Println(err)
+		return
+	} else {
+		if errResp, ok := respMap["error"]; ok {
+			log.Println(errResp)
+			err = errors.New(errResp.(string))
+			return
+		}
+	}
+	return
+}
+
+func (hydraConfig HydraConfig) getPublicUrl() (url string) {
+	return fmt.Sprint(hydraConfig.PublicScheme, "://", hydraConfig.PublicHost, ":", hydraConfig.PublicPort)
+}
+func (hydraConfig HydraConfig) getAminUrl() (url string) {
+	return fmt.Sprint(hydraConfig.AdminScheme, "://", hydraConfig.AdminHost, ":", hydraConfig.AdminPort)
+}
+func (hydraConfig HydraConfig) acceptLoginRequest(subject string, loginChallenge string, cookies []*http.Cookie) (consentChallenge string, respCookies []*http.Cookie, err error) {
+	hydraALR := hydraAcceptLoginRequest{}
+	hydraALR.Remember = true
+	hydraALR.RememberFor = 0
+	hydraALR.Subject = subject
+	dummyMap := make(map[string]string)
+	headers := http.Header{}
+	headers.Add("content-type", "application/json")
+	paramsMap := make(map[string]string)
+	paramsMap["login_challenge"] = loginChallenge
+	postUrl := fmt.Sprint(hydraConfig.getAminUrl(), "/oauth2/auth/requests/login/accept")
+	resp, respHeaders, respCookies, statusCode, err := utils.CallHttp("PUT", postUrl, headers, dummyMap, cookies, paramsMap, hydraALR)
+	log.Println(respHeaders)
+	log.Println(statusCode)
+	log.Println(respCookies)
+	respCookies = append(respCookies, cookies...)
+	if err != nil {
+		log.Println(err)
+		return "", nil, err
+	}
+	if respMap, ok := resp.(map[string]interface{}); ok {
+		if redirectUrl, ok1 := respMap["redirect_to"]; ok1 {
+			log.Print(redirectUrl)
+			resp2, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp("GET", redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
+			log.Println(resp2)
+			log.Println(respHeaders2)
+			log.Println(statusCode2)
+			log.Println(respCookies2)
+			respCookies = append(respCookies, respCookies2...)
+			log.Println(err2)
+			if err != nil {
+				return "", nil, err
+			}
+			if statusCode2 >= 300 && statusCode2 < 400 {
+				redirectLocation := respHeaders2["Location"][0]
+				log.Println(redirectLocation)
+				params := strings.Split(redirectLocation, "?")[1]
+				log.Println(params)
+				consentChallenge = strings.Split(params, "=")[1]
+			}
+			log.Println("consentChallenge = ", consentChallenge)
+			log.Println("cookies = ", cookies)
+		} else {
+			err = errors.New("redirect_to attribute not found in response")
+			log.Println(err)
+			return
+		}
+	} else {
+		err = errors.New("response is not a map")
+		log.Println(err)
+		return
+	}
+	return
+}
+
+func (hydraConfig HydraConfig) acceptConsentRequest(identityClaims interface{}, consentChallenge string, loginCookies []*http.Cookie) (tokens interface{}, respCookies []*http.Cookie, err error) {
+	hydraCLR := hydraAcceptConsentRequest{}
+	hydraCLR.Remember = true
+	hydraCLR.RememberFor = 0
+	hydraCLR.Session.IdToken = identityClaims
+	for _, v := range hydraConfig.HydraClients {
+		log.Println("v.GrantTypes")
+		log.Println(v.Scope)
+		hydraCLR.GrantScope = strings.Split(v.Scope, " ")
+		break
+	}
+	handledAt := time.Now()
+	hydraCLR.HandledAt = handledAt
+	dummyMap := make(map[string]string)
+	headers := http.Header{}
+	headers.Add("content-type", "application/json")
+
+	paramsMap := make(map[string]string)
+	paramsMap["consent_challenge"] = consentChallenge
+	postUrl := fmt.Sprint(hydraConfig.getAminUrl(), "/oauth2/auth/requests/consent/accept")
+	resp, respHeaders, respCookies, statusCode, err := utils.CallHttp("PUT", postUrl, headers, dummyMap, loginCookies, paramsMap, hydraCLR)
+	log.Println("(respHeaders from oauth2/auth/requests/consent/accept")
+	log.Println(respHeaders)
+	log.Println(statusCode)
+	respCookies = append(respCookies, loginCookies...)
+	log.Println(respHeaders)
+	log.Println("respCookies ===============", respCookies)
+	//headerMap["cookie"] = strings.Join(respCookies, " ; ")
+	if err != nil {
+		log.Println(err)
+		return nil, nil, err
+	}
+	code := ""
+	if respMap, ok := resp.(map[string]interface{}); ok {
+		if redirectUrl, ok1 := respMap["redirect_to"]; ok1 {
+			log.Print(redirectUrl)
+			resp2, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp("GET", redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
+			log.Println(resp2)
+			log.Println(respHeaders2)
+			log.Println(statusCode2)
+			log.Println(err2)
+			respCookies = append(respCookies, respCookies2...)
+			if err != nil {
+				return nil, nil, err
+			}
+			if statusCode2 >= 300 && statusCode2 < 400 {
+				redirectLocation := respHeaders2["Location"][0]
+				log.Println(redirectLocation)
+				params := strings.Split(redirectLocation, "?")[1]
+				log.Println(params)
+				codeParam := strings.Split(params, "&")[0]
+				code = strings.Split(codeParam, "=")[1]
+				log.Println("respCookies :::::::::::::::::::::::: ", respCookies)
+				//todo context from handler
+				ctx := context.Background()
+
+				hydraClientId := ""
+				for _, v := range hydraConfig.HydraClients {
+					hydraClientId = v.ClientId
+					break
+				}
+
+				outhConfig, ocErr := hydraConfig.getOauthConfig(hydraClientId)
+				if ocErr != nil {
+					log.Println("generate state failed: %v", err)
+					err = ocErr
+					return
+				}
+
+				log.Println("code = ", code)
+				log.Println("respCookies = ", respCookies)
+
+				token, tokenErr := outhConfig.Exchange(ctx, code)
+				if tokenErr != nil {
+					log.Printf("unable to exchange code for token: %s\n", err)
+					err = tokenErr
+					return
+				}
+				idt := token.Extra("id_token")
+				loginSuccess := LoginSuccess{}
+				loginSuccess.AccessToken = token.AccessToken
+				loginSuccess.RefreshToken = token.RefreshToken
+				loginSuccess.IdToken = idt.(string)
+				loginSuccess.Expiry = token.Expiry
+				loginSuccess.ExpiresIn = token.Extra("expires_in").(float64)
+				//log.Println(loginSuccess)
+				log.Println("respCookies before returning")
+				log.Println(respCookies)
+				return loginSuccess, respCookies, nil
+			}
+		} else {
+			err = errors.New("redirect_to attribute not found in response")
+			log.Println(err)
+			return
+		}
+	} else {
+		err = errors.New("response is not a map")
+		log.Println(err)
+		return
+	}
+	return
+}

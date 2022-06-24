@@ -48,7 +48,7 @@ func (awsStorage *AwsStorage) UploadFile(file multipart.File, header *multipart.
 	log.Println(awsStorage.EncryptFiles)
 
 	if awsStorage.EncryptFiles {
-		byteContainer, err = eruaes.Encrypt(byteContainer, keyName.Key)
+		byteContainer, err = eruaes.Encrypt(byteContainer, string(keyName.Key))
 		if err != nil {
 			log.Println(err)
 			return

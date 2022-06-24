@@ -19,6 +19,7 @@ type Project struct {
 	Routes        map[string]routes.Route     `eru:"required"`
 	FuncGroups    map[string]routes.FuncGroup `eru:"required"`
 	ProjectConfig ProjectConfig
+	Authorizers   map[string]routes.Authorizer
 }
 
 func (prg *Project) AddRoute(routeObj routes.Route) error {

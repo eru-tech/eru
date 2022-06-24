@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/eru-tech/eru/eru-crypto/jwt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -19,6 +20,15 @@ const (
 const MatchTypePrefix = "PREFIX"
 const MatchTypeExact = "EXACT"
 
+type Authorizer struct {
+	AuthorizerName string
+	TokenHeaderKey string
+	SecretAlgo     string
+	JwkUrl         string
+	Audience       []string
+	Issuer         []string
+}
+
 type TokenSecret struct {
 	HeaderKey  string
 	SecretAlgo string
@@ -28,26 +38,28 @@ type TokenSecret struct {
 	Issuer     []string
 }
 type Route struct {
-	RouteName         string `eru:"required"`
-	RouteCategoryName string
-	Url               string `eru:"required"`
-	MatchType         string `eru:"required"`
-	RewriteUrl        string
-	TargetHosts       []TargetHost `eru:"required"`
-	AllowedHosts      []string
-	AllowedMethods    []string
-	RequiredHeaders   []Headers
-	EnableCache       bool
-	RequestHeaders    []Headers
-	QueryParams       []Headers
-	FormData          []Headers
-	FileData          []FilePart
-	ResponseHeaders   []Headers
-	TransformRequest  string
-	TransformResponse string
-	IsPublic          bool
-	TokenSecret       TokenSecret `json:"-"`
-	RemoveParams      RemoveParams
+	RouteName           string `eru:"required"`
+	RouteCategoryName   string
+	Url                 string `eru:"required"`
+	MatchType           string `eru:"required"`
+	RewriteUrl          string
+	TargetHosts         []TargetHost `eru:"required"`
+	AllowedHosts        []string
+	AllowedMethods      []string
+	RequiredHeaders     []Headers
+	EnableCache         bool
+	RequestHeaders      []Headers
+	QueryParams         []Headers
+	FormData            []Headers
+	FileData            []FilePart
+	ResponseHeaders     []Headers
+	TransformRequest    string
+	TransformResponse   string
+	IsPublic            bool
+	Authorizer          string
+	AuthorizerException []string
+	TokenSecret         TokenSecret `json:"-"`
+	RemoveParams        RemoveParams
 }
 
 type RemoveParams struct {
@@ -95,6 +107,24 @@ var httpClient = http.Client{
 	},
 }
 
+func (authorizer Authorizer) VerifyToken(token string) (claims interface{}, err error) {
+	claims, err = jwt.DecryptTokenJWK(token, authorizer.JwkUrl)
+	if err != nil {
+		return
+	}
+	return
+}
+
+func (route *Route) CheckPathException(path string) (bypass bool) {
+	for _, v := range route.AuthorizerException {
+		if v == path {
+			return true
+			break
+		}
+	}
+	return false
+}
+
 func (route *Route) GetTargetSchemeHostPortPath(url string) (scheme string, host string, port string, path string, method string, err error) {
 	targetHost, err := route.getTargetHost()
 	if err != nil {
@@ -113,6 +143,7 @@ func (route *Route) GetTargetSchemeHostPortPath(url string) (scheme string, host
 	default:
 		//do nothing
 	}
+	log.Println("path = ", path)
 	return
 }
 
@@ -204,18 +235,23 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	log.Println(request.URL)
 	log.Println(request.Method)
 	log.Println(route.TargetHosts)
+	log.Println(request)
 	printRequestBody(request, "printing request Before httpClient.Do of route Execute")
+
 	response, err = httpClient.Do(request)
 	if err != nil {
 		log.Println(" httpClient.Do error ")
 		log.Println(err)
 		return
 	}
+	printResponseBody(response, "printing response After httpClient.Do of route Execute before transformResponse")
+
 	trResVars, err = route.transformResponse(response, trReqVars)
 	if err != nil {
 		log.Println(err)
 		return
 	}
+	//printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
 	return
 }
 

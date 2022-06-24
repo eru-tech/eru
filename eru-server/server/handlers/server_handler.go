@@ -1,4 +1,4 @@
-package server
+package handlers
 
 import (
 	"encoding/json"
@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 )
+
+var ServerName = "unkown"
 
 func HelloHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/hello" {
@@ -17,13 +19,10 @@ func HelloHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 		return
 	}
-
-	//log.Print("log testing")
-	fmt.Fprintf(w, "Hello!")
+	fmt.Fprintf(w, fmt.Sprint("Hello ", ServerName))
 }
 
 func EchoHandler(w http.ResponseWriter, r *http.Request) {
-
 	err := r.ParseMultipartForm((1 << 20) * 10)
 	log.Println(err)
 	formData := r.MultipartForm

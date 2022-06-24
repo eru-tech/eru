@@ -3,7 +3,6 @@ package module_server
 import (
 	module_handlers "github.com/eru-tech/eru/eru-routes/module_server/handlers"
 	"github.com/eru-tech/eru/eru-routes/module_store"
-	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"net/http"
 )
@@ -20,6 +19,8 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save").HandlerFunc(module_handlers.ProjectSaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/config/save").HandlerFunc(module_handlers.ProjectConfigSaveHandler(sh.Store))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/authorizer/save").HandlerFunc(module_handlers.ProjectAuthorizerSaveHandler(sh.Store))
+	storeRouter.Methods(http.MethodDelete).Path("/{project}/authorizer/remove/{authorizername}").HandlerFunc(module_handlers.ProjectAuthorizerRemoveHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove").HandlerFunc(module_handlers.ProjectRemoveHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/project/list").HandlerFunc(module_handlers.ProjectListHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/config").HandlerFunc(module_handlers.ProjectConfigHandler(sh.Store))
@@ -32,6 +33,6 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	serverRouter.PathPrefix("/{project}/func/{funcname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
 	serverRouter.PathPrefix("/public/{project}/func/{funcname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
 
-	serverRouter.PathPrefix("/").HandlerFunc(server_handlers.EchoHandler)
+	serverRouter.PathPrefix("/").HandlerFunc(module_handlers.RouteForwardHandler(sh.Store))
 
 }

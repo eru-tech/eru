@@ -1,4 +1,4 @@
-package server
+package handlers
 
 import (
 	"bytes"
@@ -47,7 +47,7 @@ func MakeCorsObject() *cors.Cors {
 		AllowOriginFunc: func(s string) bool {
 			return true
 		},
-		//AllowedOrigins: []string{"*"},
+		//AllowedOrigins: []string{"127.0.0.1"},
 		AllowedMethods: []string{"GET", "PUT", "POST", "DELETE"},
 		AllowedHeaders: []string{"Authorization", "Content-Type"},
 		//ExposedHeaders: []string{"Authorization", "Content-Type"},

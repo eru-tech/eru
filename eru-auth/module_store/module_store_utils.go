@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	authtype "github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
 	"github.com/eru-tech/eru/eru-auth/module_model"
 	"log"
@@ -89,6 +90,46 @@ func UnMarshalStore(b []byte, msi ModuleStoreI) error {
 				err = gatewayI.MakeFromJson(gatewayJson)
 				if err == nil {
 					err = msi.SaveGateway(gatewayI, prj, nil, false)
+					if err != nil {
+						log.Println(err)
+						return err
+					}
+				} else {
+					log.Println(err)
+					return err
+				}
+			}
+
+			var auths map[string]*json.RawMessage
+			err = json.Unmarshal(*prjObjs["Auth"], &auths)
+			if err != nil {
+				log.Print("error json.Unmarshal(*prgObjs[\"Auth\"], &auths)")
+				log.Print(err)
+				return err
+			}
+			log.Println(auths)
+			for authKey, authJson := range auths {
+				log.Println("authKey === ", authKey)
+				var authObj map[string]*json.RawMessage
+				err = json.Unmarshal(*authJson, &authObj)
+				if err != nil {
+					log.Print("error json.Unmarshal(*authJson, &authObj)")
+					log.Print(err)
+					return err
+				}
+				var authType string
+				if at, ok := authObj["AuthType"]; ok {
+					err = json.Unmarshal(*at, &authType)
+					if err != nil {
+						log.Println(err)
+						return err
+					}
+				}
+				log.Println("authType = ", authType)
+				authI := authtype.GetAuth(authType)
+				err = authI.MakeFromJson(authJson)
+				if err == nil {
+					err = msi.SaveAuth(authI, prj, nil, false)
 					if err != nil {
 						log.Println(err)
 						return err

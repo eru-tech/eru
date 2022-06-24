@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
 	"github.com/eru-tech/eru/eru-auth/module_model"
 	"github.com/eru-tech/eru/eru-auth/module_store"
@@ -71,6 +72,8 @@ func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
+
+/*
 func SmsGatewaySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -176,7 +179,7 @@ func EmailGatewayRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
-
+*/
 func MessageTemplateSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -294,6 +297,96 @@ func GatewayRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			s.SaveStore("", s)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("gateway config for ", gatewayName, " removed successfully")})
+		}
+		return
+	}
+}
+
+func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Print("inside AuthSaveHandler")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authType := ""
+
+		authFromReq := json.NewDecoder(r.Body)
+		authFromReq.DisallowUnknownFields()
+
+		var authObjTmp map[string]interface{}
+		if err := authFromReq.Decode(&authObjTmp); err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			if at, ok := authObjTmp["AuthType"]; !ok {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : AuthType")})
+				return
+			} else {
+				authType = at.(string)
+			}
+		}
+		log.Println(authObjTmp)
+		authObj := auth.GetAuth(authType)
+
+		authJson, err := json.Marshal(authObjTmp)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		if err = json.Unmarshal(authJson, &authObj); err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err = utils.ValidateStruct(authObj, "")
+			//TODO to uncomment this code and validate the incoming json
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+
+		err = s.SaveAuth(authObj, projectId, s, true)
+		if err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			s.SaveStore("", s)
+			server_handlers.FormatResponse(w, 200)
+			authName, anErr := authObj.GetAttribute("AuthName")
+			if err != nil {
+				log.Println(anErr)
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": anErr.Error()})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("auth config ", authName, " saved successfully")})
+		}
+		return
+	}
+}
+
+func AuthRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Print("inside AuthRemoveHandler")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		err := s.RemoveAuth(authName, projectId, s)
+		if err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			s.SaveStore("", s)
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("auth config ", authName, " removed successfully")})
 		}
 		return
 	}

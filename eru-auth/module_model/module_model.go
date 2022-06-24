@@ -2,6 +2,7 @@ package module_model
 
 import (
 	"fmt"
+	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
 	"log"
 	"strings"
@@ -9,16 +10,17 @@ import (
 
 type ModuleProjectI interface {
 	AddGateway(gatewayObj gateway.GatewayI)
+	AddAuth(authObj auth.AuthI)
 }
 
 type Project struct {
 	ProjectId        string `eru:"required"`
 	Gateways         map[string]gateway.GatewayI
-	SmsGateways      map[string]SmsGateway
-	EmailGateways    map[string]EmailGateway
 	MessageTemplates map[string]MessageTemplate
+	Auth             map[string]auth.AuthI
 }
 
+/*
 type SmsGateway struct {
 	GatewayName   string `eru:"required"`
 	GatewayUrl    string `eru:"required"`
@@ -32,7 +34,7 @@ type EmailGateway struct {
 	GatewayMethod string `eru:"required"`
 	Allocation    int    `eru:"required"`
 }
-
+*/
 type MessageTemplate struct {
 	GatewayName  string `eru:"required"`
 	TemplateType string `eru:"required"`
@@ -59,6 +61,17 @@ func (prg *Project) AddGateway(gatewayObjI gateway.GatewayI) error {
 	log.Print(gKey)
 	prg.Gateways[gKey] = gatewayObjI
 	log.Println(prg)
+	return nil
+}
+
+func (prg *Project) AddAuth(authType string, authObjI auth.AuthI) error {
+	log.Println("inside AddAuth")
+	prg.Auth[authType] = authObjI
+	return nil
+}
+func (prg *Project) RemoveAuth(authType string) error {
+	log.Println("inside RemoveAuth")
+	delete(prg.Auth, authType)
 	return nil
 }
 
