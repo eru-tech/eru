@@ -60,6 +60,7 @@ type Route struct {
 	AuthorizerException []string
 	TokenSecret         TokenSecret `json:"-"`
 	RemoveParams        RemoveParams
+	OnError             string
 }
 
 type RemoveParams struct {
@@ -236,6 +237,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	log.Println(request.Method)
 	log.Println(route.TargetHosts)
 	log.Println(request)
+	request.Header.Set("accept-encoding", "identity")
 	printRequestBody(request, "printing request Before httpClient.Do of route Execute")
 
 	response, err = httpClient.Do(request)
@@ -244,6 +246,8 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 		log.Println(err)
 		return
 	}
+	log.Println(response.Header)
+	log.Println(response.StatusCode)
 	printResponseBody(response, "printing response After httpClient.Do of route Execute before transformResponse")
 
 	trResVars, err = route.transformResponse(response, trReqVars)
@@ -251,7 +255,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 		log.Println(err)
 		return
 	}
-	//printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
+	printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
 	return
 }
 

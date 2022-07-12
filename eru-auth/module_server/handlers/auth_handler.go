@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-auth/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -116,6 +117,115 @@ func LoginHydraHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		return
 	}
 }
+
+func UserInfoHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		log.Println(authName)
+		log.Println(projectId)
+
+		userInfoFromReq := json.NewDecoder(r.Body)
+		userInfoFromReq.DisallowUnknownFields()
+		userInfoObj := make(map[string]interface{})
+		//storageObj := new(storage.Storage)
+		if err := userInfoFromReq.Decode(&userInfoObj); err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		accessTokenStr := ""
+		if accessToken, ok := userInfoObj["access_token"]; !ok {
+			atErr := errors.New("access_token attribute missing in request body")
+			log.Println(atErr)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": atErr})
+			return
+		} else {
+			if accessTokenStr, ok = accessToken.(string); !ok {
+				atErr := errors.New("Incorrect access_token recevied in request body")
+				log.Println(atErr)
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": atErr})
+				return
+			}
+		}
+
+		authObjI, err := s.GetAuth(projectId, authName)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		identity, err := authObjI.GetUserInfo(accessTokenStr)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(identity)
+		return
+	}
+}
+
+func FetchTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		log.Println(authName)
+		log.Println(projectId)
+
+		fetchTokenFromReq := json.NewDecoder(r.Body)
+		fetchTokenFromReq.DisallowUnknownFields()
+		fetchTokenObj := make(map[string]interface{})
+		//storageObj := new(storage.Storage)
+		if err := fetchTokenFromReq.Decode(&fetchTokenObj); err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		refreshTokenStr := ""
+		if refreshToken, ok := fetchTokenObj["refresh_token"]; !ok {
+			rtErr := errors.New("refresh_token attribute missing in request body")
+			log.Println(rtErr)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
+			return
+		} else {
+			if refreshTokenStr, ok = refreshToken.(string); !ok {
+				rtErr := errors.New("Incorrect refresh_token recevied in request body")
+				log.Println(rtErr)
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
+				return
+			}
+		}
+
+		authObjI, err := s.GetAuth(projectId, authName)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		loginSuccess, err := authObjI.FetchTokens(refreshTokenStr)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(loginSuccess)
+		return
+	}
+}
+
 func VerifyTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -177,15 +287,15 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 			log.Println("cookies = ", len(cookies))
 
-			//for _,v:= range cookies {
-			//	cookie := http.Cookie{Name: v.Name, Value: v.Value, Path: v.Path, Expires: v.Expires, MaxAge: v.MaxAge, HttpOnly: v.HttpOnly, Secure: v.Secure}
-			//	log.Println(cookie.Path)
-			//	log.Println(cookie.Name)
-			//	log.Println(cookie.HttpOnly)
-			//	log.Println(cookie.Expires)
-			//http.SetCookie(w,&cookie)
-			//w.Header().Add("Set-Cookie",v.String())
-			//}
+			for _, v := range cookies {
+				cookie := http.Cookie{Name: v.Name, Value: v.Value, Path: v.Path, Expires: v.Expires, MaxAge: v.MaxAge, HttpOnly: v.HttpOnly, Secure: v.Secure}
+				log.Println(cookie.Path)
+				log.Println(cookie.Name)
+				log.Println(cookie.HttpOnly)
+				log.Println(cookie.Expires)
+				http.SetCookie(w, &cookie)
+				w.Header().Add("Set-Cookie", v.String())
+			}
 			//expire := time.Now().Add(20 * time.Minute) // Expires in 20 minutes
 			cookie := http.Cookie{Name: "abc", Value: "xyz", Path: "/"}
 			http.SetCookie(w, &cookie)

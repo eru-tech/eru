@@ -416,6 +416,7 @@ func printResponseBody(response *http.Response, msg string) {
 		log.Println(err)
 	}
 	log.Println(msg)
+	//log.Println(body)
 	log.Println(string(body))
 	log.Println(response.Header.Get("Content-Length"))
 	response.Body = ioutil.NopCloser(bytes.NewReader(body))

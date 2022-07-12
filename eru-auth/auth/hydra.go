@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
@@ -91,6 +92,7 @@ func (kratosHydraAuth *KratosHydraAuth) ensureLoginChallenge(r *http.Request) (l
 			err = ocErr
 			return
 		}
+		log.Println(outhConfig)
 		redirectTo := outhConfig.AuthCodeURL(state)
 
 		log.Println("redirect to hydra, url: %s", redirectTo)
@@ -110,6 +112,107 @@ func (kratosHydraAuth *KratosHydraAuth) ensureLoginChallenge(r *http.Request) (l
 		}
 	}
 	return
+}
+
+func (kratosHydraAuth *KratosHydraAuth) GetUserInfo(access_token string) (identity Identity, err error) {
+	dummyMap := make(map[string]string)
+	headers := http.Header{}
+	headers.Add("Authorization", fmt.Sprint("Bearer ", access_token))
+	res, _, _, _, err := utils.CallHttp("POST", fmt.Sprint(kratosHydraAuth.Hydra.getPublicUrl(), "/userinfo"), headers, dummyMap, nil, dummyMap, dummyMap)
+	if err != nil {
+		log.Print("error in http.Get GetUserInfo")
+		log.Print(err)
+		return Identity{}, err
+	}
+	log.Println(res)
+	/*
+		if sc >= 400{
+			log.Print("error in http.Get GetUserInfo")
+			resBytes, bytesErr := json.Marshal(res)
+			if bytesErr != nil {
+				log.Print("error in http.Get GetUserInfo")
+				log.Print(bytesErr)
+				return Identity{}, bytesErr
+			}
+			err = errors.New(strings.Replace(string(resBytes),"\"","",-1))
+			return Identity{}, err
+		}
+	*/
+	if userInfo, ok := res.(map[string]interface{}); !ok {
+		err = errors.New("User Info response not in expected format")
+		return Identity{}, err
+	} else {
+		if identityObj, isIdOk := userInfo["identity"]; !isIdOk {
+			err = errors.New("Identity attribute missing in User Info")
+			return Identity{}, err
+		} else {
+			log.Println(identityObj)
+			identityObjJson, iErr := json.Marshal(identityObj)
+			if iErr != nil {
+				log.Println(iErr)
+				err = errors.New("Json marshal error for identityObj")
+				return Identity{}, err
+			}
+			iiErr := json.Unmarshal(identityObjJson, &identity)
+			if iiErr != nil {
+				log.Println(iiErr)
+				err = errors.New("Json unmarshal error for identityObj")
+				return Identity{}, err
+			}
+			return
+		}
+	}
+}
+
+func (kratosHydraAuth *KratosHydraAuth) FetchTokens(refresh_token string) (res interface{}, err error) {
+	dummyMap := make(map[string]string)
+	headers := http.Header{}
+	headers.Add("content-type", "application/x-www-form-urlencoded")
+	formData := make(map[string]string)
+	formData["refresh_token"] = refresh_token
+	formData["grant_type"] = "refresh_token"
+	for _, v := range kratosHydraAuth.Hydra.HydraClients {
+		formData["client_id"] = v.ClientId
+		break
+	}
+	res, _, _, _, err = utils.CallHttp("POST", fmt.Sprint(kratosHydraAuth.Hydra.getPublicUrl(), "/oauth2/token"), headers, formData, nil, dummyMap, dummyMap)
+	if err != nil {
+		log.Print("error in http.Get FetchTokens")
+		log.Print(err)
+		return nil, err
+	}
+	log.Println(res)
+	loginSuccess := LoginSuccess{}
+	ok := false
+	if resMap, resOk := res.(map[string]interface{}); !resOk {
+		err = errors.New("Response is not map[string]string")
+		log.Println(err)
+		return nil, err
+	} else {
+		if loginSuccess.AccessToken, ok = resMap["access_token"].(string); !ok {
+			err = errors.New("access_token attribute missing from response")
+			log.Print(err)
+			return nil, err
+		}
+		if loginSuccess.IdToken, ok = resMap["id_token"].(string); !ok {
+			err = errors.New("id_token attribute missing from response")
+			log.Print(err)
+			return nil, err
+		}
+		if loginSuccess.RefreshToken, ok = resMap["refresh_token"].(string); !ok {
+			err = errors.New("refresh_token attribute missing from response")
+			log.Print(err)
+			return nil, err
+		}
+		if loginSuccess.ExpiresIn, ok = resMap["expires_in"].(float64); !ok {
+			err = errors.New("expires_in attribute missing from response")
+			log.Print(err)
+			return nil, err
+		}
+	}
+	log.Println("before returning loginSuccess")
+	log.Println(loginSuccess)
+	return loginSuccess, nil
 }
 
 func (kratosHydraAuth *KratosHydraAuth) VerifyToken(tokenType string, token string) (res interface{}, err error) {
@@ -282,10 +385,18 @@ func checkResponseError(resp interface{}) (err error) {
 }
 
 func (hydraConfig HydraConfig) getPublicUrl() (url string) {
-	return fmt.Sprint(hydraConfig.PublicScheme, "://", hydraConfig.PublicHost, ":", hydraConfig.PublicPort)
+	port := ""
+	if hydraConfig.PublicPort != "" {
+		port = fmt.Sprint(":", hydraConfig.PublicPort)
+	}
+	return fmt.Sprint(hydraConfig.PublicScheme, "://", hydraConfig.PublicHost, port)
 }
 func (hydraConfig HydraConfig) getAminUrl() (url string) {
-	return fmt.Sprint(hydraConfig.AdminScheme, "://", hydraConfig.AdminHost, ":", hydraConfig.AdminPort)
+	port := ""
+	if hydraConfig.AdminPort != "" {
+		port = fmt.Sprint(":", hydraConfig.AdminPort)
+	}
+	return fmt.Sprint(hydraConfig.AdminScheme, "://", hydraConfig.AdminHost, port)
 }
 func (hydraConfig HydraConfig) acceptLoginRequest(subject string, loginChallenge string, cookies []*http.Cookie) (consentChallenge string, respCookies []*http.Cookie, err error) {
 	hydraALR := hydraAcceptLoginRequest{}

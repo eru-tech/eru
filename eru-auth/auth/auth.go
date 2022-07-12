@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 )
 
 type AuthI interface {
 	Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error)
 	VerifyToken(tokenType string, token string) (res interface{}, err error)
 	GetAttribute(attributeName string) (attributeValue interface{}, err error)
+	GetUserInfo(access_token string) (identity Identity, err error)
+	FetchTokens(refresh_token string) (res interface{}, err error)
 	MakeFromJson(rj *json.RawMessage) (err error)
 	PerformPreSaveTask() (err error)
 	PerformPreDeleteTask() (err error)
@@ -18,6 +21,26 @@ type AuthI interface {
 type LoginPostBody struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+type Identity struct {
+	Id          string                 `json:"id"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+	Attributes  map[string]interface{} `json:"attributes"`
+	AuthDetails IdentityAuth           `json:"auth_details"`
+	OtherInfo   map[string]interface{} `json:"other_info"`
+	Status      string                 `json:"status"`
+}
+
+type IdentityAuth struct {
+	SessionId                   string        `json:"session_id"`
+	SessionStatus               bool          `json:"session_status"`
+	ExpiresAt                   time.Time     `json:"expires_at"`
+	AuthenticatedAt             time.Time     `json:"authenticated_at"`
+	AuthenticatorAssuranceLevel string        `json:"authenticator_assurance_level"`
+	AuthenticationMethods       []interface{} `json:"authentication_methods"`
+	IssuedAt                    time.Time     `json:"issued_at"`
 }
 
 type Auth struct {
@@ -52,6 +75,14 @@ func (auth *Auth) GetAttribute(attributeName string) (attributeValue interface{}
 	default:
 		return nil, errors.New("Attribute not found")
 	}
+}
+
+func (auth *Auth) GetUserInfo(access_token string) (identity Identity, err error) {
+	return Identity{}, errors.New("GetUserInfo Method not implemented")
+}
+
+func (auth *Auth) FetchTokens(refresh_token string) (res interface{}, err error) {
+	return nil, errors.New("FetchTokens Method not implemented")
 }
 
 func (auth *Auth) Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error) {

@@ -110,6 +110,7 @@ type KratosIdentity struct {
 	SchemaId            string                  `json:"schema_id"`
 	SchemaUrl           string                  `json:"schema_url"`
 	State               string                  `json:"state"`
+	StateChangedAt      time.Time               `json:"state_changed_at"`
 	Traits              interface{}             `json:"traits"`
 	VerifiableAddresses []KratosIdentityAddress `json:"verifiable_addresses"`
 	RecoveryAddresses   []KratosIdentityAddress `json:"recovery_addresses"`
@@ -269,15 +270,15 @@ func (kratosHydraAuth *KratosHydraAuth) Login(req *http.Request) (res interface{
 	}
 	log.Println("loginChallenge = ", loginChallenge)
 
-	port := "4433"
+	port := kratosHydraAuth.Kratos.PublicPort
 	if port != "" {
 		port = fmt.Sprint(":", port)
 	}
 	req.RequestURI = ""
-	req.Host = "127.0.0.1"
-	req.URL.Host = fmt.Sprint("127.0.0.1", port)
+	req.Host = kratosHydraAuth.Kratos.PublicHost
+	req.URL.Host = fmt.Sprint(kratosHydraAuth.Kratos.PublicHost, port)
 	req.URL.Path = "/self-service/login"
-	req.URL.Scheme = "http"
+	req.URL.Scheme = kratosHydraAuth.Kratos.PublicScheme
 	req.Method = "POST"
 
 	log.Println(req.URL)
@@ -325,17 +326,72 @@ func (kratosHydraAuth *KratosHydraAuth) Login(req *http.Request) (res interface{
 			err = loginAcceptErr
 			return
 		}
-		tokens, loginAcceptConsentCookies, cosentAcceptErr := kratosHydraAuth.Hydra.acceptConsentRequest(kratosSession.Session.Identity.Traits, consentChallenge, loginAcceptRequestCookies)
+		identityHolder := make(map[string]interface{})
+		identity := Identity{}
+		identity.Id = kratosSession.Session.Identity.Id
+		identity.CreatedAt = kratosSession.Session.Identity.CreatedAt
+		identity.UpdatedAt = kratosSession.Session.Identity.UpdatedAt
+		identity.OtherInfo = make(map[string]interface{})
+		identity.OtherInfo["schema_id"] = kratosSession.Session.Identity.SchemaId
+		identity.OtherInfo["state_changed_at"] = kratosSession.Session.Identity.StateChangedAt
+		identity.Status = kratosSession.Session.Identity.State
+		identity.AuthDetails = IdentityAuth{}
+		identity.AuthDetails.SessionId = kratosSession.Session.Id
+		identity.AuthDetails.AuthenticatedAt = kratosSession.Session.AuthenticatedAt
+		for _, v := range kratosSession.Session.AuthenticationMethods {
+			identity.AuthDetails.AuthenticationMethods = append(identity.AuthDetails.AuthenticationMethods, v)
+		}
+		log.Println("asasasasas")
+		log.Println(identity.AuthDetails.AuthenticationMethods)
+		identity.AuthDetails.AuthenticatorAssuranceLevel = kratosSession.Session.AuthenticatorAssuranceLevel
+		identity.AuthDetails.ExpiresAt = kratosSession.Session.ExpiresAt
+		identity.AuthDetails.IssuedAt = kratosSession.Session.IssuedAt
+		identity.AuthDetails.SessionStatus = kratosSession.Session.Active
+		ok := false
+		if identity.Attributes, ok = kratosSession.Session.Identity.Traits.(map[string]interface{}); ok {
+			identity.Attributes["sub"] = kratosSession.Session.Identity.Id
+			if pubMetadata, ok := kratosSession.Session.Identity.MetaDataPublic.(map[string]interface{}); ok {
+				for k, v := range pubMetadata {
+					if _, chkKey := identity.Attributes[k]; !chkKey { // check if key already exists then silemtly ignore the value from public metadata
+						identity.Attributes[k] = v
+					}
+				}
+			} else {
+				log.Println("kratosSession.Session.Identity.MetaDataPublic is not a map[string]interface{}")
+				err = errors.New("Error reading Identity MetaDataPublic")
+				return
+			}
+		} else {
+			log.Println("kratosSession.Session.Identity.Traits is not a map[string]interface{}")
+			err = errors.New("Error reading Identity")
+			return
+		}
+		identityHolder["identity"] = identity
+		tokens, loginAcceptConsentCookies, cosentAcceptErr := kratosHydraAuth.Hydra.acceptConsentRequest(identityHolder, consentChallenge, loginAcceptRequestCookies)
 		if cosentAcceptErr != nil {
 			log.Println(cosentAcceptErr)
 			err = cosentAcceptErr
 			return
 		}
-
 		return tokens, loginAcceptConsentCookies, nil
 	} else {
 		err = errors.New(fmt.Sprint("Login Failed : ", kratosLoginFlow.UI.Messages))
 		return
 		//reject Hudra login request
 	}
+}
+
+func (kratosConfig KratosConfig) getPublicUrl() (url string) {
+	port := ""
+	if kratosConfig.PublicPort != "" {
+		port = fmt.Sprint(":", kratosConfig.PublicPort)
+	}
+	return fmt.Sprint(kratosConfig.PublicScheme, "://", kratosConfig.PublicHost, port)
+}
+func (kratosConfig KratosConfig) getAminUrl() (url string) {
+	port := ""
+	if kratosConfig.AdminPort != "" {
+		port = fmt.Sprint(":", kratosConfig.AdminPort)
+	}
+	return fmt.Sprint(kratosConfig.AdminScheme, "://", kratosConfig.AdminHost, port)
 }

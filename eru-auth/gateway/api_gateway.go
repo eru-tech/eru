@@ -26,36 +26,42 @@ var httpClient = http.Client{
 
 func (apiGateway *ApiGateway) Send(msg string, templateId string, params url.Values) (map[string]interface{}, error) {
 	log.Println("inside ApiGateway Send")
-	req, err := http.NewRequest(apiGateway.GatewayMethod, apiGateway.GatewayUrl, nil)
-	if err != nil {
-		log.Println(err)
-	}
-
-	for k, v := range apiGateway.QueryParams {
-		if k == "msg" {
-			params.Set(v, msg)
-		}
-		if k == "templateId" {
-			params.Set(v, templateId)
-		}
-	}
-	req.URL.RawQuery = params.Encode()
-	log.Println(req)
-	response, err := httpClient.Do(req)
-	defer response.Body.Close()
-	if err != nil {
-		log.Println("---")
-		log.Println(err)
-		return nil, err
-	}
 	resBody := make(map[string]interface{})
-	if err = json.NewDecoder(response.Body).Decode(&resBody); err != nil {
-		log.Print(err)
-		return nil, err
-	}
-	log.Println("==================")
-	log.Println(resBody)
+	log.Println(params.Get("silent"))
+	if params.Get("silent") == "true" {
+		log.Println("inside params.Get(\"silent\")")
+		msg = "777777 "
+	} else {
+		req, err := http.NewRequest(apiGateway.GatewayMethod, apiGateway.GatewayUrl, nil)
+		if err != nil {
+			log.Println(err)
+		}
 
+		for k, v := range apiGateway.QueryParams {
+			if k == "msg" {
+				params.Set(v, msg)
+			}
+			if k == "templateId" {
+				params.Set(v, templateId)
+			}
+		}
+		req.URL.RawQuery = params.Encode()
+		log.Println(req)
+		response, err := httpClient.Do(req)
+		defer response.Body.Close()
+		if err != nil {
+			log.Println("---")
+			log.Println(err)
+			return nil, err
+		}
+
+		if err = json.NewDecoder(response.Body).Decode(&resBody); err != nil {
+			log.Print(err)
+			return nil, err
+		}
+		log.Println("==================")
+		log.Println(resBody)
+	}
 	//todo to remove this hard coded call and make it configurable
 	saveOtp := make(map[string][]map[string]string)
 	saveDoc := make(map[string]string)
@@ -68,6 +74,7 @@ func (apiGateway *ApiGateway) Send(msg string, templateId string, params url.Val
 		log.Print(err)
 		return nil, err
 	}
+
 	eruQueriesURL := os.Getenv("ERUQUERIESURL")
 	if eruQueriesURL == "" {
 		eruQueriesURL = "http://localhost:8080"

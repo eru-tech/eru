@@ -69,6 +69,9 @@ func (funcStep *FuncStep) execute(request *http.Request, reqVars map[string]*Tem
 	if err != nil {
 		return
 	}
+	if funcStep.Route.OnError == "STOP" && response.StatusCode >= 400 {
+		return
+	}
 	resVars[funcStep.RouteName] = routevars
 	//log.Println("resVars[funcStep.RouteName] for ",funcStep.RouteName)
 	//log.Println(resVars[funcStep.RouteName])

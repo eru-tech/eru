@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const StoreTableName = "eruapis_config"
+const StoreTableName = "erugateway_config"
 
 func StartUp() (module_store.ModuleStoreI, error) {
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))

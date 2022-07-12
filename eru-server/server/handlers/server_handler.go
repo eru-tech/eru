@@ -24,7 +24,7 @@ func HelloHandler(w http.ResponseWriter, r *http.Request) {
 
 func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseMultipartForm((1 << 20) * 10)
-	log.Println(err)
+	log.Println(fmt.Sprint("r.ParseMultipartForm error = ", err))
 	formData := r.MultipartForm
 	/*
 		for k, v := range r.Header {
@@ -47,10 +47,13 @@ func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	res["Method"] = r.Method
 	res["MultipartForm"] = r.MultipartForm
 	res["RequestURI"] = r.RequestURI
+	res["RemoteAddr"] = r.RemoteAddr
+	res["Response"] = r.Response
+	res["Cookies"] = r.Cookies()
+	//res["request"] = r
 	//log.Println(res)
 	FormatResponse(w, 200)
 	_ = json.NewEncoder(w).Encode(res)
-
 	/*t, err := io.Copy(w, r.Body)
 	if err != nil {
 		log.Println("================")

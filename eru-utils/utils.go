@@ -11,6 +11,7 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	httpurl "net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -173,7 +174,7 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 
 	reqContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
 	log.Print("reqContentType = ", reqContentType)
-	if reqContentType == encodedForm || reqContentType == multiPartForm {
+	if reqContentType == multiPartForm {
 		log.Println("===========================")
 		log.Println("inside encodedForm || multiPartForm")
 		var reqBodyNew bytes.Buffer
@@ -196,12 +197,26 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 		}
 		multipartWriter.Close()
 		req.Body = ioutil.NopCloser(&reqBodyNew)
-		req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+		if reqContentType == multiPartForm {
+			req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+		}
 		req.Header.Set("Content-Length", strconv.Itoa(reqBodyNew.Len()))
 		req.ContentLength = int64(reqBodyNew.Len())
 	}
-
+	if reqContentType == encodedForm {
+		data := httpurl.Values{}
+		var reqBodyNew bytes.Buffer
+		for fk, fd := range formData {
+			data.Add(fk, fd)
+		}
+		encodedData := data.Encode()
+		reqBodyNew.WriteString(encodedData)
+		req.Body = ioutil.NopCloser(&reqBodyNew)
+		req.Header.Set("Content-Length", strconv.Itoa(len(data.Encode())))
+		req.ContentLength = int64(len(data.Encode()))
+	}
 	log.Println(req)
+	PrintRequestBody(req, "printing request body from utils before http call")
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Print("error in httpClient.Do")
@@ -222,7 +237,7 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 	statusCode = resp.StatusCode
 	defer resp.Body.Close()
 	log.Println("resp.ContentLength = ", resp.ContentLength)
-	if resp.ContentLength > 0 {
+	if resp.ContentLength > 0 || reqContentType == encodedForm {
 		log.Println(resp.Header.Get("content-type"))
 		if strings.Split(resp.Header.Get("content-type"), ";")[0] == "application/json" {
 			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
@@ -242,6 +257,17 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 			res = resBody
 		}
 		log.Println(res)
+	}
+	if resp.StatusCode >= 400 {
+		log.Print("error in httpClient.Do - response status code >=400 ")
+		resBytes, bytesErr := json.Marshal(res)
+		if bytesErr != nil {
+			log.Print("error in json.Marshal of httpClient.Do response")
+			log.Print(bytesErr)
+			return nil, nil, nil, 0, bytesErr
+		}
+		err = errors.New(strings.Replace(string(resBytes), "\"", "", -1))
+		return nil, nil, nil, 0, err
 	}
 	return
 }

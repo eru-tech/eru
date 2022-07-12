@@ -12,6 +12,7 @@ import (
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	"log"
 	//"strconv"
+	"github.com/google/uuid"
 	"text/template"
 )
 
@@ -42,6 +43,8 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return
 		},
 		"b64Encode": func(str []byte) (string, error) {
+			log.Print("printing str from b64Encode")
+			log.Print(string(str))
 			return b64.StdEncoding.EncodeToString(str), nil
 		},
 		"b64Decode": func(str string) (string, error) {
@@ -123,6 +126,10 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			log.Println(str)
 			return
 		},
+		"uuid": func() (uuidStr string, err error) {
+			uuidStr = uuid.New().String()
+			return
+		},
 	}
 
 	buf := &bytes.Buffer{}
@@ -139,7 +146,7 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 	case "json":
 		log.Println("buf.String()")
 		log.Println("-------------------")
-		//log.Println(buf.String())
+		log.Println(buf.String())
 		if err = json.Unmarshal([]byte(buf.String()), &output); err != nil {
 			return nil, errors.New(fmt.Sprintf("Unable to marhsal templated output to JSON : ", buf.String(), " ", err))
 		} else {
