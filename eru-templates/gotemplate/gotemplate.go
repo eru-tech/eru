@@ -87,6 +87,7 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return aesObj.Key, nil
 		},
 		"shaHash": func(b string, bits int) (string, error) {
+			log.Print("string for shaHash = ", b)
 			switch bits {
 			case 256:
 				return hex.EncodeToString(erusha.NewSHA256([]byte(b))), nil
@@ -110,8 +111,9 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		"concatMapKeyVal": func(vars map[string]interface{}, keys []string, seprator string) string {
 			str := ""
 			for _, k := range keys {
-				str = fmt.Sprint(str, k, "=", vars[k], seprator)
+				str = fmt.Sprint(str, k, "=", vars[k], "|")
 			}
+			log.Print("string from concatMapKeyVal = ", str)
 			return str
 		},
 		"concatMapKeyValUnordered": func(vars map[string]interface{}, seprator string) string {

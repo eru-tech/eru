@@ -61,13 +61,11 @@ func loadRequestVars(vars *TemplateVars, request *http.Request) (err error) {
 			log.Println(err)
 			//return err
 		}
-
 		body, err := json.Marshal(vars.Body)
 		if err != nil {
 			log.Println(err)
 		}
 		request.Body = ioutil.NopCloser(bytes.NewReader(body))
-
 	}
 	vars.Vars = make(map[string]interface{})
 	return

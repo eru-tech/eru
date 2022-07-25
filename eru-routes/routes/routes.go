@@ -237,9 +237,9 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	log.Println(request.URL)
 	log.Println(request.Method)
 	log.Println(route.TargetHosts)
-	log.Println(request)
+	//log.Println(request)
 	request.Header.Set("accept-encoding", "identity")
-	printRequestBody(request, "printing request Before httpClient.Do of route Execute")
+	//printRequestBody(request, "printing request Before httpClient.Do of route Execute")
 
 	response, err = httpClient.Do(request)
 	if err != nil {
@@ -291,65 +291,76 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 			request.Header.Set(h.Key, h.Value)
 		}
 	}
-
-	vars.FormData, vars.FormDataKeyArray, err = processMultipart(request, route.RemoveParams.FormData, route.FormData)
-	if err != nil {
-		return
+	multiPart := false
+	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
+	log.Print("reqContentType from makeMultipart = ", reqContentType)
+	if reqContentType == encodedForm || reqContentType == multiPartForm {
+		multiPart = true
+		vars.FormData, vars.FormDataKeyArray, err = processMultipart(request, route.RemoveParams.FormData, route.FormData)
+		if err != nil {
+			return
+		}
 	}
-
 	err = processParams(request, route.RemoveParams.QueryParams, route.QueryParams)
 	if err != nil {
 		return
 	}
 
-	log.Println("route.TransformRequest = ", route.TransformRequest)
-	//vars := module_model.TemplateVars{}
-	if route.TransformRequest != "" {
+	if !multiPart {
+		log.Println("route.TransformRequest = ", route.TransformRequest)
+		//vars := module_model.TemplateVars{}
+		if route.TransformRequest != "" {
 
-		if !reqVarsLoaded {
-			err = loadRequestVars(vars, request)
+			if !reqVarsLoaded {
+				err = loadRequestVars(vars, request)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				reqVarsLoaded = true
+			}
+			fvars := &FuncTemplateVars{}
+			fvars.Vars = vars
+			output, err := processTemplate(route.RouteName, route.TransformRequest, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
 			if err != nil {
+				log.Println(err)
+				return &TemplateVars{}, err
+			}
+			err = json.Unmarshal(output, &vars.Body)
+			if err != nil {
+				log.Println(err)
+				return &TemplateVars{}, err
+			}
+			request.Body = ioutil.NopCloser(bytes.NewBuffer(output))
+			request.Header.Set("Content-Length", strconv.Itoa(len(output)))
+			request.ContentLength = int64(len(output))
+
+		} else {
+			log.Print("inside else")
+			body, err3 := ioutil.ReadAll(request.Body)
+			if err3 != nil {
+				err = err3
+				log.Print("error in ioutil.ReadAll(request.Body)")
 				log.Println(err)
 				return
 			}
-			reqVarsLoaded = true
+			log.Print(vars)
+			err = json.Unmarshal(body, &vars.Body)
+			if err != nil {
+				log.Print("error in json.Unmarshal(body, &vars.Body)")
+				log.Println(err)
+				return &TemplateVars{}, err
+			}
+			//log.Println("body from route transformRequest - else part")
+			//log.Println(string(body))
+			//log.Println(request.Header.Get("Content-Length"))
+			request.Body = ioutil.NopCloser(bytes.NewReader(body))
 		}
-		fvars := &FuncTemplateVars{}
-		fvars.Vars = vars
-		output, err := processTemplate(route.RouteName, route.TransformRequest, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
-		if err != nil {
-			log.Println(err)
-			return &TemplateVars{}, err
-		}
-		err = json.Unmarshal(output, &vars.Body)
-		if err != nil {
-			log.Println(err)
-			return &TemplateVars{}, err
-		}
-		request.Body = ioutil.NopCloser(bytes.NewBuffer(output))
-		request.Header.Set("Content-Length", strconv.Itoa(len(output)))
-		request.ContentLength = int64(len(output))
-
-	} else {
-		body, err3 := ioutil.ReadAll(request.Body)
-		if err3 != nil {
-			err = err3
-			log.Println(err)
-			return
-		}
-		err = json.Unmarshal(body, &vars.Body)
-		if err != nil {
-			log.Println(err)
-			return &TemplateVars{}, err
-		}
-		//log.Println("body from route transformRequest - else part")
-		//log.Println(string(body))
-		//log.Println(request.Header.Get("Content-Length"))
-		request.Body = ioutil.NopCloser(bytes.NewReader(body))
 	}
 
 	err = processHeaderTemplates(request, route.RemoveParams.RequestHeaders, route.RequestHeaders, reqVarsLoaded, vars, route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl, nil, nil)
 	if err != nil {
+		log.Print("error from processHeaderTemplates")
 		return
 	}
 	return
