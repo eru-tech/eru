@@ -233,6 +233,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 		return
 	}
 	log.Println("Before httpClient.Do of route Execute")
+	log.Print(trReqVars)
 	log.Println(request.URL)
 	log.Println(request.Method)
 	log.Println(route.TargetHosts)
@@ -266,6 +267,7 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 	reqVarsLoaded := false
 	vars = &TemplateVars{}
 	vars.FormData = make(map[string]interface{})
+	vars.Body = make(map[string]interface{})
 
 	scheme, host, port, path, method, err := route.GetTargetSchemeHostPortPath(url)
 	if err != nil {
@@ -319,15 +321,26 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 			log.Println(err)
 			return &TemplateVars{}, err
 		}
+		err = json.Unmarshal(output, &vars.Body)
+		if err != nil {
+			log.Println(err)
+			return &TemplateVars{}, err
+		}
 		request.Body = ioutil.NopCloser(bytes.NewBuffer(output))
 		request.Header.Set("Content-Length", strconv.Itoa(len(output)))
 		request.ContentLength = int64(len(output))
+
 	} else {
 		body, err3 := ioutil.ReadAll(request.Body)
 		if err3 != nil {
 			err = err3
 			log.Println(err)
 			return
+		}
+		err = json.Unmarshal(body, &vars.Body)
+		if err != nil {
+			log.Println(err)
+			return &TemplateVars{}, err
 		}
 		//log.Println("body from route transformRequest - else part")
 		//log.Println(string(body))
@@ -345,6 +358,9 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 func (route *Route) transformResponse(response *http.Response, trReqVars *TemplateVars) (trResVars *TemplateVars, err error) {
 
 	log.Println("inside transformResponse")
+	a, e := json.Marshal(trReqVars)
+	log.Print(string(a))
+	log.Print(e)
 	trResVars = &TemplateVars{}
 	//printResponseBody(response,"printing response from route TransformResponse")
 	for _, h := range route.ResponseHeaders {
@@ -358,8 +374,11 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 	}
 	trResVars.Params = make(map[string]interface{})
 	trResVars.Vars = make(map[string]interface{})
+	if trReqVars.Vars == nil {
+		trReqVars.Vars = make(map[string]interface{})
+	}
+	trReqVars.Vars["Body"] = trReqVars.Body
 	trResVars.Vars = trReqVars.Vars
-
 	tmplBodyFromRes := json.NewDecoder(response.Body)
 	tmplBodyFromRes.DisallowUnknownFields()
 	var res interface{}

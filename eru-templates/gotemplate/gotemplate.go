@@ -2,6 +2,7 @@ package gotemplate
 
 import (
 	"bytes"
+	"crypto/md5"
 	b64 "encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,8 @@ import (
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	"log"
+	"strings"
+
 	//"strconv"
 	"github.com/google/uuid"
 	"text/template"
@@ -93,6 +96,13 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 				return "", errors.New(fmt.Sprint("SHA function not defined for ", bits, "bits"))
 			}
 		},
+		"md5": func(b string) string {
+			hash := md5.Sum([]byte(b))
+			log.Print(b)
+			log.Print(hash)
+			log.Print(hex.EncodeToString(hash[:]))
+			return hex.EncodeToString(hash[:])
+		},
 		"saveVar": func(vars map[string]interface{}, ketToSave string, valueToSave interface{}) error {
 			vars[ketToSave] = valueToSave
 			return nil
@@ -100,16 +110,28 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		"concatMapKeyVal": func(vars map[string]interface{}, keys []string, seprator string) string {
 			str := ""
 			for _, k := range keys {
-				str = fmt.Sprint(str, k, "=", vars[k], "|")
+				str = fmt.Sprint(str, k, "=", vars[k], seprator)
+			}
+			return str
+		},
+		"concatMapKeyValUnordered": func(vars map[string]interface{}, seprator string) string {
+			str := ""
+			log.Print(vars)
+			for k, _ := range vars {
+				log.Print("inside concatMapKeyValUnordered loop")
+				str = fmt.Sprint(str, k, "=", vars[k], seprator)
 			}
 			return str
 		},
 		"overwriteMap": func(orgMap map[string]interface{}, b []byte) (d interface{}, err error) {
+			log.Print("overwriteMap")
+			log.Print(orgMap)
 			newMap := make(map[string]interface{})
 			err = json.Unmarshal(b, &newMap)
 			for k, v := range newMap {
 				orgMap[k] = v
 			}
+			log.Print(orgMap)
 			d, err = json.Marshal(orgMap)
 			return
 		},
@@ -128,6 +150,13 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		},
 		"uuid": func() (uuidStr string, err error) {
 			uuidStr = uuid.New().String()
+			return
+		},
+		"concat": func(sep string, inStr ...string) (str string, err error) {
+			log.Print("inside concat")
+			log.Print(inStr)
+			str = strings.Join(inStr, sep)
+			log.Print(str)
 			return
 		},
 	}
