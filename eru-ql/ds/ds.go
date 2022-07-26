@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-ql/module_model"
+	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/kinds"
-
 	//"github.com/graphql-go/graphql/language/ast"
 	//"github.com/graphql-go/graphql/language/kinds"
 	"github.com/jmoiron/sqlx"
@@ -77,8 +77,8 @@ type GraphqlResult struct {
 
 var DefaultDriverConfig = module_model.DriverConfig{10, 2, time.Hour}
 var DefaultOtherConfig = module_model.OtherDbConfig{1000, 60, false}
-var emptyCustomRule = module_model.CustomRule{}
-var DefaultDbSecurityRules = module_model.SecurityRules{module_model.SecurityRule{"Allow", emptyCustomRule}, module_model.SecurityRule{"Deny", emptyCustomRule}, module_model.SecurityRule{"Allow", emptyCustomRule}, module_model.SecurityRule{"Allow", emptyCustomRule}, module_model.SecurityRule{"Allow", emptyCustomRule}, module_model.SecurityRule{"Deny", emptyCustomRule}, module_model.SecurityRule{"Allow", emptyCustomRule}}
+var emptyCustomRule = security_rule.CustomRule{}
+var DefaultDbSecurityRules = module_model.SecurityRules{security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Deny", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Deny", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}}
 
 type SqlMakerI interface {
 	GetReturnAlias() string
@@ -856,9 +856,10 @@ func (sqr *SqlMaker) ExecuteQuery(datasource *module_model.DataSource, qrm modul
 			if mapping[colType.Name()] != nil {
 				actualColType = reflect.TypeOf(mapping[colType.Name()]).String()
 			}
-			log.Println(actualColType)
-			log.Println(colType.Name())
-			log.Println(mapping[colType.Name()])
+			_ = actualColType
+			//log.Println(actualColType)
+			//log.Println(colType.Name())
+			//log.Println(mapping[colType.Name()])
 
 			//log.Println(colType.DatabaseTypeName())
 			if colType.DatabaseTypeName() == "NUMERIC" && mapping[colType.Name()] != nil {
@@ -929,7 +930,7 @@ func (sqr *SqlMaker) ExecuteQuery(datasource *module_model.DataSource, qrm modul
 }
 
 func (sqr *SqlMaker) processRows(vrh [][]map[string]interface{}, curLevel int, rowNo int, parentRecordFound bool, parentIndexNo int) (r map[string]interface{}, recf map[string]bool, err error) {
-	log.Print("curLevel = ", curLevel)
+	//log.Print("curLevel = ", curLevel)
 	recordFound := false
 	recf = make(map[string]bool)
 	//r = append(r,[]interface{}{})

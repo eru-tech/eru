@@ -193,6 +193,18 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				sqlObj.QueryType = tempStr[0]
 				sqlObj.MainTableName = strings.Replace(tempStr[1], "___", ".", -1)
 				//log.Print("sqlObj.MainTableName = ", sqlObj.MainTableName)
+
+				tr, err := s.GetTableTransformation(projectId, dbAlias, sqlObj.MainTableName)
+				if err != nil {
+					errFound = true
+				}
+				log.Print(tr)
+				sqlObj.OverwriteDoc, err = gqd.ProcessTransformRule(tr.TransformInput)
+				if err != nil {
+					log.Print(err)
+					errMsg = fmt.Sprint("TransformRule failed : ", err.Error())
+					errFound = true
+				}
 				err = gqd.getSqlForQuery(projectId, datasources, sqlObj.MainTableName, s)
 				if err == nil {
 					sqlObj.PreparedQuery = true
@@ -216,6 +228,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					err = gqd.getSqlForQuery(projectId, datasources, selectQuery, s)
 					if err != nil {
 						errFound = true
+						errMsg = err.Error()
 					}
 				}
 				//log.Print("singleTxn === ", singleTxn)
@@ -344,6 +357,13 @@ func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, e
 		if strings.Contains(v, "__") {
 			v = strings.ReplaceAll(v, "__", ".")
 		}
+
+		for varsK, varsV := range vars {
+			if str, ok := varsV.(string); ok {
+				v = strings.ReplaceAll(v, fmt.Sprint("$", varsK), str)
+			}
+		}
+
 		/*
 			val, err := LoadValue(v, store)
 			if err == nil {

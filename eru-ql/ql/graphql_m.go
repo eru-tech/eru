@@ -40,6 +40,7 @@ type SQLObjectM struct {
 	//queryLevel      int
 	//querySubLevel   []int
 	PreparedQuery bool
+	OverwriteDoc  map[string]interface{} `json:"-"`
 }
 
 func (sqlObj *SQLObjectM) ProcessMutationGraphQL(sel ast.Selection, vars map[string]interface{}, datasource *module_model.DataSource) (err error) {
@@ -117,6 +118,7 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(sel ast.Selection, vars map[str
 				return e
 			}
 			docs = varValue
+
 			/*sqlObj.MutationRecords, err = sqlObj.processMutationDoc(varValue, datasource, sqlObj.MainTableName, sqlObj.NestedDoc,nil)
 			if err != nil {
 				log.Print(err.Error()) //TODO to pass this error as query result
@@ -236,22 +238,27 @@ func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_m
 	sqlObj.NestedDoc = nested // updating if recursive call is made
 	docs, err := d.([]interface{})
 	if !err {
-		_, er := d.(map[string]interface{}) // checking if docs is a single document without array
+		dd, er := d.(map[string]interface{}) // checking if docs is a single document without array
 		if !er {
 			return nil, errors.New("error while parsing value of 'docs'")
 		}
-		docs = append(docs, d)
+		docs = append(docs, dd)
 	} else if sqlObj.QueryType == "update" {
 		return nil, errors.New("value of 'docs' cannot be an array")
 	}
 	log.Print(" len(docs) == ", len(docs))
 	mr = make([]module_model.MutationRecord, len(docs))
 	for i, doc := range docs {
-		var jsonFields []string
+
 		insertDoc, err := doc.(map[string]interface{})
 		if !err {
 			return nil, errors.New(fmt.Sprintf("error while parsing document at index ", i))
 		}
+		for k, v := range sqlObj.OverwriteDoc {
+			insertDoc[k] = v
+		}
+
+		var jsonFields []string
 
 		var updateCols []string
 		//var colsPlaceholder []string

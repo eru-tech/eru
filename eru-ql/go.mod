@@ -3,8 +3,10 @@ module github.com/eru-tech/eru/eru-ql
 go 1.17
 
 require (
+	github.com/eru-tech/eru/eru-security-rule v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-server v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-store v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-templates v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/golang-jwt/jwt/v4 v4.4.2
@@ -17,7 +19,9 @@ require (
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
+	github.com/eru-tech/eru/eru-crypto v0.0.0-00010101000000-000000000000 // indirect
 	github.com/goccy/go-json v0.9.7 // indirect
+	github.com/google/uuid v1.3.0 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.0 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
@@ -30,7 +34,11 @@ require (
 )
 
 replace (
+	github.com/eru-tech/eru/eru-crypto => ../eru-crypto
+	github.com/eru-tech/eru/eru-security-rule => ../eru-security-rule
 	github.com/eru-tech/eru/eru-server => ../eru-server
 	github.com/eru-tech/eru/eru-store => ../eru-store
+	github.com/eru-tech/eru/eru-templates => ../eru-templates
 	github.com/eru-tech/eru/eru-utils => ../eru-utils
+
 )

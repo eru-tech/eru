@@ -3,9 +3,17 @@ package module_model
 import (
 	"errors"
 	"fmt"
+	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/jmoiron/sqlx"
 	"log"
 	"time"
+)
+
+const (
+	RULETYPE_NONE    = "none"
+	RULETYPE_ALWAYS  = "always"
+	RULETYPE_CUSTOM  = "custom"
+	RULEPREFIX_TOKEN = "token"
 )
 
 type ModuleProjectI interface {
@@ -53,7 +61,7 @@ type MyQuery struct {
 	DBAlias      string
 	ReadWrite    string
 	Cols         string
-	SecurityRule SecurityRule
+	SecurityRule security_rule.SecurityRule
 }
 
 type DataSource struct {
@@ -110,9 +118,10 @@ type TableColsMetaData struct {
 type ColumnMasking struct {
 	MaskingType string
 	MaskingRule string
-	CustomRule  CustomRule
+	CustomRule  security_rule.CustomRule
 }
 
+/*
 type CustomRule struct {
 	AND []CustomRuleDetails `json:",omitempty"`
 	OR  []CustomRuleDetails `json:",omitempty"`
@@ -132,15 +141,15 @@ type SecurityRule struct {
 	RuleType   string
 	CustomRule CustomRule
 }
-
+*/
 type SecurityRules struct {
-	Create SecurityRule
-	Drop   SecurityRule
-	Alter  SecurityRule
-	Insert SecurityRule
-	Update SecurityRule
-	Delete SecurityRule
-	Select SecurityRule
+	Create security_rule.SecurityRule
+	Drop   security_rule.SecurityRule
+	Alter  security_rule.SecurityRule
+	Insert security_rule.SecurityRule
+	Update security_rule.SecurityRule
+	Delete security_rule.SecurityRule
+	Select security_rule.SecurityRule
 }
 type TransformRules struct {
 	TransformInput  TransformRule
@@ -152,7 +161,7 @@ type TransformRule struct {
 }
 
 type TransformRuleDetail struct {
-	CustomRule         CustomRule
+	CustomRule         security_rule.CustomRule
 	ForceColumnValues  map[string]string
 	RemoveColumnValues []string
 	ComplexScript      string

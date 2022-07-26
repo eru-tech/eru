@@ -193,6 +193,24 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectID := vars["project"]
 		log.Print(projectID)
 
+		projectConfig, err := s.GetProjectConfigObject(projectID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		tokenObj := make(map[string]interface{})
+		tokenStr := r.Header.Get(projectConfig.TokenSecret.HeaderKey)
+		if tokenStr != "" {
+			err = json.Unmarshal([]byte(tokenStr), &tokenObj)
+			if err != nil {
+				log.Print("error while unmarshalling token claim")
+				log.Print(err)
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		}
 		datasources, err := s.GetDataSources(projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -216,6 +234,7 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		//log.Print(gqd)
 		gqd.FinalVariables = gqd.Variables
 		gqd.ExecuteFlag = true
+		gqd.TokenObject = tokenObj
 		/*
 			queryNames, err := gqd.CheckIfMutationByQuery()
 			log.Print(queryNames)

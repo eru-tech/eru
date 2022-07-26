@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
+	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/eru-tech/eru/eru-store/store"
 	"log"
 	"strings"
@@ -26,6 +27,7 @@ type ModuleStoreI interface {
 	SaveProject(projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveProject(projectId string, realStore ModuleStoreI) error
 	GetProjectConfig(projectId string) (*module_model.Project, error)
+	GetProjectConfigObject(projectId string) (pc module_model.ProjectConfig, err error)
 	GetProjectList() []map[string]interface{}
 	SetDataSourceConnections() (err error)
 	SaveProjectConfig(projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error
@@ -38,9 +40,10 @@ type ModuleStoreI interface {
 	SaveSchemaTable(projectId string, dbAlias string, tableName string, tableObj map[string]module_model.TableColsMetaData, realStore ModuleStoreI) (err error)
 	SaveTableSecurity(projectId string, dbAlias string, tableName string, securityRules module_model.SecurityRules, realStore ModuleStoreI) (err error)
 	SaveTableTransformation(projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error)
+	GetTableTransformation(projectId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error)
 	DropSchemaTable(projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error)
 	RemoveSchemaTable(projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
-	SaveMyQuery(projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule module_model.SecurityRule) error
+	SaveMyQuery(projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule) error
 	RemoveMyQuery(projectId string, queryName string, realStore ModuleStoreI) error
 	GetMyQuery(projectId string, queryName string) (myquery *module_model.MyQuery, err error)
 	GetMyQueries(projectId string, queryType string) (myqueries map[string]module_model.MyQuery, err error)
@@ -100,6 +103,15 @@ func (ms *ModuleStore) GetProjectConfig(projectId string) (*module_model.Project
 		return ms.Projects[projectId], nil
 	} else {
 		return nil, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+	}
+}
+
+func (ms *ModuleStore) GetProjectConfigObject(projectId string) (pc module_model.ProjectConfig, err error) {
+	if _, ok := ms.Projects[projectId]; ok {
+		//log.Println(store.Projects[projectId])
+		return ms.Projects[projectId].ProjectConfig, nil
+	} else {
+		return pc, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 	}
 }
 
@@ -352,7 +364,7 @@ func (ms *ModuleStore) RemoveSchemaJoin(projectId string, dbAlias string, tj *mo
 	}
 }
 
-func (ms *ModuleStore) SaveMyQuery(projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule module_model.SecurityRule) error {
+func (ms *ModuleStore) SaveMyQuery(projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule) error {
 	if _, ok := ms.Projects[projectId]; ok {
 		readWrite := ""
 		queryFirstWord := strings.ToUpper(strings.Split(query, " ")[0])
@@ -501,7 +513,24 @@ func (ms *ModuleStore) SaveTableTransformation(projectId string, dbAlias string,
 	} else {
 		return errors.New(fmt.Sprint("Project ", projectId, " not found"))
 	}
-	return err
+	return realStore.SaveStore("", realStore)
+}
+
+func (ms *ModuleStore) GetTableTransformation(projectId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error) {
+	if prj, ok := ms.Projects[projectId]; ok {
+		if db, ok := prj.DataSources[dbAlias]; ok {
+			if _, ok := db.SchemaTables[tableName]; ok {
+				transformRules = db.SchemaTablesTransformation[tableName]
+			} else {
+				return transformRules, errors.New(fmt.Sprint("Table ", tableName, " not found"))
+			}
+		} else {
+			return transformRules, errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+		}
+	} else {
+		return transformRules, errors.New(fmt.Sprint("Project ", projectId, " not found"))
+	}
+	return
 }
 
 func (ms *ModuleStore) DropSchemaTable(projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error) {

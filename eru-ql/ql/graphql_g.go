@@ -222,6 +222,9 @@ func (sqlObj *SQLObjectQ) processColumnList(sel []ast.Selection, tableName strin
 				log.Print(colTableName)
 				log.Print("sqlObj.JoinClause[colTableName] ===", sqlObj.JoinClause[colTableName])
 			case "calc":
+				log.Print("calc calc calc calc")
+				log.Print(a.Value)
+				log.Print(vars)
 				v, err := ParseAstValue(a.Value, vars)
 				log.Print(err) //TODO to exit if error
 				//val = fmt.Sprint("'", v.(string), "'") //TODO to handle float value as variable value

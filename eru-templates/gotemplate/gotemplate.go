@@ -173,6 +173,9 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 	}
 	switch outputFormat {
 	case "string":
+		if buf.String() == "<no value>" {
+			return nil, errors.New("Template returned <no value>")
+		}
 		return buf.String(), nil
 	case "json":
 		log.Println("buf.String()")
