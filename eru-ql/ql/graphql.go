@@ -133,7 +133,11 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 		}
 		var returnAliasStrings []string
 		var mainAliasNames []string
+		breakForLoop := false
 		for i, v := range op.SelectionSet.Selections {
+			if breakForLoop {
+				break
+			}
 			errMsg := "-"
 			openTxn := false
 			closeTxn := false
@@ -196,6 +200,8 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 
 				tr, err := s.GetTableTransformation(projectId, dbAlias, sqlObj.MainTableName)
 				if err != nil {
+					log.Print("error from GetTableTransformation = ", err.Error())
+					errMsg = fmt.Sprint("error from GetTableTransformation = ", err.Error())
 					errFound = true
 				}
 				log.Print(tr)
@@ -250,7 +256,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				//log.Print("sqlObj.QueryType == ", sqlObj.QueryType)
 				//TODO to loop on MutationRecords and pass query
 				//queryObj.Query = sqlObj.DBQuery
-
+				log.Print("gqd.ExecuteFlag && !errFound = ", gqd.ExecuteFlag, " ", !errFound)
 				if gqd.ExecuteFlag && !errFound {
 					//TODO can remove this mrm object and directly set values to graphQLs[i]
 					log.Print("inside gqd.ExecuteFlag && !errFound")
@@ -276,6 +282,12 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 						errMsg = err.Error()
 						// no need to return here - error is returned as part of result - if asked in the query.
 					}
+				} else if errFound {
+					rollBackErr := graphQLs[i].RollbackQuery()
+					if rollBackErr != nil {
+						errMsg = rollBackErr.Error()
+					}
+					breakForLoop = true
 				}
 				returnResult := make(map[string]interface{})
 				if sqlObj.MutationReturn.ReturnError {

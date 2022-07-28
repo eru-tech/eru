@@ -521,6 +521,8 @@ func (ms *ModuleStore) GetTableTransformation(projectId string, dbAlias string, 
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if _, ok := db.SchemaTables[tableName]; ok {
 				transformRules = db.SchemaTablesTransformation[tableName]
+			} else if _, ok := prj.MyQueries[tableName]; ok {
+				//do nothing as there are no transform rule feature for my query TODO check feasibility
 			} else {
 				return transformRules, errors.New(fmt.Sprint("Table ", tableName, " not found"))
 			}

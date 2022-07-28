@@ -94,6 +94,7 @@ type SqlMakerI interface {
 	ExecuteQuery(datasource *module_model.DataSource, qrm module_model.QueryResultMaker) (res map[string]interface{}, err error)
 	ExecuteMutationQuery(datasource *module_model.DataSource, myself SqlMakerI, mrm module_model.MutationResultMaker) (res []map[string]interface{}, err error)
 	ExecutePreparedQuery(query string, datasource *module_model.DataSource) (res map[string]interface{}, err error)
+	RollbackQuery() (err error)
 	GetTableList(query string, datasource *module_model.DataSource, myself SqlMakerI) (err error)
 	GetTableMetaDataSQL() string
 	MakeCreateTableSQL(tableName string, tableObj map[string]module_model.TableColsMetaData) (string, error)
@@ -538,6 +539,15 @@ func (sqr *SqlMaker) ExecuteMutationQuery(datasource *module_model.DataSource, m
 	return res, nil
 }
 
+func (sqr *SqlMaker) RollbackQuery() (err error) {
+	log.Print("RollbackQuery called")
+	err = sqr.tx.Rollback()
+	if err != nil {
+		log.Print("RollbackQuery failed = ", err.Error())
+	}
+	return err
+}
+
 func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_model.MutationRecord, tableName string, datasource *module_model.DataSource, myself SqlMakerI, isNested bool, docNo int) (res []map[string]interface{}, err error) {
 	log.Print("inside iterateDocsForMutation")
 	var errMsgs []string
@@ -759,7 +769,7 @@ func (sqr *SqlMaker) executeMutationQueriesinDB(ctx context.Context, query strin
 		log.Println(res)
 		//}
 	}
-
+	log.Print("!sqr.TxnFlag && !isNested", sqr.TxnFlag, " ", !isNested)
 	if !sqr.TxnFlag && !isNested {
 		log.Print(" ***************************** sqr.tx.Commit() called *******************")
 		err = sqr.tx.Commit()
