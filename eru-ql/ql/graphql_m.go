@@ -40,7 +40,7 @@ type SQLObjectM struct {
 	//queryLevel      int
 	//querySubLevel   []int
 	PreparedQuery bool
-	OverwriteDoc  map[string]interface{} `json:"-"`
+	OverwriteDoc  map[string]map[string]interface{} `json:"-"`
 }
 
 func (sqlObj *SQLObjectM) ProcessMutationGraphQL(sel ast.Selection, vars map[string]interface{}, datasource *module_model.DataSource) (err error) {
@@ -235,6 +235,8 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(sel ast.Selection, vars map[str
 }
 
 func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_model.DataSource, parentTableName string, nested bool, jc []string) (mr []module_model.MutationRecord, e error) {
+	log.Print("**************** processMutationDoc called for ", parentTableName, " ", nested, " ****************")
+
 	sqlObj.NestedDoc = nested // updating if recursive call is made
 	docs, err := d.([]interface{})
 	if !err {
@@ -254,10 +256,10 @@ func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_m
 		if !err {
 			return nil, errors.New(fmt.Sprintf("error while parsing document at index ", i))
 		}
-		for k, v := range sqlObj.OverwriteDoc {
+
+		for k, v := range sqlObj.OverwriteDoc[parentTableName] {
 			insertDoc[k] = v
 		}
-
 		var jsonFields []string
 
 		var updateCols []string

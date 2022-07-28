@@ -17,7 +17,6 @@ type QLData struct {
 	FinalVariables map[string]interface{}     `json:"-"`
 	ExecuteFlag    bool                       `json:"-"`
 	SecurityRule   security_rule.SecurityRule `json:"security_rule"`
-	TokenObject    map[string]interface{}     `json:"-"`
 }
 
 type QueryObject struct {
@@ -28,11 +27,15 @@ type QueryObject struct {
 
 type QL interface {
 	Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI) (res []map[string]interface{}, queryObjs []QueryObject, err error)
-	SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool)
+	SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{})
 	ProcessTransformRule(tr module_model.TransformRule) (outputObj map[string]interface{}, err error)
 }
 
-func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool) (err error) {
+func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}) (err error) {
+	if mq.Vars == nil {
+		mq.Vars = make(map[string]interface{})
+	}
+	mq.Vars[module_model.RULEPREFIX_TOKEN] = tokenObj
 	qld.Query = mq.Query
 	qld.Variables = mq.Vars
 	qld.ExecuteFlag = executeFlag
@@ -71,15 +74,13 @@ func (qld *QLData) ProcessTransformRule(tr module_model.TransformRule) (outputOb
 		if len(tr.Rules) > 0 {
 			log.Print("inside len(tr.Rules)>0")
 			for k, v := range tr.Rules[0].ForceColumnValues { //todo to remove array and make it single object
-				ruleValue := strings.SplitN(v, ".", 2)
-				if ruleValue[0] == module_model.RULEPREFIX_TOKEN {
-					templateString := fmt.Sprint("{{ .", ruleValue[1], " }}")
-					outputBytes, err := processTemplate("xxx", templateString, qld.TokenObject, "string")
-					if err != nil {
-						return nil, err
-					}
-					outputObj[k] = string(outputBytes)
+				log.Print(qld.Variables["token"])
+				log.Print(v)
+				outputBytes, err := processTemplate("xxx", v, qld.Variables, "string")
+				if err != nil {
+					return nil, err
 				}
+				outputObj[k] = string(outputBytes)
 			}
 		}
 	}
@@ -89,20 +90,24 @@ func (qld *QLData) ProcessTransformRule(tr module_model.TransformRule) (outputOb
 
 func processTemplate(templateName string, templateString string, vars map[string]interface{}, outputType string) (output []byte, err error) {
 	log.Println("inside processTemplate")
-
-	goTmpl := gotemplate.GoTemplate{templateName, templateString}
-	outputObj, err := goTmpl.Execute(vars, outputType)
-	if err != nil {
-		log.Println(err)
-		return nil, err
-	} else if outputType == "string" {
-		return []byte(outputObj.(string)), nil
-	} else {
-		output, err = json.Marshal(outputObj)
+	ruleValue := strings.SplitN(templateString, ".", 2)
+	if ruleValue[0] == module_model.RULEPREFIX_TOKEN {
+		templateStr := fmt.Sprint("{{ .", ruleValue[1], " }}")
+		goTmpl := gotemplate.GoTemplate{templateName, templateStr}
+		outputObj, err := goTmpl.Execute(vars[module_model.RULEPREFIX_TOKEN], outputType)
 		if err != nil {
 			log.Println(err)
 			return nil, err
+		} else if outputType == "string" {
+			return []byte(outputObj.(string)), nil
+		} else {
+			output, err = json.Marshal(outputObj)
+			if err != nil {
+				log.Println(err)
+				return nil, err
+			}
 		}
-		return
 	}
+	//todo - to add if prefix is not token
+	return
 }

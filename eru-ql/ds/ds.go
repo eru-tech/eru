@@ -546,6 +546,8 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 	if !sqr.IsNested {
 		log.Print("inside if of !sqr.IsNested ")
 		log.Print("sqr.DBQuery = ", sqr.DBQuery)
+		log.Print("sqr.QueryType = ,", sqr.QueryType)
+		log.Print("sqr.PreparedQuery = ", sqr.PreparedQuery)
 		if sqr.QueryType == "insertselect" || sqr.QueryType == "delete" || sqr.PreparedQuery {
 			query = sqr.DBQuery
 		} else if sqr.QueryType == "update" {
@@ -767,6 +769,7 @@ func (sqr *SqlMaker) executeMutationQueriesinDB(ctx context.Context, query strin
 		}
 	}
 	//log.Print(res)
+	log.Print("Exiting executeMutationQueriesinDB")
 	return res, nil
 }
 

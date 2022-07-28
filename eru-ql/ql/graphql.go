@@ -22,8 +22,8 @@ type GraphQLData struct {
 	QueryObject map[string]QueryObject `json:"_"`
 }
 
-func (gqd *GraphQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool) {
-	gqd.SetQLDataCommon(mq, vars, executeFlag)
+func (gqd *GraphQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}) {
+	gqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj)
 	//gqd.Query=mq.Query
 	//gqd.Variables=mq.Vars
 	//gqd.SetFinalVars(vars)
@@ -70,7 +70,7 @@ func (gqd *GraphQLData) parseGraphQL() (d *ast.Document, err error) {
 	return d, err
 }
 
-func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]*module_model.DataSource, query string, s module_store.ModuleStoreI) (err error) {
+func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]*module_model.DataSource, query string, s module_store.ModuleStoreI, tokenObj map[string]interface{}) (err error) {
 	log.Print("query = ", query)
 	mq, err := s.GetMyQuery(projectId, query)
 	if err != nil {
@@ -90,7 +90,7 @@ func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]
 		log.Print(err)
 		return err
 	}
-	qlInterface.SetQLData(*mq, gqd.FinalVariables, false) //passing false as we only need the query in execute function and not actual result
+	qlInterface.SetQLData(*mq, gqd.FinalVariables, false, tokenObj) //passing false as we only need the query in execute function and not actual result
 	_, queryObjs, err := qlInterface.Execute(projectId, datasources, s)
 	//log.Print("queryObjs[0].Type ==", queryObjs[0].Type)
 	for i, q := range queryObjs {
@@ -199,13 +199,19 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					errFound = true
 				}
 				log.Print(tr)
-				sqlObj.OverwriteDoc, err = gqd.ProcessTransformRule(tr.TransformInput)
+				if sqlObj.OverwriteDoc == nil {
+					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
+				}
+				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.ProcessTransformRule(tr.TransformInput)
 				if err != nil {
 					log.Print(err)
 					errMsg = fmt.Sprint("TransformRule failed : ", err.Error())
 					errFound = true
 				}
-				err = gqd.getSqlForQuery(projectId, datasources, sqlObj.MainTableName, s)
+				log.Print("sqlObj.OverwriteDoc")
+				log.Print(sqlObj.OverwriteDoc)
+
+				err = gqd.getSqlForQuery(projectId, datasources, sqlObj.MainTableName, s, nil)
 				if err == nil {
 					sqlObj.PreparedQuery = true
 				}
@@ -225,7 +231,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				}
 				//log.Print(selectQuery)
 				if selectQuery != "" {
-					err = gqd.getSqlForQuery(projectId, datasources, selectQuery, s)
+					err = gqd.getSqlForQuery(projectId, datasources, selectQuery, s, nil)
 					if err != nil {
 						errFound = true
 						errMsg = err.Error()

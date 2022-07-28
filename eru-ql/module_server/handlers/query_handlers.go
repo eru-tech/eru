@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-ql/ql"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -122,6 +123,27 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 		projectID := vars["project"]
 		queryName := vars["queryname"]
 		log.Print("projectID = ", projectID)
+
+		projectConfig, err := s.GetProjectConfigObject(projectID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		tokenObj := make(map[string]interface{})
+		tokenStr := r.Header.Get(projectConfig.TokenSecret.HeaderKey)
+		log.Print("tokenStr = ", tokenStr)
+		if tokenStr != "" {
+			err = json.Unmarshal([]byte(tokenStr), &tokenObj)
+			if err != nil {
+				log.Print("error while unmarshalling token claim")
+				log.Print(err)
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		}
+
 		postBody := make(map[string]interface{})
 
 		if err := json.NewDecoder(r.Body).Decode(&postBody); err != nil {
@@ -158,7 +180,7 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				log.Print(err)
 				return
 			}
-			qlInterface.SetQLData(*myQuery, postBody, true)
+			qlInterface.SetQLData(*myQuery, postBody, true, tokenObj)
 			res, _, err = qlInterface.Execute(projectID, datasources, s)
 
 			log.Print(queries)
@@ -201,6 +223,7 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		tokenObj := make(map[string]interface{})
 		tokenStr := r.Header.Get(projectConfig.TokenSecret.HeaderKey)
+		log.Print("tokenStr = ", tokenStr)
 		if tokenStr != "" {
 			err = json.Unmarshal([]byte(tokenStr), &tokenObj)
 			if err != nil {
@@ -232,9 +255,9 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		//log.Print(gqd)
+		gqd.Variables[module_model.RULEPREFIX_TOKEN] = tokenObj
 		gqd.FinalVariables = gqd.Variables
 		gqd.ExecuteFlag = true
-		gqd.TokenObject = tokenObj
 		/*
 			queryNames, err := gqd.CheckIfMutationByQuery()
 			log.Print(queryNames)

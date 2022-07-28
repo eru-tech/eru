@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 )
 
 type AesKey struct {
@@ -141,6 +142,24 @@ func DecryptECB(encryptedBytes []byte, aesKey []byte) (plainBytes []byte, err er
 	return plainBytes, err
 }
 
+func DecryptCBC(cipherText string, encKey string, iv string) (decryptedString string) {
+	bKey := []byte(encKey)
+	bIV := []byte(iv)
+	//cipherTextDecoded, err := hex.DecodeString(cipherText)
+	//if err != nil {
+	//	panic(err)
+	//}
+
+	block, err := caes.NewCipher(bKey)
+	if err != nil {
+		panic(err)
+	}
+	bPlaintext := make([]byte, len(cipherText))
+	mode := cipher.NewCBCDecrypter(block, bIV)
+	mode.CryptBlocks([]byte(bPlaintext), []byte(cipherText))
+	return strings.Trim(string(bPlaintext), " ")
+}
+
 func Encrypt(plainBytes []byte, aesKeyStr string) (encryptedBytes []byte, err error) {
 	key, _ := hex.DecodeString(aesKeyStr)
 	block, err := caes.NewCipher(key)
@@ -148,7 +167,6 @@ func Encrypt(plainBytes []byte, aesKeyStr string) (encryptedBytes []byte, err er
 		log.Println(err.Error())
 		return
 	}
-
 	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
 		log.Println(err.Error())
@@ -161,6 +179,7 @@ func Encrypt(plainBytes []byte, aesKeyStr string) (encryptedBytes []byte, err er
 
 func Decrypt(encryptedBytes []byte, aesKeyStr string) (decryptedBytes []byte, err error) {
 	key, _ := hex.DecodeString(aesKeyStr)
+	log.Print(key)
 	//enc, err := hex.DecodeString(string(encryptedBytes))
 	if err != nil {
 		log.Println(err.Error())

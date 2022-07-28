@@ -16,9 +16,9 @@ type SQLData struct {
 	Cols    string `json:"cols"`
 }
 
-func (sqd *SQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool) {
+func (sqd *SQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}) {
 	log.Print("inside SetQLData of SQLData")
-	sqd.SetQLDataCommon(mq, vars, executeFlag)
+	sqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj)
 	//sqd.Query=mq.Query
 	//sqd.Variables=mq.Vars
 	sqd.DBAlias = mq.DBAlias
