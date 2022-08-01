@@ -77,9 +77,10 @@ func (apiGateway *ApiGateway) Send(msg string, templateId string, params url.Val
 
 	eruQueriesURL := os.Getenv("ERUQUERIESURL")
 	if eruQueriesURL == "" {
-		eruQueriesURL = "http://localhost:8080"
+		eruQueriesURL = "http://localhost:8087"
 	}
-	saveOtpResp, err := http.Post(fmt.Sprint(eruQueriesURL, "/store/myquery/smartvalues/execute/save_otp"), "application/json", bytes.NewBuffer(saveOtpReqBody))
+	log.Print(saveOtpReqBody)
+	saveOtpResp, err := http.Post(fmt.Sprint(eruQueriesURL, "/store/smartvalues/myquery/execute/save_otp"), "application/json", bytes.NewBuffer(saveOtpReqBody))
 	if err != nil {
 		log.Print(err)
 		return nil, err
