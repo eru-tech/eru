@@ -41,6 +41,7 @@ type ModuleStoreI interface {
 	SaveTableSecurity(projectId string, dbAlias string, tableName string, securityRules module_model.SecurityRules, realStore ModuleStoreI) (err error)
 	SaveTableTransformation(projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error)
 	GetTableTransformation(projectId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error)
+	GetTableSecurityRule(projectId string, dbAlias string, tableName string) (transformRules module_model.SecurityRules, err error)
 	DropSchemaTable(projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error)
 	RemoveSchemaTable(projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
 	SaveMyQuery(projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule) error
@@ -493,7 +494,10 @@ func (ms *ModuleStore) SaveTableSecurity(projectId string, dbAlias string, table
 	} else {
 		return errors.New(fmt.Sprint("Project ", projectId, " not found"))
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return realStore.SaveStore("", realStore)
 }
 
 func (ms *ModuleStore) SaveTableTransformation(projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error) {
@@ -531,6 +535,25 @@ func (ms *ModuleStore) GetTableTransformation(projectId string, dbAlias string, 
 		}
 	} else {
 		return transformRules, errors.New(fmt.Sprint("Project ", projectId, " not found"))
+	}
+	return
+}
+
+func (ms *ModuleStore) GetTableSecurityRule(projectId string, dbAlias string, tableName string) (securityRules module_model.SecurityRules, err error) {
+	if prj, ok := ms.Projects[projectId]; ok {
+		if db, ok := prj.DataSources[dbAlias]; ok {
+			if _, ok := db.SchemaTables[tableName]; ok {
+				securityRules = db.SchemaTablesSecurity[tableName]
+			} else if _, ok := prj.MyQueries[tableName]; ok {
+				securityRules.Query = prj.MyQueries[tableName].SecurityRule
+			} else {
+				return securityRules, errors.New(fmt.Sprint("Table ", tableName, " not found"))
+			}
+		} else {
+			return securityRules, errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+		}
+	} else {
+		return securityRules, errors.New(fmt.Sprint("Project ", projectId, " not found"))
 	}
 	return
 }

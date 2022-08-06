@@ -78,7 +78,7 @@ type GraphqlResult struct {
 var DefaultDriverConfig = module_model.DriverConfig{10, 2, time.Hour}
 var DefaultOtherConfig = module_model.OtherDbConfig{1000, 60, false}
 var emptyCustomRule = security_rule.CustomRule{}
-var DefaultDbSecurityRules = module_model.SecurityRules{security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Deny", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Deny", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}}
+var DefaultDbSecurityRules = module_model.SecurityRules{security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Deny", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Deny", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}}
 
 type SqlMakerI interface {
 	GetReturnAlias() string
@@ -541,9 +541,11 @@ func (sqr *SqlMaker) ExecuteMutationQuery(datasource *module_model.DataSource, m
 
 func (sqr *SqlMaker) RollbackQuery() (err error) {
 	log.Print("RollbackQuery called")
-	err = sqr.tx.Rollback()
-	if err != nil {
-		log.Print("RollbackQuery failed = ", err.Error())
+	if sqr.tx != nil {
+		err = sqr.tx.Rollback()
+		if err != nil {
+			log.Print("RollbackQuery failed = ", err.Error())
+		}
 	}
 	return err
 }
@@ -821,6 +823,7 @@ func (sqr *SqlMaker) ExecuteQuery(datasource *module_model.DataSource, qrm modul
 		if e != nil {
 			return nil, e
 		}
+
 		var colLevelI, colSubLevelI int
 		var er error
 		for _, colType := range colsType {
@@ -918,6 +921,7 @@ func (sqr *SqlMaker) ExecuteQuery(datasource *module_model.DataSource, qrm modul
 
 		r, rf, err := sqr.processRows(resultRowHolderNew, 0, rowNo, true, -1) //sqr.result[sqr.MainTableName].([]interface{})
 		if err != nil {
+			log.Print("error from processRows = ", err.Error())
 			return nil, er
 		}
 		mtn := strings.Replace(sqr.MainTableName, ".", "___", 1)
@@ -934,6 +938,7 @@ func (sqr *SqlMaker) ExecuteQuery(datasource *module_model.DataSource, qrm modul
 		}
 
 	}
+	log.Print("rows returned = ", rowNo)
 	//log.Print("888888888")
 	//ff, _ := json.Marshal(sqr.result)
 	//log.Print(string(ff))

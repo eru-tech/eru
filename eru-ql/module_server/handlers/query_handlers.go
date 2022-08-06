@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
+	"strconv"
 	//"../server"
 )
 
@@ -180,16 +181,25 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				log.Print(err)
 				return
 			}
-			qlInterface.SetQLData(*myQuery, postBody, true, tokenObj)
-			res, _, err = qlInterface.Execute(projectID, datasources, s)
-
-			log.Print(queries)
+			isPublic := false
+			log.Print("r.Header.Get(\"is_public\") = ", r.Header.Get("is_public"))
+			isPublic, err = strconv.ParseBool(r.Header.Get("is_public"))
 			if err != nil {
-				server_handlers.FormatResponse(w, 400)
-				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-				log.Print(err)
-				return
+				// do nothing - silently execute with is_public as false
 			}
+			log.Print("isPublic = ", isPublic)
+
+			qlInterface.SetQLData(*myQuery, postBody, true, tokenObj, isPublic)
+			res, _, err = qlInterface.Execute(projectID, datasources, s)
+			log.Print(queries)
+			/*
+				if err != nil {
+					server_handlers.FormatResponse(w, 400)
+					json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+					log.Print(err)
+					return
+				}
+			*/
 		} else {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": errors.New(fmt.Sprint("query ", queryName, " not found")).Error()})
@@ -223,6 +233,7 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		tokenObj := make(map[string]interface{})
 		tokenStr := r.Header.Get(projectConfig.TokenSecret.HeaderKey)
+
 		log.Print("tokenStr = ", tokenStr)
 		if tokenStr != "" {
 			err = json.Unmarshal([]byte(tokenStr), &tokenObj)
@@ -248,6 +259,13 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		//log.Print(t)
 
 		var gqd ql.GraphQLData
+		gqd.IsPublic = false
+		gqd.IsPublic, err = strconv.ParseBool(r.Header.Get("is_public"))
+		if err != nil {
+			// do nothing - silently execute with is_public as false
+		}
+		log.Print("gqd.IsPublic = ", gqd.IsPublic)
+
 		if err := json.NewDecoder(r.Body).Decode(&gqd); err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -255,6 +273,9 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		//log.Print(gqd)
+		if gqd.Variables == nil {
+			gqd.Variables = make(map[string]interface{})
+		}
 		gqd.Variables[module_model.RULEPREFIX_TOKEN] = tokenObj
 		gqd.FinalVariables = gqd.Variables
 		gqd.ExecuteFlag = true
@@ -322,6 +343,26 @@ func SqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectID := vars["project"]
 		log.Print(projectID)
 
+		projectConfig, err := s.GetProjectConfigObject(projectID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		tokenObj := make(map[string]interface{})
+		tokenStr := r.Header.Get(projectConfig.TokenSecret.HeaderKey)
+		log.Print("tokenStr = ", tokenStr)
+		if tokenStr != "" {
+			err = json.Unmarshal([]byte(tokenStr), &tokenObj)
+			if err != nil {
+				log.Print("error while unmarshalling token claim")
+				log.Print(err)
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		}
+
 		datasources, err := s.GetDataSources(projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -330,6 +371,13 @@ func SqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		var sqd ql.SQLData
+		sqd.IsPublic = false
+		sqd.IsPublic, err = strconv.ParseBool(r.Header.Get("is_public"))
+		if err != nil {
+			// do nothing - silently execute with is_public as false
+		}
+		log.Print("gqd.IsPublic = ", sqd.IsPublic)
+
 		if err := json.NewDecoder(r.Body).Decode(&sqd); err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -337,9 +385,12 @@ func SqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		//log.Print(sqd)
+		if sqd.Variables == nil {
+			sqd.Variables = make(map[string]interface{})
+		}
+		sqd.Variables[module_model.RULEPREFIX_TOKEN] = tokenObj
 		sqd.FinalVariables = sqd.Variables
 		sqd.ExecuteFlag = true
-
 		res, queryObjs, err := sqd.Execute(projectID, datasources, s)
 		_ = queryObjs
 		//log.Print("queryObjs printed below")

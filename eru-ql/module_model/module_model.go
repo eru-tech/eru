@@ -150,6 +150,7 @@ type SecurityRules struct {
 	Update security_rule.SecurityRule
 	Delete security_rule.SecurityRule
 	Select security_rule.SecurityRule
+	Query  security_rule.SecurityRule
 }
 type TransformRules struct {
 	TransformInput  TransformRule

@@ -107,7 +107,6 @@ func EncryptECB(plainBytes []byte, aesKey []byte) (encryptedBytes []byte, err er
 	ecbObj.CryptBlocks(encryptedBytes, plaintext)
 	log.Println("len(encryptedBytes) = ", len(encryptedBytes))
 	log.Println("len(plaintext) = ", len(plaintext))
-
 	/*ecbdObj := NewECBDecrypter(block)
 	plainBytesBeforeUnpad := make([]byte,len(encryptedBytes))
 	log.Println("len(plainBytesBeforeUnpad) = ",len(plainBytesBeforeUnpad))
@@ -142,6 +141,73 @@ func DecryptECB(encryptedBytes []byte, aesKey []byte) (plainBytes []byte, err er
 	return plainBytes, err
 }
 
+func EncryptCBC(plainText string, encKey string, iv string) (encryptedString string) {
+	bKey := []byte(encKey)
+	bIV := []byte(iv)
+	//cipherTextDecoded, err := hex.DecodeString(cipherText)
+	//if err != nil {
+	//	panic(err)
+	//}
+	block, err := caes.NewCipher(bKey)
+	if err != nil {
+		panic(err)
+	}
+	log.Print("block size = ", block.BlockSize())
+	//paddding with spaces
+	//if block.BlockSize() < 1 || block.BlockSize() > 255 {
+	//	panic(fmt.Sprintf("inappropriate block size %d", block.BlockSize()))
+	//}
+	//plainBuf := []byte(plainText)
+	//i := block.BlockSize() - (len(plainBuf) % block.BlockSize())
+	//spaceByte := []byte(" ")
+	//finalPlainBytes := append(plainBuf, bytes.Repeat(spaceByte, i)...)
+	//finalPlainText := string(finalPlainBytes)
+	//paddding with spaces ended
+
+	bCipherText := make([]byte, len(plainText))
+	mode := cipher.NewCBCEncrypter(block, bIV)
+	mode.CryptBlocks(bCipherText, []byte(plainText))
+	return string(bCipherText)
+}
+func DecryptCBC(cipherText string, encKey string, iv string) (decryptedString string) {
+	bKey := []byte(encKey)
+	bIV := []byte(iv)
+	//cipherTextDecoded, err := hex.DecodeString(cipherText)
+	//if err != nil {
+	//	panic(err)
+	//}
+	block, err := caes.NewCipher(bKey)
+	if err != nil {
+		panic(err)
+	}
+	bPlaintext := make([]byte, len(cipherText))
+	mode := cipher.NewCBCDecrypter(block, bIV)
+	mode.CryptBlocks([]byte(bPlaintext), []byte(cipherText))
+	return strings.Trim(string(bPlaintext), " ")
+}
+
+/*func EncryptCBC(plainText string, encKey string, iv string) (encryptedString string) {
+	bKey := []byte(encKey)
+	bIV := []byte(iv)
+	//cipherTextDecoded, err := hex.DecodeString(cipherText)
+	//if err != nil {
+	//	panic(err)
+	//}
+	block, err := caes.NewCipher(bKey)
+	if err != nil {
+		panic(err)
+	}
+
+	log.Print("block..BlockSize() = ",block.BlockSize())
+
+	bCipherText := make([]byte, len(plainText))
+	mode := cipher.NewCBCEncrypter(block, bIV)
+	mode.CryptBlocks([]byte(bCipherText), []byte(plainText))
+	log.Print(bCipherText)
+	log.Print(string(bCipherText))
+	return string(bCipherText)
+}
+
 func DecryptCBC(cipherText string, encKey string, iv string) (decryptedString string) {
 	bKey := []byte(encKey)
 	bIV := []byte(iv)
@@ -159,6 +225,8 @@ func DecryptCBC(cipherText string, encKey string, iv string) (decryptedString st
 	mode.CryptBlocks([]byte(bPlaintext), []byte(cipherText))
 	return strings.Trim(string(bPlaintext), " ")
 }
+
+*/
 
 func Encrypt(plainBytes []byte, aesKeyStr string) (encryptedBytes []byte, err error) {
 	key, _ := hex.DecodeString(aesKeyStr)

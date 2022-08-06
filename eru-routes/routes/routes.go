@@ -239,7 +239,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	log.Println(route.TargetHosts)
 	//log.Println(request)
 	request.Header.Set("accept-encoding", "identity")
-	//printRequestBody(request, "printing request Before httpClient.Do of route Execute")
+	printRequestBody(request, "printing request Before httpClient.Do of route Execute")
 
 	response, err = httpClient.Do(request)
 	if err != nil {

@@ -1,6 +1,7 @@
 package ql
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-ql/ds"
@@ -16,9 +17,9 @@ type SQLData struct {
 	Cols    string `json:"cols"`
 }
 
-func (sqd *SQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}) {
+func (sqd *SQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool) {
 	log.Print("inside SetQLData of SQLData")
-	sqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj)
+	sqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj, isPublic)
 	//sqd.Query=mq.Query
 	//sqd.Variables=mq.Vars
 	sqd.DBAlias = mq.DBAlias
@@ -38,9 +39,15 @@ func (sqd *SQLData) Execute(projectId string, datasources map[string]*module_mod
 		var str string
 		switch tp := v.(type) {
 		case float64:
+
 			str = fmt.Sprint(v.(float64))
 		case string:
+
 			str = v.(string)
+		case map[string]interface{}:
+			strBytes, strBytesErr := json.Marshal(v)
+			err = strBytesErr
+			str = string(strBytes)
 		default:
 			log.Print(tp)
 			// do noting

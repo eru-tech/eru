@@ -30,6 +30,8 @@ type SQLObjectQ struct {
 	queryLevel      int
 	querySubLevel   []int
 	DBQuery         string
+	OverwriteDoc    map[string]map[string]interface{} `json:"-"`
+	SecurityClause  map[string]string                 `json:"-"`
 }
 
 type SQLCols struct {
@@ -340,6 +342,7 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string)
 				//	return "", "" //exiting as we will ignore this condition as user has not passed any value for filter
 				//}
 				log.Print("newVal === ", newVal)
+				log.Print(reflect.TypeOf(newVal).Kind().String())
 				if newVal != nil {
 					var valPrefix, valSuffix = "", ""
 					if reflect.TypeOf(newVal).Kind().String() == "string" {
@@ -425,6 +428,7 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string)
 						default:
 							str := ""
 							str, err = processWhereClause(newVal, eru_utils.ReplaceUnderscoresWithDots(v.String()), mainTableName)
+							log.Print("str = ", str)
 							if str == "" {
 								log.Print("skipping whereclause for ", newVal, " as there is no value provided by user  : ", str)
 								log.Print(err)
@@ -454,6 +458,8 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string)
 			//log.Print(fmt.Sprint(parentKey , " = " , reflect.ValueOf(val)))
 			var valPrefix, valSuffix = "", ""
 			if reflect.TypeOf(val).Kind().String() == "string" {
+				//TODO due to below statement - 2022-07-27T18:30:00.000Z date in filter is failing if passed in this format
+				//parse for date
 				if !strings.Contains(reflect.ValueOf(val).String(), ".") {
 					valPrefix = "'"
 					valSuffix = "'"
@@ -592,9 +598,19 @@ func (sqlObj *SQLObjectQ) MakeQuery(sqlMaker ds.SqlMakerI) (err error) {
 	if e != "" {
 		err = errors.New(e)
 	}
+	log.Print("sqlObj.SecurityClause[sqlObj.MainTableName] = ", sqlObj.SecurityClause[sqlObj.MainTableName])
+	if sqlObj.SecurityClause[sqlObj.MainTableName] != "" {
+		if strWhereClause != "" {
+			strWhereClause = fmt.Sprint(strWhereClause, " and ", sqlObj.SecurityClause[sqlObj.MainTableName])
+		} else {
+			strWhereClause = sqlObj.SecurityClause[sqlObj.MainTableName]
+		}
+	}
+	log.Print("strWhereClause after = ", strWhereClause)
 	if strWhereClause != "" {
 		strWhereClause = fmt.Sprint(" where ", strWhereClause)
 	}
+
 	strSortClause := sqlObj.processSortClause(sqlObj.SortClause)
 	if sqlObj.HasAggregate && len(sqlObj.Columns.GroupClause) > 0 {
 		strGroupClause = fmt.Sprint(" group by ", strings.Join(sqlObj.Columns.GroupClause, " , "))

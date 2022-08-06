@@ -137,12 +137,14 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.T
 						if strings.HasPrefix(r.URL.Path, pathException.Path) {
 							log.Println(fmt.Sprint("pathException match = ", pathException.Path))
 							pathExceptionFound = true
+							r.Header.Set("is_public", "true")
 							break
 						}
 					case MatchTypeExact:
 						if r.URL.Path == pathException.Path {
 							log.Println(fmt.Sprint("pathException match = ", pathException.Path))
 							pathExceptionFound = true
+							r.Header.Set("is_public", "true")
 							break
 						}
 					default:

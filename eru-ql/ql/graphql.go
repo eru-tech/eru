@@ -22,8 +22,8 @@ type GraphQLData struct {
 	QueryObject map[string]QueryObject `json:"_"`
 }
 
-func (gqd *GraphQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}) {
-	gqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj)
+func (gqd *GraphQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool) {
+	gqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj, isPublic)
 	//gqd.Query=mq.Query
 	//gqd.Variables=mq.Vars
 	//gqd.SetFinalVars(vars)
@@ -70,7 +70,7 @@ func (gqd *GraphQLData) parseGraphQL() (d *ast.Document, err error) {
 	return d, err
 }
 
-func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]*module_model.DataSource, query string, s module_store.ModuleStoreI, tokenObj map[string]interface{}) (err error) {
+func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]*module_model.DataSource, query string, s module_store.ModuleStoreI, tokenObj map[string]interface{}, isPublic bool) (err error) {
 	log.Print("query = ", query)
 	mq, err := s.GetMyQuery(projectId, query)
 	if err != nil {
@@ -90,7 +90,7 @@ func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]
 		log.Print(err)
 		return err
 	}
-	qlInterface.SetQLData(*mq, gqd.FinalVariables, false, tokenObj) //passing false as we only need the query in execute function and not actual result
+	qlInterface.SetQLData(*mq, gqd.FinalVariables, false, tokenObj, isPublic) //passing false as we only need the query in execute function and not actual result
 	_, queryObjs, err := qlInterface.Execute(projectId, datasources, s)
 	//log.Print("queryObjs[0].Type ==", queryObjs[0].Type)
 	for i, q := range queryObjs {
@@ -165,7 +165,30 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 			switch op.Operation {
 			case "query":
 				sqlObj := SQLObjectQ{}
+
+				field := v.(*ast.Field)
+				sqlObj.MainTableName = strings.Replace(field.Name.Value, "___", ".", -1) //replacing schema___tablename with schema.tablename
+
+				if sqlObj.OverwriteDoc == nil {
+					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
+				}
+				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation)
+				if err != nil {
+					errMsg = err.Error()
+					errFound = true
+				}
+
+				if sqlObj.SecurityClause == nil {
+					sqlObj.SecurityClause = make(map[string]string)
+				}
+				sqlObj.SecurityClause[sqlObj.MainTableName], err = gqd.getTableSecurityRule(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation)
+				if err != nil {
+					errMsg = err.Error()
+					errFound = true
+				}
+
 				err = sqlObj.ProcessGraphQL(v, datasource, graphQLs[i], gqd.FinalVariables) //TODO to handle if err recd.
+
 				queryObj.Query = sqlObj.DBQuery
 				queryObj.Cols = strings.Join(sqlObj.Columns.ColNames, " , ")
 				mainAliasNames = append(mainAliasNames, sqlObj.MainAliasName)
@@ -180,9 +203,11 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 
 					result, err = graphQLs[i].ExecuteQuery(datasource, qrm)
 					if err != nil {
+						log.Print("error printed below fromc all of ExecuteQuery")
+						log.Print(err)
+						errMsg = err.Error()
 						errFound = true
 					}
-					log.Print(err)
 					//log.Print("result is printed below")
 					//log.Print(result)
 					if result != nil {
@@ -197,27 +222,35 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				sqlObj.QueryType = tempStr[0]
 				sqlObj.MainTableName = strings.Replace(tempStr[1], "___", ".", -1)
 				//log.Print("sqlObj.MainTableName = ", sqlObj.MainTableName)
-
-				tr, err := s.GetTableTransformation(projectId, dbAlias, sqlObj.MainTableName)
-				if err != nil {
-					log.Print("error from GetTableTransformation = ", err.Error())
-					errMsg = fmt.Sprint("error from GetTableTransformation = ", err.Error())
-					errFound = true
-				}
-				log.Print(tr)
 				if sqlObj.OverwriteDoc == nil {
 					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
 				}
-				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.ProcessTransformRule(tr.TransformInput)
+				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation)
 				if err != nil {
-					log.Print(err)
-					errMsg = fmt.Sprint("TransformRule failed : ", err.Error())
+					errMsg = err.Error()
 					errFound = true
 				}
-				log.Print("sqlObj.OverwriteDoc")
-				log.Print(sqlObj.OverwriteDoc)
-
-				err = gqd.getSqlForQuery(projectId, datasources, sqlObj.MainTableName, s, nil)
+				/*
+					tr, err := s.GetTableTransformation(projectId, dbAlias, sqlObj.MainTableName)
+					if err != nil {
+						log.Print("error from GetTableTransformation = ", err.Error())
+						errMsg = fmt.Sprint("error from GetTableTransformation = ", err.Error())
+						errFound = true
+					}
+					log.Print(tr)
+					if sqlObj.OverwriteDoc == nil {
+						sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
+					}
+					sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.ProcessTransformRule(tr.TransformInput)
+					if err != nil {
+						log.Print(err)
+						errMsg = fmt.Sprint("TransformRule failed : ", err.Error())
+						errFound = true
+					}
+					log.Print("sqlObj.OverwriteDoc")
+					log.Print(sqlObj.OverwriteDoc)
+				*/
+				err = gqd.getSqlForQuery(projectId, datasources, sqlObj.MainTableName, s, nil, gqd.IsPublic)
 				if err == nil {
 					sqlObj.PreparedQuery = true
 				}
@@ -237,7 +270,8 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				}
 				//log.Print(selectQuery)
 				if selectQuery != "" {
-					err = gqd.getSqlForQuery(projectId, datasources, selectQuery, s, nil)
+					err = gqd.getSqlForQuery(projectId, datasources, selectQuery, s, nil, gqd.IsPublic)
+					//todo consider passing token from finalvariables
 					if err != nil {
 						errFound = true
 						errMsg = err.Error()
@@ -320,11 +354,12 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					}
 				}
 			}
+			return res, queryObjs, errors.New("ERROR")
 		}
 	}
 	//log.Print(res)
-	log.Print(queryObjs)
-	return res, queryObjs, nil
+	//log.Print(queryObjs)
+	return res, queryObjs, err
 }
 
 // parseAstValue returns an interface that can be casted to string
@@ -526,4 +561,62 @@ func adjustObjectKey(key string) string {
 	key = strings.ReplaceAll(key, "__", ".")
 
 	return key
+}
+
+func (gqd *GraphQLData) setOverwriteDoc(projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string) (overwriteDoc map[string]interface{}, err error) {
+	tr, err := s.GetTableTransformation(projectId, dbAlias, tableName)
+	if err != nil {
+		log.Print("error from GetTableTransformation = ", err.Error())
+		err = errors.New(fmt.Sprint("error from GetTableTransformation = ", err.Error()))
+		return nil, err
+	}
+	log.Print(tr)
+	overwriteDoc = make(map[string]interface{})
+
+	if op == "query" {
+		overwriteDoc, err = gqd.ProcessTransformRule(tr.TransformOutput)
+	} else if op == "mutation" {
+		overwriteDoc, err = gqd.ProcessTransformRule(tr.TransformInput)
+	} else {
+		err = errors.New(fmt.Sprint("Invalid Operation : ", op))
+		log.Print(err)
+	}
+
+	if err != nil {
+		log.Print(err)
+		err = errors.New(fmt.Sprint("TransformRule failed : ", err.Error()))
+		return nil, err
+	}
+	log.Print("overwriteDoc")
+	log.Print(overwriteDoc)
+	return
+}
+
+func (gqd *GraphQLData) getTableSecurityRule(projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string) (ruleOutput string, err error) {
+	log.Print("inside getTableSecurityRule")
+	sr, err := s.GetTableSecurityRule(projectId, dbAlias, tableName)
+	if err != nil {
+		err = errors.New(fmt.Sprint("error from getTableSecurityRule = ", err.Error()))
+		log.Print(err)
+		return "", err
+	}
+	log.Print(sr)
+
+	if op == "query" {
+		ruleOutput, err = gqd.ProcessSecurityRule(sr.Select, gqd.Variables)
+	} else if op == "mutation" {
+		ruleOutput, err = gqd.ProcessSecurityRule(sr.Insert, gqd.Variables) //todo to change it as per query type
+	} else {
+		err = errors.New(fmt.Sprint("Invalid Query Type : ", op))
+		log.Print(err)
+	}
+
+	if err != nil {
+		log.Print(err)
+		err = errors.New(fmt.Sprint("SecurityRule failed : ", err.Error()))
+		return "", err
+	}
+	log.Print("ruleOutput")
+	log.Print(ruleOutput)
+	return
 }

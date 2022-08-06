@@ -2,6 +2,7 @@ package ql
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
@@ -17,6 +18,7 @@ type QLData struct {
 	FinalVariables map[string]interface{}     `json:"-"`
 	ExecuteFlag    bool                       `json:"-"`
 	SecurityRule   security_rule.SecurityRule `json:"security_rule"`
+	IsPublic       bool                       `json:"is_public"`
 }
 
 type QueryObject struct {
@@ -27,11 +29,11 @@ type QueryObject struct {
 
 type QL interface {
 	Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI) (res []map[string]interface{}, queryObjs []QueryObject, err error)
-	SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{})
+	SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool)
 	ProcessTransformRule(tr module_model.TransformRule) (outputObj map[string]interface{}, err error)
 }
 
-func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}) (err error) {
+func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool) (err error) {
 	if mq.Vars == nil {
 		mq.Vars = make(map[string]interface{})
 	}
@@ -39,6 +41,7 @@ func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]inte
 	qld.Query = mq.Query
 	qld.Variables = mq.Vars
 	qld.ExecuteFlag = executeFlag
+	qld.IsPublic = isPublic
 	err = qld.SetFinalVars(vars)
 	return err
 }
@@ -85,6 +88,24 @@ func (qld *QLData) ProcessTransformRule(tr module_model.TransformRule) (outputOb
 		}
 	}
 	log.Print(outputObj)
+	return
+}
+
+func (qld *QLData) ProcessSecurityRule(sr security_rule.SecurityRule, vars map[string]interface{}) (outputStr string, err error) {
+	if sr.RuleType == module_model.RULETYPE_NONE {
+		err = errors.New("Security Rule Set to NONE")
+		return
+	}
+	if sr.RuleType == module_model.RULETYPE_ALWAYS {
+		//do nothing
+		return
+	} else if sr.RuleType == module_model.RULETYPE_CUSTOM {
+		log.Print("printing custom rule")
+		log.Print(sr.CustomRule)
+		outputStr, err = sr.Stringify(vars, qld.IsPublic)
+		log.Print(outputStr)
+		log.Print(err)
+	}
 	return
 }
 

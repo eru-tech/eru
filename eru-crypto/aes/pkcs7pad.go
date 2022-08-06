@@ -14,13 +14,30 @@ import (
 
 var errPKCS7Padding = errors.New("bad padding for pkcs7pad")
 
+func Pkcs7Pad(b []byte, blocksize int) ([]byte, error) {
+	if blocksize <= 0 {
+		return nil, errors.New("Invalid block size")
+	}
+	if b == nil || len(b) == 0 {
+		return nil, errors.New("Invalid block size")
+	}
+	n := blocksize - (len(b) % blocksize)
+	pb := make([]byte, len(b)+n)
+	copy(pb, b)
+	copy(pb[len(b):], bytes.Repeat([]byte{byte(n)}, n))
+	return pb, nil
+}
+
 func Pad(buf []byte, size int) []byte {
 	if size < 1 || size > 255 {
 		panic(fmt.Sprintf("inappropriate pkcs7pad block size %d", size))
 	}
 	i := size - (len(buf) % size)
 	log.Println("i = ", i)
-	return append(buf, bytes.Repeat([]byte{byte(i)}, i)...)
+	//outputBytes := append(buf, bytes.Repeat([]byte{byte(i)}, i)...)
+	outputBytes := append(buf, bytes.Repeat([]byte("5"), i)...)
+	log.Print(string(outputBytes))
+	return outputBytes
 }
 
 func Unpad(buf []byte) ([]byte, error) {
