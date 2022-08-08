@@ -229,9 +229,14 @@ func DecryptCBC(cipherText string, encKey string, iv string) (decryptedString st
 */
 
 func Encrypt(plainBytes []byte, aesKeyStr string) (encryptedBytes []byte, err error) {
-	key, _ := hex.DecodeString(aesKeyStr)
+	log.Print("aesKeyStr = ", aesKeyStr)
+	//key, err := hex.DecodeString(aesKeyStr)
+	//log.Print("error from hex.DecodeString(aesKeyStr) ", err.Error())
+	//log.Print(key)
+	key := []byte(aesKeyStr)
 	block, err := caes.NewCipher(key)
 	if err != nil {
+		log.Println("error from caes.NewCipher(key)")
 		log.Println(err.Error())
 		return
 	}

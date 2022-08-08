@@ -25,6 +25,6 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	// routes for file events
 	fileRouter := serverRouter.PathPrefix("/files/{project}").Subrouter()
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/upload").HandlerFunc(file_handlers.FileUploadHandler(sh.Store))
-	fileRouter.Methods(http.MethodPost).Path("/testEncrypt/{text}").HandlerFunc(file_handlers.TestEncrypt(sh.Store))
-	fileRouter.Methods(http.MethodPost).Path("/testAesEncrypt/{text}/{keyname}").HandlerFunc(file_handlers.TestAesEncrypt(sh.Store))
+	//fileRouter.Methods(http.MethodPost).Path("/testEncrypt/{text}").HandlerFunc(file_handlers.TestEncrypt(sh.Store))
+	//fileRouter.Methods(http.MethodPost).Path("/testAesEncrypt/{text}/{keyname}").HandlerFunc(file_handlers.TestAesEncrypt(sh.Store))
 }

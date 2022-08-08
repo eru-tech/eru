@@ -20,6 +20,7 @@ const (
 	multiPartForm = "multipart/form-data"
 )
 
+/*
 func TestEncrypt(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -37,6 +38,8 @@ func TestAesEncrypt(s module_store.ModuleStoreI) http.HandlerFunc {
 		s.TestAesEncrypt(projectId, text, keyName)
 	}
 }
+
+*/
 
 func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

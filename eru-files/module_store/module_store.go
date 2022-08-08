@@ -26,8 +26,8 @@ type ModuleStoreI interface {
 	GenerateRsaKeyPair(projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (rsaKeyPair erursa.RsaKeyPair, err error)
 	GenerateAesKey(projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (aesKey eruaes.AesKey, err error)
 	UploadFile(projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string, keyName string) (docId string, err error)
-	TestEncrypt(projectId string, text string)
-	TestAesEncrypt(projectId string, text string, keyName string)
+	//TestEncrypt(projectId string, text string)
+	//TestAesEncrypt(projectId string, text string, keyName string)
 }
 
 type ModuleStore struct {
@@ -43,7 +43,7 @@ type ModuleDbStore struct {
 	ModuleStore
 }
 
-func (ms *ModuleStore) TestEncrypt(projectId string, text string) {
+/*func (ms *ModuleStore) TestEncrypt(projectId string, text string) {
 	prj, err := ms.GetProjectConfig(projectId)
 	if err != nil {
 		log.Print(err)
@@ -73,7 +73,7 @@ func (ms *ModuleStore) TestAesEncrypt(projectId string, text string, keyName str
 		log.Println(string(dtext))
 	}
 }
-
+*/
 func (ms *ModuleStore) GenerateRsaKeyPair(projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (rsaKeyPair erursa.RsaKeyPair, err error) {
 	log.Println("inside GenerateRsaKeyPair")
 	prj, err := ms.GetProjectConfig(projectId)

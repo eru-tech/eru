@@ -27,6 +27,7 @@ type AwsStorage struct {
 
 func (awsStorage *AwsStorage) UploadFile(file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
 	log.Println("inside AwsStorage UploadFile")
+	log.Print(string(keyName.Key))
 	if awsStorage.session == nil {
 		err = awsStorage.Init()
 		if err != nil {
