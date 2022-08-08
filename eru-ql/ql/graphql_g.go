@@ -480,22 +480,33 @@ func (sqlObj *SQLObjectQ) processSortClause(val interface{}) (sortClause string)
 		//v, e := ParseAstValue(val, vars)
 		//log.Print(e)
 		switch reflect.TypeOf(val).Kind() {
-		case reflect.Slice: //TODO integer in slice fails - to check - order on column name and column number together should also work
+		case reflect.Slice:
+			log.Print("inside processSortClause reflect.Slice")
 			s := reflect.ValueOf(val)
+			log.Print(s)
+			log.Print("s.Len() = ", s.Len())
 			temp := make([]string, s.Len())
 			for i := 0; i < s.Len(); i++ {
 				isDesc = ""
-				ss := fmt.Sprintf("%s", s.Index(i))
-				if strings.HasPrefix(ss, "-") {
-					isDesc = " desc"
-					ss = strings.Replace(ss, "-", "", 1)
-				}
-				if strings.Contains(ss, ".") {
-					temp[i] = ss + isDesc
+				si, ok := s.Index(i).Interface().(int)
+				if ok {
+					if si < 0 {
+						isDesc = " desc"
+						si = si * -1
+					}
+					temp[i] = fmt.Sprint(si, " ", isDesc)
 				} else {
-					temp[i] = fmt.Sprintf("%s%s%s%s", sqlObj.MainTableName, ".", ss, isDesc)
+					ss := fmt.Sprintf("%s", s.Index(i))
+					if strings.HasPrefix(ss, "-") {
+						isDesc = " desc"
+						ss = strings.Replace(ss, "-", "", 1)
+					}
+					if strings.Contains(ss, ".") {
+						temp[i] = ss + isDesc
+					} else {
+						temp[i] = fmt.Sprintf("%s%s%s%s", sqlObj.MainTableName, ".", ss, isDesc)
+					}
 				}
-
 			}
 			return fmt.Sprint(" order by ", strings.Join(temp, " , "))
 		case reflect.String:
