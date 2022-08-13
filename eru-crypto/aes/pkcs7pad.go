@@ -9,12 +9,11 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
-	"log"
 )
 
 var errPKCS7Padding = errors.New("bad padding for pkcs7pad")
 
-func Pkcs7Pad(b []byte, blocksize int) ([]byte, error) {
+/*func Pkcs7Pad(b []byte, blocksize int) ([]byte, error) {
 	if blocksize <= 0 {
 		return nil, errors.New("Invalid block size")
 	}
@@ -28,15 +27,14 @@ func Pkcs7Pad(b []byte, blocksize int) ([]byte, error) {
 	return pb, nil
 }
 
+*/
+
 func Pad(buf []byte, size int) []byte {
 	if size < 1 || size > 255 {
 		panic(fmt.Sprintf("inappropriate pkcs7pad block size %d", size))
 	}
 	i := size - (len(buf) % size)
-	log.Println("i = ", i)
-	//outputBytes := append(buf, bytes.Repeat([]byte{byte(i)}, i)...)
-	outputBytes := append(buf, bytes.Repeat([]byte("5"), i)...)
-	log.Print(string(outputBytes))
+	outputBytes := append(buf, bytes.Repeat([]byte{byte(i)}, i)...)
 	return outputBytes
 }
 

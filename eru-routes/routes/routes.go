@@ -248,16 +248,20 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 		return
 	}
 	log.Println(response.Header)
+	response.StatusCode = 301
 	log.Println(response.StatusCode)
 	printResponseBody(response, "printing response After httpClient.Do of route Execute before transformResponse")
 
-	trResVars, err = route.transformResponse(response, trReqVars)
+	/*trResVars, err = route.transformResponse(response, trReqVars)
+
 	if err != nil {
 		log.Println(err)
 		return
 	}
 	printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
+	*/
 	return
+
 }
 
 func (route *Route) transformRequest(request *http.Request, url string) (vars *TemplateVars, err error) {
@@ -265,10 +269,19 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 	//printRequestBody(request,"body from route transformRequest")
 
 	reqVarsLoaded := false
+
 	vars = &TemplateVars{}
 	vars.FormData = make(map[string]interface{})
 	vars.Body = make(map[string]interface{})
 
+	if !reqVarsLoaded {
+		err = loadRequestVars(vars, request)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		reqVarsLoaded = true
+	}
 	scheme, host, port, path, method, err := route.GetTargetSchemeHostPortPath(url)
 	if err != nil {
 		return
@@ -296,6 +309,39 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 	log.Print("reqContentType from makeMultipart = ", reqContentType)
 	if reqContentType == encodedForm || reqContentType == multiPartForm {
 		multiPart = true
+		mpvars := &FuncTemplateVars{}
+
+		body, err3 := ioutil.ReadAll(request.Body)
+		if err3 != nil {
+			err = err3
+			log.Print("error in ioutil.ReadAll(request.Body)")
+			log.Println(err)
+			return
+		}
+		log.Print(vars)
+		err = json.Unmarshal(body, &vars.Body)
+		if err != nil {
+			log.Print("error in json.Unmarshal(body, &vars.Body)")
+			log.Println(err)
+			return &TemplateVars{}, err
+		}
+
+		mpvars.Vars = vars
+
+		for i, fd := range route.FormData {
+			if fd.IsTemplate {
+				log.Print("inside route.FormData")
+				log.Print(fd.Key)
+				output, err := processTemplate(fd.Key, fd.Value, mpvars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+				if err != nil {
+					log.Println(err)
+					return &TemplateVars{}, err
+				}
+				log.Print("form data template processed")
+				log.Print(string(output))
+				route.FormData[i].Value = string(output)
+			}
+		}
 		vars.FormData, vars.FormDataKeyArray, err = processMultipart(request, route.RemoveParams.FormData, route.FormData)
 		if err != nil {
 			return
@@ -311,7 +357,7 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 		//vars := module_model.TemplateVars{}
 		if route.TransformRequest != "" {
 
-			if !reqVarsLoaded {
+			/*if !reqVarsLoaded {
 				err = loadRequestVars(vars, request)
 				if err != nil {
 					log.Println(err)
@@ -319,6 +365,8 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 				}
 				reqVarsLoaded = true
 			}
+
+			*/
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = vars
 			output, err := processTemplate(route.RouteName, route.TransformRequest, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)

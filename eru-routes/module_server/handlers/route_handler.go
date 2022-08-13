@@ -102,6 +102,8 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+		http.Redirect(w, r, "https://google.com", 301)
+		return
 	}
 
 }

@@ -2,13 +2,13 @@ package gotemplate
 
 import (
 	"bytes"
-	"crypto/md5"
 	b64 "encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
+	erumd5 "github.com/eru-tech/eru/eru-crypto/md5"
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	"log"
@@ -58,17 +58,30 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			}
 			return string(decodeBytes), nil
 		},
-		"aesEncryptECB": func(pb []byte, k []byte) ([]byte, error) {
-			dst, err := eruaes.EncryptECB(pb, k)
-			return dst, err
+		"hexEncode": func(str []byte) string {
+			return hex.EncodeToString(str)
+		},
+		"hexDecode": func(str string) (string, error) {
+			decodeBytes, err := hex.DecodeString(str)
+			return string(decodeBytes), err
 		},
 		"len": func(j interface{}) (int, error) {
 			strJ, err := json.Marshal(j)
 			return len(strJ), err
-
+		},
+		"aesEncryptECB": func(pb []byte, k []byte) ([]byte, error) {
+			dst, err := eruaes.EncryptECB(pb, k)
+			return dst, err
 		},
 		"aesDecryptECB": func(eb []byte, k []byte) ([]byte, error) {
 			return eruaes.DecryptECB(eb, k)
+		},
+		"aesEncryptCBC": func(pb []byte, k []byte, iv []byte) ([]byte, error) {
+			dst, err := eruaes.EncryptCBC(pb, k, iv)
+			return []byte(dst), err
+		},
+		"aesDecryptCBC": func(eb []byte, k []byte, iv []byte) ([]byte, error) {
+			return eruaes.DecryptCBC(eb, k, iv)
 		},
 		"encryptRSACert": func(j []byte, pubK string) ([]byte, error) {
 			return erursa.EncryptWithCert(j, pubK)
@@ -97,12 +110,14 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 				return "", errors.New(fmt.Sprint("SHA function not defined for ", bits, "bits"))
 			}
 		},
-		"md5": func(b string) string {
-			hash := md5.Sum([]byte(b))
-			log.Print(b)
-			log.Print(hash)
-			log.Print(hex.EncodeToString(hash[:]))
-			return hex.EncodeToString(hash[:])
+		"md5": func(str string, output string) (string, error) {
+			return erumd5.Md5(str, output)
+		},
+		"PKCS7Pad": func(buf []byte, size int) []byte {
+			return eruaes.Pad(buf, size)
+		},
+		"PKCS7Unpad": func(buf []byte) ([]byte, error) {
+			return eruaes.Unpad(buf)
 		},
 		"saveVar": func(vars map[string]interface{}, ketToSave string, valueToSave interface{}) error {
 			vars[ketToSave] = valueToSave
@@ -117,12 +132,14 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return str
 		},
 		"concatMapKeyValUnordered": func(vars map[string]interface{}, seprator string) string {
+			log.Print("inside concatMapKeyValUnordered")
 			str := ""
 			log.Print(vars)
 			for k, _ := range vars {
 				log.Print("inside concatMapKeyValUnordered loop")
 				str = fmt.Sprint(str, k, "=", vars[k], seprator)
 			}
+			log.Print(str)
 			return str
 		},
 		"overwriteMap": func(orgMap map[string]interface{}, b []byte) (d interface{}, err error) {

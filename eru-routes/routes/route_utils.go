@@ -82,19 +82,19 @@ func processTemplate(templateName string, templateString string, vars *FuncTempl
 			return
 		}
 	}
-	log.Println("templateString from processTemplate")
-	log.Println(templateString)
 	goTmpl := gotemplate.GoTemplate{templateName, templateString}
 	outputObj, err := goTmpl.Execute(vars, outputType)
 	if err != nil {
 		log.Println(err)
 		return nil, err
 	} else {
+		log.Print(outputObj)
 		output, err = json.Marshal(outputObj)
 		if err != nil {
 			log.Println(err)
 			return nil, err
 		}
+		log.Print(output)
 		return
 	}
 }
@@ -237,6 +237,8 @@ func makeMultipart(request *http.Request, formData []Headers, fileData []FilePar
 }
 
 func processMultipart(request *http.Request, formDataRemove []string, formData []Headers) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, err error) {
+	log.Print("formData printed from processMultipart")
+	log.Print(formData)
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	log.Print("reqContentType = ", reqContentType)
 	varsFormData = make(map[string]interface{})
@@ -248,76 +250,81 @@ func processMultipart(request *http.Request, formDataRemove []string, formData [
 		log.Println("|||||||||||||||||||||||||||||||||||||||")
 		log.Println("multipart read here from processMultipart")
 		multiPart, err := request.MultipartReader()
+		requestHasMultipart := true
 		if err != nil {
 			log.Println(err)
-			return nil, nil, err
+			requestHasMultipart = false
+			//return nil, nil, err
 		}
-		for {
-			log.Println("inside for loop - multiPart.NextRawPart() ")
-			removeFlag := false
-			part, errPart := multiPart.NextRawPart()
-			if errPart == io.EOF {
-				break
-			}
-			log.Println("formDataRemove = ", formDataRemove)
-			if formDataRemove != nil {
-				for _, v := range formDataRemove {
-					if part.FormName() == v {
-						removeFlag = true
-						break
+		if requestHasMultipart {
+			for {
+				log.Println("inside for loop - multiPart.NextRawPart() ")
+				removeFlag := false
+				part, errPart := multiPart.NextRawPart()
+				if errPart == io.EOF {
+					break
+				}
+				log.Println("formDataRemove = ", formDataRemove)
+				if formDataRemove != nil {
+					for _, v := range formDataRemove {
+						if part.FormName() == v {
+							removeFlag = true
+							break
+						}
 					}
 				}
-			}
-			if !removeFlag {
-				log.Println("inside !removeFlag")
-				if part.FileName() != "" {
-					log.Println(part.FileName())
-					log.Println(part)
-					var tempFile *os.File
-					tempFile, err = ioutil.TempFile(os.TempDir(), "spa")
-					defer tempFile.Close()
-					if err != nil {
-						log.Println("Temp file creation failed")
+				if !removeFlag {
+					log.Println("inside !removeFlag")
+					if part.FileName() != "" {
+						log.Println(part.FileName())
+						log.Println(part)
+						var tempFile *os.File
+						tempFile, err = ioutil.TempFile(os.TempDir(), "spa")
+						defer tempFile.Close()
+						if err != nil {
+							log.Println("Temp file creation failed")
+						}
+						//_, err = io.Copy(tempFile, part)
+						//if err != nil {
+						//	log.Println(err)
+						//	return
+						//}
+						fileWriter, err := createFormFileCopy(multipartWriter, part)
+						//fileWriter, err := multipartWriter.CreateFormFile(part.FormName(), part.FileName())
+						if err != nil {
+							log.Println(err)
+							return nil, nil, err
+						}
+						//_, err = fileWriter.Write()
+						_, err = io.Copy(fileWriter, part)
+						if err != nil {
+							log.Println(err)
+							return nil, nil, err
+						}
+					} else {
+						log.Println("inside else of part.FileName() != \"\"", part.FormName())
+						buf := new(bytes.Buffer)
+						buf.ReadFrom(part)
+						fieldWriter, err := multipartWriter.CreateFormField(part.FormName())
+						if err != nil {
+							log.Println(err)
+							return nil, nil, err
+						}
+						_, err = fieldWriter.Write(buf.Bytes())
+						if err != nil {
+							log.Println(err)
+							return nil, nil, err
+						}
+						varsFormData[part.FormName()] = buf.String()
+						varsFormDataKeyArray = append(varsFormDataKeyArray, part.FormName())
 					}
-					//_, err = io.Copy(tempFile, part)
-					//if err != nil {
-					//	log.Println(err)
-					//	return
-					//}
-					fileWriter, err := createFormFileCopy(multipartWriter, part)
-					//fileWriter, err := multipartWriter.CreateFormFile(part.FormName(), part.FileName())
-					if err != nil {
-						log.Println(err)
-						return nil, nil, err
-					}
-					//_, err = fileWriter.Write()
-					_, err = io.Copy(fileWriter, part)
-					if err != nil {
-						log.Println(err)
-						return nil, nil, err
-					}
-				} else {
-					log.Println("inside else of part.FileName() != \"\"", part.FormName())
-					buf := new(bytes.Buffer)
-					buf.ReadFrom(part)
-					fieldWriter, err := multipartWriter.CreateFormField(part.FormName())
-					if err != nil {
-						log.Println(err)
-						return nil, nil, err
-					}
-					_, err = fieldWriter.Write(buf.Bytes())
-					if err != nil {
-						log.Println(err)
-						return nil, nil, err
-					}
-					varsFormData[part.FormName()] = buf.String()
-					varsFormDataKeyArray = append(varsFormDataKeyArray, part.FormName())
 				}
 			}
 		}
 		log.Println(" ++++++++++++++++++ formData ++++++++++++++++")
 		log.Println(formData)
 		for _, fd := range formData {
+
 			fieldWriter, err := multipartWriter.CreateFormField(fd.Key)
 			if err != nil {
 				log.Println(err)
