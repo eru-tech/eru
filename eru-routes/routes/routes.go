@@ -236,6 +236,9 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	log.Print(trReqVars)
 	log.Println(request.URL)
 	log.Println(request.Method)
+	log.Print("printing request header beofre route.Execute")
+	log.Print(request.Header)
+
 	log.Println(route.TargetHosts)
 	//log.Println(request)
 	request.Header.Set("accept-encoding", "identity")
@@ -248,18 +251,17 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 		return
 	}
 	log.Println(response.Header)
-	response.StatusCode = 301
 	log.Println(response.StatusCode)
 	printResponseBody(response, "printing response After httpClient.Do of route Execute before transformResponse")
+	if route.TransformResponse != "" {
+		trResVars, err = route.transformResponse(response, trReqVars)
 
-	/*trResVars, err = route.transformResponse(response, trReqVars)
-
-	if err != nil {
-		log.Println(err)
-		return
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
 	}
-	printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
-	*/
 	return
 
 }
@@ -338,8 +340,13 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 					return &TemplateVars{}, err
 				}
 				log.Print("form data template processed")
-				log.Print(string(output))
-				route.FormData[i].Value = string(output)
+				outputStr, err := strconv.Unquote(string(output))
+				if err != nil {
+					log.Println(err)
+					return &TemplateVars{}, err
+				}
+				log.Print(outputStr)
+				route.FormData[i].Value = outputStr
 			}
 		}
 		vars.FormData, vars.FormDataKeyArray, err = processMultipart(request, route.RemoveParams.FormData, route.FormData)

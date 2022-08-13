@@ -342,12 +342,15 @@ func processMultipart(request *http.Request, formDataRemove []string, formData [
 		request.Body = ioutil.NopCloser(&reqBody)
 		//request.Header.Set("Content-Type","application/pdf" )
 		log.Println(multipartWriter.FormDataContentType())
+		log.Print("multipartWriter.Boundary() = ", multipartWriter.Boundary())
 		log.Println(" ++++++++++++++++++ varsFormData ++++++++++++++++")
 		log.Println(varsFormData)
 		log.Println(varsFormDataKeyArray)
 		request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
 		request.Header.Set("Content-Length", strconv.Itoa(reqBody.Len()))
 		request.ContentLength = int64(reqBody.Len())
+		log.Print("Content-Type = ", request.Header.Get("Content-Type"))
+		log.Print("Content-Length = ", request.Header.Get("Content-Length"))
 	}
 	return
 }

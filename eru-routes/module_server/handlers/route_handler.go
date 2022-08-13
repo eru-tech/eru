@@ -80,7 +80,6 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				r.Header.Add("claims", string(claimsBytes))
 			}
 		}
-
 		response, _, err := route.Execute(r, url)
 		if err != nil {
 			log.Println(" httpClient.Do error ")
