@@ -305,6 +305,37 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
+
+func LogoutHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		log.Println(projectId)
+		log.Println(authName)
+
+		authObjI, err := s.GetAuth(projectId, authName)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		res, resStatusCode, err := authObjI.Logout(r)
+		if err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, resStatusCode)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			server_handlers.FormatResponse(w, resStatusCode)
+			_ = json.NewEncoder(w).Encode(res)
+			log.Println(w.Header())
+			return
+		}
+	}
+}
+
 func GenerateOtpHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)

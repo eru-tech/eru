@@ -92,7 +92,8 @@ type KratosAuthenticationMethods struct {
 }
 
 type KratosSession struct {
-	Session KratosSessionBody `json:"session"`
+	SessionToken string            `json:"session_token"`
+	Session      KratosSessionBody `json:"session"`
 }
 type KratosSessionBody struct {
 	Id                          string                        `json:"id"`
@@ -195,7 +196,7 @@ func (kratosHydraAuth *KratosHydraAuth) ensureCookieFlowId(flowType string, r *h
 			port = fmt.Sprint(":", port)
 		}
 		newR.URL.Host = fmt.Sprint(kratosHydraAuth.Kratos.PublicHost, port)
-		newR.URL.Path = fmt.Sprint("/self-service/", flowType, "/browser")
+		newR.URL.Path = fmt.Sprint("/self-service/", flowType, "/api")
 		newR.URL.Scheme = kratosHydraAuth.Kratos.PublicScheme
 		newR.Method = "GET"
 		newR.ContentLength = int64(0)
@@ -209,7 +210,7 @@ func (kratosHydraAuth *KratosHydraAuth) ensureCookieFlowId(flowType string, r *h
 		}
 		loginFLowFromRes := json.NewDecoder(flowRes.Body)
 		loginFLowFromRes.DisallowUnknownFields()
-
+		log.Print(loginFLowFromRes)
 		var loginFlow KratosFlow
 
 		if err = loginFLowFromRes.Decode(&loginFlow); err != nil {
@@ -231,7 +232,7 @@ func (kratosHydraAuth *KratosHydraAuth) ensureCookieFlowId(flowType string, r *h
 		newParams := r.URL.Query()
 		newParams.Set("flow", loginFlow.Id)
 		r.URL.RawQuery = newParams.Encode()
-		r.Header.Set("cookie", flowRes.Header.Get("set-cookie"))
+		//r.Header.Set("cookie", flowRes.Header.Get("set-cookie"))
 		log.Println("kratosLoginPostBody")
 		log.Println(kratosLoginPostBody)
 		rb, jmErr := json.Marshal(kratosLoginPostBody)
@@ -246,12 +247,91 @@ func (kratosHydraAuth *KratosHydraAuth) ensureCookieFlowId(flowType string, r *h
 	}
 	return
 }
+func (kratosHydraAuth *KratosHydraAuth) Logout(req *http.Request) (res interface{}, resStatusCode int, err error) {
+	sessionToken := ""
+	tokenObj := make(map[string]interface{})
+	//todo - remove hardcoding of claims and change it to projectConfig.TokenSecret.HeaderKey
+	tokenStr := req.Header.Get("Claims")
+	log.Print("tokenStr = ", tokenStr)
+	if tokenStr != "" {
+		err = json.Unmarshal([]byte(tokenStr), &tokenObj)
+		if err != nil {
+			return nil, 400, err
+		}
+	}
+	if identity, ok := tokenObj["identity"]; ok {
+		if identityMap, iOk := identity.(map[string]interface{}); iOk {
+			if authDetails, adOk := identityMap["auth_details"]; adOk {
+				if authDetailsMap, admOk := authDetails.(map[string]interface{}); admOk {
+					if st, stOk := authDetailsMap["session_token"]; stOk {
+						sessionToken = st.(string)
+					}
+				}
+			}
+		}
+	}
+	log.Print(sessionToken)
+	if sessionToken == "" {
+		err = errors.New("session token not found")
+		log.Print(err)
+		return nil, 400, err
+	}
 
+	refreshTokenFromReq := json.NewDecoder(req.Body)
+	refreshTokenFromReq.DisallowUnknownFields()
+	refreshTokenObj := make(map[string]string)
+	if rtErr := refreshTokenFromReq.Decode(&refreshTokenObj); rtErr != nil {
+		log.Print(rtErr)
+		err = rtErr
+		resStatusCode = 400
+		return
+	}
+	refreshToken := ""
+	if rt, ok := refreshTokenObj["refresh_token"]; ok {
+		refreshToken = rt
+	}
+	if refreshToken == "" {
+		err = errors.New("refresh token not found")
+		log.Print(err)
+		resStatusCode = 400
+		return
+	}
+
+	logoutPostBody := make(map[string]string)
+	logoutPostBody["session_token"] = sessionToken
+
+	port := kratosHydraAuth.Kratos.PublicPort
+	if port != "" {
+		port = fmt.Sprint(":", port)
+	}
+	//req.RequestURI = ""
+	//req.Host = kratosHydraAuth.Kratos.PublicHost
+	//req.URL.Host = fmt.Sprint(kratosHydraAuth.Kratos.PublicHost, port)
+	//req.URL.Path = "/self-service//logout/api"
+	//req.URL.Scheme = kratosHydraAuth.Kratos.PublicScheme
+	//req.Method = "DELETE"
+
+	log.Println(req.URL)
+
+	res, _, _, resStatusCode, logoutErr := utils.CallHttp(http.MethodDelete, fmt.Sprint(kratosHydraAuth.Kratos.PublicScheme, "://", kratosHydraAuth.Kratos.PublicHost, port, "/self-service/logout/api"), req.Header, nil, nil, nil, logoutPostBody)
+	if logoutErr != nil {
+		log.Println(" httpClient.Do error ")
+		log.Println(logoutErr)
+		err = logoutErr
+		return
+	}
+	resStatusCode, err = kratosHydraAuth.Hydra.revokeToken(refreshToken)
+	if res == nil {
+		res = make(map[string]interface{})
+	}
+	return res, resStatusCode, err
+}
 func (kratosHydraAuth *KratosHydraAuth) Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error) {
 	//loginPostBodyMap := loginPostBody.(map[string]interface{})
 	//username := loginPostBodyMap["identifier"]
 	//password := loginPostBodyMap["password"]
 	//log.Println(username,password)
+
 	err = kratosHydraAuth.ensureCookieFlowId("login", req)
 	if err != nil {
 		log.Println(err)
@@ -263,6 +343,7 @@ func (kratosHydraAuth *KratosHydraAuth) Login(req *http.Request) (res interface{
 	log.Println(req.Header.Get("cookie"))
 	log.Println(err)
 	utils.PrintRequestBody(req, "abcabc")
+
 	loginChallenge, loginChallengeCookies, err := kratosHydraAuth.ensureLoginChallenge(req)
 	if err != nil {
 		log.Println(err)
@@ -337,6 +418,7 @@ func (kratosHydraAuth *KratosHydraAuth) Login(req *http.Request) (res interface{
 		identity.Status = kratosSession.Session.Identity.State
 		identity.AuthDetails = IdentityAuth{}
 		identity.AuthDetails.SessionId = kratosSession.Session.Id
+		identity.AuthDetails.SessionToken = kratosSession.SessionToken
 		identity.AuthDetails.AuthenticatedAt = kratosSession.Session.AuthenticatedAt
 		for _, v := range kratosSession.Session.AuthenticationMethods {
 			identity.AuthDetails.AuthenticationMethods = append(identity.AuthDetails.AuthenticationMethods, v)

@@ -555,3 +555,28 @@ func (hydraConfig HydraConfig) acceptConsentRequest(identityClaims interface{}, 
 	}
 	return
 }
+
+func (hydraConfig HydraConfig) revokeToken(token string) (resStatusCode int, err error) {
+	hydraRevokeToken := make(map[string]string)
+	hydraRevokeToken["token"] = token
+	for i, _ := range hydraConfig.HydraClients {
+		//picking up first client as usually there will be only 1 client defined
+		hydraRevokeToken["client_id"] = hydraConfig.HydraClients[i].ClientId
+		break
+	}
+
+	dummyMap := make(map[string]string)
+	headers := http.Header{}
+	headers.Add("content-type", "application/x-www-form-urlencoded")
+
+	postUrl := fmt.Sprint(hydraConfig.getPublicUrl(), "/oauth2/revoke")
+	resp, _, _, statusCode, err := utils.CallHttp(http.MethodPost, postUrl, headers, hydraRevokeToken, nil, dummyMap, dummyMap)
+	log.Println("(resp from oauth2/revoke")
+	log.Print(resp)
+	log.Println(statusCode)
+	if err != nil {
+		log.Println(err)
+		return statusCode, err
+	}
+	return statusCode, nil
+}

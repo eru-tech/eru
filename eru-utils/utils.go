@@ -218,6 +218,8 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 	log.Println(req)
 	PrintRequestBody(req, "printing request body from utils before http call")
 	resp, err := httpClient.Do(req)
+	statusCode = resp.StatusCode
+
 	if err != nil {
 		log.Print("error in httpClient.Do")
 		log.Print(err)
@@ -234,7 +236,6 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 	//	respHeaders[k] = v
 	//}
 	respCookies = resp.Cookies()
-	statusCode = resp.StatusCode
 	defer resp.Body.Close()
 	log.Println("resp.ContentLength = ", resp.ContentLength)
 	if resp.ContentLength > 0 || reqContentType == encodedForm {
@@ -260,14 +261,15 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 	}
 	if resp.StatusCode >= 400 {
 		log.Print("error in httpClient.Do - response status code >=400 ")
+		statusCode = resp.StatusCode
 		resBytes, bytesErr := json.Marshal(res)
 		if bytesErr != nil {
 			log.Print("error in json.Marshal of httpClient.Do response")
 			log.Print(bytesErr)
-			return nil, nil, nil, 0, bytesErr
+			return nil, nil, nil, statusCode, bytesErr
 		}
 		err = errors.New(strings.Replace(string(resBytes), "\"", "", -1))
-		return nil, nil, nil, 0, err
+		return nil, nil, nil, statusCode, err
 	}
 	return
 }

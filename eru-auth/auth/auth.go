@@ -9,6 +9,7 @@ import (
 
 type AuthI interface {
 	Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error)
+	Logout(req *http.Request) (res interface{}, resStatusCode int, err error)
 	VerifyToken(tokenType string, token string) (res interface{}, err error)
 	GetAttribute(attributeName string) (attributeValue interface{}, err error)
 	GetUserInfo(access_token string) (identity Identity, err error)
@@ -34,6 +35,7 @@ type Identity struct {
 }
 
 type IdentityAuth struct {
+	SessionToken                string        `json:"session_token"`
 	SessionId                   string        `json:"session_id"`
 	SessionStatus               bool          `json:"session_status"`
 	ExpiresAt                   time.Time     `json:"expires_at"`
@@ -87,6 +89,10 @@ func (auth *Auth) FetchTokens(refresh_token string) (res interface{}, err error)
 
 func (auth *Auth) Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error) {
 	return nil, nil, errors.New("Login Method not implemented")
+}
+
+func (auth *Auth) Logout(req *http.Request) (res interface{}, resStatusCode int, err error) {
+	return nil, 400, errors.New("Login Method not implemented")
 }
 
 func GetAuth(authType string) AuthI {
