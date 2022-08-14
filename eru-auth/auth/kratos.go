@@ -2,7 +2,6 @@ package auth
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -163,45 +163,46 @@ func (kratosHydraAuth *KratosHydraAuth) PerformPreDeleteTask() (err error) {
 	return
 }
 func (kratosHydraAuth *KratosHydraAuth) ensureCookieFlowId(flowType string, r *http.Request) (err error) {
-	ctx := context.Background()
+	//ctx := context.Background()
 	// fetch flowID from url query parameters
 	flowId := r.URL.Query().Get("flow")
 	// fetch cookie from headers
 	cookie := r.Header.Get("cookie")
 	if flowId == "" || cookie == "" {
 		log.Println("inside flowId == \"\" || cookie == \"\" ")
-		newR := r.Clone(ctx)
-		loginPostBodyFromReq := json.NewDecoder(newR.Body)
-		loginPostBodyFromReq.DisallowUnknownFields()
-
-		var loginPostBody LoginPostBody
-
-		if err = loginPostBodyFromReq.Decode(&loginPostBody); err != nil {
-			log.Println(err)
-			return
+		//newR := r.Clone(ctx)
+		newR := http.Request{
+			Method: "GET",
+			Host:   kratosHydraAuth.Kratos.PublicHost,
+			Header: http.Header{},
 		}
-		log.Println(loginPostBody)
+		port := kratosHydraAuth.Kratos.PublicPort
+		if port != "" {
+			port = fmt.Sprint(":", port)
+		}
+		url := url.URL{
+			Scheme: kratosHydraAuth.Kratos.PublicScheme,
+			Host:   fmt.Sprint(kratosHydraAuth.Kratos.PublicHost, port),
+			Path:   fmt.Sprint("/self-service/", flowType, "/api"),
+		}
+		newR.URL = &url
+		//newR.URL.Host = fmt.Sprint(kratosHydraAuth.Kratos.PublicHost, port)
+		//newR.URL.Path = fmt.Sprint("/self-service/", flowType, "/api")
+		//newR.URL.Scheme = kratosHydraAuth.Kratos.PublicScheme
+		//newR.Method = "GET"
+		newR.ContentLength = int64(0)
 
 		params := newR.URL.Query()
 		params.Del("flow")
 		newR.URL.RawQuery = params.Encode()
 
-		newR.Header.Del("cookie")
+		//newR.Header.Del("cookie")
 		newR.Header.Set("Accept", "application/json")
 		newR.Header.Set("Content-Length", strconv.Itoa(0))
-		newR.RequestURI = ""
-		newR.Host = kratosHydraAuth.Kratos.PublicHost
-		port := kratosHydraAuth.Kratos.PublicPort
-		if port != "" {
-			port = fmt.Sprint(":", port)
-		}
-		newR.URL.Host = fmt.Sprint(kratosHydraAuth.Kratos.PublicHost, port)
-		newR.URL.Path = fmt.Sprint("/self-service/", flowType, "/api")
-		newR.URL.Scheme = kratosHydraAuth.Kratos.PublicScheme
-		newR.Method = "GET"
-		newR.ContentLength = int64(0)
+		//newR.RequestURI = ""
+		//newR.Host = kratosHydraAuth.Kratos.PublicHost
 		log.Println(newR)
-		flowRes, flowErr := httpClient.Do(newR)
+		flowRes, flowErr := httpClient.Do(&newR)
 		if flowErr != nil {
 			log.Println(" httpClient.Do error ")
 			log.Println(flowErr)
@@ -219,7 +220,20 @@ func (kratosHydraAuth *KratosHydraAuth) ensureCookieFlowId(flowType string, r *h
 		}
 		log.Println(loginFlow)
 		log.Println(flowRes.Header)
+
+		loginPostBodyFromReq := json.NewDecoder(r.Body)
+		loginPostBodyFromReq.DisallowUnknownFields()
+
+		var loginPostBody LoginPostBody
+
+		if err = loginPostBodyFromReq.Decode(&loginPostBody); err != nil {
+			log.Println(err)
+			return
+		}
+		log.Println(loginPostBody)
+
 		kratosLoginPostBody := KratosLoginPostBody{}
+
 		kratosLoginPostBody.Identifier = loginPostBody.Username
 		kratosLoginPostBody.Password = loginPostBody.Password
 		kratosLoginPostBody.Method = kratosHydraAuth.Kratos.LoginMethod
