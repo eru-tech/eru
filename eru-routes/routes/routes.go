@@ -253,6 +253,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	log.Println(response.Header)
 	log.Println(response.StatusCode)
 	printResponseBody(response, "printing response After httpClient.Do of route Execute before transformResponse")
+	trResVars = &TemplateVars{}
 	if route.TransformResponse != "" {
 		trResVars, err = route.transformResponse(response, trReqVars)
 
@@ -444,7 +445,9 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 		trReqVars.Vars = make(map[string]interface{})
 	}
 	trReqVars.Vars["Body"] = trReqVars.Body
+
 	trResVars.Vars = trReqVars.Vars
+
 	tmplBodyFromRes := json.NewDecoder(response.Body)
 	tmplBodyFromRes.DisallowUnknownFields()
 	var res interface{}
