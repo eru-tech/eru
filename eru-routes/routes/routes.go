@@ -71,10 +71,10 @@ type RemoveParams struct {
 }
 
 type TargetHost struct {
-	Host       string `eru:"required"`
+	Host       string
 	Port       string
-	Method     string `eru:"required"`
-	Scheme     string `eru:"required"`
+	Method     string
+	Scheme     string
 	Allocation int64
 }
 
@@ -244,15 +244,19 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	request.Header.Set("accept-encoding", "identity")
 	printRequestBody(request, "printing request Before httpClient.Do of route Execute")
 
-	response, err = httpClient.Do(request)
-	if err != nil {
-		log.Println(" httpClient.Do error ")
-		log.Println(err)
-		return
+	if request.Host != "" {
+		response, err = httpClient.Do(request)
+		if err != nil {
+			log.Println(" httpClient.Do error from route execute function")
+			log.Println(err)
+			return
+		}
+		log.Println(response.Header)
+		log.Println(response.StatusCode)
+		printResponseBody(response, "printing response After httpClient.Do of route Execute before transformResponse")
+	} else {
+		response = &http.Response{Header: http.Header{}, StatusCode: http.StatusOK}
 	}
-	log.Println(response.Header)
-	log.Println(response.StatusCode)
-	printResponseBody(response, "printing response After httpClient.Do of route Execute before transformResponse")
 	trResVars = &TemplateVars{}
 	if route.TransformResponse != "" {
 		trResVars, err = route.transformResponse(response, trReqVars)
@@ -411,6 +415,8 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 			//log.Println(string(body))
 			//log.Println(request.Header.Get("Content-Length"))
 			request.Body = ioutil.NopCloser(bytes.NewReader(body))
+			//request.Header.Set("Content-Length", strconv.Itoa(len(body)))
+			//request.ContentLength = int64(len(body))
 		}
 	}
 
@@ -425,9 +431,9 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 func (route *Route) transformResponse(response *http.Response, trReqVars *TemplateVars) (trResVars *TemplateVars, err error) {
 
 	log.Println("inside transformResponse")
-	a, e := json.Marshal(trReqVars)
-	log.Print(string(a))
-	log.Print(e)
+	//a, e := json.Marshal(trReqVars)
+	//log.Print(string(a))
+	//log.Print(e)
 	trResVars = &TemplateVars{}
 	//printResponseBody(response,"printing response from route TransformResponse")
 	for _, h := range route.ResponseHeaders {
@@ -447,29 +453,32 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 	trReqVars.Vars["Body"] = trReqVars.Body
 
 	trResVars.Vars = trReqVars.Vars
-
-	tmplBodyFromRes := json.NewDecoder(response.Body)
-	tmplBodyFromRes.DisallowUnknownFields()
 	var res interface{}
-	if err = tmplBodyFromRes.Decode(&res); err != nil {
-		log.Println("tmplBodyFromRes.Decode error")
-		log.Println(err)
-		return
+	if response.ContentLength > 0 {
+		tmplBodyFromRes := json.NewDecoder(response.Body)
+		tmplBodyFromRes.DisallowUnknownFields()
+		if err = tmplBodyFromRes.Decode(&res); err != nil {
+			log.Println("tmplBodyFromRes.Decode error")
+			log.Println(err)
+			return
+		}
+
 	}
 	rb, err := json.Marshal(res)
 	if err != nil {
 		log.Println(err)
 		return &TemplateVars{}, err
 	}
-
+	err = json.Unmarshal(rb, &trResVars.Body)
+	if err != nil {
+		log.Println(err)
+		return &TemplateVars{}, err
+	}
 	if route.TransformResponse != "" {
-		err = json.Unmarshal(rb, &trResVars.Body)
-		if err != nil {
-			log.Println(err)
-			return &TemplateVars{}, err
-		}
+
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = trResVars
+		log.Print(fvars.ReqVars)
 		output, err := processTemplate(route.RouteName, route.TransformResponse, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
 		if err != nil {
 			log.Println(err)

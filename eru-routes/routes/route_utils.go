@@ -65,7 +65,10 @@ func loadRequestVars(vars *TemplateVars, request *http.Request) (err error) {
 		if err != nil {
 			log.Println(err)
 		}
+		request.Header.Set("Content-Length", strconv.Itoa(len(body)))
+		request.ContentLength = int64(len(body))
 		request.Body = ioutil.NopCloser(bytes.NewReader(body))
+
 	}
 	vars.Vars = make(map[string]interface{})
 	return
@@ -88,13 +91,11 @@ func processTemplate(templateName string, templateString string, vars *FuncTempl
 		log.Println(err)
 		return nil, err
 	} else {
-		log.Print(outputObj)
 		output, err = json.Marshal(outputObj)
 		if err != nil {
 			log.Println(err)
 			return nil, err
 		}
-		log.Print(output)
 		return
 	}
 }

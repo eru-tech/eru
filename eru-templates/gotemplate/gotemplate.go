@@ -46,8 +46,6 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return
 		},
 		"b64Encode": func(str []byte) (string, error) {
-			log.Print("printing str from b64Encode")
-			log.Print(string(str))
 			return b64.StdEncoding.EncodeToString(str), nil
 		},
 		"b64Decode": func(str string) (string, error) {
@@ -100,7 +98,6 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return aesObj.Key, nil
 		},
 		"shaHash": func(b string, bits int) (string, error) {
-			log.Print("string for shaHash = ", b)
 			switch bits {
 			case 256:
 				return hex.EncodeToString(erusha.NewSHA256([]byte(b))), nil
@@ -128,29 +125,21 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			for _, k := range keys {
 				str = fmt.Sprint(str, k, "=", vars[k], "|")
 			}
-			log.Print("string from concatMapKeyVal = ", str)
 			return str
 		},
 		"concatMapKeyValUnordered": func(vars map[string]interface{}, seprator string) string {
-			log.Print("inside concatMapKeyValUnordered")
 			str := ""
-			log.Print(vars)
 			for k, _ := range vars {
-				log.Print("inside concatMapKeyValUnordered loop")
 				str = fmt.Sprint(str, k, "=", vars[k], seprator)
 			}
-			log.Print(str)
 			return str
 		},
 		"overwriteMap": func(orgMap map[string]interface{}, b []byte) (d interface{}, err error) {
-			log.Print("overwriteMap")
-			log.Print(orgMap)
 			newMap := make(map[string]interface{})
 			err = json.Unmarshal(b, &newMap)
 			for k, v := range newMap {
 				orgMap[k] = v
 			}
-			log.Print(orgMap)
 			d, err = json.Marshal(orgMap)
 			return
 		},
@@ -172,10 +161,7 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return
 		},
 		"concat": func(sep string, inStr ...string) (str string, err error) {
-			log.Print("inside concat")
-			log.Print(inStr)
 			str = strings.Join(inStr, sep)
-			log.Print(str)
 			return
 		},
 	}
@@ -195,9 +181,9 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		}
 		return buf.String(), nil
 	case "json":
-		log.Println("buf.String()")
-		log.Println("-------------------")
-		log.Println(buf.String())
+		//log.Println("buf.String()")
+		//log.Println("-------------------")
+		//log.Println(buf.String())
 		if err = json.Unmarshal([]byte(buf.String()), &output); err != nil {
 			return nil, errors.New(fmt.Sprintf("Unable to marhsal templated output to JSON : ", buf.String(), " ", err))
 		} else {

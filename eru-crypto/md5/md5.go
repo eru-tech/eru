@@ -5,12 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 )
 
 func Md5(str string, output string) (string, error) {
 	h := md5.Sum([]byte(str))
-	log.Println(string(h[:]))
+	//log.Println(string(h[:]))
 	if output == "hex" {
 		return hex.EncodeToString(h[:]), nil
 	} else if output == "string" {
