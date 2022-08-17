@@ -280,6 +280,12 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 	vars = &TemplateVars{}
 	vars.FormData = make(map[string]interface{})
 	vars.Body = make(map[string]interface{})
+	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
+	if reqContentType == encodedForm || reqContentType == multiPartForm {
+		vars.FormData["dummy"] = nil
+		// addding the same so loadvars will get length > 0 and avoid processing body
+		// this dummy record will get overwritten as part of return value from process multipart
+	}
 
 	if !reqVarsLoaded {
 		err = loadRequestVars(vars, request)
@@ -312,27 +318,29 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 		}
 	}
 	multiPart := false
-	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
+	//reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	log.Print("reqContentType from makeMultipart = ", reqContentType)
 	if reqContentType == encodedForm || reqContentType == multiPartForm {
 		multiPart = true
 		mpvars := &FuncTemplateVars{}
 
-		body, err3 := ioutil.ReadAll(request.Body)
-		if err3 != nil {
-			err = err3
-			log.Print("error in ioutil.ReadAll(request.Body)")
-			log.Println(err)
-			return
-		}
-		log.Print(vars)
-		err = json.Unmarshal(body, &vars.Body)
-		if err != nil {
-			log.Print("error in json.Unmarshal(body, &vars.Body)")
-			log.Println(err)
-			return &TemplateVars{}, err
-		}
-
+		/*
+			// TODO - need to reopen this comment block if converting a json request to formdata
+			body, err3 := ioutil.ReadAll(request.Body)
+			if err3 != nil {
+				err = err3
+				log.Print("error in ioutil.ReadAll(request.Body)")
+				log.Println(err)
+				return
+			}
+			log.Print(vars)
+			err = json.Unmarshal(body, &vars.Body)
+			if err != nil {
+				log.Print("error in json.Unmarshal(body, &vars.Body)")
+				log.Println(err)
+				return &TemplateVars{}, err
+			}
+		*/
 		mpvars.Vars = vars
 
 		for i, fd := range route.FormData {

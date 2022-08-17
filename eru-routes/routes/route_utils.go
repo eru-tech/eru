@@ -40,6 +40,7 @@ func createFormFile(w *multipart.Writer, contentType string, fieldName string, f
 func loadRequestVars(vars *TemplateVars, request *http.Request) (err error) {
 	log.Println("inside loadRequestVars")
 	log.Println(vars)
+	//utils.PrintRequestBody(request, "printing request body from loadRequestVars")
 	vars.Headers = make(map[string]interface{})
 	for k, v := range request.Header {
 		vars.Headers[k] = v
