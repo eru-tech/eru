@@ -4,7 +4,6 @@ import (
 	//"bytes"
 	"encoding/json"
 	"github.com/eru-tech/eru/eru-routes/module_store"
-	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"io"
 	"log"
@@ -90,8 +89,8 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		defer response.Body.Close()
-		server_handlers.FormatResponse(w, response.StatusCode)
-		//w.WriteHeader(response.StatusCode)
+		//server_handlers.FormatResponse(w, response.StatusCode)
+		w.WriteHeader(response.StatusCode)
 		for k, v := range response.Header {
 			w.Header()[k] = v
 		}
