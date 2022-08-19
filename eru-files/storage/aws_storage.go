@@ -27,7 +27,7 @@ type AwsStorage struct {
 	session        *session.Session
 }
 
-func (awsStorage *AwsStorage) DownloadFile(fileName string, keyName eruaes.AesKey) (file []byte, err error) {
+func (awsStorage *AwsStorage) DownloadFile(folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error) {
 	log.Print(fileName)
 	log.Print(keyName)
 	if awsStorage.session == nil {
@@ -47,7 +47,7 @@ func (awsStorage *AwsStorage) DownloadFile(fileName string, keyName eruaes.AesKe
 	downloader := s3manager.NewDownloader(awsStorage.session)
 	_, err = downloader.Download(tmpfile, &s3.GetObjectInput{
 		Bucket: aws.String(awsStorage.BucketName),
-		Key:    aws.String(fmt.Sprint("AB/", fileName)),
+		Key:    aws.String(fmt.Sprint(folderPath, "/", fileName)),
 	})
 	if err != nil {
 		log.Print("err from download = ", err)

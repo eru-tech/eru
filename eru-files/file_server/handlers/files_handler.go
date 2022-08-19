@@ -66,7 +66,7 @@ func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		file, err := s.DownloadFile(projectId, storageName, dfFromObj["file_name"])
+		file, err := s.DownloadFile(projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"])
 		if err != nil {
 			log.Println(err)
 			server_handlers.FormatResponse(w, 400)

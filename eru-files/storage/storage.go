@@ -9,7 +9,7 @@ import (
 
 type StorageI interface {
 	UploadFile(file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error)
-	DownloadFile(fileName string, keyName eruaes.AesKey) (file []byte, err error)
+	DownloadFile(folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error)
 	GetAttribute(attributeName string) (attributeValue interface{}, err error)
 	MakeFromJson(rj *json.RawMessage) error
 	Init() error

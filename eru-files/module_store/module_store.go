@@ -26,7 +26,7 @@ type ModuleStoreI interface {
 	GenerateRsaKeyPair(projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (rsaKeyPair erursa.RsaKeyPair, err error)
 	GenerateAesKey(projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (aesKey eruaes.AesKey, err error)
 	UploadFile(projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string) (docId string, err error)
-	DownloadFile(projectId string, storageName string, fileName string) (file []byte, err error)
+	DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, err error)
 	//TestEncrypt(projectId string, text string)
 	//TestAesEncrypt(projectId string, text string, keyName string)
 }
@@ -151,7 +151,7 @@ func (ms *ModuleStore) UploadFile(projectId string, storageName string, file mul
 	}
 }
 
-func (ms *ModuleStore) DownloadFile(projectId string, storageName string, fileName string) (file []byte, err error) {
+func (ms *ModuleStore) DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, err error) {
 	log.Println("inside DownloadFile")
 	prj, err := ms.GetProjectConfig(projectId)
 	if err != nil {
@@ -170,7 +170,7 @@ func (ms *ModuleStore) DownloadFile(projectId string, storageName string, fileNa
 			return
 		}
 		log.Print(keyName.(string))
-		file, err = storageObj.DownloadFile(fileName, prj.AesKeys[keyName.(string)])
+		file, err = storageObj.DownloadFile(folderPath, fileName, prj.AesKeys[keyName.(string)])
 		return file, err
 	}
 }
