@@ -243,7 +243,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	//log.Println(request)
 	request.Header.Set("accept-encoding", "identity")
 	printRequestBody(request, "printing request Before httpClient.Do of route Execute")
-
+	log.Print("request.Host = ", request.Host)
 	if request.Host != "" {
 		response, err = httpClient.Do(request)
 		if err != nil {
@@ -260,11 +260,12 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 		rb, err := json.Marshal(make(map[string]interface{}))
 		if err != nil {
 			log.Println(err)
-			err = json.Unmarshal(rb, &response.Body)
-			if err != nil {
-				log.Println(err)
-			}
+		} else {
+			log.Print("making dummy response body")
+			response.Body = ioutil.NopCloser(bytes.NewReader(rb))
 		}
+		log.Print("response.Body")
+		log.Print(response.Body)
 	}
 	trResVars = &TemplateVars{}
 
@@ -472,8 +473,10 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 
 	trResVars.Vars = trReqVars.Vars
 	var res interface{}
+	log.Print(response.Body)
 	tmplBodyFromRes := json.NewDecoder(response.Body)
 	tmplBodyFromRes.DisallowUnknownFields()
+	log.Print("tmplBodyFromRes = ", tmplBodyFromRes)
 	if err = tmplBodyFromRes.Decode(&res); err != nil {
 		log.Println("tmplBodyFromRes.Decode error")
 		log.Println(err)

@@ -329,6 +329,10 @@ func (funcStep *FuncStep) transformResponse(response *http.Response, trReqVars *
 		fvars.Vars = vars
 		fvars.ResVars = resVars
 		fvars.ReqVars = reqVars
+
+		log.Print("fvars.ReqVars")
+		log.Print(fvars.ReqVars["generateotp"])
+
 		output, err := processTemplate(funcStep.RouteName, funcStep.TransformResponse, fvars, "json", funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl)
 		if err != nil {
 			log.Println(err)
