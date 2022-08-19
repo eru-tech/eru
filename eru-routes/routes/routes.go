@@ -253,11 +253,21 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 		}
 		log.Println(response.Header)
 		log.Println(response.StatusCode)
+		log.Print(response.ContentLength)
 		printResponseBody(response, "printing response After httpClient.Do of route Execute before transformResponse")
 	} else {
 		response = &http.Response{Header: http.Header{}, StatusCode: http.StatusOK}
+		rb, err := json.Marshal(make(map[string]interface{}))
+		if err != nil {
+			log.Println(err)
+			err = json.Unmarshal(rb, &response.Body)
+			if err != nil {
+				log.Println(err)
+			}
+		}
 	}
 	trResVars = &TemplateVars{}
+
 	if route.TransformResponse != "" {
 		trResVars, err = route.transformResponse(response, trReqVars)
 
@@ -462,16 +472,14 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 
 	trResVars.Vars = trReqVars.Vars
 	var res interface{}
-	if response.ContentLength > 0 {
-		tmplBodyFromRes := json.NewDecoder(response.Body)
-		tmplBodyFromRes.DisallowUnknownFields()
-		if err = tmplBodyFromRes.Decode(&res); err != nil {
-			log.Println("tmplBodyFromRes.Decode error")
-			log.Println(err)
-			return
-		}
-
+	tmplBodyFromRes := json.NewDecoder(response.Body)
+	tmplBodyFromRes.DisallowUnknownFields()
+	if err = tmplBodyFromRes.Decode(&res); err != nil {
+		log.Println("tmplBodyFromRes.Decode error")
+		log.Println(err)
+		return
 	}
+	log.Print(res)
 	rb, err := json.Marshal(res)
 	if err != nil {
 		log.Println(err)
@@ -482,11 +490,12 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 		log.Println(err)
 		return &TemplateVars{}, err
 	}
+	log.Print(trResVars)
 	if route.TransformResponse != "" {
 
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = trResVars
-		log.Print(fvars.ReqVars)
+		log.Print(fvars.Vars.Body)
 		output, err := processTemplate(route.RouteName, route.TransformResponse, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
 		if err != nil {
 			log.Println(err)
