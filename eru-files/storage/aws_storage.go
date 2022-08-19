@@ -7,12 +7,14 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
 	"github.com/segmentio/ksuid"
 	"io/ioutil"
 	"log"
 	"mime/multipart"
+	"os"
 )
 
 type AwsStorage struct {
@@ -25,10 +27,76 @@ type AwsStorage struct {
 	session        *session.Session
 }
 
+func (awsStorage *AwsStorage) DownloadFile(fileName string, keyName eruaes.AesKey) (file []byte, err error) {
+	log.Print(fileName)
+	log.Print(keyName)
+	if awsStorage.session == nil {
+		log.Print("creating AWS session")
+		err = awsStorage.Init()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	}
+
+	tmpfile, err := ioutil.TempFile("", fileName)
+	if err != nil {
+		return nil, err
+	}
+
+	downloader := s3manager.NewDownloader(awsStorage.session)
+	_, err = downloader.Download(tmpfile, &s3.GetObjectInput{
+		Bucket: aws.String(awsStorage.BucketName),
+		Key:    aws.String(fmt.Sprint("AB/", fileName)),
+	})
+	if err != nil {
+		log.Print("err from download = ", err)
+		_ = tmpfile.Close()
+		_ = os.Remove(tmpfile.Name())
+		return nil, err
+	}
+	byteContainer, err := ioutil.ReadAll(tmpfile)
+	if err != nil {
+		log.Println(err)
+		_ = tmpfile.Close()
+		_ = os.Remove(tmpfile.Name())
+		return
+	}
+	defer func() {
+		_ = tmpfile.Close()
+		_ = os.Remove(tmpfile.Name())
+	}()
+
+	log.Print(awsStorage.EncryptFiles)
+	if awsStorage.EncryptFiles {
+		log.Print(len(byteContainer))
+		byteContainer, err = eruaes.DecryptCBC(byteContainer, keyName.Key, keyName.Vector)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		byteContainer, err = eruaes.Unpad(byteContainer)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		log.Print(len(byteContainer))
+	}
+	log.Print("---------")
+	log.Print(len(byteContainer))
+	//log.Print(byteContainer)
+
+	//return &model.File{File: bufio.NewReader(tmpfile), Close: func() error {
+	//defer func() { _ = os.Remove(tmpfile.Name()) }()
+	//return tmpfile.Close()
+	//}}, nil
+	return byteContainer, nil
+}
+
 func (awsStorage *AwsStorage) UploadFile(file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
 	log.Println("inside AwsStorage UploadFile")
-	log.Print(string(keyName.Key))
 	if awsStorage.session == nil {
+		log.Print("creating AWS session")
 		err = awsStorage.Init()
 		if err != nil {
 			log.Println(err)
@@ -49,7 +117,10 @@ func (awsStorage *AwsStorage) UploadFile(file multipart.File, header *multipart.
 	log.Println(awsStorage.EncryptFiles)
 
 	if awsStorage.EncryptFiles {
-		byteContainer, err = eruaes.Encrypt(byteContainer, string(keyName.Key))
+		log.Print(len(byteContainer))
+		byteContainer = eruaes.Pad(byteContainer, 16)
+		log.Print(len(byteContainer))
+		byteContainer, err = eruaes.EncryptCBC(byteContainer, keyName.Key, keyName.Vector)
 		if err != nil {
 			log.Println(err)
 			return

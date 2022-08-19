@@ -1,12 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/eru-tech/eru/eru-files/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -40,7 +42,44 @@ func TestAesEncrypt(s module_store.ModuleStoreI) http.HandlerFunc {
 }
 
 */
+func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		log.Println("FileUploadHandler called")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		storageName := vars["storagename"]
 
+		var err error
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		defer cancel()
+		_ = ctx
+
+		dfFromReq := json.NewDecoder(r.Body)
+		dfFromReq.DisallowUnknownFields()
+		dfFromObj := make(map[string]string)
+
+		if err := dfFromReq.Decode(&dfFromObj); err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		file, err := s.DownloadFile(projectId, storageName, dfFromObj["file_name"])
+		if err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		//server_handlers.FormatResponse(w,http.StatusOK)
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", "attachment; filename=test.pdf")
+		_, _ = io.Copy(w, bytes.NewReader(file))
+	}
+}
 func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -86,7 +125,7 @@ func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			formData := r.MultipartForm
 			folderPath := formData.Value["folderpath"][0]
 			docTypes := formData.Value["doctype"]
-			keyPairName := formData.Value["keyPairName"][0]
+			//keyPairName := formData.Value["keyPairName"][0]
 			log.Println(folderPath)
 			log.Println(docTypes)
 			fileNames := make(map[string]string)
@@ -112,7 +151,7 @@ func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				log.Println(f.Size)
 				log.Println(f.Header)
 				//TODO - check for file size and check for file meme
-				docId, err := s.UploadFile(projectId, storageName, file, f, docType, folderPath, keyPairName)
+				docId, err := s.UploadFile(projectId, storageName, file, f, docType, folderPath)
 				if err != nil {
 					log.Println(err)
 					server_handlers.FormatResponse(w, 400)

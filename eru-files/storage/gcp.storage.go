@@ -15,6 +15,10 @@ func (gcpStorage *GcpStorage) UploadFile(file multipart.File, header *multipart.
 	return docId, err
 }
 
+func (gcpStorage *GcpStorage) DownloadFile(fileName string, keyName eruaes.AesKey) (file []byte, err error) {
+	return
+}
+
 func (gcpStorage *GcpStorage) Init() error {
 	return nil
 }

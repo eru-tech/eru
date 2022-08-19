@@ -25,7 +25,8 @@ type ModuleStoreI interface {
 	RemoveStorage(storageName string, projectId string, realStore ModuleStoreI) error
 	GenerateRsaKeyPair(projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (rsaKeyPair erursa.RsaKeyPair, err error)
 	GenerateAesKey(projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (aesKey eruaes.AesKey, err error)
-	UploadFile(projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string, keyName string) (docId string, err error)
+	UploadFile(projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string) (docId string, err error)
+	DownloadFile(projectId string, storageName string, fileName string) (file []byte, err error)
 	//TestEncrypt(projectId string, text string)
 	//TestAesEncrypt(projectId string, text string, keyName string)
 }
@@ -125,7 +126,7 @@ func (ms *ModuleStore) SaveStorage(storageObj storage.StorageI, projectId string
 	return nil
 }
 
-func (ms *ModuleStore) UploadFile(projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName string) (docId string, err error) {
+func (ms *ModuleStore) UploadFile(projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string) (docId string, err error) {
 	log.Println("inside UploadFile")
 	log.Println(docType)
 	prj, err := ms.GetProjectConfig(projectId)
@@ -133,12 +134,44 @@ func (ms *ModuleStore) UploadFile(projectId string, storageName string, file mul
 		log.Print("error in GetProjectConfig ", err)
 		return
 	}
+
 	if storageObj, ok := prj.Storages[storageName]; !ok {
 		err = errors.New(fmt.Sprint("storage ", storageName, " not found"))
 		return
 	} else {
-		docId, err = storageObj.UploadFile(file, header, docType, folderPath, prj.AesKeys[keyName])
+		keyName, kpErr := storageObj.GetAttribute("KeyPair")
+		if err != nil {
+			err = kpErr
+			log.Print(err)
+			return
+		}
+		log.Print(keyName.(string))
+		docId, err = storageObj.UploadFile(file, header, docType, folderPath, prj.AesKeys[keyName.(string)])
 		return
+	}
+}
+
+func (ms *ModuleStore) DownloadFile(projectId string, storageName string, fileName string) (file []byte, err error) {
+	log.Println("inside DownloadFile")
+	prj, err := ms.GetProjectConfig(projectId)
+	if err != nil {
+		log.Print("error in GetProjectConfig ", err)
+		return
+	}
+
+	if storageObj, ok := prj.Storages[storageName]; !ok {
+		err = errors.New(fmt.Sprint("storage ", storageName, " not found"))
+		return
+	} else {
+		keyName, kpErr := storageObj.GetAttribute("KeyPair")
+		if err != nil {
+			err = kpErr
+			log.Print(err)
+			return
+		}
+		log.Print(keyName.(string))
+		file, err = storageObj.DownloadFile(fileName, prj.AesKeys[keyName.(string)])
+		return file, err
 	}
 }
 

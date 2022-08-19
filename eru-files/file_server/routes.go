@@ -3,11 +3,13 @@ package file_server
 import (
 	file_handlers "github.com/eru-tech/eru/eru-files/file_server/handlers"
 	"github.com/eru-tech/eru/eru-files/module_store"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"net/http"
 )
 
 func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
+	server_handlers.ServerName = "erufiles"
 	//store routes specific to files
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 
@@ -25,6 +27,7 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	// routes for file events
 	fileRouter := serverRouter.PathPrefix("/files/{project}").Subrouter()
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/upload").HandlerFunc(file_handlers.FileUploadHandler(sh.Store))
+	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/{storagename}/download").HandlerFunc(file_handlers.FileDownloadHandler(sh.Store))
 	//fileRouter.Methods(http.MethodPost).Path("/testEncrypt/{text}").HandlerFunc(file_handlers.TestEncrypt(sh.Store))
 	//fileRouter.Methods(http.MethodPost).Path("/testAesEncrypt/{text}/{keyname}").HandlerFunc(file_handlers.TestAesEncrypt(sh.Store))
 }

@@ -11,9 +11,11 @@ import (
 )
 
 type AesKey struct {
-	KeyHex string `json:"key_string" eru:"required"`
-	Key    []byte `json:"key" eru:"required"`
-	Bits   int    `json:"bits" eru:"required"`
+	KeyHex    string `json:"key_string" eru:"required"`
+	Key       []byte `json:"key" eru:"required"`
+	VectorHex string `json:"iv_string" eru:"required"`
+	Vector    []byte `json:"iv" eru:"required"`
+	Bits      int    `json:"bits" eru:"required"`
 }
 
 type ecb struct {
@@ -78,12 +80,18 @@ func GenerateKey(bits int) (aesKey AesKey, err error) {
 	log.Println("inside GenerateKey")
 
 	aesKey.Bits = bits
-	bytes := make([]byte, bits/8) //generate a random xx byte key for AES-256
+	bytes := make([]byte, bits) //generate a random xx byte key for AES-256
 	if _, err := rand.Read(bytes); err != nil {
+		log.Println(err.Error())
+	}
+	iv := make([]byte, 16) //generate a random 16 byte vector
+	if _, err := rand.Read(iv); err != nil {
 		log.Println(err.Error())
 	}
 	aesKey.KeyHex = hex.EncodeToString(bytes)
 	aesKey.Key = bytes
+	aesKey.VectorHex = hex.EncodeToString(iv)
+	aesKey.Vector = iv
 	log.Println(bytes)
 	log.Println(string(bytes))
 	return
