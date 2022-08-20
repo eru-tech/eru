@@ -460,7 +460,7 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string)
 			if reflect.TypeOf(val).Kind().String() == "string" {
 				//TODO due to below statement - 2022-07-27T18:30:00.000Z date in filter is failing if passed in this format
 				//parse for date
-				if !strings.Contains(reflect.ValueOf(val).String(), ".") {
+				if !strings.Contains(reflect.ValueOf(val).String(), "..") {
 					valPrefix = "'"
 					valSuffix = "'"
 				}
