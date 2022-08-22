@@ -90,10 +90,13 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		defer response.Body.Close()
 		//server_handlers.FormatResponse(w, response.StatusCode)
-		w.WriteHeader(response.StatusCode)
 		for k, v := range response.Header {
-			w.Header()[k] = v
+			log.Print(k, " = ", v)
+			for _, h := range v {
+				w.Header().Set(k, h)
+			}
 		}
+		w.WriteHeader(response.StatusCode)
 		_, err = io.Copy(w, response.Body)
 		if err != nil {
 			log.Println("================")
@@ -102,6 +105,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+		log.Print(w.Header())
 		return
 	}
 
