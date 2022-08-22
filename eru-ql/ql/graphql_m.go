@@ -396,7 +396,7 @@ func (sqlObj *SQLObjectM) MakeMutationQuery(doc *module_model.MutationRecord, ta
 	//log.Print(fmt.Sprint("sqlObj.MutationReturn.ReturnDoc = ", sqlObj.MutationReturn.ReturnDoc))
 	returningStr := ""
 	//log.Print("sqlObj.WhereClause == ", sqlObj.WhereClause)
-	strWhereClause, e := processWhereClause(sqlObj.WhereClause, "", sqlObj.MainTableName)
+	strWhereClause, e := processWhereClause(sqlObj.WhereClause, "", sqlObj.MainTableName, false)
 	if e != "" {
 		log.Print(e)
 		//TODO to return errors to main result

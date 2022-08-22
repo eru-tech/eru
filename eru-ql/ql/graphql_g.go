@@ -320,11 +320,12 @@ func (sqlObj *SQLObjectQ) processColumnList(sel []ast.Selection, tableName strin
 	return sqlCols, err
 }
 
-func processWhereClause(val interface{}, parentKey string, mainTableName string) (whereClause string, err string) { //, gqr *graphQLRead
+func processWhereClause(val interface{}, parentKey string, mainTableName string, isJoinClause bool) (whereClause string, err string) { //, gqr *graphQLRead
 	//q := pd.Variables["where"]
 	//log.Print("start start start start start start start start ")
 	//defer log.Print("end end end end end end end end ")
 	//log.Print("reflect.TypeOf(val) = " + reflect.TypeOf(val).Kind().String())
+	log.Print("reflect.ValueOf(val) = ", reflect.ValueOf(val))
 	if val != nil {
 		if strings.HasPrefix(parentKey, "CONST_") {
 			parentKey = fmt.Sprint("'", strings.Replace(parentKey, "CONST_", "", 1), "'")
@@ -346,8 +347,10 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string)
 				if newVal != nil {
 					var valPrefix, valSuffix = "", ""
 					if reflect.TypeOf(newVal).Kind().String() == "string" {
-						valPrefix = "'"
-						valSuffix = "'"
+						if !strings.Contains(newVal.(string), ".") {
+							valPrefix = "'"
+							valSuffix = "'"
+						}
 					}
 					if v.String() == "$or" || v.String() == "or" {
 						if reflect.TypeOf(newVal).Kind().String() != "slice" {
@@ -358,7 +361,7 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string)
 						log.Print("s === ", s)
 						innerTempArray := make([]string, s.Len())
 						for ii := 0; ii < s.Len(); ii++ {
-							innerTempArray[ii], err = processWhereClause(s.Index(ii).Interface(), v.String(), mainTableName)
+							innerTempArray[ii], err = processWhereClause(s.Index(ii).Interface(), v.String(), mainTableName, isJoinClause)
 							if err != "" {
 								return "", err
 							}
@@ -427,7 +430,9 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string)
 							}
 						default:
 							str := ""
-							str, err = processWhereClause(newVal, eru_utils.ReplaceUnderscoresWithDots(v.String()), mainTableName)
+							log.Print(newVal)
+							log.Print(mainTableName)
+							str, err = processWhereClause(newVal, eru_utils.ReplaceUnderscoresWithDots(v.String()), mainTableName, isJoinClause)
 							log.Print("str = ", str)
 							if str == "" {
 								log.Print("skipping whereclause for ", newVal, " as there is no value provided by user  : ", str)
@@ -460,12 +465,14 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string)
 			if reflect.TypeOf(val).Kind().String() == "string" {
 				//TODO due to below statement - 2022-07-27T18:30:00.000Z date in filter is failing if passed in this format
 				//parse for date
-				if !strings.Contains(reflect.ValueOf(val).String(), "..") {
+				log.Print("reflect.ValueOf(val).String()")
+				log.Print(reflect.ValueOf(val).String())
+				if !strings.Contains(reflect.ValueOf(val).String(), ".") || !isJoinClause {
 					valPrefix = "'"
 					valSuffix = "'"
 				}
 			}
-			return fmt.Sprint(parentKey, " = ", valPrefix, reflect.ValueOf(val), valSuffix), ""
+			return fmt.Sprint(parentKey, " = ", valPrefix, reflect.ValueOf(val).String(), valSuffix), ""
 		default:
 			return "", ""
 		}
@@ -582,7 +589,7 @@ func (sqlObj *SQLObjectQ) processJoins(val map[string]interface{}) (strJoinClaus
 						log.Print("valid values for joinType are LEFT RIGHT and INNER ")
 					}
 				} else if vv.String() == "on" {
-					oc, _ := processWhereClause(reflect.ValueOf(v).MapIndex(vv).Interface(), "", sqlObj.MainTableName)
+					oc, _ := processWhereClause(reflect.ValueOf(v).MapIndex(vv).Interface(), "", sqlObj.MainTableName, true)
 					onClause = oc
 					log.Print("onClause == ", onClause)
 				}
@@ -605,7 +612,7 @@ func (sqlObj *SQLObjectQ) MakeQuery(sqlMaker ds.SqlMakerI) (err error) {
 	log.Print("sqlObj.JoinClause === ", sqlObj.JoinClause)
 	strJoinClause := sqlObj.processJoins(sqlObj.JoinClause)
 	log.Print("strJoinClause == ", strJoinClause)
-	strWhereClause, e := processWhereClause(sqlObj.WhereClause, "", sqlObj.MainTableName)
+	strWhereClause, e := processWhereClause(sqlObj.WhereClause, "", sqlObj.MainTableName, false)
 	if e != "" {
 		err = errors.New(e)
 	}
