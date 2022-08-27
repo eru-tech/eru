@@ -369,6 +369,8 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 						tempArray = append(tempArray, fmt.Sprint("( ", strings.Join(innerTempArray, " or "), " )"))
 
 					} else {
+						log.Print("inside else of or = ", v.String())
+
 						op := ""
 						switch v.String() {
 						case "$gte":
@@ -472,7 +474,8 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 					valSuffix = "'"
 				}
 			}
-			return fmt.Sprint(parentKey, " = ", valPrefix, reflect.ValueOf(val).String(), valSuffix), ""
+			log.Print("valPrefix, reflect.ValueOf(val).String() = ", valPrefix, reflect.ValueOf(val))
+			return fmt.Sprint(parentKey, " = ", valPrefix, reflect.ValueOf(val), valSuffix), ""
 		default:
 			return "", ""
 		}

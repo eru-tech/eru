@@ -22,6 +22,8 @@ type GraphQLData struct {
 	QueryObject map[string]QueryObject `json:"_"`
 }
 
+var KeyWords = []string{"null"}
+
 func (gqd *GraphQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool) {
 	gqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj, isPublic)
 	//gqd.Query=mq.Query
@@ -466,6 +468,13 @@ func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, e
 }
 
 func replaceVariableValue(varName string, vars map[string]interface{}) (res interface{}, err error) {
+
+	for _, kw := range KeyWords {
+		if kw == varName {
+			return fmt.Sprint("$", varName), nil
+		}
+	}
+
 	if vars[varName] == nil {
 		return nil, errors.New(fmt.Sprint("Variable value not found for '", varName, "'"))
 	}
