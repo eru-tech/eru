@@ -378,7 +378,8 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 			return
 		}
 	}
-	err = processParams(request, route.RemoveParams.QueryParams, route.QueryParams)
+
+	err = processParams(request, route.RemoveParams.QueryParams, route.QueryParams, vars, nil, nil)
 	if err != nil {
 		return
 	}

@@ -242,7 +242,7 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 		}
 	}
 
-	err = processParams(req, funcStep.RemoveParams.QueryParams, funcStep.QueryParams)
+	err = processParams(req, funcStep.RemoveParams.QueryParams, funcStep.QueryParams, vars, reqVars, resVars)
 	if err != nil {
 		return
 	}

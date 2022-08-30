@@ -357,10 +357,33 @@ func processMultipart(request *http.Request, formDataRemove []string, formData [
 	return
 }
 
-func processParams(request *http.Request, queryParamsRemove []string, queryParams []Headers) (err error) {
+func processParams(request *http.Request, queryParamsRemove []string, queryParams []Headers, vars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (err error) {
+
+	pvars := &FuncTemplateVars{}
+	pvars.Vars = vars
+	pvars.ReqVars = reqVars
+	pvars.ResVars = resVars
 	params := request.URL.Query()
 	for _, p := range queryParams {
-		params.Set(p.Key, p.Value)
+		if p.IsTemplate {
+			log.Print(pvars)
+			valueBytes, terr := processTemplate(p.Key, p.Value, pvars, "string", "", "")
+			if terr != nil {
+				err = terr
+				log.Print(err)
+				return
+			}
+			valueStr, uerr := strconv.Unquote(string(valueBytes))
+			if terr != nil {
+				err = uerr
+				log.Print(err)
+				return
+			}
+			log.Print("valueStr = ", valueStr)
+			params.Set(p.Key, valueStr)
+		} else {
+			params.Set(p.Key, p.Value)
+		}
 	}
 
 	if queryParamsRemove != nil {
@@ -368,6 +391,7 @@ func processParams(request *http.Request, queryParamsRemove []string, queryParam
 			params.Del(v)
 		}
 	}
+	log.Print(params)
 	request.URL.RawQuery = params.Encode()
 	return
 }
