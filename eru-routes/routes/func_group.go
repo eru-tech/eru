@@ -194,6 +194,7 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 	//printRequestBody(request,"body from funcStep transformRequest")
 	defer request.Body.Close()
 	vars = &TemplateVars{}
+	log.Print(mainRouteName, " == ", funcStep.RouteName)
 	if mainRouteName == funcStep.RouteName {
 		err = loadRequestVars(vars, request)
 		if err != nil {
@@ -320,10 +321,22 @@ func (funcStep *FuncStep) transformResponse(response *http.Response, trReqVars *
 	tmplBodyFromRes := json.NewDecoder(response.Body)
 	tmplBodyFromRes.DisallowUnknownFields()
 	if err = tmplBodyFromRes.Decode(&vars.Body); err != nil {
-		log.Println("tmplBodyFromRes.Decode error")
+		log.Println("tmplBodyFromRes.Decode error from func")
 		log.Println(err)
-		return
+		body, readErr := ioutil.ReadAll(tmplBodyFromRes.Buffered())
+		if readErr != nil {
+			err = readErr
+			log.Println("ioutil.ReadAll(response.Body) error")
+			log.Println(err)
+			return
+		}
+		err = nil
+		log.Print("string(body) = ", string(body))
+		tempBody := make(map[string]string)
+		tempBody["data"] = string(body)
+		vars.Body = tempBody
 	}
+	log.Print(vars.Body)
 	if funcStep.TransformResponse != "" {
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = vars

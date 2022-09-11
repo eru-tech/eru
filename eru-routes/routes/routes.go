@@ -479,9 +479,18 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 	tmplBodyFromRes.DisallowUnknownFields()
 	log.Print("tmplBodyFromRes = ", tmplBodyFromRes)
 	if err = tmplBodyFromRes.Decode(&res); err != nil {
-		log.Println("tmplBodyFromRes.Decode error")
+		log.Println("tmplBodyFromRes.Decode error from routes")
 		log.Println(err)
-		return
+		body, readErr := ioutil.ReadAll(response.Body)
+		if readErr != nil {
+			err = readErr
+			log.Println("ioutil.ReadAll(response.Body) error")
+			log.Println(err)
+			return
+		}
+		tempBody := make(map[string]string)
+		tempBody["data"] = string(body)
+		res = tempBody
 	}
 	log.Print(res)
 	rb, err := json.Marshal(res)

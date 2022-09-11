@@ -60,6 +60,7 @@ func loadRequestVars(vars *TemplateVars, request *http.Request) (err error) {
 		if err = tmplBodyFromReq.Decode(&vars.Body); err != nil {
 			log.Println("error decode request body")
 			log.Println(err)
+			err = nil
 			//return err
 		}
 		body, err := json.Marshal(vars.Body)
