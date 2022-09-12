@@ -298,7 +298,7 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 	vars.FormData = make(map[string]interface{})
 	vars.Body = make(map[string]interface{})
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
-	if reqContentType == multiPartForm {
+	if reqContentType == encodedForm || reqContentType == multiPartForm {
 		vars.FormData["dummy"] = nil
 		// addding the same so loadvars will get length > 0 and avoid processing body
 		// this dummy record will get overwritten as part of return value from process multipart
