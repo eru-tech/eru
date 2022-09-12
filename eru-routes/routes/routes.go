@@ -386,8 +386,9 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 			return
 		}
 	} else if reqContentType == encodedForm {
-		err := request.ParseForm()
-		if err != nil {
+		rpfErr := request.ParseForm()
+		if rpfErr != nil {
+			err = rpfErr
 			log.Print("error from request.ParseForm() = ", err.Error())
 			return
 		}
