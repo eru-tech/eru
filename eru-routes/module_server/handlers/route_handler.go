@@ -91,16 +91,19 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		defer response.Body.Close()
 		//server_handlers.FormatResponse(w, response.StatusCode)
 		log.Print("before range response.Header")
-		for k, v := range response.Header {
-			for _, h := range v {
-				w.Header().Set(k, h)
-			}
-		}
+
 		if route.Redirect {
 			log.Print("before redirect")
 			http.Redirect(w, r, route.RedirectUrl, http.StatusSeeOther)
+			log.Print(w.Header())
+			log.Print(w)
 			log.Print("after redirect")
 		} else {
+			for k, v := range response.Header {
+				for _, h := range v {
+					w.Header().Set(k, h)
+				}
+			}
 			log.Print("inside else route.Redirect = false")
 			w.WriteHeader(response.StatusCode)
 			_, err = io.Copy(w, response.Body)
