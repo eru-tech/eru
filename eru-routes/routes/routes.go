@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -228,6 +229,8 @@ func (route *Route) getTargetHost() (targetHost TargetHost, err error) {
 func (route *Route) Execute(request *http.Request, url string) (response *http.Response, trResVars *TemplateVars, err error) {
 	log.Println("inside route.Execute")
 	log.Println("url = ", url)
+	utils.PrintRequestBody(request, "printing request from route Execute")
+	log.Print(request.Header)
 
 	trReqVars, err := route.transformRequest(request, url)
 	if err != nil {
@@ -295,7 +298,7 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 	vars.FormData = make(map[string]interface{})
 	vars.Body = make(map[string]interface{})
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
-	if reqContentType == encodedForm || reqContentType == multiPartForm {
+	if reqContentType == multiPartForm {
 		vars.FormData["dummy"] = nil
 		// addding the same so loadvars will get length > 0 and avoid processing body
 		// this dummy record will get overwritten as part of return value from process multipart
@@ -334,7 +337,7 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 	multiPart := false
 	//reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	log.Print("reqContentType from makeMultipart = ", reqContentType)
-	if reqContentType == encodedForm || reqContentType == multiPartForm {
+	if reqContentType == multiPartForm {
 		multiPart = true
 		mpvars := &FuncTemplateVars{}
 
@@ -378,7 +381,20 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 		}
 		vars.FormData, vars.FormDataKeyArray, err = processMultipart(request, route.RemoveParams.FormData, route.FormData)
 		if err != nil {
+			log.Print("printing error recd from processMultipart")
+			log.Print(err)
 			return
+		}
+	} else if reqContentType == encodedForm {
+		err := request.ParseForm()
+		if err != nil {
+			log.Print("error from request.ParseForm() = ", err.Error())
+			return
+		}
+		if request.PostForm != nil {
+			for k, v := range request.PostForm {
+				vars.FormData[k] = v
+			}
 		}
 	}
 
