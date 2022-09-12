@@ -134,6 +134,15 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			}
 			return str
 		},
+		"MakeMapKeyValUnordered": func(str string, seprator string) (vars map[string]interface{}) {
+			vars = make(map[string]interface{})
+			tmpStr := strings.Split(str, seprator)
+			for _, v := range tmpStr {
+				vSplit := strings.Split(v, "=")
+				vars[vSplit[0]] = vSplit[1]
+			}
+			return vars
+		},
 		"overwriteMap": func(orgMap map[string]interface{}, b []byte) (d interface{}, err error) {
 			newMap := make(map[string]interface{})
 			err = json.Unmarshal(b, &newMap)
