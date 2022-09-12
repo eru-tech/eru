@@ -394,7 +394,7 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 		}
 		if request.PostForm != nil {
 			for k, v := range request.PostForm {
-				vars.FormData[k] = v
+				vars.FormData[k] = strings.Join(v, ",")
 			}
 		}
 	}
