@@ -61,6 +61,9 @@ type Route struct {
 	TokenSecret         TokenSecret `json:"-"`
 	RemoveParams        RemoveParams
 	OnError             string
+	Redirect            bool
+	RedirectUrl         string
+	RedirectParams      []Headers
 }
 
 type RemoveParams struct {
