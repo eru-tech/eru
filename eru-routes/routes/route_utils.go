@@ -256,9 +256,11 @@ func processMultipart(request *http.Request, formDataRemove []string, formData [
 		requestHasMultipart := true
 		if err != nil {
 			log.Println(err)
+			log.Print("error from request.MultipartReader()")
 			requestHasMultipart = false
 			//return nil, nil, err
 		}
+		log.Print("requestHasMultipart = ", requestHasMultipart)
 		if requestHasMultipart {
 			for {
 				log.Println("inside for loop - multiPart.NextRawPart() ")
