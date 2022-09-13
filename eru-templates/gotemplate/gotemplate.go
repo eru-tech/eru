@@ -12,6 +12,7 @@ import (
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	"log"
+	"strconv"
 	"strings"
 
 	//"strconv"
@@ -85,10 +86,17 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return erursa.EncryptWithCert(j, pubK)
 		},
 		"bytesToString": func(b []byte) string {
+			//str , uerr := strconv.Unquote(string(b))
+			//log.Print(uerr)
 			return string(b)
 		},
 		"stringToByte": func(s string) []byte {
 			return []byte(s)
+		},
+		"unquote": func(s string) string {
+			str, uerr := strconv.Unquote(string(s))
+			log.Print(uerr)
+			return str
 		},
 		"generateAesKey": func(bits int) ([]byte, error) {
 			aesObj, err := eruaes.GenerateKey(bits)
@@ -134,8 +142,10 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			}
 			return str
 		},
-		"MakeMapKeyValUnordered": func(str string, seprator string) (vars map[string]interface{}) {
+		"makeMapKeyValUnordered": func(str string, seprator string) (vars map[string]interface{}) {
 			vars = make(map[string]interface{})
+			log.Print("string from makeMapKeyValUnordered")
+			log.Print(str)
 			tmpStr := strings.Split(str, seprator)
 			for _, v := range tmpStr {
 				vSplit := strings.Split(v, "=")

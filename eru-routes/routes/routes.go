@@ -64,6 +64,7 @@ type Route struct {
 	OnError             string
 	Redirect            bool
 	RedirectUrl         string
+	RedirectScheme      string
 	RedirectParams      []Headers
 }
 
@@ -474,6 +475,40 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 	//a, e := json.Marshal(trReqVars)
 	//log.Print(string(a))
 	//log.Print(e)
+
+	if route.Redirect {
+		fvars := &FuncTemplateVars{}
+		fvars.Vars = trReqVars
+		redirectUrlBytes, rubErr := processTemplate(route.RouteName, route.RedirectUrl, fvars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+		if rubErr != nil {
+			err = rubErr
+			log.Print("error from processHeaderTemplates = ", err.Error())
+			return
+		}
+		route.RedirectUrl, err = strconv.Unquote(string(redirectUrlBytes))
+		if err != nil {
+			log.Print("error from strconv.Unquote(string(redirectUrlBytes)) = ", err.Error())
+			route.RedirectUrl = string(redirectUrlBytes)
+		}
+
+		for i, v := range route.RedirectParams {
+			if v.IsTemplate {
+				paramValue, rptErr := processTemplate(v.Key, v.Value, fvars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+				if err != nil {
+					err = rptErr
+					log.Print("error from RedirectParams processTemplate = ", err.Error())
+					return
+				}
+				route.RedirectParams[i].Value, err = strconv.Unquote(string(paramValue))
+				if err != nil {
+					log.Print("error from strconv.Unquote(string(paramValue)) = ", err.Error())
+					route.RedirectParams[i].Value = string(paramValue)
+				}
+			}
+		}
+		return
+	}
+
 	trResVars = &TemplateVars{}
 	//printResponseBody(response,"printing response from route TransformResponse")
 	for _, h := range route.ResponseHeaders {
