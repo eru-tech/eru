@@ -14,6 +14,7 @@ const (
 	RULETYPE_ALWAYS  = "always"
 	RULETYPE_CUSTOM  = "custom"
 	RULEPREFIX_TOKEN = "token"
+	RULEPREFIX_DOCS  = "docs"
 )
 
 type ModuleProjectI interface {

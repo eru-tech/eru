@@ -3,7 +3,6 @@ package ql
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
@@ -77,17 +76,20 @@ func (qld *QLData) ProcessTransformRule(tr module_model.TransformRule) (outputOb
 		if len(tr.Rules) > 0 {
 			log.Print("inside len(tr.Rules)>0")
 			for k, v := range tr.Rules[0].ForceColumnValues { //todo to remove array and make it single object
-				log.Print(qld.Variables["token"])
+				log.Print(qld.FinalVariables)
 				log.Print(v)
-				outputBytes, err := processTemplate("xxx", v, qld.Variables, "string")
+				outputBytes, err := processTemplate("xxx", v, qld.FinalVariables, "string", k)
 				if err != nil {
 					return nil, err
 				}
-				outputObj[k] = string(outputBytes)
+				if outputBytes != nil {
+					outputObj[k] = string(outputBytes)
+					//skipping to write to overwriteobj if there is no output
+				}
 			}
 		}
 	}
-	log.Print(outputObj)
+	log.Print("ProcessTransformRule output = ", outputObj)
 	return
 }
 
@@ -109,26 +111,61 @@ func (qld *QLData) ProcessSecurityRule(sr security_rule.SecurityRule, vars map[s
 	return
 }
 
-func processTemplate(templateName string, templateString string, vars map[string]interface{}, outputType string) (output []byte, err error) {
-	log.Println("inside processTemplate")
+func processTemplate(templateName string, templateString string, vars map[string]interface{}, outputType string, key string) (output []byte, err error) {
+	log.Println("inside processTemplate with temaplte = ", templateString)
 	ruleValue := strings.SplitN(templateString, ".", 2)
+	log.Print(ruleValue)
+	templateStr := ruleValue[1]
 	if ruleValue[0] == module_model.RULEPREFIX_TOKEN {
-		templateStr := fmt.Sprint("{{ .", ruleValue[1], " }}")
-		goTmpl := gotemplate.GoTemplate{templateName, templateStr}
-		outputObj, err := goTmpl.Execute(vars[module_model.RULEPREFIX_TOKEN], outputType)
+		return executeTemplate(templateName, templateStr, vars[module_model.RULEPREFIX_TOKEN], outputType)
+	} else if ruleValue[0] == module_model.RULEPREFIX_DOCS {
+		var docs []interface{}
+		isArray := false
+		if d, ok := vars["docs"]; ok {
+			docs, isArray = d.([]interface{})
+			if !isArray {
+				dd, er := d.(map[string]interface{}) // checking if docs is a single document without array
+				if !er {
+					return nil, errors.New("error while parsing value of 'docs'")
+				}
+				docs = append(docs, dd)
+			}
+		} else {
+			err = errors.New("docs keyword not found while transforming the doc")
+		}
+		for i, doc := range docs {
+			dd, er := doc.(map[string]interface{}) // checking if docs is a single document without array
+			if !er {
+				return nil, errors.New("error while parsing value of 'docs'")
+			}
+			outputBytes, ptErr := executeTemplate(templateName, templateStr, dd, outputType)
+			if err != nil {
+				err = ptErr
+				log.Print(err)
+				return
+			}
+			dd[key] = string(outputBytes)
+			docs[i] = dd
+			outputBytes = nil
+		}
+	}
+	return
+}
+
+func executeTemplate(templateName string, templateString string, vars interface{}, outputType string) (output []byte, err error) {
+	goTmpl := gotemplate.GoTemplate{templateName, templateString}
+	outputObj, err := goTmpl.Execute(vars, outputType)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	} else if outputType == "string" {
+		return []byte(outputObj.(string)), nil
+	} else {
+		output, err = json.Marshal(outputObj)
 		if err != nil {
 			log.Println(err)
 			return nil, err
-		} else if outputType == "string" {
-			return []byte(outputObj.(string)), nil
-		} else {
-			output, err = json.Marshal(outputObj)
-			if err != nil {
-				log.Println(err)
-				return nil, err
-			}
 		}
 	}
-	//todo - to add if prefix is not token
 	return
 }
