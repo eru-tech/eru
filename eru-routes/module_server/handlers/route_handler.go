@@ -3,7 +3,6 @@ package handlers
 import (
 	//"bytes"
 	"encoding/json"
-	"fmt"
 	"github.com/eru-tech/eru/eru-routes/module_store"
 	"github.com/gorilla/mux"
 	"io"
@@ -94,22 +93,8 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		log.Print("before range response.Header")
 
 		if route.Redirect {
-			log.Print("before redirect")
-			paramStr := ""
-			for _, v := range route.RedirectParams {
-				if paramStr == "" {
-					paramStr = "?"
-				} else {
-					paramStr = fmt.Sprint(paramStr, "&")
-				}
-				log.Print(v.Key, " = ", v.Value)
-				paramStr = fmt.Sprint(paramStr, v.Key, "=", v.Value)
-			}
-			log.Print(route.RedirectUrl)
-			http.Redirect(w, r, fmt.Sprint(route.RedirectScheme, "://", route.RedirectUrl, paramStr), http.StatusSeeOther)
-			log.Print(w.Header())
-			log.Print(w)
-			log.Print("after redirect")
+			log.Print(route.FinalRedirectUrl)
+			http.Redirect(w, r, route.FinalRedirectUrl, http.StatusSeeOther)
 		} else {
 			for k, v := range response.Header {
 				for _, h := range v {

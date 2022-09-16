@@ -64,6 +64,7 @@ type Route struct {
 	OnError             string
 	Redirect            bool
 	RedirectUrl         string
+	FinalRedirectUrl    string `json:"-"`
 	RedirectScheme      string
 	RedirectParams      []Headers
 }
@@ -477,6 +478,7 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 	//log.Print(e)
 
 	if route.Redirect {
+		finalRedirectUrl := route.RedirectUrl
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = trReqVars
 		redirectUrlBytes, rubErr := processTemplate(route.RouteName, route.RedirectUrl, fvars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
@@ -485,13 +487,20 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 			log.Print("error from processHeaderTemplates = ", err.Error())
 			return
 		}
-		route.RedirectUrl, err = strconv.Unquote(string(redirectUrlBytes))
+		finalRedirectUrl, err = strconv.Unquote(string(redirectUrlBytes))
 		if err != nil {
 			log.Print("error from strconv.Unquote(string(redirectUrlBytes)) = ", err.Error())
-			route.RedirectUrl = string(redirectUrlBytes)
+			finalRedirectUrl = string(redirectUrlBytes)
 		}
 
-		for i, v := range route.RedirectParams {
+		paramStr := ""
+		for _, v := range route.RedirectParams {
+			if paramStr == "" {
+				paramStr = "?"
+			} else {
+				paramStr = fmt.Sprint(paramStr, "&")
+			}
+			finalParamValue := v.Value
 			if v.IsTemplate {
 				paramValue, rptErr := processTemplate(v.Key, v.Value, fvars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
 				if err != nil {
@@ -499,13 +508,15 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 					log.Print("error from RedirectParams processTemplate = ", err.Error())
 					return
 				}
-				route.RedirectParams[i].Value, err = strconv.Unquote(string(paramValue))
+				finalParamValue, err = strconv.Unquote(string(paramValue))
 				if err != nil {
 					log.Print("error from strconv.Unquote(string(paramValue)) = ", err.Error())
-					route.RedirectParams[i].Value = string(paramValue)
+					finalParamValue = string(paramValue)
 				}
 			}
+			paramStr = fmt.Sprint(paramStr, v.Key, "=", finalParamValue)
 		}
+		route.FinalRedirectUrl = fmt.Sprint(route.RedirectScheme, "://", finalRedirectUrl, paramStr)
 		return
 	}
 
