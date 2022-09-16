@@ -15,18 +15,19 @@ type Authorizer struct {
 }
 
 type ListenerRule struct {
-	RuleRank            int64  `eru:"required"`
-	RuleName            string `eru:"required"`
-	Hosts               []string
-	Paths               []PathStruct
-	Headers             []MapStruct
-	AddHeaders          []MapStructCustom
-	Params              []MapStruct
-	Methods             []string
-	SourceIP            []string
-	TargetHosts         []TargetHost `eru:"required"`
-	AuthorizerName      string
-	AuthorizerException []PathStruct
+	RuleRank              int64  `eru:"required"`
+	RuleName              string `eru:"required"`
+	Hosts                 []string
+	Paths                 []PathStruct
+	Headers               []MapStruct
+	AddHeaders            []MapStructCustom
+	Params                []MapStruct
+	Methods               []string
+	SourceIP              []string
+	TargetHosts           []TargetHost `eru:"required"`
+	AuthorizerName        string
+	AuthorizerException   []PathStruct
+	AuthorizerExceptionIP []string
 }
 
 type MapStruct struct {
@@ -45,6 +46,7 @@ type PathStruct struct {
 }
 
 type TargetHost struct {
+	Name       string
 	Host       string `eru:"required"`
 	Port       string
 	Method     string
