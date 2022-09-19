@@ -252,6 +252,10 @@ func (ms *ModuleStore) AddSchemaTable(projectId string, dbAlias string, tableNam
 		return nil, err
 	}
 	datasource := ms.Projects[projectId].DataSources[dbAlias]
+	log.Print(tableName)
+	for k, _ := range datasource.OtherTables {
+		log.Print(k)
+	}
 	if val, ok := datasource.OtherTables[tableName]; ok {
 		if datasource.SchemaTables == nil {
 			datasource.SchemaTables = make(map[string]map[string]module_model.TableColsMetaData)

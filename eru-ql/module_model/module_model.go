@@ -10,11 +10,16 @@ import (
 )
 
 const (
-	RULETYPE_NONE    = "none"
-	RULETYPE_ALWAYS  = "always"
-	RULETYPE_CUSTOM  = "custom"
-	RULEPREFIX_TOKEN = "token"
-	RULEPREFIX_DOCS  = "docs"
+	RULETYPE_NONE     = "none"
+	RULETYPE_ALWAYS   = "always"
+	RULETYPE_CUSTOM   = "custom"
+	RULEPREFIX_TOKEN  = "token"
+	RULEPREFIX_DOCS   = "docs"
+	RULEPREFIX_NONE   = "none"
+	QUERY_TYPE_INSERT = "insert"
+	QUERY_TYPE_UPDATE = "update"
+	QUERY_TYPE_DELETE = "delete"
+	QUERY_TYPE_SELECT = "select"
 )
 
 type ModuleProjectI interface {
@@ -159,6 +164,7 @@ type TransformRules struct {
 }
 type TransformRule struct {
 	RuleType string
+	ApplyOn  []string
 	Rules    []TransformRuleDetail
 }
 

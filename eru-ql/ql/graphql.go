@@ -174,7 +174,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				if sqlObj.OverwriteDoc == nil {
 					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
 				}
-				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation)
+				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, module_model.QUERY_TYPE_SELECT)
 				if err != nil {
 					errMsg = err.Error()
 					errFound = true
@@ -227,7 +227,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				if sqlObj.OverwriteDoc == nil {
 					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
 				}
-				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation)
+				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, sqlObj.QueryType)
 				if err != nil {
 					errMsg = err.Error()
 					errFound = true
@@ -572,7 +572,7 @@ func adjustObjectKey(key string) string {
 	return key
 }
 
-func (gqd *GraphQLData) setOverwriteDoc(projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string) (overwriteDoc map[string]interface{}, err error) {
+func (gqd *GraphQLData) setOverwriteDoc(projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, queryType string) (overwriteDoc map[string]interface{}, err error) {
 	tr, err := s.GetTableTransformation(projectId, dbAlias, tableName)
 	if err != nil {
 		log.Print("error from GetTableTransformation = ", err.Error())
@@ -581,11 +581,19 @@ func (gqd *GraphQLData) setOverwriteDoc(projectId string, dbAlias string, tableN
 	}
 	log.Print(tr)
 	overwriteDoc = make(map[string]interface{})
-
 	if op == "query" {
 		overwriteDoc, err = gqd.ProcessTransformRule(tr.TransformOutput)
 	} else if op == "mutation" {
-		overwriteDoc, err = gqd.ProcessTransformRule(tr.TransformInput)
+		processTransformRule := false
+		for _, v := range tr.TransformInput.ApplyOn {
+			if v == queryType {
+				processTransformRule = true
+				break
+			}
+		}
+		if processTransformRule {
+			overwriteDoc, err = gqd.ProcessTransformRule(tr.TransformInput)
+		}
 	} else {
 		err = errors.New(fmt.Sprint("Invalid Operation : ", op))
 		log.Print(err)
