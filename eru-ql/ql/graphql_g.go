@@ -645,10 +645,12 @@ func (sqlObj *SQLObjectQ) MakeQuery(sqlMaker ds.SqlMakerI) (err error) {
 			strAnd = " and "
 		}
 	}
-	if strWhereClause != "" {
-		strWhereClause = fmt.Sprint(strWhereClause, " and ", strSecurityClause)
-	} else {
-		strWhereClause = strSecurityClause
+	if strSecurityClause != "" {
+		if strWhereClause != "" {
+			strWhereClause = fmt.Sprint(strWhereClause, " and ", strSecurityClause)
+		} else {
+			strWhereClause = strSecurityClause
+		}
 	}
 	log.Print("strWhereClause after = ", strWhereClause)
 	if strWhereClause != "" {
