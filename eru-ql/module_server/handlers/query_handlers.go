@@ -182,12 +182,10 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				return
 			}
 			isPublic := false
-			log.Print("r.Header.Get(\"is_public\") = ", r.Header.Get("is_public"))
 			isPublic, err = strconv.ParseBool(r.Header.Get("is_public"))
 			if err != nil {
 				// do nothing - silently execute with is_public as false
 			}
-			log.Print("isPublic = ", isPublic)
 
 			qlInterface.SetQLData(*myQuery, postBody, true, tokenObj, isPublic)
 			res, _, err = qlInterface.Execute(projectID, datasources, s)

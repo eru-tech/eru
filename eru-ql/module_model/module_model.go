@@ -250,11 +250,11 @@ type Tables struct {
 	SqlQuery string
 }
 
-func (ds *DataSource) GetTableJoins(parentTableName string, childTableName string) (TableJoins, error) {
+func (ds *DataSource) GetTableJoins(parentTableName string, childTableName string, otherTables map[string]string) (TableJoins, error) {
 	//log.Print("inside VerifyChildTable")
 	// TODO if schema is not passed with table name then compare with default schema set at datasource level
-	//log.Print(parentTableName, " - ", childTableName)
-
+	log.Print(parentTableName, " - ", childTableName)
+	log.Print(otherTables)
 	tj := TableJoins{}
 	if _, ok := ds.SchemaTables[parentTableName]; !ok {
 		//log.Print(parentTableName, " table not found")
@@ -266,11 +266,30 @@ func (ds *DataSource) GetTableJoins(parentTableName string, childTableName strin
 	}
 	tempKey := fmt.Sprint(parentTableName, "___", childTableName)
 	tempKey1 := fmt.Sprint(childTableName, "___", parentTableName)
-
 	if val, ok := ds.TableJoins[tempKey]; !ok {
 		if val, ok := ds.TableJoins[tempKey1]; !ok {
-			//log.Print("table joins not found for ",parentTableName," and ",childTableName)
-			return tj, errors.New(fmt.Sprint("table joins not found for ", parentTableName, " and ", childTableName))
+			log.Print("table joins not found for ", parentTableName, " and ", childTableName)
+			log.Print("checking other joins = ", otherTables)
+			newOtherTables := make(map[string]string)
+			for k, _ := range otherTables {
+				if k != parentTableName && k != childTableName {
+					newOtherTables[k] = ""
+				}
+			}
+			log.Print("newOtherTables = ", newOtherTables)
+			newParentTableName := ""
+			finalOtherTables := make(map[string]string)
+			for k, _ := range newOtherTables {
+				if newParentTableName == "" {
+					newParentTableName = k
+				} else {
+					finalOtherTables[k] = ""
+				}
+				log.Print("finalOtherTables = ", finalOtherTables)
+			}
+			return ds.GetTableJoins(newParentTableName, childTableName, finalOtherTables)
+			//return tj, errors.New(fmt.Sprint("table joins not found for ", parentTableName, " and ", childTableName))
+
 		} else {
 			tj = *val
 			//swaping so the consumer of this function will always get child details as table 2 details and parent details as table 1 details

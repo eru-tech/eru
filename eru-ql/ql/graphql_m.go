@@ -288,7 +288,7 @@ func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_m
 				isArray = true
 			}
 			childTableName := strings.Replace(k, "___", ".", -1)
-			tj, e := datasource.GetTableJoins(parentTableName, childTableName)
+			tj, e := datasource.GetTableJoins(parentTableName, childTableName, nil)
 			if e != nil {
 				//log.Println(e)
 				if isArray {

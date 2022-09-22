@@ -93,7 +93,7 @@ func (qld *QLData) ProcessTransformRule(tr module_model.TransformRule) (outputOb
 	return
 }
 
-func (qld *QLData) ProcessSecurityRule(sr security_rule.SecurityRule, vars map[string]interface{}) (outputStr string, err error) {
+func processSecurityRule(sr security_rule.SecurityRule, vars map[string]interface{}) (outputStr string, err error) {
 	if sr.RuleType == module_model.RULETYPE_NONE {
 		err = errors.New("Security Rule Set to NONE")
 		return
@@ -102,11 +102,8 @@ func (qld *QLData) ProcessSecurityRule(sr security_rule.SecurityRule, vars map[s
 		//do nothing
 		return
 	} else if sr.RuleType == module_model.RULETYPE_CUSTOM {
-		log.Print("printing custom rule")
-		log.Print(sr.CustomRule)
-		outputStr, err = sr.Stringify(vars, qld.IsPublic)
-		log.Print(outputStr)
-		log.Print(err)
+		outputStr, err = sr.Stringify(vars, false)
+
 	}
 	return
 }

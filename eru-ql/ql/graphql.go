@@ -167,7 +167,8 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 			switch op.Operation {
 			case "query":
 				sqlObj := SQLObjectQ{}
-
+				sqlObj.ProjectId = projectId
+				sqlObj.FinalVariables = gqd.QLData.FinalVariables
 				field := v.(*ast.Field)
 				sqlObj.MainTableName = strings.Replace(field.Name.Value, "___", ".", -1) //replacing schema___tablename with schema.tablename
 
@@ -183,13 +184,13 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)
 				}
-				sqlObj.SecurityClause[sqlObj.MainTableName], err = gqd.getTableSecurityRule(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation)
+				sqlObj.SecurityClause[sqlObj.MainTableName], err = getTableSecurityRule(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.Variables)
 				if err != nil {
 					errMsg = err.Error()
 					errFound = true
 				}
 
-				err = sqlObj.ProcessGraphQL(v, datasource, graphQLs[i], gqd.FinalVariables) //TODO to handle if err recd.
+				err = sqlObj.ProcessGraphQL(v, datasource, graphQLs[i], gqd.FinalVariables, s) //TODO to handle if err recd.
 
 				queryObj.Query = sqlObj.DBQuery
 				queryObj.Cols = strings.Join(sqlObj.Columns.ColNames, " , ")
@@ -367,7 +368,6 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 // parseAstValue returns an interface that can be casted to string
 func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, error) {
 	log.Println("inside ParseAstValue for ")
-	log.Println("value.GetKind()  =", value.GetKind())
 	switch value.GetKind() {
 	case kinds.ObjectValue:
 		o := map[string]interface{}{}
@@ -579,7 +579,6 @@ func (gqd *GraphQLData) setOverwriteDoc(projectId string, dbAlias string, tableN
 		err = errors.New(fmt.Sprint("error from GetTableTransformation = ", err.Error()))
 		return nil, err
 	}
-	log.Print(tr)
 	overwriteDoc = make(map[string]interface{})
 	if op == "query" {
 		overwriteDoc, err = gqd.ProcessTransformRule(tr.TransformOutput)
@@ -604,25 +603,21 @@ func (gqd *GraphQLData) setOverwriteDoc(projectId string, dbAlias string, tableN
 		err = errors.New(fmt.Sprint("TransformRule failed : ", err.Error()))
 		return nil, err
 	}
-	log.Print("overwriteDoc")
-	log.Print(overwriteDoc)
 	return
 }
 
-func (gqd *GraphQLData) getTableSecurityRule(projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string) (ruleOutput string, err error) {
-	log.Print("inside getTableSecurityRule")
+func getTableSecurityRule(projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, vars map[string]interface{}) (ruleOutput string, err error) {
 	sr, err := s.GetTableSecurityRule(projectId, dbAlias, tableName)
 	if err != nil {
 		err = errors.New(fmt.Sprint("error from getTableSecurityRule = ", err.Error()))
 		log.Print(err)
 		return "", err
 	}
-	log.Print(sr)
 
 	if op == "query" {
-		ruleOutput, err = gqd.ProcessSecurityRule(sr.Select, gqd.Variables)
+		ruleOutput, err = processSecurityRule(sr.Select, vars)
 	} else if op == "mutation" {
-		ruleOutput, err = gqd.ProcessSecurityRule(sr.Insert, gqd.Variables) //todo to change it as per query type
+		ruleOutput, err = processSecurityRule(sr.Insert, vars) //todo to change it as per query type
 	} else {
 		err = errors.New(fmt.Sprint("Invalid Query Type : ", op))
 		log.Print(err)
@@ -633,7 +628,5 @@ func (gqd *GraphQLData) getTableSecurityRule(projectId string, dbAlias string, t
 		err = errors.New(fmt.Sprint("SecurityRule failed : ", err.Error()))
 		return "", err
 	}
-	log.Print("ruleOutput")
-	log.Print(ruleOutput)
 	return
 }
