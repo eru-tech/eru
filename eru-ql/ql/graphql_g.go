@@ -220,7 +220,7 @@ func (sqlObj *SQLObjectQ) processColumnList(sel []ast.Selection, tableName strin
 				//	sqlObj.JoinClause = make(map[string]interface{})
 				//}
 				mapObj := make(map[string]interface{})
-				mapObj[tn] = v
+				mapObj[colTableName] = v
 				om := OrderedMap{Rank: len(sqlObj.JoinClause) + 1, Obj: mapObj}
 				sqlObj.JoinClause = append(sqlObj.JoinClause, &om)
 

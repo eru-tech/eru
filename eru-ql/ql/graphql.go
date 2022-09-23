@@ -428,7 +428,9 @@ func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, e
 			log.Print(err)
 			return nil, err
 		}
-		v = string(vBytes)
+		if string(vBytes) != "" {
+			v = string(vBytes)
+		}
 		log.Print(v)
 		/*
 			val, err := LoadValue(v, store)
