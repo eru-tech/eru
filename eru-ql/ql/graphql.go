@@ -368,8 +368,10 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 // parseAstValue returns an interface that can be casted to string
 func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, error) {
 	log.Println("inside ParseAstValue for ")
+	log.Print(value.GetKind())
 	switch value.GetKind() {
 	case kinds.ObjectValue:
+
 		o := map[string]interface{}{}
 		obj := value.(*ast.ObjectValue)
 		for _, v := range obj.Fields {
@@ -418,7 +420,16 @@ func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, e
 				v = strings.ReplaceAll(v, fmt.Sprint("$", varsK), str)
 			}
 		}
-
+		log.Print("replacing variable with template output")
+		log.Print(v)
+		log.Print(vars)
+		vBytes, err := processTemplate("variable", v, vars, "string", "")
+		if err != nil {
+			log.Print(err)
+			return nil, err
+		}
+		v = string(vBytes)
+		log.Print(v)
 		/*
 			val, err := LoadValue(v, store)
 			if err == nil {
@@ -500,6 +511,9 @@ func replaceVariableValue(varName string, vars map[string]interface{}) (res inte
 }
 
 func processMapVariable(m map[string]interface{}, vars map[string]interface{}) (interface{}, error) {
+	log.Print("inside processMapVariable")
+	log.Print(m)
+	log.Print(vars)
 	var err error
 	for k, v := range m {
 		mapKey := k
@@ -553,6 +567,21 @@ func processMapVariable(m map[string]interface{}, vars map[string]interface{}) (
 						delete(m, mapKey)
 					}
 					log.Print("variable ", v.(string), " replace with ", m[mapKey])
+				} else {
+					log.Print("replacing variable with template output")
+					log.Print(v)
+					log.Print(vars)
+					vBytes, err := processTemplate("variable", v.(string), vars, "string", "")
+					if err != nil {
+						log.Print(err)
+						return nil, err
+					}
+					if string(vBytes) == "" {
+						m[mapKey] = v.(string)
+					} else {
+						m[mapKey] = string(vBytes)
+					}
+
 				}
 			default:
 				// do nothing - return as is

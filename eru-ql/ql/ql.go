@@ -109,11 +109,19 @@ func processSecurityRule(sr security_rule.SecurityRule, vars map[string]interfac
 }
 
 func processTemplate(templateName string, templateString string, vars map[string]interface{}, outputType string, key string) (output []byte, err error) {
-	log.Println("inside processTemplate with temaplte = ", templateString)
+	log.Println("inside processTemplate with template = ", templateString)
 	ruleValue := strings.SplitN(templateString, ".", 2)
 	log.Print(ruleValue)
-	templateStr := ruleValue[1]
+	log.Print("len(ruleValue) = ", len(ruleValue))
+	templateStr := ""
+	if len(ruleValue) > 1 {
+		templateStr = ruleValue[1]
+	} else {
+		templateStr = ruleValue[0]
+	}
 	if ruleValue[0] == module_model.RULEPREFIX_TOKEN {
+		log.Print("inside RULEPREFIX_TOKEN")
+		log.Print(vars)
 		return executeTemplate(templateName, templateStr, vars[module_model.RULEPREFIX_TOKEN], outputType)
 	} else if ruleValue[0] == module_model.RULEPREFIX_DOCS {
 		var docs []interface{}

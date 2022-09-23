@@ -164,6 +164,10 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			d, err = json.Marshal(orgMap)
 			return
 		},
+		"removeMapKey": func(orgMap map[string]interface{}, key string) (d map[string]interface{}, err error) {
+			delete(orgMap, key)
+			return orgMap, nil
+		},
 		"logobject": func(v interface{}) (err error) {
 			vobj, err := json.Marshal(v)
 			if err != nil {
