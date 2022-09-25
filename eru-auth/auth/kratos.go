@@ -20,6 +20,9 @@ var httpClient = http.Client{
 	},
 }
 
+//TODO to read this from kratos schema
+var kratosTraits = [...]string{"email", "phone", "name", "role"}
+
 type KratosHydraAuth struct {
 	Auth
 	Kratos KratosConfig
@@ -112,10 +115,10 @@ type KratosIdentity struct {
 	SchemaUrl           string                  `json:"schema_url"`
 	State               string                  `json:"state"`
 	StateChangedAt      time.Time               `json:"state_changed_at"`
-	Traits              interface{}             `json:"traits"`
+	Traits              map[string]interface{}  `json:"traits"`
 	VerifiableAddresses []KratosIdentityAddress `json:"verifiable_addresses"`
 	RecoveryAddresses   []KratosIdentityAddress `json:"recovery_addresses"`
-	MetaDataPublic      interface{}             `json:"metadata_public"`
+	MetaDataPublic      map[string]interface{}  `json:"metadata_public"`
 	CreatedAt           time.Time               `json:"created_at"`
 	UpdatedAt           time.Time               `json:"updated_at"`
 }
@@ -474,31 +477,29 @@ func (kratosHydraAuth *KratosHydraAuth) Login(req *http.Request) (res interface{
 		for _, v := range kratosSession.Session.AuthenticationMethods {
 			identity.AuthDetails.AuthenticationMethods = append(identity.AuthDetails.AuthenticationMethods, v)
 		}
-		log.Println("asasasasas")
-		log.Println(identity.AuthDetails.AuthenticationMethods)
 		identity.AuthDetails.AuthenticatorAssuranceLevel = kratosSession.Session.AuthenticatorAssuranceLevel
 		identity.AuthDetails.ExpiresAt = kratosSession.Session.ExpiresAt
 		identity.AuthDetails.IssuedAt = kratosSession.Session.IssuedAt
 		identity.AuthDetails.SessionStatus = kratosSession.Session.Active
-		ok := false
-		if identity.Attributes, ok = kratosSession.Session.Identity.Traits.(map[string]interface{}); ok {
-			identity.Attributes["sub"] = kratosSession.Session.Identity.Id
-			if pubMetadata, ok := kratosSession.Session.Identity.MetaDataPublic.(map[string]interface{}); ok {
-				for k, v := range pubMetadata {
-					if _, chkKey := identity.Attributes[k]; !chkKey { // check if key already exists then silemtly ignore the value from public metadata
-						identity.Attributes[k] = v
-					}
-				}
-			} else {
-				log.Println("kratosSession.Session.Identity.MetaDataPublic is not a map[string]interface{}")
-				err = errors.New("Error reading Identity MetaDataPublic")
-				return
+		//ok := false
+		//if identity.Attributes, ok = kratosSession.Session.Identity.Traits.(map[string]interface{}); ok {
+		identity.Attributes["sub"] = kratosSession.Session.Identity.Id
+		//if pubMetadata, ok := kratosSession.Session.Identity.MetaDataPublic.(map[string]interface{}); ok {
+		for k, v := range kratosSession.Session.Identity.MetaDataPublic {
+			if _, chkKey := identity.Attributes[k]; !chkKey { // check if key already exists then silemtly ignore the value from public metadata
+				identity.Attributes[k] = v
 			}
-		} else {
-			log.Println("kratosSession.Session.Identity.Traits is not a map[string]interface{}")
-			err = errors.New("Error reading Identity")
-			return
 		}
+		//} else {
+		//	log.Println("kratosSession.Session.Identity.MetaDataPublic is not a map[string]interface{}")
+		//	err = errors.New("Error reading Identity MetaDataPublic")
+		//	return
+		//}
+		//} else {
+		//	log.Println("kratosSession.Session.Identity.Traits is not a map[string]interface{}")
+		//	err = errors.New("Error reading Identity")
+		//	return
+		//}
 		identityHolder["identity"] = identity
 		tokens, loginAcceptConsentCookies, cosentAcceptErr := kratosHydraAuth.Hydra.acceptConsentRequest(identityHolder, consentChallenge, loginAcceptRequestCookies)
 		if cosentAcceptErr != nil {
@@ -521,10 +522,151 @@ func (kratosConfig KratosConfig) getPublicUrl() (url string) {
 	}
 	return fmt.Sprint(kratosConfig.PublicScheme, "://", kratosConfig.PublicHost, port)
 }
-func (kratosConfig KratosConfig) getAminUrl() (url string) {
+func (kratosConfig KratosConfig) getAdminUrl() (url string) {
 	port := ""
 	if kratosConfig.AdminPort != "" {
 		port = fmt.Sprint(":", kratosConfig.AdminPort)
 	}
 	return fmt.Sprint(kratosConfig.AdminScheme, "://", kratosConfig.AdminHost, port)
+}
+func (kratosHydraAuth *KratosHydraAuth) GetUser(userId string) (identity Identity, err error) {
+	kIdentity, err := kratosHydraAuth.getKratosUser(userId)
+	if err != nil {
+		return Identity{}, err
+	}
+	return convertToIdentity(kIdentity)
+}
+
+func (kratosHydraAuth *KratosHydraAuth) getKratosUser(userId string) (identity KratosIdentity, err error) {
+	dummyMap := make(map[string]string)
+	headers := http.Header{}
+	res, _, _, _, err := utils.CallHttp("GET", fmt.Sprint(kratosHydraAuth.Kratos.getAdminUrl(), "/admin/identities/", userId), headers, dummyMap, nil, dummyMap, dummyMap)
+	if err != nil {
+		log.Print("error in http.Get GetUserInfo")
+		log.Print(err)
+		return KratosIdentity{}, err
+	}
+	log.Println(res)
+	/*
+		if sc >= 400{
+			log.Print("error in http.Get GetUserInfo")
+			resBytes, bytesErr := json.Marshal(res)
+			if bytesErr != nil {
+				log.Print("error in http.Get GetUserInfo")
+				log.Print(bytesErr)
+				return Identity{}, bytesErr
+			}
+			err = errors.New(strings.Replace(string(resBytes),"\"","",-1))
+			return Identity{}, err
+		}
+	*/
+	if userInfo, ok := res.(map[string]interface{}); !ok {
+		err = errors.New("User response not in expected format")
+		return KratosIdentity{}, err
+	} else {
+		log.Println(userInfo)
+		kratosIdentityObjJson, iErr := json.Marshal(userInfo)
+		if iErr != nil {
+			log.Println(iErr)
+			err = errors.New("Json marshal error for identityObj")
+			return KratosIdentity{}, err
+		}
+		iiErr := json.Unmarshal(kratosIdentityObjJson, &identity)
+		if iiErr != nil {
+			log.Println(iiErr)
+			err = errors.New("Json unmarshal error for identityObj")
+			return KratosIdentity{}, err
+		}
+		return
+	}
+}
+
+func (kratosHydraAuth *KratosHydraAuth) UpdateUser(identityToUpdate Identity) (err error) {
+	userId := identityToUpdate.Attributes["sub"].(string)
+	kratosIdentity, err := kratosHydraAuth.getKratosUser(userId)
+	err = convertFromIdentity(identityToUpdate, &kratosIdentity)
+	if err != nil {
+		log.Print(err)
+		return err
+	}
+	dummyMap := make(map[string]string)
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	res, _, _, _, err := utils.CallHttp("PUT", fmt.Sprint(kratosHydraAuth.Kratos.getAdminUrl(), "/admin/identities/", userId), headers, dummyMap, nil, dummyMap, kratosIdentity)
+	if err != nil {
+		log.Print("error in http.Get GetUserInfo")
+		log.Print(err)
+		return err
+	}
+	log.Println(res)
+	return
+}
+
+func convertToIdentity(kratosIdentity KratosIdentity) (identity Identity, err error) {
+	identity = Identity{}
+	identity.Id = kratosIdentity.Id
+	identity.CreatedAt = kratosIdentity.CreatedAt
+	identity.UpdatedAt = kratosIdentity.UpdatedAt
+	identity.OtherInfo = make(map[string]interface{})
+	identity.OtherInfo["schema_id"] = kratosIdentity.SchemaId
+	identity.OtherInfo["state_changed_at"] = kratosIdentity.StateChangedAt
+	identity.Status = kratosIdentity.State
+	identity.AuthDetails = IdentityAuth{}
+
+	//ok := false
+	//if identity.Attributes, ok = kratosIdentity.Traits.(map[string]interface{}); ok {
+	if identity.Attributes == nil {
+		identity.Attributes = make(map[string]interface{})
+	}
+	identity.Attributes["sub"] = kratosIdentity.Id
+	//if pubMetadata, ok := kratosIdentity.MetaDataPublic.(map[string]interface{}); ok {
+	for k, v := range kratosIdentity.MetaDataPublic {
+		//if _, chkKey := identity.Attributes[k]; !chkKey { // check if key already exists then silemtly ignore the value from public metadata
+		identity.Attributes[k] = v
+		//}
+	}
+	//} else {
+	//	log.Println("kratosIdentity.MetaDataPublic is not a map[string]interface{}")
+	//	err = errors.New("Error reading Identity MetaDataPublic")
+	//	return
+	//}
+	//} else {
+	//	log.Println("kratosIdentity.Traits is not a map[string]interface{}")
+	//	err = errors.New("Error reading Identity")
+	//	return
+	//}
+	for k, v := range kratosIdentity.Traits {
+		//if _, chkKey := identity.Attributes[k]; !chkKey { // check if key already exists then silemtly ignore the value from public metadata
+		identity.Attributes[k] = v
+		//}
+	}
+	return
+}
+
+func convertFromIdentity(identity Identity, kratosIdentity *KratosIdentity) (err error) {
+	log.Print("original kratosIdentity printed below ")
+	log.Print(kratosIdentity)
+
+	log.Print("identity printed below")
+	log.Print(identity)
+	for k, v := range identity.Attributes {
+		if k == "sub" {
+			kratosIdentity.Id = v.(string)
+		} else {
+			traitFound := false
+			for _, attr := range kratosTraits {
+				if attr == k {
+					traitFound = true
+					kratosIdentity.Traits[k] = v
+					break
+				}
+			}
+			if !traitFound {
+				kratosIdentity.MetaDataPublic[k] = v
+			}
+		}
+	}
+	log.Print("kratosIdentity printed below")
+	log.Print(kratosIdentity)
+	return
 }

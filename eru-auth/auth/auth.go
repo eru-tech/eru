@@ -17,6 +17,8 @@ type AuthI interface {
 	MakeFromJson(rj *json.RawMessage) (err error)
 	PerformPreSaveTask() (err error)
 	PerformPreDeleteTask() (err error)
+	GetUser(userId string) (identity Identity, err error)
+	UpdateUser(identityToUpdate Identity) (err error)
 }
 
 type LoginPostBody struct {
@@ -81,6 +83,14 @@ func (auth *Auth) GetAttribute(attributeName string) (attributeValue interface{}
 
 func (auth *Auth) GetUserInfo(access_token string) (identity Identity, err error) {
 	return Identity{}, errors.New("GetUserInfo Method not implemented")
+}
+
+func (auth *Auth) GetUser(userId string) (identity Identity, err error) {
+	return Identity{}, errors.New("GetUser Method not implemented")
+}
+
+func (auth *Auth) UpdateUser(identityToUpdate Identity) (err error) {
+	return errors.New("UpdateUser Method not implemented")
 }
 
 func (auth *Auth) FetchTokens(refresh_token string) (res interface{}, err error) {

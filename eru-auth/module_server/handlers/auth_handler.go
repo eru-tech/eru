@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
@@ -374,5 +375,113 @@ func GenerateOtpHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			//_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("OTP ", otp, " generated successfully")})
 			_ = json.NewEncoder(w).Encode(res)
 		}
+	}
+}
+
+func GetUser(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		log.Println(authName)
+		log.Println(projectId)
+
+		getUserReq := json.NewDecoder(r.Body)
+		getUserReq.DisallowUnknownFields()
+		getUserObj := make(map[string]interface{})
+		//storageObj := new(storage.Storage)
+		if err := getUserReq.Decode(&getUserObj); err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		userIdStr := ""
+		if userId, ok := getUserObj["id"]; !ok {
+			rtErr := errors.New("id attribute missing in request body")
+			log.Println(rtErr)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
+			return
+		} else {
+			if userIdStr, ok = userId.(string); !ok {
+				rtErr := errors.New("Incorrect refresh_token recevied in request body")
+				log.Println(rtErr)
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
+				return
+			}
+		}
+
+		authObjI, err := s.GetAuth(projectId, authName)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		identity, err := authObjI.GetUser(userIdStr)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(identity)
+		return
+	}
+}
+
+func UpdateUser(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		log.Println(authName)
+		log.Println(projectId)
+
+		updateUserReq := json.NewDecoder(r.Body)
+		updateUserReq.DisallowUnknownFields()
+		updateUserObj := make(map[string]interface{})
+		//storageObj := new(storage.Storage)
+		if err := updateUserReq.Decode(&updateUserObj); err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		identity := auth.Identity{}
+		userAttributes := make(map[string]interface{})
+		if userAttributesObj, ok := updateUserObj["attributes"]; !ok {
+			rtErr := errors.New("attributes missing in request body")
+			log.Println(rtErr)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
+			return
+		} else {
+			if userAttributes, ok = userAttributesObj.(map[string]interface{}); !ok {
+				rtErr := errors.New("incorrect post body")
+				log.Println(rtErr)
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
+				return
+			}
+		}
+		authObjI, err := s.GetAuth(projectId, authName)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		identity.Attributes = userAttributes
+		err = authObjI.UpdateUser(identity)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": "user updated successfully"})
+		return
 	}
 }
