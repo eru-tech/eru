@@ -483,6 +483,9 @@ func (kratosHydraAuth *KratosHydraAuth) Login(req *http.Request) (res interface{
 		identity.AuthDetails.SessionStatus = kratosSession.Session.Active
 		//ok := false
 		//if identity.Attributes, ok = kratosSession.Session.Identity.Traits.(map[string]interface{}); ok {
+		if identity.Attributes == nil {
+			identity.Attributes = make(map[string]interface{})
+		}
 		identity.Attributes["sub"] = kratosSession.Session.Identity.Id
 		//if pubMetadata, ok := kratosSession.Session.Identity.MetaDataPublic.(map[string]interface{}); ok {
 		for k, v := range kratosSession.Session.Identity.MetaDataPublic {

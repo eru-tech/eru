@@ -14,6 +14,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	//"strconv"
 	"github.com/google/uuid"
@@ -192,6 +193,10 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		},
 		"uuid": func() (uuidStr string, err error) {
 			uuidStr = uuid.New().String()
+			return
+		},
+		"current_date": func() (dt string, err error) {
+			dt = time.Now().Format("2006-01-01")
 			return
 		},
 		"concat": func(sep string, inStr ...string) (str string, err error) {
