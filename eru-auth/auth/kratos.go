@@ -487,6 +487,11 @@ func (kratosHydraAuth *KratosHydraAuth) Login(req *http.Request) (res interface{
 			identity.Attributes = make(map[string]interface{})
 		}
 		identity.Attributes["sub"] = kratosSession.Session.Identity.Id
+		for k, v := range kratosSession.Session.Identity.Traits {
+			if _, chkKey := identity.Attributes[k]; !chkKey { // check if key already exists then silemtly ignore the value from public metadata
+				identity.Attributes[k] = v
+			}
+		}
 		//if pubMetadata, ok := kratosSession.Session.Identity.MetaDataPublic.(map[string]interface{}); ok {
 		for k, v := range kratosSession.Session.Identity.MetaDataPublic {
 			if _, chkKey := identity.Attributes[k]; !chkKey { // check if key already exists then silemtly ignore the value from public metadata
@@ -500,7 +505,7 @@ func (kratosHydraAuth *KratosHydraAuth) Login(req *http.Request) (res interface{
 		//}
 		//} else {
 		//	log.Println("kratosSession.Session.Identity.Traits is not a map[string]interface{}")
-		//	err = errors.New("Error reading Identity")
+		////	err = errors.New("Error reading Identity")
 		//	return
 		//}
 		identityHolder["identity"] = identity
