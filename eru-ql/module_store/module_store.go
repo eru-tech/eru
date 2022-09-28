@@ -288,6 +288,7 @@ func (ms *ModuleStore) AddSchemaTable(projectId string, dbAlias string, tableNam
 				if datasource.TableJoins == nil {
 					datasource.TableJoins = make(map[string]*module_model.TableJoins)
 				}
+				log.Print(&tj)
 				datasource.TableJoins[tjJoinKey] = &tj
 			}
 		}

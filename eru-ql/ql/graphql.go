@@ -420,9 +420,6 @@ func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, e
 				v = strings.ReplaceAll(v, fmt.Sprint("$", varsK), str)
 			}
 		}
-		log.Print("replacing variable with template output")
-		log.Print(v)
-		log.Print(vars)
 		vBytes, err := processTemplate("variable", v, vars, "string", "")
 		if err != nil {
 			log.Print(err)
@@ -513,9 +510,6 @@ func replaceVariableValue(varName string, vars map[string]interface{}) (res inte
 }
 
 func processMapVariable(m map[string]interface{}, vars map[string]interface{}) (interface{}, error) {
-	log.Print("inside processMapVariable")
-	log.Print(m)
-	log.Print(vars)
 	var err error
 	for k, v := range m {
 		mapKey := k
@@ -570,9 +564,6 @@ func processMapVariable(m map[string]interface{}, vars map[string]interface{}) (
 					}
 					log.Print("variable ", v.(string), " replace with ", m[mapKey])
 				} else {
-					log.Print("replacing variable with template output")
-					log.Print(v)
-					log.Print(vars)
 					vBytes, err := processTemplate("variable", v.(string), vars, "string", "")
 					if err != nil {
 						log.Print(err)

@@ -162,9 +162,8 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			return
 		}
 		var res []map[string]interface{}
-		var queries []string
+		//var queries []string
 		myQuery, err := s.GetMyQuery(projectID, queryName)
-		log.Print("myQuery = ", myQuery)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -189,7 +188,6 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 
 			qlInterface.SetQLData(*myQuery, postBody, true, tokenObj, isPublic)
 			res, _, err = qlInterface.Execute(projectID, datasources, s)
-			log.Print(queries)
 			/*
 				if err != nil {
 					server_handlers.FormatResponse(w, 400)

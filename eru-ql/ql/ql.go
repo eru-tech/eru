@@ -72,12 +72,8 @@ func (qld *QLData) ProcessTransformRule(tr module_model.TransformRule) (outputOb
 	}
 	if tr.RuleType == module_model.RULETYPE_ALWAYS {
 		outputObj = make(map[string]interface{})
-		log.Print(tr.Rules)
 		if len(tr.Rules) > 0 {
-			log.Print("inside len(tr.Rules)>0")
 			for k, v := range tr.Rules[0].ForceColumnValues { //todo to remove array and make it single object
-				log.Print(qld.FinalVariables)
-				log.Print(v)
 				outputBytes, err := processTemplate("xxx", v, qld.FinalVariables, "string", k)
 				if err != nil {
 					return nil, err
@@ -120,8 +116,6 @@ func processTemplate(templateName string, templateString string, vars map[string
 		templateStr = ruleValue[0]
 	}
 	if ruleValue[0] == module_model.RULEPREFIX_TOKEN {
-		log.Print("inside RULEPREFIX_TOKEN")
-		log.Print(vars)
 		return executeTemplate(templateName, templateStr, vars[module_model.RULEPREFIX_TOKEN], outputType)
 	} else if ruleValue[0] == module_model.RULEPREFIX_DOCS {
 		var docs []interface{}
