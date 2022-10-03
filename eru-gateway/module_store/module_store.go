@@ -132,17 +132,18 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.T
 			if listenerRuleFound {
 				pathExceptionFound := false
 				for _, pathException := range v.AuthorizerException {
+					log.Print("inside for loop for v.AuthorizerException")
 					switch pathException.MatchType {
 					case MatchTypePrefix:
 						if strings.HasPrefix(r.URL.Path, pathException.Path) {
-							log.Println(fmt.Sprint("pathException match = ", pathException.Path))
+							log.Println(fmt.Sprint("pathException MatchTypePrefix = ", pathException.Path))
 							pathExceptionFound = true
 							r.Header.Set("is_public", "true")
 							break
 						}
 					case MatchTypeExact:
 						if r.URL.Path == pathException.Path {
-							log.Println(fmt.Sprint("pathException match = ", pathException.Path))
+							log.Println(fmt.Sprint("pathException MatchTypeExact = ", pathException.Path))
 							pathExceptionFound = true
 							r.Header.Set("is_public", "true")
 							break
@@ -151,13 +152,18 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.T
 						//do nothing
 					}
 				}
+				log.Print("pathExceptionFound = ", pathExceptionFound)
+				log.Print("v.AuthorizerName == ", v.AuthorizerName)
 				if pathExceptionFound || v.AuthorizerName == "" {
+					log.Print("inside pathExceptionFound || v.AuthorizerName == \"\"")
 					return v.TargetHosts[0], module_model.Authorizer{}, v.AddHeaders, nil
 				} else {
 					authorizer, err := ms.GetAuthorizer(v.AuthorizerName)
 					if err != nil {
+						log.Print("error from ms.GetAuthorizer(v.AuthorizerName) = ", err)
 						return module_model.TargetHost{}, module_model.Authorizer{}, nil, err
 					}
+					log.Print("returning")
 					return v.TargetHosts[0], authorizer, v.AddHeaders, nil
 				}
 			}
