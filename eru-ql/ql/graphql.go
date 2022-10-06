@@ -324,6 +324,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				} else if errFound {
 					rollBackErr := graphQLs[i].RollbackQuery()
 					if rollBackErr != nil {
+						log.Print("rollBackErr = ", rollBackErr)
 						errMsg = rollBackErr.Error()
 					}
 					breakForLoop = true
