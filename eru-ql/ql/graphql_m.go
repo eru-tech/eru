@@ -248,7 +248,7 @@ func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_m
 	} else if sqlObj.QueryType == "update" {
 		return nil, errors.New("value of 'docs' cannot be an array")
 	}
-	log.Print(" len(docs) == ", len(docs))
+	//log.Print(" len(docs) == ", len(docs))
 	mr = make([]module_model.MutationRecord, len(docs))
 	for i, doc := range docs {
 

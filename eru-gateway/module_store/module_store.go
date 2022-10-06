@@ -47,9 +47,10 @@ type ModuleDbStore struct {
 func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.TargetHost, module_model.Authorizer, []module_model.MapStructCustom, error) {
 	listenerRuleFound := false
 	if ms.ListenerRules != nil {
-		for _, v := range ms.ListenerRules {
+		for i, v := range ms.ListenerRules {
 			//TODO to sort the array on RuleRank before looping
-
+			log.Print("loop : ", i)
+			log.Print(v)
 			//check for hosts
 			for _, host := range v.Hosts {
 				log.Println(r.Host)
@@ -128,7 +129,7 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.T
 					break
 				}
 			}
-			log.Println(listenerRuleFound)
+			log.Println("listenerRuleFound = ", listenerRuleFound)
 			if listenerRuleFound {
 				pathExceptionFound := false
 				for _, pathException := range v.AuthorizerException {
@@ -169,6 +170,7 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.T
 			}
 		}
 	}
+	log.Print("returning error")
 	return module_model.TargetHost{}, module_model.Authorizer{}, nil, errors.New(fmt.Sprint("Listener Rule not found for this request"))
 }
 

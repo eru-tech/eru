@@ -253,8 +253,8 @@ type Tables struct {
 func (ds *DataSource) GetTableJoins(parentTableName string, childTableName string, otherTables map[string]string) (TableJoins, error) {
 	//log.Print("inside VerifyChildTable")
 	// TODO if schema is not passed with table name then compare with default schema set at datasource level
-	log.Print(parentTableName, " - ", childTableName)
-	log.Print(otherTables)
+	//log.Print(parentTableName, " - ", childTableName)
+	//log.Print(otherTables)
 	tj := TableJoins{}
 	if _, ok := ds.SchemaTables[parentTableName]; !ok {
 		//log.Print(parentTableName, " table not found")

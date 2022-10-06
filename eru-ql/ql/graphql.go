@@ -231,6 +231,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, sqlObj.QueryType)
 				if err != nil {
 					errMsg = err.Error()
+					log.Print(err)
 					errFound = true
 				}
 				/*
@@ -277,6 +278,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					//todo consider passing token from finalvariables
 					if err != nil {
 						errFound = true
+						log.Print(err)
 						errMsg = err.Error()
 					}
 				}
