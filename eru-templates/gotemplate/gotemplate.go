@@ -41,6 +41,9 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		},
 		"marshalJSON": func(j interface{}) ([]byte, error) {
 			d, err := json.Marshal(j)
+			if err != nil {
+				log.Print(err)
+			}
 			return d, err
 		},
 		"unmarshalJSON": func(b []byte) (d interface{}, err error) {
@@ -127,6 +130,8 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		},
 		"saveVar": func(vars map[string]interface{}, ketToSave string, valueToSave interface{}) error {
 			vars[ketToSave] = valueToSave
+			log.Print("saveVar printed below")
+			log.Print(vars)
 			return nil
 		},
 		"concatMapKeyVal": func(vars map[string]interface{}, keys []string, seprator string) string {
@@ -184,6 +189,7 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 				log.Println(err)
 				return
 			}
+			log.Print("logobject printed below")
 			log.Println(string(vobj))
 			return
 		},
@@ -197,6 +203,24 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		},
 		"current_date": func() (dt string, err error) {
 			dt = time.Now().Format("2006-01-02")
+			return
+		},
+		"date_part": func(dtStr string, dtPart string) (datePart string, err error) {
+			dt, err := time.Parse("2006-01-02", dtStr)
+			switch dtPart {
+			case "DAY":
+				datePart = string(dt.Day())
+			case "MONTHN":
+				log.Print(int(dt.Month()))
+				mStr := strconv.Itoa(int(dt.Month()))
+				datePart = strings.Repeat("0", 2-len(mStr)) + mStr
+			case "MONTH":
+				datePart = dt.Month().String()
+			case "YEAR":
+				datePart = strconv.Itoa(dt.Year())
+			default:
+				datePart = ""
+			}
 			return
 		},
 		"concat": func(sep string, inStr ...string) (str string, err error) {

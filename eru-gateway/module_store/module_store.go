@@ -133,7 +133,7 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.T
 			if listenerRuleFound {
 				pathExceptionFound := false
 				for _, pathException := range v.AuthorizerException {
-					log.Print("inside for loop for v.AuthorizerException")
+					log.Print("inside for loop for v.AuthorizerException for :", r.URL.Path)
 					switch pathException.MatchType {
 					case MatchTypePrefix:
 						if strings.HasPrefix(r.URL.Path, pathException.Path) {
