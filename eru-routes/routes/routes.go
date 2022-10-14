@@ -1,12 +1,12 @@
 package routes
 
+/// this is in eru-routes redesign branch
 import (
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
-	utils "github.com/eru-tech/eru/eru-utils"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -104,8 +104,14 @@ type TemplateVars struct {
 	Body             interface{}
 	Token            interface{}
 	FormDataKeyArray []string
+	LoopObject       LoopObject
 	//ReqVars map[string]*TemplateVars
 	//ResVars map[string]*TemplateVars
+}
+
+type LoopObject struct {
+	Index  int
+	Object interface{}
 }
 
 var httpClient = http.Client{
@@ -203,8 +209,8 @@ func (route *Route) Validate(host string, url string, method string, headers htt
 		err = errors.New("route is not public")
 		return
 	}
-	log.Println(route)
-	log.Println(url)
+	//log.Println(route)
+	//log.Println(url)
 	if route.MatchType == MatchTypePrefix && !strings.HasPrefix(strings.ToUpper(strings.Split(url, route.RouteName)[1]), strings.ToUpper(route.Url)) {
 		err = errors.New("URL Prefix mismatch")
 		return
@@ -219,7 +225,7 @@ func (route *Route) Validate(host string, url string, method string, headers htt
 }
 
 func (route *Route) getTargetHost() (targetHost TargetHost, err error) {
-	log.Println(route)
+	//log.Println(route)
 	//TODO Random selection of target based on allocation
 	if len(route.TargetHosts) > 0 {
 		return route.TargetHosts[0], err
@@ -230,9 +236,9 @@ func (route *Route) getTargetHost() (targetHost TargetHost, err error) {
 
 func (route *Route) Execute(request *http.Request, url string) (response *http.Response, trResVars *TemplateVars, err error) {
 	log.Println("inside route.Execute")
-	log.Println("url = ", url)
-	utils.PrintRequestBody(request, "printing request from route Execute")
-	log.Print(request.Header)
+	//log.Println("url = ", url)
+	//utils.PrintRequestBody(request, "printing request from route Execute")
+	//log.Print(request.Header)
 
 	trReqVars, err := route.transformRequest(request, url)
 	if err != nil {
@@ -241,17 +247,17 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 		return
 	}
 	log.Println("Before httpClient.Do of route Execute")
-	log.Print(trReqVars)
-	log.Println(request.URL)
-	log.Println(request.Method)
-	log.Print("printing request header beofre route.Execute")
-	log.Print(request.Header)
+	//log.Print(trReqVars)
+	//log.Println(request.URL)
+	//log.Println(request.Method)
+	//log.Print("printing request header beofre route.Execute")
+	//log.Print(request.Header)
 
-	log.Println(route.TargetHosts)
+	//log.Println(route.TargetHosts)
 	//log.Println(request)
 	request.Header.Set("accept-encoding", "identity")
-	printRequestBody(request, "printing request Before httpClient.Do of route Execute")
-	log.Print("request.Host = ", request.Host)
+	//printRequestBody(request, "printing request Before httpClient.Do of route Execute")
+	//log.Print("request.Host = ", request.Host)
 	if request.Host != "" {
 		response, err = httpClient.Do(request)
 		if err != nil {
@@ -259,10 +265,10 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 			log.Println(err)
 			return
 		}
-		log.Println(response.Header)
-		log.Println(response.StatusCode)
-		log.Print(response.ContentLength)
-		printResponseBody(response, "printing response After httpClient.Do of route Execute before transformResponse")
+		//log.Println(response.Header)
+		//log.Println(response.StatusCode)
+		//log.Print(response.ContentLength)
+		//printResponseBody(response, "printing response After httpClient.Do of route Execute before transformResponse")
 	} else {
 		response = &http.Response{Header: http.Header{}, StatusCode: http.StatusOK}
 		rb, err := json.Marshal(make(map[string]interface{}))
@@ -272,8 +278,8 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 			log.Print("making dummy response body")
 			response.Body = ioutil.NopCloser(bytes.NewReader(rb))
 		}
-		log.Print("response.Body")
-		log.Print(response.Body)
+		//log.Print("response.Body")
+		//log.Print(response.Body)
 	}
 	trResVars = &TemplateVars{}
 
@@ -284,7 +290,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 			log.Println(err)
 			return
 		}
-		printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
+		//printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
 	}
 	return
 
@@ -540,7 +546,7 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 
 	trResVars.Vars = trReqVars.Vars
 	var res interface{}
-	log.Print(response.Body)
+	//log.Print(response.Body)
 	tmplBodyFromRes := json.NewDecoder(response.Body)
 	tmplBodyFromRes.DisallowUnknownFields()
 	log.Print("tmplBodyFromRes = ", tmplBodyFromRes)
@@ -558,7 +564,7 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 		tempBody["data"] = string(body)
 		res = tempBody
 	}
-	log.Print(res)
+	//log.Print(res)
 	rb, err := json.Marshal(res)
 	if err != nil {
 		log.Println(err)
@@ -569,7 +575,7 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 		log.Println(err)
 		return &TemplateVars{}, err
 	}
-	log.Print(trResVars)
+	//log.Print(trResVars)
 	if route.TransformResponse != "" {
 
 		fvars := &FuncTemplateVars{}
