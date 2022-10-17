@@ -3,15 +3,18 @@ package routes
 /// this is in eru-routes redesign branch
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -20,6 +23,8 @@ const (
 )
 const MatchTypePrefix = "PREFIX"
 const MatchTypeExact = "EXACT"
+const ConditionFailActionError = "ERROR"
+const ConditionFailActionIgnore = "IGNORE"
 
 type Authorizer struct {
 	AuthorizerName string
@@ -39,34 +44,41 @@ type TokenSecret struct {
 	Issuer     []string
 }
 type Route struct {
-	RouteName           string `eru:"required"`
-	RouteCategoryName   string
-	Url                 string `eru:"required"`
-	MatchType           string `eru:"required"`
-	RewriteUrl          string
-	TargetHosts         []TargetHost `eru:"required"`
-	AllowedHosts        []string
-	AllowedMethods      []string
-	RequiredHeaders     []Headers
-	EnableCache         bool
-	RequestHeaders      []Headers
-	QueryParams         []Headers
-	FormData            []Headers
-	FileData            []FilePart
-	ResponseHeaders     []Headers
-	TransformRequest    string
-	TransformResponse   string
-	IsPublic            bool
-	Authorizer          string
-	AuthorizerException []string
-	TokenSecret         TokenSecret `json:"-"`
-	RemoveParams        RemoveParams
-	OnError             string
-	Redirect            bool
-	RedirectUrl         string
-	FinalRedirectUrl    string `json:"-"`
-	RedirectScheme      string
-	RedirectParams      []Headers
+	Condition            string
+	ConditionFailMessage string
+	ConditionFailAction  string
+	Async                bool
+	AsyncMessage         string
+	LoopVariable         string
+	LoopInParallel       bool
+	RouteName            string `eru:"required"`
+	RouteCategoryName    string
+	Url                  string `eru:"required"`
+	MatchType            string `eru:"required"`
+	RewriteUrl           string
+	TargetHosts          []TargetHost `eru:"required"`
+	AllowedHosts         []string
+	AllowedMethods       []string
+	RequiredHeaders      []Headers
+	EnableCache          bool
+	RequestHeaders       []Headers
+	QueryParams          []Headers
+	FormData             []Headers
+	FileData             []FilePart
+	ResponseHeaders      []Headers
+	TransformRequest     string
+	TransformResponse    string
+	IsPublic             bool
+	Authorizer           string
+	AuthorizerException  []string
+	TokenSecret          TokenSecret `json:"-"`
+	RemoveParams         RemoveParams
+	OnError              string
+	Redirect             bool
+	RedirectUrl          string
+	FinalRedirectUrl     string `json:"-"`
+	RedirectScheme       string
+	RedirectParams       []Headers
 }
 
 type RemoveParams struct {
@@ -104,14 +116,9 @@ type TemplateVars struct {
 	Body             interface{}
 	Token            interface{}
 	FormDataKeyArray []string
-	LoopObject       LoopObject
+	LoopVars         interface{}
 	//ReqVars map[string]*TemplateVars
 	//ResVars map[string]*TemplateVars
-}
-
-type LoopObject struct {
-	Index  int
-	Object interface{}
 }
 
 var httpClient = http.Client{
@@ -234,13 +241,146 @@ func (route *Route) getTargetHost() (targetHost TargetHost, err error) {
 	return
 }
 
-func (route *Route) Execute(request *http.Request, url string) (response *http.Response, trResVars *TemplateVars, err error) {
+func (route *Route) Execute(request *http.Request, url string) (responses []*http.Response, trResVars []*TemplateVars, errs []error) {
 	log.Println("inside route.Execute")
 	//log.Println("url = ", url)
 	//utils.PrintRequestBody(request, "printing request from route Execute")
 	//log.Print(request.Header)
 
-	trReqVars, err := route.transformRequest(request, url)
+	trReqVars := &TemplateVars{}
+	err := loadRequestVars(trReqVars, request)
+	if err != nil {
+		log.Println(err)
+		errs = append(errs, err)
+		return
+	}
+
+	if route.Condition != "" {
+		avars := &FuncTemplateVars{}
+		avars.Vars = trReqVars
+		output, outputErr := processTemplate(route.RouteName, route.Condition, avars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+		log.Print(string(output))
+		if outputErr != nil {
+			log.Println(outputErr)
+			errs = append(errs, outputErr)
+			return
+		}
+		strCond, strCondErr := strconv.Unquote(string(output))
+		if strCondErr != nil {
+			log.Println(strCondErr)
+			errs = append(errs, strCondErr)
+			return
+		}
+		if strCond == "false" {
+			cfmBody := "{}"
+			if route.ConditionFailMessage != "" {
+				cfmvars := &FuncTemplateVars{}
+				cfmvars.Vars = trReqVars
+				cfmOutput, cfmOutputErr := processTemplate(route.RouteName, route.ConditionFailMessage, avars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+				log.Print(string(cfmOutput))
+				if cfmOutputErr != nil {
+					log.Println(cfmOutputErr)
+					errs = append(errs, cfmOutputErr)
+					return
+				}
+				cfmBody = string(cfmOutput)
+			}
+			statusCode := http.StatusOK
+			if route.ConditionFailAction == ConditionFailActionError {
+				statusCode = http.StatusBadRequest
+			}
+
+			condRespHeader := http.Header{}
+			condRespHeader.Set("Content-Type", "application/json")
+			response := &http.Response{
+				StatusCode:    statusCode,
+				Proto:         "HTTP/1.1",
+				ProtoMajor:    1,
+				ProtoMinor:    1,
+				Body:          ioutil.NopCloser(bytes.NewBufferString(cfmBody)),
+				ContentLength: int64(len(cfmBody)),
+				Request:       request,
+				Header:        condRespHeader,
+			}
+			responses = append(responses, response)
+			return
+		}
+	}
+
+	var loopArray []interface{}
+	if route.LoopVariable != "" {
+		fvars := &FuncTemplateVars{}
+		fvars.Vars = trReqVars
+		output, outputErr := processTemplate(route.RouteName, route.LoopVariable, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+		log.Print(string(output))
+		if outputErr != nil {
+			log.Println(outputErr)
+			errs = append(errs, outputErr)
+			return
+		}
+		var loopJson interface{}
+		loopJsonErr := json.Unmarshal(output, &loopJson)
+		if loopJsonErr != nil {
+			err = errors.New("route loop variable is not a json")
+			log.Print(loopJsonErr)
+			errs = append(errs, err)
+		}
+
+		ok := false
+		if loopArray, ok = loopJson.([]interface{}); !ok {
+			err = errors.New("route loop variable is not an array")
+			log.Print(err)
+			errs = append(errs, err)
+			return
+		}
+		log.Print("loopArray = ", loopArray)
+
+	} else {
+		//dummy row added to create a job
+		loopArray = append(loopArray, make(map[string]interface{}))
+	}
+	var jobs = make(chan Job, 10)
+	var results = make(chan Result, 10)
+	startTime := time.Now()
+	go allocate(request, url, trReqVars, loopArray, jobs)
+	done := make(chan bool)
+	//go result(done,results,responses, trResVars,errs)
+
+	go func(done chan bool, results chan Result) {
+		for res := range results {
+			responses = append(responses, res.response)
+			trResVars = append(trResVars, res.responseVars)
+			errs = append(errs, res.responseErr)
+		}
+		done <- true
+	}(done, results)
+
+	//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
+	noOfWorkers := 1
+	if route.LoopInParallel && route.LoopVariable != "" {
+		noOfWorkers = 2
+		if len(loopArray) < noOfWorkers {
+			noOfWorkers = len(loopArray)
+		}
+	}
+
+	log.Print("noOfWorkers = ", noOfWorkers)
+	createWorkerPool(route, noOfWorkers, jobs, results)
+	<-done
+	log.Print("after done")
+	log.Print("len(responses) = ", len(responses))
+	log.Print("len(trVars) = ", len(trResVars))
+	log.Print("len(errs) = ", len(errs))
+	endTime := time.Now()
+	diff := endTime.Sub(startTime)
+	fmt.Println("total time taken ", diff.Seconds(), "seconds")
+	return
+}
+
+func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateVars) (response *http.Response, trResVars *TemplateVars, err error) {
+	//clone request for parallel execution
+	request := req.Clone(context.Background())
+	err = route.transformRequest(request, url, trReqVars)
 	if err != nil {
 		log.Println("error from transformRequest")
 		log.Println(err)
@@ -255,16 +395,69 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 
 	//log.Println(route.TargetHosts)
 	//log.Println(request)
-	request.Header.Set("accept-encoding", "identity")
+
+	//TODO commented below line - chk this and take it in route config
+	//request.Header.Set("accept-encoding", "identity")
+
 	//printRequestBody(request, "printing request Before httpClient.Do of route Execute")
 	//log.Print("request.Host = ", request.Host)
+
 	if request.Host != "" {
-		response, err = httpClient.Do(request)
-		if err != nil {
-			log.Println(" httpClient.Do error from route execute function")
-			log.Println(err)
-			return
+		if route.Async {
+			//creating a new context with 1ms to give sufficient time to execute the http request and
+			// timeout without waiting for the response
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+			defer cancel()
+			request = request.WithContext(ctx)
+			_, err = utils.ExecuteHttp(request)
+
+			respHeader := http.Header{}
+			respHeader.Set("Content-Type", "application/json")
+
+			if errors.Is(err, context.DeadlineExceeded) {
+				//ignoring DeadlineExceeded error as we know it will timeout
+				err = nil
+			} else {
+				return
+			}
+			body := "{}"
+			if route.AsyncMessage != "" {
+				avars := &FuncTemplateVars{}
+				avars.Vars = trReqVars
+				output, outputErr := processTemplate(route.RouteName, route.AsyncMessage, avars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+				log.Print(string(output))
+				if outputErr != nil {
+					err = outputErr
+					log.Println(err)
+					return
+				}
+				body = string(output)
+			}
+
+			response = &http.Response{
+				Status:     "200 OK",
+				StatusCode: 200,
+				Proto:      "HTTP/1.1",
+				ProtoMajor: 1,
+				ProtoMinor: 1,
+				Body:       ioutil.NopCloser(bytes.NewBufferString(body)),
+
+				ContentLength: int64(len(body)),
+				Request:       request,
+				Header:        respHeader,
+			}
+
+		} else {
+			response, err = utils.ExecuteHttp(request)
+			if err != nil {
+				log.Println(" httpClient.Do error from route execute function")
+				log.Println(err)
+				return
+			}
 		}
+
+		//response = <-routeChan
+
 		//log.Println(response.Header)
 		//log.Println(response.StatusCode)
 		//log.Print(response.ContentLength)
@@ -281,8 +474,8 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 		//log.Print("response.Body")
 		//log.Print(response.Body)
 	}
-	trResVars = &TemplateVars{}
 
+	trResVars = &TemplateVars{}
 	if route.TransformResponse != "" {
 		trResVars, err = route.transformResponse(response, trReqVars)
 
@@ -293,16 +486,15 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 		//printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
 	}
 	return
-
 }
 
-func (route *Route) transformRequest(request *http.Request, url string) (vars *TemplateVars, err error) {
+func (route *Route) transformRequest(request *http.Request, url string, vars *TemplateVars) (err error) {
 	log.Println("inside route.transformRequest")
 	//printRequestBody(request,"body from route transformRequest")
 
-	reqVarsLoaded := false
+	//reqVarsLoaded := false
+	//vars = &TemplateVars{}
 
-	vars = &TemplateVars{}
 	vars.FormData = make(map[string]interface{})
 	vars.Body = make(map[string]interface{})
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
@@ -312,25 +504,31 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 		// this dummy record will get overwritten as part of return value from process multipart
 	}
 
-	if !reqVarsLoaded {
-		err = loadRequestVars(vars, request)
-		if err != nil {
-			log.Println(err)
-			return
+	//TODO check if commenting below block has any impact - loading vars only once now
+	/*
+		if !reqVarsLoaded {
+			err = loadRequestVars(vars, request)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			reqVarsLoaded = true
 		}
-		reqVarsLoaded = true
-	}
+	*/
+
 	scheme, host, port, path, method, err := route.GetTargetSchemeHostPortPath(url)
 	if err != nil {
 		return
 	}
 
-	// http: Request.RequestURI can't be set in client requests.
-	// http://golang.org/src/pkg/net/http/client.go
 	if port != "" {
 		port = fmt.Sprint(":", port)
 	}
+
+	// http: Request.RequestURI can't be set in client requests.
+	// http://golang.org/src/pkg/net/http/client.go
 	request.RequestURI = ""
+
 	request.Host = host
 	request.URL.Host = fmt.Sprint(host, port)
 	request.URL.Path = path
@@ -367,27 +565,27 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 			}
 		*/
 		mpvars.Vars = vars
-
-		for i, fd := range route.FormData {
+		routesFormData := route.FormData
+		for i, fd := range routesFormData {
 			if fd.IsTemplate {
 				log.Print("inside route.FormData")
 				log.Print(fd.Key)
 				output, err := processTemplate(fd.Key, fd.Value, mpvars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
 				if err != nil {
 					log.Println(err)
-					return &TemplateVars{}, err
+					return err
 				}
 				log.Print("form data template processed")
 				outputStr, err := strconv.Unquote(string(output))
 				if err != nil {
 					log.Println(err)
-					return &TemplateVars{}, err
+					return err
 				}
 				log.Print(outputStr)
-				route.FormData[i].Value = outputStr
+				routesFormData[i].Value = outputStr
 			}
 		}
-		vars.FormData, vars.FormDataKeyArray, err = processMultipart(request, route.RemoveParams.FormData, route.FormData)
+		vars.FormData, vars.FormDataKeyArray, err = processMultipart(request, route.RemoveParams.FormData, routesFormData)
 		if err != nil {
 			log.Print("printing error recd from processMultipart")
 			log.Print(err)
@@ -432,12 +630,12 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 			output, err := processTemplate(route.RouteName, route.TransformRequest, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
 			if err != nil {
 				log.Println(err)
-				return &TemplateVars{}, err
+				return err
 			}
 			err = json.Unmarshal(output, &vars.Body)
 			if err != nil {
 				log.Println(err)
-				return &TemplateVars{}, err
+				return err
 			}
 			request.Body = ioutil.NopCloser(bytes.NewBuffer(output))
 			request.Header.Set("Content-Length", strconv.Itoa(len(output)))
@@ -457,7 +655,7 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 			if err != nil {
 				log.Print("error in json.Unmarshal(body, &vars.Body)")
 				log.Println(err)
-				return &TemplateVars{}, err
+				return err
 			}
 			//log.Println("body from route transformRequest - else part")
 			//log.Println(string(body))
@@ -468,7 +666,7 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 		}
 	}
 
-	err = processHeaderTemplates(request, route.RemoveParams.RequestHeaders, route.RequestHeaders, reqVarsLoaded, vars, route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl, nil, nil)
+	err = processHeaderTemplates(request, route.RemoveParams.RequestHeaders, route.RequestHeaders, true, vars, route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl, nil, nil)
 	if err != nil {
 		log.Print("error from processHeaderTemplates")
 		return

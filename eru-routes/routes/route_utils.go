@@ -89,6 +89,7 @@ func processTemplate(templateName string, templateString string, vars *FuncTempl
 	}
 	goTmpl := gotemplate.GoTemplate{templateName, templateString}
 	outputObj, err := goTmpl.Execute(vars, outputType)
+	log.Print(outputObj)
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -104,6 +105,8 @@ func processTemplate(templateName string, templateString string, vars *FuncTempl
 func makeMultipart(request *http.Request, formData []Headers, fileData []FilePart, vars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, tokenSecretKey string, jwkUrl string) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, err error) {
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	log.Print("reqContentType from makeMultipart = ", reqContentType)
+	log.Print("fileData")
+	log.Print(fileData)
 	varsFormData = make(map[string]interface{})
 	if reqContentType == encodedForm || reqContentType == multiPartForm {
 		log.Println("===========================")
@@ -235,7 +238,7 @@ func makeMultipart(request *http.Request, formData []Headers, fileData []FilePar
 		log.Println(request.Header.Get("Content-Type"))
 		defer request.Body.Close()
 	}
-	printRequestBody(request, "request body from makemultipart")
+	//printRequestBody(request, "request body from makemultipart")
 	return
 }
 
@@ -400,16 +403,22 @@ func processParams(request *http.Request, queryParamsRemove []string, queryParam
 }
 
 func processHeaderTemplates(request *http.Request, headersToRemove []string, headers []Headers, reqVarsLoaded bool, vars *TemplateVars, tokenSecretKey string, jwkUrl string, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (err error) {
+	//TODO remove reqVarsLoaded unused parameter
 	for _, h := range headers {
 		if h.IsTemplate {
-			if !reqVarsLoaded {
-				err = loadRequestVars(vars, request)
-				if err != nil {
-					log.Println(err)
-					return
+
+			//TODO check if commenting below block as an impact elsewhere as we are loading vars only once before transform request is called.
+			/*
+				if !reqVarsLoaded {
+					err = loadRequestVars(vars, request)
+					if err != nil {
+						log.Println(err)
+						return
+					}
+					reqVarsLoaded = true
 				}
-				reqVarsLoaded = true
-			}
+			*/
+
 			log.Println("processTemplate called for header value ", h.Key)
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = vars
