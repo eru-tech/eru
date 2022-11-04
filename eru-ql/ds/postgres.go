@@ -109,20 +109,24 @@ func (pr *PostgresSqlMaker) MakeDropTableSQL(tableName string) (string, error) {
 
 func (pr *PostgresSqlMaker) CreateConn(dataSource *module_model.DataSource) error {
 	connString := fmt.Sprint("postgres://", dataSource.DbConfig.User, ":", dataSource.DbConfig.Password, "@", dataSource.DbConfig.Host, ":", dataSource.DbConfig.Port, "/", dataSource.DbConfig.DefaultSchema, "?sslmode=disable")
-	//log.Print(connString)
+	log.Print(connString)
 	//log.Print("CreateConn from PostgresSqlMaker called")
 	db, err := sqlx.Open("postgres", connString)
+	log.Print(err)
 	if err != nil {
 		log.Print(err)
 		dataSource.ConStatus = false
 		return err
 	}
+	log.Print("db connection successfull  fetch dummy query")
 	_, err = db.Queryx("select 1")
+	log.Print(err)
 	if err != nil {
 		dataSource.ConStatus = false
 		log.Print(err)
 		return err
 	}
+	log.Print("dummy query success - setting con as true")
 	dataSource.Con = db
 	dataSource.ConStatus = true
 	return nil

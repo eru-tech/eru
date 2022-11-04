@@ -36,6 +36,7 @@ func StartUp() (module_store.ModuleStoreI, error) {
 		return nil, errors.New(fmt.Sprint("Invalid STORE_TYPE ", storeType))
 	}
 	storeBytes, err := myStore.GetStoreByteArray("")
+	log.Print(err)
 	if err == nil {
 		err = json.Unmarshal(storeBytes, myStore)
 		//module_store.UnMarshalStore(storeBytes, myStore)

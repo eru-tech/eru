@@ -46,14 +46,18 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 	}
 	log.Print("Creating DB connection for GetStoreByteArray")
 	log.Println(store.DbType)
-	db, err := sqlx.Open(store.DbType, dbString)
-	if err != nil {
-		log.Print(err)
+	db, dbErr := sqlx.Open(store.DbType, dbString)
+	log.Print(db)
+	log.Print(dbErr)
+	if dbErr != nil {
+		log.Print(dbErr)
+		err = dbErr
 		log.Print("creating blank db store")
 		store.SaveStore("", nil)
 		return nil, err
 	}
 	defer db.Close()
+	log.Print("db connection succesfull - fetch config from ", store.StoreTableName)
 	rows, err := db.Queryx(fmt.Sprint("select * from ", store.StoreTableName, " limit 1"))
 	if err != nil {
 		log.Print(err)
@@ -61,6 +65,7 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 		store.SaveStore("", nil)
 		return nil, err
 	}
+	log.Print("config fetched succesfully")
 	mapping := make(map[string]interface{})
 	var storeData interface{}
 	for rows.Next() {
@@ -84,6 +89,7 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 		store.SaveStore("", nil)
 		return nil, err
 	}
+	log.Print("config loaded successfully")
 	return storeData.([]byte), err
 }
 

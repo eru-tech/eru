@@ -134,7 +134,9 @@ func (ms *ModuleStore) SetDataSourceConnections() (err error) {
 		log.Print(prj.ProjectId)
 		for _, datasource := range prj.DataSources {
 			log.Print(datasource.DbName)
+			log.Print(datasource.DbConfig)
 			i := ds.GetSqlMaker(datasource.DbName)
+			log.Print(i)
 			if i != nil {
 				err = i.CreateConn(datasource)
 				if err != nil {
@@ -146,6 +148,7 @@ func (ms *ModuleStore) SetDataSourceConnections() (err error) {
 			}
 		}
 	}
+	log.Print("exiting SetDataSourceConnections")
 	return nil
 }
 

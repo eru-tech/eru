@@ -336,11 +336,11 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 			request.Header.Set(h.Key, h.Value)
 		}
 	}
-	multiPart := false
+	//multiPart := false
 	//reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	log.Print("reqContentType from makeMultipart = ", reqContentType)
 	if reqContentType == multiPartForm {
-		multiPart = true
+		//multiPart = true
 		mpvars := &FuncTemplateVars{}
 
 		/*
@@ -405,62 +405,62 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 	if err != nil {
 		return
 	}
+	//log.Print("multiPart =" , !multiPart)
+	//if !multiPart {
+	log.Println("route.TransformRequest = ", route.TransformRequest)
+	//vars := module_model.TemplateVars{}
+	if route.TransformRequest != "" {
 
-	if !multiPart {
-		log.Println("route.TransformRequest = ", route.TransformRequest)
-		//vars := module_model.TemplateVars{}
-		if route.TransformRequest != "" {
-
-			/*if !reqVarsLoaded {
-				err = loadRequestVars(vars, request)
-				if err != nil {
-					log.Println(err)
-					return
-				}
-				reqVarsLoaded = true
-			}
-
-			*/
-			fvars := &FuncTemplateVars{}
-			fvars.Vars = vars
-			output, err := processTemplate(route.RouteName, route.TransformRequest, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+		/*if !reqVarsLoaded {
+			err = loadRequestVars(vars, request)
 			if err != nil {
-				log.Println(err)
-				return &TemplateVars{}, err
-			}
-			err = json.Unmarshal(output, &vars.Body)
-			if err != nil {
-				log.Println(err)
-				return &TemplateVars{}, err
-			}
-			request.Body = ioutil.NopCloser(bytes.NewBuffer(output))
-			request.Header.Set("Content-Length", strconv.Itoa(len(output)))
-			request.ContentLength = int64(len(output))
-
-		} else {
-			log.Print("inside else")
-			body, err3 := ioutil.ReadAll(request.Body)
-			if err3 != nil {
-				err = err3
-				log.Print("error in ioutil.ReadAll(request.Body)")
 				log.Println(err)
 				return
 			}
-			log.Print(vars)
-			err = json.Unmarshal(body, &vars.Body)
-			if err != nil {
-				log.Print("error in json.Unmarshal(body, &vars.Body)")
-				log.Println(err)
-				return &TemplateVars{}, err
-			}
-			//log.Println("body from route transformRequest - else part")
-			//log.Println(string(body))
-			//log.Println(request.Header.Get("Content-Length"))
-			request.Body = ioutil.NopCloser(bytes.NewReader(body))
-			//request.Header.Set("Content-Length", strconv.Itoa(len(body)))
-			//request.ContentLength = int64(len(body))
+			reqVarsLoaded = true
 		}
+
+		*/
+		fvars := &FuncTemplateVars{}
+		fvars.Vars = vars
+		output, err := processTemplate(route.RouteName, route.TransformRequest, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+		if err != nil {
+			log.Println(err)
+			return &TemplateVars{}, err
+		}
+		err = json.Unmarshal(output, &vars.Body)
+		if err != nil {
+			log.Println(err)
+			return &TemplateVars{}, err
+		}
+		request.Body = ioutil.NopCloser(bytes.NewBuffer(output))
+		request.Header.Set("Content-Length", strconv.Itoa(len(output)))
+		request.ContentLength = int64(len(output))
+
+	} else {
+		log.Print("inside else")
+		body, err3 := ioutil.ReadAll(request.Body)
+		if err3 != nil {
+			err = err3
+			log.Print("error in ioutil.ReadAll(request.Body)")
+			log.Println(err)
+			return
+		}
+		log.Print(vars)
+		err = json.Unmarshal(body, &vars.Body)
+		if err != nil {
+			log.Print("error in json.Unmarshal(body, &vars.Body)")
+			log.Println(err)
+			return &TemplateVars{}, err
+		}
+		//log.Println("body from route transformRequest - else part")
+		//log.Println(string(body))
+		//log.Println(request.Header.Get("Content-Length"))
+		request.Body = ioutil.NopCloser(bytes.NewReader(body))
+		//request.Header.Set("Content-Length", strconv.Itoa(len(body)))
+		//request.ContentLength = int64(len(body))
 	}
+	//}
 
 	err = processHeaderTemplates(request, route.RemoveParams.RequestHeaders, route.RequestHeaders, reqVarsLoaded, vars, route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl, nil, nil)
 	if err != nil {

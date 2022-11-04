@@ -558,7 +558,7 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 	if !sqr.IsNested {
 		log.Print("inside if of !sqr.IsNested ")
 		log.Print("sqr.DBQuery = ", sqr.DBQuery)
-		log.Print("sqr.QueryType = ,", sqr.QueryType)
+		log.Print("sqr.QueryType = ", sqr.QueryType)
 		log.Print("sqr.PreparedQuery = ", sqr.PreparedQuery)
 		if sqr.QueryType == "insertselect" || sqr.QueryType == "delete" || sqr.PreparedQuery {
 			query = sqr.DBQuery
@@ -570,14 +570,15 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 			}
 		} else {
 			//TODO to handle if sqr.MutationRecords is nil - one of the reason it is passed as nil is when table or table join is not found
-			//log.Println("docs printed below from ds line 539")
-			//log.Println(docs)
+			log.Println("docs printed below from ds line 573")
+			log.Println(docs)
 			for _, d := range docs {
 				finalValues = append(finalValues, d.NonNestedValues...)
 			}
 			query = strings.Replace(sqr.MutationRecords[0].DBQuery, "$ColsPlaceholder", myself.GetPreparedQueryPlaceholder(len(sqr.MutationRecords), len(sqr.MutationRecords[0].Values), false), 1)
 		}
-		//log.Println("finalValues = ", finalValues)
+		log.Println("finalValues = ", finalValues)
+		log.Print(query)
 		res, err = sqr.executeMutationQueriesinDB(ctx, query, tableName, datasource, myself, isNested, docNo, 0, finalValues)
 		if err != nil {
 			errMsgs = append(errMsgs, err.Error())
