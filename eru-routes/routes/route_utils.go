@@ -320,8 +320,9 @@ func processMultipart(request *http.Request, formDataRemove []string, formData [
 							log.Println(err)
 							return nil, nil, err
 						}
-						varsFormData[part.FormName()] = buf.String()
-						varsFormDataKeyArray = append(varsFormDataKeyArray, part.FormName())
+						formName := strings.Replace(strings.Replace(part.FormName(), "[", "", -1), "]", "", -1)
+						varsFormData[formName] = buf.String()
+						varsFormDataKeyArray = append(varsFormDataKeyArray, formName)
 					}
 				}
 			}
