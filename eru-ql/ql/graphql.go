@@ -175,6 +175,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				if sqlObj.OverwriteDoc == nil {
 					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
 				}
+
 				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, module_model.QUERY_TYPE_SELECT)
 				if err != nil {
 					errMsg = err.Error()
@@ -598,6 +599,7 @@ func adjustObjectKey(key string) string {
 }
 
 func (gqd *GraphQLData) setOverwriteDoc(projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, queryType string) (overwriteDoc map[string]interface{}, err error) {
+	log.Print("calling for GetTableTransformation = ", tableName)
 	tr, err := s.GetTableTransformation(projectId, dbAlias, tableName)
 	if err != nil {
 		log.Print("error from GetTableTransformation = ", err.Error())

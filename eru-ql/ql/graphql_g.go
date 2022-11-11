@@ -309,7 +309,7 @@ func (sqlObj *SQLObjectQ) processColumnList(sel []ast.Selection, tableName strin
 					sqlObj.SecurityClause = make(map[string]string)
 				}
 				sqlObj.SecurityClause[colTableName], e = getTableSecurityRule(sqlObj.ProjectId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables)
-				log.Print("-----------printing sqlObj.SecurityClause ----------------")
+				log.Print("-----------printing sqlObj.SecurityClause ----------------   ", colTableName)
 				log.Print(sqlObj.SecurityClause)
 				log.Print(e)
 				if e != nil {

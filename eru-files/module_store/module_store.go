@@ -1,6 +1,7 @@
 package module_store
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
@@ -27,6 +28,7 @@ type ModuleStoreI interface {
 	GenerateAesKey(projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (aesKey eruaes.AesKey, err error)
 	UploadFile(projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string) (docId string, err error)
 	DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, err error)
+	DownloadFileB64(projectId string, storageName string, folderPath string, fileName string) (fileB64 string, err error)
 	//TestEncrypt(projectId string, text string)
 	//TestAesEncrypt(projectId string, text string, keyName string)
 }
@@ -150,7 +152,10 @@ func (ms *ModuleStore) UploadFile(projectId string, storageName string, file mul
 		return
 	}
 }
-
+func (ms *ModuleStore) DownloadFileB64(projectId string, storageName string, folderPath string, fileName string) (fileB64 string, err error) {
+	f, e := ms.DownloadFile(projectId, storageName, folderPath, fileName)
+	return base64.StdEncoding.EncodeToString(f), e
+}
 func (ms *ModuleStore) DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, err error) {
 	log.Println("inside DownloadFile")
 	prj, err := ms.GetProjectConfig(projectId)

@@ -80,6 +80,43 @@ func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		_, _ = io.Copy(w, bytes.NewReader(file))
 	}
 }
+
+func FileDownloadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		log.Println("FileDownloadHandlerB64 called")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		storageName := vars["storagename"]
+
+		var err error
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		defer cancel()
+		_ = ctx
+
+		dfFromReq := json.NewDecoder(r.Body)
+		dfFromReq.DisallowUnknownFields()
+		dfFromObj := make(map[string]string)
+
+		if err := dfFromReq.Decode(&dfFromObj); err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		fileB64, err := s.DownloadFileB64(projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"])
+		if err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{"file": fileB64})
+	}
+}
+
 func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()

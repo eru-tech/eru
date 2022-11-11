@@ -30,6 +30,7 @@ type SecurityRule struct {
 }
 
 func (sr SecurityRule) Stringify(vars map[string]interface{}, ignoreIfNotFound bool) (str string, err error) {
+	log.Print(vars)
 	if len(sr.CustomRule.AND) > 0 {
 		str, err = processRuleClause(sr.CustomRule.AND, "and", vars, ignoreIfNotFound)
 		return
@@ -94,7 +95,7 @@ func stringifyRule(cd CustomRuleDetails, conditionType string, vars map[string]i
 	} else if ignoreIfNotFound && err.Error() != "no variable prefix found" {
 		return "", nil
 	}
-
+	log.Print(fmt.Sprint(cd.Variable1, op, cd.Variable2))
 	return fmt.Sprint(cd.Variable1, op, cd.Variable2), nil
 }
 
