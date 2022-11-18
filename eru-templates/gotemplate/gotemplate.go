@@ -227,6 +227,15 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			str = strings.Join(inStr, sep)
 			return
 		},
+		"replace": func(txt string, oldStr string, newStr string, num int) (str string, err error) {
+			str = strings.Replace(txt, oldStr, newStr, num)
+			return
+		},
+		"removenull": func(txt string) (str string, err error) {
+			str = strings.Replace(txt, "\u0000", "", -1)
+			str = strings.Replace(str, "\\u0000", "", -1)
+			return
+		},
 	}
 
 	buf := &bytes.Buffer{}
