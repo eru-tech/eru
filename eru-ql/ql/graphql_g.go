@@ -66,7 +66,9 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_m
 
 	//log.Print("len(field.Arguments) = " + string(len(field.Arguments)))
 	for _, ff := range field.Arguments { //TODO to add join to main table without having to add
-		v, _ := ParseAstValue(ff.Value, vars)
+
+		v, e := ParseAstValue(ff.Value, vars)
+		log.Print(e)
 		switch ff.Name.Value {
 		case "where":
 			sqlObj.WhereClause = v
@@ -91,10 +93,13 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_m
 			}
 			sqlObj.Limit = v.(int)
 		case "skip":
-			if ff.Value.GetKind() != kinds.IntValue {
+			if reflect.TypeOf(v).Kind() == reflect.Float64 {
+				v = int(v.(float64))
+			}
+			if reflect.TypeOf(v).Kind() != reflect.Int {
 				return errors.New("Non Integer value received - skip clause need integer value")
 			}
-			v, _ := ParseAstValue(ff.Value, vars)
+			//v, e := ParseAstValue(ff.Value, vars)
 			sqlObj.Skip = v.(int)
 		default:
 		}
