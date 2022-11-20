@@ -389,6 +389,8 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 					} else {
 						op := ""
 						switch v.String() {
+						case "$btw":
+							op = " between "
 						case "$gte":
 							op = " >= "
 						case "$lte":
@@ -415,6 +417,16 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, reflect.ValueOf(newVal), valSuffix))
 						case "$like":
 							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, "%", reflect.ValueOf(newVal), "%", valSuffix))
+						case "$btw":
+							log.Print("printing between clause")
+							log.Print(reflect.ValueOf(newVal))
+							log.Print(reflect.TypeOf(newVal))
+							btwClause, ok := reflect.ValueOf(newVal).Interface().(map[string]interface{})
+							if !ok {
+								log.Print("between clause is not a map")
+							}
+							btwClauseStr := fmt.Sprint("'", btwClause["from_date"], "' and '", btwClause["to_date"], "'")
+							tempArray = append(tempArray, fmt.Sprint(parentKey, op, btwClauseStr))
 						case "$null":
 							nullValue := fmt.Sprint(reflect.ValueOf(newVal))
 							if nullValue == "true" {
