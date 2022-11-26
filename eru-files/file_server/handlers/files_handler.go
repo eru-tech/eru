@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/eru-tech/eru/eru-files/module_store"
@@ -114,6 +115,73 @@ func FileDownloadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		server_handlers.FormatResponse(w, http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{"file": fileB64})
+	}
+}
+
+func FileUploadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		log.Println("FileUploadHandler called")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		storageName := vars["storagename"]
+
+		var err error
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		defer cancel()
+		_ = ctx
+
+		ufFromReq := json.NewDecoder(r.Body)
+		ufFromReq.DisallowUnknownFields()
+		ufFromObj := make(map[string]string)
+
+		if err := ufFromReq.Decode(&ufFromObj); err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		file, ok := ufFromObj["file"]
+		if !ok {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "file attribute missing"})
+			return
+		}
+		docType, ok := ufFromObj["doc_type"]
+		if !ok {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "doc_type attribute missing"})
+			return
+		}
+		fileName, ok := ufFromObj["file_name"]
+		if !ok {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "file_name attribute missing"})
+			return
+		}
+		folderPath, ok := ufFromObj["folder_path"]
+		if !ok {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "folder_path attribute missing"})
+			return
+		}
+		fileBytes, err := b64.StdEncoding.DecodeString(file)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "base64 decode failed"})
+			return
+		}
+		docId, err := s.UploadFileB64(projectId, storageName, fileBytes, fileName, docType, folderPath)
+		if err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		fileNames := make(map[string]string)
+		fileNames[fileName] = docId
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"files": fileNames})
 	}
 }
 

@@ -27,6 +27,7 @@ type ModuleStoreI interface {
 	GenerateRsaKeyPair(projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (rsaKeyPair erursa.RsaKeyPair, err error)
 	GenerateAesKey(projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (aesKey eruaes.AesKey, err error)
 	UploadFile(projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string) (docId string, err error)
+	UploadFileB64(projectId string, storageName string, file []byte, fileName string, docType string, fodlerPath string) (docId string, err error)
 	DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, err error)
 	DownloadFileB64(projectId string, storageName string, folderPath string, fileName string) (fileB64 string, err error)
 	//TestEncrypt(projectId string, text string)
@@ -152,6 +153,32 @@ func (ms *ModuleStore) UploadFile(projectId string, storageName string, file mul
 		return
 	}
 }
+
+func (ms *ModuleStore) UploadFileB64(projectId string, storageName string, file []byte, fileName string, docType string, folderPath string) (docId string, err error) {
+	log.Println("inside UploadFile")
+	log.Println(docType)
+	prj, err := ms.GetProjectConfig(projectId)
+	if err != nil {
+		log.Print("error in GetProjectConfig ", err)
+		return
+	}
+
+	if storageObj, ok := prj.Storages[storageName]; !ok {
+		err = errors.New(fmt.Sprint("storage ", storageName, " not found"))
+		return
+	} else {
+		keyName, kpErr := storageObj.GetAttribute("KeyPair")
+		if err != nil {
+			err = kpErr
+			log.Print(err)
+			return
+		}
+		log.Print(keyName.(string))
+		docId, err = storageObj.UploadFileB64(file, fileName, docType, folderPath, prj.AesKeys[keyName.(string)])
+		return
+	}
+}
+
 func (ms *ModuleStore) DownloadFileB64(projectId string, storageName string, folderPath string, fileName string) (fileB64 string, err error) {
 	f, e := ms.DownloadFile(projectId, storageName, folderPath, fileName)
 	return base64.StdEncoding.EncodeToString(f), e

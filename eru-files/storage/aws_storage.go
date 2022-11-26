@@ -111,15 +111,15 @@ func (awsStorage *AwsStorage) UploadFile(file multipart.File, header *multipart.
 		return
 	}
 	log.Println("size = ", len(byteContainer))
-	log.Println("file.Read(byteContainer)")
-	log.Println(file.Read(byteContainer))
+	//log.Println("file.Read(byteContainer)")
+	//log.Println(file.Read(byteContainer))
 
-	log.Println(awsStorage.EncryptFiles)
+	//log.Println(awsStorage.EncryptFiles)
 
 	if awsStorage.EncryptFiles {
-		log.Print(len(byteContainer))
+		//log.Print(len(byteContainer))
 		byteContainer = eruaes.Pad(byteContainer, 16)
-		log.Print(len(byteContainer))
+		//log.Print(len(byteContainer))
 		byteContainer, err = eruaes.EncryptCBC(byteContainer, keyName.Key, keyName.Vector)
 		if err != nil {
 			log.Println(err)
@@ -128,17 +128,61 @@ func (awsStorage *AwsStorage) UploadFile(file multipart.File, header *multipart.
 		enc = ".enc"
 	}
 	docId = ksuid.New().String()
-	log.Println(docType)
+	//log.Println(docType)
 	if docType != "" {
 		docType = fmt.Sprint(docType, "_")
 	}
-	log.Println(docType)
+	//log.Println(docType)
 	finalFileName := fmt.Sprint(docType, docId, "_", header.Filename, enc)
 	uploader := s3manager.NewUploader(awsStorage.session)
 	_, err = uploader.Upload(&s3manager.UploadInput{
 		Bucket: aws.String(awsStorage.BucketName),
 		Key:    aws.String(fmt.Sprint(folderPath, "/", finalFileName)),
 		Body:   bytes.NewReader(byteContainer),
+	})
+	return
+}
+
+func (awsStorage *AwsStorage) UploadFileB64(file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+	log.Println("inside AwsStorage UploadFileB64")
+	if awsStorage.session == nil {
+		log.Print("creating AWS session")
+		err = awsStorage.Init()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	}
+	enc := ""
+	log.Println("size = ", len(file))
+	//log.Println("file.Read(byteContainer)")
+	//log.Println(file.Read(byteContainer))
+
+	//log.Println(awsStorage.EncryptFiles)
+
+	if awsStorage.EncryptFiles {
+		//log.Print(len(byteContainer))
+		file = eruaes.Pad(file, 16)
+		//log.Print(len(byteContainer))
+		file, err = eruaes.EncryptCBC(file, keyName.Key, keyName.Vector)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		enc = ".enc"
+	}
+	docId = ksuid.New().String()
+	//log.Println(docType)
+	if docType != "" {
+		docType = fmt.Sprint(docType, "_")
+	}
+	//log.Println(docType)
+	finalFileName := fmt.Sprint(docType, docId, "_", fileName, enc)
+	uploader := s3manager.NewUploader(awsStorage.session)
+	_, err = uploader.Upload(&s3manager.UploadInput{
+		Bucket: aws.String(awsStorage.BucketName),
+		Key:    aws.String(fmt.Sprint(folderPath, "/", finalFileName)),
+		Body:   bytes.NewReader(file),
 	})
 	return
 }
