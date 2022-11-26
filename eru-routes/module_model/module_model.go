@@ -36,6 +36,6 @@ func (prg *Project) AddFunc(funcObj routes.FuncGroup) error {
 		prg.FuncGroups = make(map[string]routes.FuncGroup)
 	}
 	prg.FuncGroups[funcObj.FuncGroupName] = funcObj
-	log.Println(prg)
+	//log.Println(prg)
 	return nil
 }

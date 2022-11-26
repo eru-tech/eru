@@ -276,7 +276,7 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 		//log.Println(req.Header.Get("Content-Length"))
 	}
 
-	printRequestBody(req, "body from funcstep transformRequest - after else part")
+	//printRequestBody(req, "body from funcstep transformRequest - after else part")
 	defer req.Body.Close()
 	err = processHeaderTemplates(req, funcStep.RemoveParams.RequestHeaders, funcStep.RequestHeaders, false, vars, funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl, reqVars, resVars)
 	if err != nil {
@@ -313,10 +313,10 @@ func (funcStep *FuncStep) transformResponse(response *http.Response, trReqVars *
 		vars.Vars = make(map[string]interface{})
 	}
 	//log.Println("++++++++++++++++++++++++++++++")
-	for k, v := range vars.Vars {
-		log.Println(k)
-		log.Println(v)
-	}
+	//for k, v := range vars.Vars {
+	//	log.Println(k)
+	//	log.Println(v)
+	//}
 
 	tmplBodyFromRes := json.NewDecoder(response.Body)
 	tmplBodyFromRes.DisallowUnknownFields()
@@ -336,7 +336,7 @@ func (funcStep *FuncStep) transformResponse(response *http.Response, trReqVars *
 		tempBody["data"] = string(body)
 		vars.Body = tempBody
 	}
-	log.Print(vars.Body)
+	//log.Print(vars.Body)
 	if funcStep.TransformResponse != "" {
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = vars

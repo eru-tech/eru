@@ -39,7 +39,7 @@ func createFormFile(w *multipart.Writer, contentType string, fieldName string, f
 
 func loadRequestVars(vars *TemplateVars, request *http.Request) (err error) {
 	log.Println("inside loadRequestVars")
-	log.Println(vars)
+	//log.Println(vars)
 	//utils.PrintRequestBody(request, "printing request body from loadRequestVars")
 	vars.Headers = make(map[string]interface{})
 	for k, v := range request.Header {
@@ -194,6 +194,7 @@ func makeMultipart(request *http.Request, formData []Headers, fileData []FilePar
 			}
 			//log.Println(filecontentStr)
 			decodeBytes := []byte("")
+			//TODO make temp file name unique
 			decodeBytes, err = b64.StdEncoding.DecodeString(filecontentStr)
 			if err != nil {
 				log.Println(err)
@@ -235,7 +236,7 @@ func makeMultipart(request *http.Request, formData []Headers, fileData []FilePar
 		log.Println(request.Header.Get("Content-Type"))
 		defer request.Body.Close()
 	}
-	printRequestBody(request, "request body from makemultipart")
+	//printRequestBody(request, "request body from makemultipart")
 	return
 }
 
@@ -455,7 +456,12 @@ func printResponseBody(response *http.Response, msg string) {
 	}
 	log.Println(msg)
 	//log.Println(body)
-	log.Println(string(body))
+	cl, _ := strconv.Atoi(response.Header.Get("Content-Length"))
+	if cl > 1000 {
+		log.Println(string(body)[1:1000])
+	} else {
+		log.Println(string(body))
+	}
 	log.Println(response.Header.Get("Content-Length"))
 	response.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
