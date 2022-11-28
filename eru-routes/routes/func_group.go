@@ -2,7 +2,9 @@ package routes
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -11,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type FuncGroup struct {
@@ -27,35 +30,78 @@ type FuncTemplateVars struct {
 }
 
 type FuncStep struct {
-	LoopVariable      string
-	RouteName         string
-	Path              string
-	Route             Route `json:"-"`
-	RequestHeaders    []Headers
-	QueryParams       []Headers
-	FormData          []Headers
-	FileData          []FilePart
-	ResponseHeaders   []Headers
-	TransformRequest  string
-	TransformResponse string
-	IsPublic          bool
-	RemoveParams      RemoveParams
-	FuncSteps         map[string]*FuncStep
+	Condition            string
+	ConditionFailMessage string
+	ConditionFailAction  string
+	Async                bool
+	AsyncMessage         string
+	LoopVariable         string
+	LoopInParallel       bool
+	RouteName            string
+	Path                 string
+	Route                Route `json:"-"`
+	RequestHeaders       []Headers
+	QueryParams          []Headers
+	FormData             []Headers
+	FileData             []FilePart
+	ResponseHeaders      []Headers
+	TransformRequest     string
+	TransformResponse    string
+	IsPublic             bool
+	RemoveParams         RemoveParams
+	FuncSteps            map[string]*FuncStep
 }
 
 func (funcGroup *FuncGroup) Execute(request *http.Request) (response *http.Response, err error) {
 	log.Println("inside funGroup Execute")
 	reqVars := make(map[string]*TemplateVars)
 	resVars := make(map[string]*TemplateVars)
-	for _, v := range funcGroup.FuncSteps {
-		response, err = v.execute(request, reqVars, resVars, v.RouteName)
+	log.Print("len(funcGroup.FuncSteps) = ", len(funcGroup.FuncSteps))
+
+	var responses []*http.Response
+	var errs []error
+
+	var funcJobs = make(chan FuncJob, 10)
+	var funcResults = make(chan FuncResult, 10)
+	startTime := time.Now()
+	go allocateFunc(request, funcGroup.FuncSteps, reqVars, resVars, funcJobs)
+	done := make(chan bool)
+
+	go func(done chan bool, funcResults chan FuncResult) {
+		for res := range funcResults {
+			responses = append(responses, res.response)
+			//trResVars = append(trResVars, res.responseVars)
+			errs = append(errs, res.responseErr)
+		}
+		done <- true
+	}(done, funcResults)
+
+	//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
+	noOfWorkers := 10 //TODO make to configurable
+	if len(funcGroup.FuncSteps) < noOfWorkers {
+		noOfWorkers = len(funcGroup.FuncSteps)
 	}
+
+	log.Print("noOfWorkers = ", noOfWorkers)
+	createWorkerPoolFunc(noOfWorkers, funcJobs, funcResults)
+	<-done
+	log.Print("after done")
+	log.Print("len(responses) = ", len(responses))
+	//log.Print("len(trVars) = ", len(trResVars))
+	log.Print("len(errs) = ", len(errs))
+	endTime := time.Now()
+	diff := endTime.Sub(startTime)
+	fmt.Println("total time taken ", diff.Seconds(), "seconds")
+	//for _, v := range funcGroup.FuncSteps {
+	//	response, err = v.execute(request, reqVars, resVars, v.RouteName)
+	//	utils.PrintResponseBody(response,"printing response from (funcGroup *FuncGroup) Execute")
+	//}
+	response, _, err = clubResponses(responses, nil, errs)
 	return
 }
 
-func (funcStep *FuncStep) execute(request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string) (response *http.Response, err error) {
+func (funcStep *FuncStep) RunFuncStep(request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string) (response *http.Response, err error) {
 	log.Println("*******************funcStep execute start for ", funcStep.RouteName, " *******************")
-
 	/*
 		vars := &TemplateVars{}
 		var loopArray []interface{}
@@ -119,27 +165,24 @@ func (funcStep *FuncStep) execute(request *http.Request, reqVars map[string]*Tem
 		return
 	}
 	reqVars[funcStep.RouteName] = vars
-
-	//printRequestBody(req,"body from funcStep execute")
-
+	defer req.Body.Close()
 	routevars := &TemplateVars{}
 	_ = routevars
-	var reErr error
-
-	responses, routevarss, reErrs := funcStep.Route.Execute(req, funcStep.Path)
-	if reErrs[0] != nil {
-		err = reErr
+	response, routevars, err = funcStep.Route.Execute(req, funcStep.Path)
+	if err != nil {
 		log.Print(err)
 		return
 	}
-	if funcStep.Route.OnError == "STOP" && responses[0].StatusCode >= 400 {
+
+	if funcStep.Route.OnError == "STOP" && response.StatusCode >= 400 {
 		return
 	}
-	resVars[funcStep.RouteName] = routevarss[0]
+	resVars[funcStep.RouteName] = routevars
 	//log.Println("resVars[funcStep.RouteName] for ",funcStep.RouteName)
 	//log.Println(resVars[funcStep.RouteName])
 
 	//response *http.Response, trReqVars TemplateVars, resHeaders []Headers, removeHeaders []string, templateName string, templateString string,tokenHeaderKey string,jwkUrl string) (trResVars TemplateVars , err error)
+
 	var trespErr error
 	resVars[funcStep.RouteName], trespErr = funcStep.transformResponse(response, resVars[funcStep.RouteName], reqVars, resVars)
 	if trespErr != nil {
@@ -152,7 +195,7 @@ func (funcStep *FuncStep) execute(request *http.Request, reqVars map[string]*Tem
 	//log.Println(resVars[funcStep.RouteName])
 
 	for _, cv := range funcStep.FuncSteps {
-		response, err = cv.execute(request, reqVars, resVars, mainRouteName)
+		response, err = cv.RunFuncStep(request, reqVars, resVars, mainRouteName)
 	}
 	//		loopCounter++
 	//}
@@ -162,7 +205,7 @@ func (funcStep *FuncStep) execute(request *http.Request, reqVars map[string]*Tem
 
 func cloneRequest(request *http.Request) (req *http.Request, err error) {
 	log.Println("clone request")
-	req = request.Clone(request.Context())
+	req = request.Clone(context.Background())
 
 	//req, err = http.NewRequest(request.Method, request.URL.String(), nil)
 	//if err != nil {
@@ -242,6 +285,7 @@ func cloneRequest(request *http.Request) (req *http.Request, err error) {
 		req.Header.Set("Content-Length", strconv.Itoa(reqBody.Len()))
 		req.ContentLength = int64(reqBody.Len())
 	} else {
+		log.Print("inside else - cloneRequest")
 		body, err3 := ioutil.ReadAll(request.Body)
 		if err3 != nil {
 			err = err3
@@ -250,6 +294,7 @@ func cloneRequest(request *http.Request) (req *http.Request, err error) {
 		}
 		//log.Println("body from clonerequest - else part")
 		//log.Println(string(body))
+		request.Body = ioutil.NopCloser(bytes.NewReader(body))
 		req.Body = ioutil.NopCloser(bytes.NewReader(body))
 	}
 
@@ -258,21 +303,6 @@ func cloneRequest(request *http.Request) (req *http.Request, err error) {
 
 func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string) (req *http.Request, vars *TemplateVars, err error) {
 	log.Println("inside funcStep.transformRequest")
-	makeMultiPartCalled := false
-	//printRequestBody(request,"body from funcStep transformRequest")
-	defer request.Body.Close()
-	vars = &TemplateVars{}
-	log.Print(mainRouteName, " == ", funcStep.RouteName)
-	if mainRouteName == funcStep.RouteName {
-		err = loadRequestVars(vars, request)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	} else {
-		log.Println("vars = reqVars[mainRouteName]")
-		vars = reqVars[mainRouteName]
-	}
 
 	oldContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	req, err = cloneRequest(request)
@@ -281,6 +311,22 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 	if err != nil {
 		log.Println(err)
 		return req, &TemplateVars{}, err
+	}
+
+	makeMultiPartCalled := false
+	//printRequestBody(request,"body from funcStep transformRequest")
+	//defer request.Body.Close()
+	vars = &TemplateVars{}
+	log.Print(mainRouteName, " == ", funcStep.RouteName)
+	if mainRouteName == funcStep.RouteName {
+		err = loadRequestVars(vars, req)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	} else {
+		log.Println("vars = reqVars[mainRouteName]")
+		vars = reqVars[mainRouteName]
 	}
 
 	//reqVarsLoaded := false
@@ -346,7 +392,7 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 	}
 
 	//printRequestBody(req, "body from funcstep transformRequest - after else part")
-	defer req.Body.Close()
+	//defer req.Body.Close()
 	err = processHeaderTemplates(req, funcStep.RemoveParams.RequestHeaders, funcStep.RequestHeaders, false, vars, funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl, reqVars, resVars)
 	if err != nil {
 		log.Println(err)
@@ -359,7 +405,7 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 func (funcStep *FuncStep) transformResponse(response *http.Response, trReqVars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (vars *TemplateVars, err error) {
 	log.Println("inside funcStep transformResponse")
 	vars = trReqVars
-
+	log.Print(response)
 	//printResponseBody(response,"printing response from funcStep TransformResponse")
 	//vars.ReqVars = reqVars
 	//vars.ResVars = resVars

@@ -241,17 +241,19 @@ func (route *Route) getTargetHost() (targetHost TargetHost, err error) {
 	return
 }
 
-func (route *Route) Execute(request *http.Request, url string) (responses []*http.Response, trResVars []*TemplateVars, errs []error) {
+func (route *Route) Execute(request *http.Request, url string) (response *http.Response, trResVar *TemplateVars, resErr error) {
 	log.Println("inside route.Execute")
 	//log.Println("url = ", url)
 	//utils.PrintRequestBody(request, "printing request from route Execute")
 	//log.Print(request.Header)
-
+	var responses []*http.Response
 	trReqVars := &TemplateVars{}
+	var trResVars []*TemplateVars
+	var errs []error
 	err := loadRequestVars(trReqVars, request)
 	if err != nil {
 		log.Println(err)
-		errs = append(errs, err)
+		resErr = err
 		return
 	}
 
@@ -262,13 +264,13 @@ func (route *Route) Execute(request *http.Request, url string) (responses []*htt
 		log.Print(string(output))
 		if outputErr != nil {
 			log.Println(outputErr)
-			errs = append(errs, outputErr)
+			resErr = err
 			return
 		}
 		strCond, strCondErr := strconv.Unquote(string(output))
 		if strCondErr != nil {
 			log.Println(strCondErr)
-			errs = append(errs, strCondErr)
+			resErr = err
 			return
 		}
 		if strCond == "false" {
@@ -280,7 +282,7 @@ func (route *Route) Execute(request *http.Request, url string) (responses []*htt
 				log.Print(string(cfmOutput))
 				if cfmOutputErr != nil {
 					log.Println(cfmOutputErr)
-					errs = append(errs, cfmOutputErr)
+					resErr = err
 					return
 				}
 				cfmBody = string(cfmOutput)
@@ -292,7 +294,7 @@ func (route *Route) Execute(request *http.Request, url string) (responses []*htt
 
 			condRespHeader := http.Header{}
 			condRespHeader.Set("Content-Type", "application/json")
-			response := &http.Response{
+			response = &http.Response{
 				StatusCode:    statusCode,
 				Proto:         "HTTP/1.1",
 				ProtoMajor:    1,
@@ -315,7 +317,7 @@ func (route *Route) Execute(request *http.Request, url string) (responses []*htt
 		log.Print(string(output))
 		if outputErr != nil {
 			log.Println(outputErr)
-			errs = append(errs, outputErr)
+			resErr = err
 			return
 		}
 		var loopJson interface{}
@@ -323,14 +325,14 @@ func (route *Route) Execute(request *http.Request, url string) (responses []*htt
 		if loopJsonErr != nil {
 			err = errors.New("route loop variable is not a json")
 			log.Print(loopJsonErr)
-			errs = append(errs, err)
+			resErr = err
 		}
 
 		ok := false
 		if loopArray, ok = loopJson.([]interface{}); !ok {
 			err = errors.New("route loop variable is not an array")
 			log.Print(err)
-			errs = append(errs, err)
+			resErr = err
 			return
 		}
 		log.Print("loopArray = ", loopArray)
@@ -358,7 +360,7 @@ func (route *Route) Execute(request *http.Request, url string) (responses []*htt
 	//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
 	noOfWorkers := 1
 	if route.LoopInParallel && route.LoopVariable != "" {
-		noOfWorkers = 2
+		noOfWorkers = 5
 		if len(loopArray) < noOfWorkers {
 			noOfWorkers = len(loopArray)
 		}
@@ -371,6 +373,8 @@ func (route *Route) Execute(request *http.Request, url string) (responses []*htt
 	log.Print("len(responses) = ", len(responses))
 	log.Print("len(trVars) = ", len(trResVars))
 	log.Print("len(errs) = ", len(errs))
+	log.Print("calling clubResponses from route")
+	response, trResVar, resErr = clubResponses(responses, trResVars, errs)
 	endTime := time.Now()
 	diff := endTime.Sub(startTime)
 	fmt.Println("total time taken ", diff.Seconds(), "seconds")

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	b64 "encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	erujwt "github.com/eru-tech/eru/eru-crypto/jwt"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
@@ -40,7 +41,6 @@ func createFormFile(w *multipart.Writer, contentType string, fieldName string, f
 func loadRequestVars(vars *TemplateVars, request *http.Request) (err error) {
 	log.Println("inside loadRequestVars")
 	log.Println(vars)
-	//utils.PrintRequestBody(request, "printing request body from loadRequestVars")
 	vars.Headers = make(map[string]interface{})
 	for k, v := range request.Header {
 		vars.Headers[k] = v
@@ -466,4 +466,102 @@ func printResponseBody(response *http.Response, msg string) {
 	log.Println(string(body))
 	log.Println(response.Header.Get("Content-Length"))
 	response.Body = ioutil.NopCloser(bytes.NewReader(body))
+}
+
+func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs []error) (response *http.Response, trResVar *TemplateVars, err error) {
+	//check error of first record only as it is same host
+	log.Print("len(responses) = ", len(responses))
+	//log.Print("len(trVars) = ", len(trVars))
+	log.Print("len(errs) = ", len(errs))
+
+	var errMsg []string
+	errorFound := false
+	for _, e := range errs {
+		if e != nil {
+			errorFound = true
+			errMsg = append(errMsg, e.Error())
+		} else {
+			errMsg = append(errMsg, "-")
+		}
+
+	}
+	//trResVar - copying all attributes of first element as it will be same except response body
+	trResVar = &TemplateVars{}
+	if trResVars != nil {
+		if trResVars[0] != nil {
+			trResVar.LoopVars = trResVars[0].LoopVars
+			trResVar.Vars = trResVars[0].Vars
+			trResVar.FormData = trResVars[0].FormData
+			trResVar.Params = trResVars[0].Params
+			trResVar.Headers = trResVars[0].Headers
+			trResVar.FormDataKeyArray = trResVars[0].FormDataKeyArray
+			trResVar.Token = trResVars[0].Token
+			var resBody []interface{}
+			for _, tr := range trResVars {
+				resBody = append(resBody, tr.Body)
+			}
+			trResVar.Body = resBody
+		}
+	}
+
+	if errorFound {
+		log.Println(" httpClient.Do error ")
+		log.Println(errMsg)
+		return nil, trResVar, errors.New(strings.Join(errMsg, " , "))
+	}
+
+	defer func(resps []*http.Response) {
+		for _, resp := range resps {
+			resp.Body.Close()
+		}
+	}(responses)
+
+	respHeader := http.Header{}
+	for k, v := range responses[0].Header {
+		// for loop, content length is calculcated below based on all responses
+		if k != "Content-Length" { //TODO is this needed? || route.LoopVariable == ""
+			for _, h := range v {
+				respHeader.Set(k, h)
+			}
+		}
+	}
+	var rJsonArray []interface{}
+	for _, rp := range responses {
+		var rJson interface{}
+		err = json.NewDecoder(rp.Body).Decode(&rJson)
+		if err != nil {
+			log.Println("================")
+			log.Println(err)
+			return nil, trResVar, err
+		}
+		rJson = stripSingleElement(rJson)
+		rJsonArray = append(rJsonArray, rJson)
+	}
+	rJsonArrayBytes, eee := json.Marshal(rJsonArray)
+	if eee != nil {
+		return nil, trResVar, eee
+	}
+	respHeader.Set("Content-Length", fmt.Sprint(len(rJsonArrayBytes)))
+
+	response = &http.Response{
+		StatusCode:    http.StatusOK,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Body:          ioutil.NopCloser(bytes.NewBuffer(rJsonArrayBytes)),
+		ContentLength: int64(len(rJsonArrayBytes)),
+		Request:       responses[0].Request,
+		Header:        respHeader,
+	}
+	return
+}
+
+func stripSingleElement(obj interface{}) interface{} {
+	if objArray, ok := obj.([]interface{}); !ok {
+		return obj
+	} else if len(objArray) == 1 {
+		return objArray[0]
+	} else {
+		return obj
+	}
 }

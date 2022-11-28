@@ -40,7 +40,6 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		defer response.Body.Close()
-		log.Println(response.Body)
 		for k, v := range response.Header {
 			w.Header()[k] = v
 		}
