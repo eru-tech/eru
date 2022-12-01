@@ -57,7 +57,8 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			decodeBytes, err := b64.StdEncoding.DecodeString(str)
 			if err != nil {
 				log.Println(err)
-				return "", err
+				//return empty string with nil error to silently proceed even if base64 conversion fails
+				return "", nil
 			}
 			return string(decodeBytes), nil
 		},
