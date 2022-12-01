@@ -148,7 +148,8 @@ func processTemplate(templateName string, templateString string, vars map[string
 			outputBytes = nil
 		}
 	} else if ruleValue[0] == module_model.RULEPREFIX_NONE {
-		return executeTemplate(templateName, templateStr, make(map[string]interface{}), outputType)
+		log.Print(vars)
+		return executeTemplate(templateName, templateStr, vars, outputType)
 	}
 	return
 }
