@@ -565,3 +565,29 @@ func stripSingleElement(obj interface{}) interface{} {
 		return obj
 	}
 }
+
+func protect(f func()) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("Recovered: %v", err)
+		}
+	}()
+
+	f()
+}
+
+func errorResponse(errMsg string, request *http.Request) (response *http.Response) {
+	errRespHeader := http.Header{}
+	errRespHeader.Set("Content-Type", "application/json")
+	response = &http.Response{
+		StatusCode:    http.StatusBadRequest,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Body:          ioutil.NopCloser(bytes.NewBufferString(errMsg)),
+		ContentLength: int64(len(errMsg)),
+		Request:       request,
+		Header:        errRespHeader,
+	}
+	return
+}

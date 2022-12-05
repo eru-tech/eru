@@ -49,16 +49,16 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 	db, err := sqlx.Open(store.DbType, dbString)
 	if err != nil {
 		log.Print(err)
-		log.Print("creating blank db store")
-		store.SaveStore("", nil)
+		//log.Print("creating blank db store")
+		//store.SaveStore("", nil)
 		return nil, err
 	}
 	defer db.Close()
 	rows, err := db.Queryx(fmt.Sprint("select * from ", store.StoreTableName, " limit 1"))
 	if err != nil {
 		log.Print(err)
-		log.Print("creating blank db store")
-		store.SaveStore("", nil)
+		//log.Print("creating blank db store")
+		//store.SaveStore("", nil)
 		return nil, err
 	}
 	mapping := make(map[string]interface{})
@@ -67,8 +67,8 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 		err = rows.MapScan(mapping)
 		if err != nil {
 			log.Print(err)
-			log.Print("creating blank db store")
-			store.SaveStore("", nil)
+			//log.Print("creating blank db store")
+			//store.SaveStore("", nil)
 			return nil, err
 		}
 		storeData = mapping["config"]
@@ -80,9 +80,9 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 	}
 	if storeData == nil {
 		log.Print("no config data retrived from db")
-		log.Print("creating blank db store")
-		store.SaveStore("", nil)
-		return nil, err
+		//log.Print("creating blank db store")
+		//store.SaveStore("", nil)
+		return nil, errors.New("no config data retrived from db")
 	}
 	return storeData.([]byte), err
 }
@@ -97,15 +97,15 @@ func (store *DbStore) LoadStore(dbString string, ms StoreI) (err error) {
 	defer db.Close()
 	if err != nil {
 		log.Print(err)
-		log.Print("creating blank db store")
-		store.SaveStore("", nil)
+		//log.Print("creating blank db store")
+		//store.SaveStore("", nil)
 		return err
 	}
 	rows, err := db.Queryx(fmt.Sprint("select * from ", store.StoreTableName, " limit 1"))
 	if err != nil {
 		log.Print(err)
-		log.Print("creating blank db store")
-		store.SaveStore("", nil)
+		//log.Print("creating blank db store")
+		//store.SaveStore("", nil)
 		return err
 	}
 	mapping := make(map[string]interface{})
@@ -113,8 +113,8 @@ func (store *DbStore) LoadStore(dbString string, ms StoreI) (err error) {
 		err = rows.MapScan(mapping)
 		if err != nil {
 			log.Print(err)
-			log.Print("creating blank db store")
-			store.SaveStore("", nil)
+			//log.Print("creating blank db store")
+			//store.SaveStore("", nil)
 			return err
 		}
 		storeData := mapping["config"]
@@ -124,8 +124,8 @@ func (store *DbStore) LoadStore(dbString string, ms StoreI) (err error) {
 		err = json.Unmarshal(storeData.([]byte), ms)
 		if err != nil {
 			log.Print(err)
-			log.Print("creating blank db store")
-			store.SaveStore("", nil)
+			//log.Print("creating blank db store")
+			//store.SaveStore("", nil)
 			return err
 		}
 		store.UpdateTime = storeUpdateTime.(time.Time)
@@ -134,8 +134,8 @@ func (store *DbStore) LoadStore(dbString string, ms StoreI) (err error) {
 	}
 	if err != nil {
 		log.Print(err)
-		log.Print("creating blank db store")
-		store.SaveStore("", nil)
+		//log.Print("creating blank db store")
+		//store.SaveStore("", nil)
 		return err
 	}
 	//loadEnvironmentVariable(store)
@@ -152,8 +152,8 @@ func (store *DbStore) SaveStore(dbString string, ms StoreI) (err error) {
 	defer db.Close()
 	if err != nil {
 		log.Print(err)
-		log.Print("creating blank db store")
-		store.SaveStore("", nil) //TODO - seems recursive call in case of error
+		//log.Print("creating blank db store")
+		//store.SaveStore("", nil) //TODO - seems recursive call in case of error
 		return err
 	}
 	tx := db.MustBegin()

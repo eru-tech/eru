@@ -175,7 +175,7 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			return
 		}
 		// overwriting variables with same names
-		if myQuery != nil {
+		if myQuery.QueryName != "" {
 			qlInterface := ql.GetQL(myQuery.QueryType)
 			if qlInterface == nil {
 				server_handlers.FormatResponse(w, 400)
@@ -190,7 +190,7 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				// do nothing - silently execute with is_public as false
 			}
 
-			qlInterface.SetQLData(*myQuery, postBody, true, tokenObj, isPublic)
+			qlInterface.SetQLData(myQuery, postBody, true, tokenObj, isPublic)
 			res, _, err = qlInterface.Execute(projectID, datasources, s)
 			/*
 				if err != nil {

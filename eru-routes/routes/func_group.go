@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -68,6 +69,11 @@ func (funcGroup *FuncGroup) Execute(request *http.Request) (response *http.Respo
 	done := make(chan bool)
 
 	go func(done chan bool, funcResults chan FuncResult) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Print("goroutine paniqued Func Execute: ", r)
+			}
+		}()
 		for res := range funcResults {
 			responses = append(responses, res.response)
 			//trResVars = append(trResVars, res.responseVars)
@@ -77,7 +83,7 @@ func (funcGroup *FuncGroup) Execute(request *http.Request) (response *http.Respo
 	}(done, funcResults)
 
 	//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
-	noOfWorkers := 10 //TODO make to configurable
+	noOfWorkers := 1 //TODO make to configurable
 	if len(funcGroup.FuncSteps) < noOfWorkers {
 		noOfWorkers = len(funcGroup.FuncSteps)
 	}
@@ -100,65 +106,176 @@ func (funcGroup *FuncGroup) Execute(request *http.Request) (response *http.Respo
 	return
 }
 
-func (funcStep *FuncStep) RunFuncStep(request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string) (response *http.Response, err error) {
+func (funcStep *FuncStep) RunFuncStep(req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string) (response *http.Response, err error) {
 	log.Println("*******************funcStep execute start for ", funcStep.RouteName, " *******************")
-	/*
-		vars := &TemplateVars{}
-		var loopArray []interface{}
-		if funcStep.LoopVariable != "" {
-			log.Print(mainRouteName, " == ", funcStep.RouteName)
-			if mainRouteName == funcStep.RouteName {
-				err = loadRequestVars(vars, request)
-				if err != nil {
-					log.Println(err)
+	request, err := cloneRequest(req)
+	var responses []*http.Response
+	var errs []error
+	reqVars[funcStep.RouteName] = &TemplateVars{}
+	//var trResVars []*TemplateVars
+	//var errs []error
+	lrErr := loadRequestVars(reqVars[funcStep.RouteName], request)
+	if lrErr != nil {
+		log.Println(lrErr)
+		err = lrErr
+		response = errorResponse(err.Error(), request)
+		return
+	}
+
+	if funcStep.Condition != "" {
+		avars := &FuncTemplateVars{}
+		avars.Vars = reqVars[funcStep.RouteName]
+		output, outputErr := processTemplate(funcStep.RouteName, funcStep.Condition, avars, "string", "", "")
+		log.Print(string(output))
+		if outputErr != nil {
+			log.Println(outputErr)
+			err = outputErr
+			response = errorResponse(err.Error(), request)
+			return
+		}
+		strCond, strCondErr := strconv.Unquote(string(output))
+		if strCondErr != nil {
+			log.Println(strCondErr)
+			err = strCondErr
+			response = errorResponse(err.Error(), request)
+			return
+		}
+		if strCond == "false" {
+			cfmBody := "{}"
+			if funcStep.ConditionFailMessage != "" {
+				cfmvars := &FuncTemplateVars{}
+				cfmvars.Vars = reqVars[funcStep.RouteName]
+				cfmOutput, cfmOutputErr := processTemplate(funcStep.RouteName, funcStep.ConditionFailMessage, avars, "json", "", "")
+				log.Print(string(cfmOutput))
+				if cfmOutputErr != nil {
+					log.Println(cfmOutputErr)
+					err = cfmOutputErr
+					response = errorResponse(err.Error(), request)
 					return
 				}
-			} else {
-				log.Println("vars = reqVars[mainRouteName] : ", reqVars[mainRouteName])
-				vars = reqVars[mainRouteName]
+				cfmBody = string(cfmOutput)
 			}
-			log.Print(vars)
-			fvars := &FuncTemplateVars{}
-			fvars.Vars = vars
-			fvars.ResVars = resVars
-			fvars.ReqVars = reqVars
-			output, outputErr := processTemplate(funcStep.RouteName, funcStep.LoopVariable, fvars, "json", funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl)
-			log.Print(string(output))
-			if outputErr != nil {
-				err = outputErr
-				log.Println(err)
-				return
-			}
-			var loopJson interface{}
-			loopJsonErr := json.Unmarshal(output, &loopJson)
-			if loopJsonErr != nil {
-				err = errors.New("function loop variable is not a json")
-				log.Print(loopJsonErr)
+			statusCode := http.StatusOK
+			if funcStep.ConditionFailAction == ConditionFailActionError {
+				statusCode = http.StatusBadRequest
 			}
 
-			ok := false
-			if loopArray, ok = loopJson.([]interface{}); !ok {
-				err = errors.New("function loop variable is not an array")
-				log.Print(err)
-				return
+			condRespHeader := http.Header{}
+			condRespHeader.Set("Content-Type", "application/json")
+			response = &http.Response{
+				StatusCode:    statusCode,
+				Proto:         "HTTP/1.1",
+				ProtoMajor:    1,
+				ProtoMinor:    1,
+				Body:          ioutil.NopCloser(bytes.NewBufferString(cfmBody)),
+				ContentLength: int64(len(cfmBody)),
+				Request:       request,
+				Header:        condRespHeader,
 			}
-			log.Print("loopArray = ", loopArray)
+			responses = append(responses, response)
+			return
+		}
+	}
+	asyncMessage := ""
+	if funcStep.Async && funcStep.AsyncMessage != "" {
+		avars := &FuncTemplateVars{}
+		avars.Vars = reqVars[funcStep.RouteName]
+		output, outputErr := processTemplate(funcStep.RouteName, funcStep.AsyncMessage, avars, "json", "", "")
+		log.Print(string(output))
+		if outputErr != nil {
+			log.Println(outputErr)
+			err = outputErr
+			response = errorResponse(err.Error(), request)
+			return
+		}
+		asyncMessage = string(output)
+	}
 
+	var loopArray []interface{}
+	if funcStep.LoopVariable != "" {
+		fvars := &FuncTemplateVars{}
+		fvars.Vars = reqVars[funcStep.RouteName]
+		output, outputErr := processTemplate(funcStep.RouteName, funcStep.LoopVariable, fvars, "json", "", "")
+		log.Print(string(output))
+		if outputErr != nil {
+			log.Println(outputErr)
+			err = outputErr
+			response = errorResponse(err.Error(), request)
+			return
+		}
+		var loopJson interface{}
+		loopJsonErr := json.Unmarshal(output, &loopJson)
+		if loopJsonErr != nil {
+			err = errors.New("func loop variable is not a json")
+			response = errorResponse(err.Error(), request)
+			log.Print(loopJsonErr)
 		}
 
-		loopEnd := false
-		loopCounter := 0
-		for !loopEnd {
-			if loopCounter == len(loopArray) {
-				break
-			}
-			log.Print(loopArray[loopCounter])
-			loopObject := &LoopObject{}
-			loopObject.Index =loopCounter
-			loopObject.Object=loopArray[loopCounter]
-	*/
+		ok := false
+		if loopArray, ok = loopJson.([]interface{}); !ok {
+			err = errors.New("func loop variable is not an array")
+			log.Print(err)
+			response = errorResponse(err.Error(), request)
+			return
+		}
+		log.Print("loopArray = ", loopArray)
 
-	req, vars, trErr := funcStep.transformRequest(request, reqVars, resVars, mainRouteName)
+	} else {
+		//dummy row added to create a job
+		loopArray = append(loopArray, make(map[string]interface{}))
+	}
+
+	var jobs = make(chan FuncJob, 10)
+	var results = make(chan FuncResult, 10)
+	startTime := time.Now()
+	go allocateFuncInner(request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs)
+	done := make(chan bool)
+	//go result(done,results,responses, trResVars,errs)
+	var trResVars []*TemplateVars
+	go func(done chan bool, results chan FuncResult) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Print("goroutine paniqued RunFuncStep: ", r)
+			}
+		}()
+		for res := range results {
+			responses = append(responses, res.response)
+			trResVars = append(trResVars, res.responseVars)
+			errs = append(errs, res.responseErr)
+		}
+		done <- true
+	}(done, results)
+
+	//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
+	noOfWorkers := 1
+	if funcStep.LoopInParallel && funcStep.LoopVariable != "" {
+		noOfWorkers = 5
+		if len(loopArray) < noOfWorkers {
+			noOfWorkers = len(loopArray)
+		}
+	}
+
+	log.Print("noOfWorkers = ", noOfWorkers)
+	createWorkerPoolFuncInner(noOfWorkers, jobs, results)
+	<-done
+	log.Print("after done")
+	log.Print("len(responses) = ", len(responses))
+	log.Print("len(trVars) = ", len(trResVars))
+	log.Print(&trResVars)
+	log.Print("len(errs) = ", len(errs))
+	log.Print("calling clubResponses from route")
+	response, _, err = clubResponses(responses, trResVars, errs)
+	endTime := time.Now()
+	diff := endTime.Sub(startTime)
+	fmt.Println("total time taken ", diff.Seconds(), "seconds")
+	log.Println("*******************funcStep execute end for ", funcStep.RouteName, " *******************")
+	return
+}
+func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, asyncMsg string) (response *http.Response, err error) {
+	//utils.PrintRequestBody(request,"printing from RunFuncStepInner")
+	log.Print("inside RunFuncStepInner")
+	log.Print(reqVars[funcStep.RouteName].LoopVars)
+	request, vars, trErr := funcStep.transformRequest(req, reqVars, resVars, mainRouteName)
 	if trErr != nil {
 		err = trErr
 		log.Println(err)
@@ -166,15 +283,20 @@ func (funcStep *FuncStep) RunFuncStep(request *http.Request, reqVars map[string]
 	}
 	reqVars[funcStep.RouteName] = vars
 	defer req.Body.Close()
+
 	routevars := &TemplateVars{}
 	_ = routevars
-	response, routevars, err = funcStep.Route.Execute(req, funcStep.Path)
+	response, routevars, err = funcStep.Route.Execute(request, funcStep.Path, funcStep.Async, asyncMsg)
+	log.Print("print after funcStep.Route.Execute")
+	log.Print(response)
+	log.Print(routevars)
+
 	if err != nil {
 		log.Print(err)
-		return
 	}
 
 	if funcStep.Route.OnError == "STOP" && response.StatusCode >= 400 {
+		log.Print("inside funcStep.Route.OnError == \"STOP\" && response.StatusCode >= 400")
 		return
 	}
 	resVars[funcStep.RouteName] = routevars
@@ -183,23 +305,27 @@ func (funcStep *FuncStep) RunFuncStep(request *http.Request, reqVars map[string]
 
 	//response *http.Response, trReqVars TemplateVars, resHeaders []Headers, removeHeaders []string, templateName string, templateString string,tokenHeaderKey string,jwkUrl string) (trResVars TemplateVars , err error)
 
-	var trespErr error
-	resVars[funcStep.RouteName], trespErr = funcStep.transformResponse(response, resVars[funcStep.RouteName], reqVars, resVars)
-	if trespErr != nil {
-		err = trespErr
-		log.Print(err)
-		return
+	// in case of error - no need to call  transformResponse
+	if err == nil {
+		var trespErr error
+		resVars[funcStep.RouteName], trespErr = funcStep.transformResponse(response, resVars[funcStep.RouteName], reqVars, resVars)
+		if trespErr != nil {
+			err = trespErr
+			log.Print(err)
+			return
+		}
 	}
-
 	//log.Println("resVars[funcStep.RouteName] for ",funcStep.RouteName, " after funcStep.transformResponse")
 	//log.Println(resVars[funcStep.RouteName])
-
+	log.Print("len(funcStep.FuncSteps) = ", len(funcStep.FuncSteps))
 	for _, cv := range funcStep.FuncSteps {
 		response, err = cv.RunFuncStep(request, reqVars, resVars, mainRouteName)
 	}
+	log.Print("after loop of funcStep.FuncSteps")
+	log.Print(err)
+	log.Print(response)
 	//		loopCounter++
 	//}
-	log.Println("*******************funcStep execute end for ", funcStep.RouteName, " *******************")
 	return
 }
 

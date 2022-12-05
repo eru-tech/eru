@@ -241,8 +241,8 @@ func (route *Route) getTargetHost() (targetHost TargetHost, err error) {
 	return
 }
 
-func (route *Route) Execute(request *http.Request, url string) (response *http.Response, trResVar *TemplateVars, resErr error) {
-	log.Println("inside route.Execute")
+func (route *Route) Execute(request *http.Request, url string, async bool, asyncMsg string) (response *http.Response, trResVar *TemplateVars, resErr error) {
+	log.Println("*******************route execute start for ", route.RouteName, "*******************")
 	//log.Println("url = ", url)
 	//utils.PrintRequestBody(request, "printing request from route Execute")
 	//log.Print(request.Header)
@@ -254,6 +254,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	if err != nil {
 		log.Println(err)
 		resErr = err
+		response = errorResponse(resErr.Error(), request)
 		return
 	}
 
@@ -264,13 +265,15 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 		log.Print(string(output))
 		if outputErr != nil {
 			log.Println(outputErr)
-			resErr = err
+			resErr = outputErr
+			response = errorResponse(resErr.Error(), request)
 			return
 		}
 		strCond, strCondErr := strconv.Unquote(string(output))
 		if strCondErr != nil {
 			log.Println(strCondErr)
 			resErr = err
+			response = errorResponse(resErr.Error(), request)
 			return
 		}
 		if strCond == "false" {
@@ -283,6 +286,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 				if cfmOutputErr != nil {
 					log.Println(cfmOutputErr)
 					resErr = err
+					response = errorResponse(resErr.Error(), request)
 					return
 				}
 				cfmBody = string(cfmOutput)
@@ -304,6 +308,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 				Request:       request,
 				Header:        condRespHeader,
 			}
+			trResVar = &TemplateVars{}
 			responses = append(responses, response)
 			return
 		}
@@ -318,6 +323,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 		if outputErr != nil {
 			log.Println(outputErr)
 			resErr = err
+			response = errorResponse(resErr.Error(), request)
 			return
 		}
 		var loopJson interface{}
@@ -326,6 +332,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 			err = errors.New("route loop variable is not a json")
 			log.Print(loopJsonErr)
 			resErr = err
+			response = errorResponse(resErr.Error(), request)
 		}
 
 		ok := false
@@ -333,6 +340,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 			err = errors.New("route loop variable is not an array")
 			log.Print(err)
 			resErr = err
+			response = errorResponse(resErr.Error(), request)
 			return
 		}
 		log.Print("loopArray = ", loopArray)
@@ -344,11 +352,16 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	var jobs = make(chan Job, 10)
 	var results = make(chan Result, 10)
 	startTime := time.Now()
-	go allocate(request, url, trReqVars, loopArray, jobs)
+	go allocate(request, url, trReqVars, loopArray, jobs, async, asyncMsg)
 	done := make(chan bool)
 	//go result(done,results,responses, trResVars,errs)
 
 	go func(done chan bool, results chan Result) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Print("goroutine paniqued Route Execute: ", r)
+			}
+		}()
 		for res := range results {
 			responses = append(responses, res.response)
 			trResVars = append(trResVars, res.responseVars)
@@ -372,18 +385,28 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	log.Print("after done")
 	log.Print("len(responses) = ", len(responses))
 	log.Print("len(trVars) = ", len(trResVars))
+	log.Print(&trResVars)
 	log.Print("len(errs) = ", len(errs))
 	log.Print("calling clubResponses from route")
 	response, trResVar, resErr = clubResponses(responses, trResVars, errs)
 	endTime := time.Now()
 	diff := endTime.Sub(startTime)
 	fmt.Println("total time taken ", diff.Seconds(), "seconds")
+	log.Println("*******************route execute end for ", route.RouteName, "*******************")
 	return
 }
 
-func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateVars) (response *http.Response, trResVars *TemplateVars, err error) {
+func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateVars, async bool, asyncMsg string) (response *http.Response, trResVars *TemplateVars, err error) {
+	log.Print("inside RunRoute")
+	log.Print(trReqVars.LoopVars)
 	//clone request for parallel execution
-	request := req.Clone(context.Background())
+
+	request, err := cloneRequest(req)
+	if err != nil {
+		log.Println("error from cloneRequest")
+		log.Println(err)
+		return
+	}
 	err = route.transformRequest(request, url, trReqVars)
 	if err != nil {
 		log.Println("error from transformRequest")
@@ -407,7 +430,7 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 	//log.Print("request.Host = ", request.Host)
 
 	if request.Host != "" {
-		if route.Async {
+		if route.Async || async {
 			//creating a new context with 1ms to give sufficient time to execute the http request and
 			// timeout without waiting for the response
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
@@ -425,7 +448,10 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 				return
 			}
 			body := "{}"
-			if route.AsyncMessage != "" {
+
+			if asyncMsg != "" {
+				body = asyncMsg
+			} else if route.AsyncMessage != "" {
 				avars := &FuncTemplateVars{}
 				avars.Vars = trReqVars
 				output, outputErr := processTemplate(route.RouteName, route.AsyncMessage, avars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
@@ -654,7 +680,9 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 				log.Println(err)
 				return
 			}
-			log.Print(vars)
+			log.Print(string(body))
+			log.Print("printing vars recevied")
+			log.Print(vars.Body)
 			err = json.Unmarshal(body, &vars.Body)
 			if err != nil {
 				log.Print("error in json.Unmarshal(body, &vars.Body)")

@@ -46,7 +46,7 @@ type ModuleStoreI interface {
 	RemoveSchemaTable(projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
 	SaveMyQuery(projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule) error
 	RemoveMyQuery(projectId string, queryName string, realStore ModuleStoreI) error
-	GetMyQuery(projectId string, queryName string) (myquery *module_model.MyQuery, err error)
+	GetMyQuery(projectId string, queryName string) (myquery module_model.MyQuery, err error)
 	GetMyQueries(projectId string, queryType string) (myqueries map[string]module_model.MyQuery, err error)
 	AddSchemaJoin(projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error)
 	RemoveSchemaJoin(projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error)
@@ -411,18 +411,19 @@ func (ms *ModuleStore) RemoveMyQuery(projectId string, queryName string, realSto
 	}
 }
 
-func (ms *ModuleStore) GetMyQuery(projectId string, queryName string) (myquery *module_model.MyQuery, err error) {
+func (ms *ModuleStore) GetMyQuery(projectId string, queryName string) (myquery module_model.MyQuery, err error) {
 	if _, ok := ms.Projects[projectId]; ok {
 		if ms.Projects[projectId].MyQueries == nil {
-			return nil, errors.New(fmt.Sprint("Query ", queryName, " not found"))
+			return module_model.MyQuery{}, errors.New(fmt.Sprint("Query ", queryName, " not found"))
 		}
-		if myquery, ok = ms.Projects[projectId].MyQueries[queryName]; ok {
+		if myqueryPointer, ok := ms.Projects[projectId].MyQueries[queryName]; ok {
+			myquery = *myqueryPointer
 			return myquery, nil
 		} else {
-			return nil, errors.New(fmt.Sprint("Query ", queryName, " not found"))
+			return module_model.MyQuery{}, errors.New(fmt.Sprint("Query ", queryName, " not found"))
 		}
 	} else {
-		return nil, errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		return module_model.MyQuery{}, errors.New(fmt.Sprint("Project ", projectId, " not found"))
 	}
 }
 
