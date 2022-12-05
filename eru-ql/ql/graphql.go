@@ -79,7 +79,7 @@ func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]
 		log.Print(err)
 		return err
 	}
-	if mq == nil {
+	if mq.QueryName == "" {
 		log.Print("------------")
 		err = errors.New(fmt.Sprint("Query ", query, " not found"))
 		log.Print(err)
@@ -92,7 +92,7 @@ func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]
 		log.Print(err)
 		return err
 	}
-	qlInterface.SetQLData(*mq, gqd.FinalVariables, false, tokenObj, isPublic) //passing false as we only need the query in execute function and not actual result
+	qlInterface.SetQLData(mq, gqd.FinalVariables, false, tokenObj, isPublic) //passing false as we only need the query in execute function and not actual result
 	_, queryObjs, err := qlInterface.Execute(projectId, datasources, s)
 	//log.Print("queryObjs[0].Type ==", queryObjs[0].Type)
 	for i, q := range queryObjs {
