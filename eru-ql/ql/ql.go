@@ -36,12 +36,13 @@ func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]inte
 	if mq.Vars == nil {
 		mq.Vars = make(map[string]interface{})
 	}
-	mq.Vars[module_model.RULEPREFIX_TOKEN] = tokenObj
+	//mq.Vars[module_model.RULEPREFIX_TOKEN] = tokenObj
 	qld.Query = mq.Query
 	qld.Variables = mq.Vars
 	qld.ExecuteFlag = executeFlag
 	qld.IsPublic = isPublic
 	err = qld.SetFinalVars(vars)
+	qld.FinalVariables[module_model.RULEPREFIX_TOKEN] = tokenObj
 	return err
 }
 func (qld *QLData) SetFinalVars(vars map[string]interface{}) (err error) {
