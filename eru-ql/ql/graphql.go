@@ -185,7 +185,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)
 				}
-				sqlObj.SecurityClause[sqlObj.MainTableName], err = getTableSecurityRule(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.Variables)
+				sqlObj.SecurityClause[sqlObj.MainTableName], err = getTableSecurityRule(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.FinalVariables)
 				if err != nil {
 					errMsg = err.Error()
 					errFound = true

@@ -106,7 +106,8 @@ func processSecurityRule(sr security_rule.SecurityRule, vars map[string]interfac
 }
 
 func processTemplate(templateName string, templateString string, vars map[string]interface{}, outputType string, key string) (output []byte, err error) {
-	//log.Println("inside processTemplate with template = ", templateString)
+	log.Println("inside processTemplate with template = ", templateString)
+	log.Print(vars)
 	ruleValue := strings.SplitN(templateString, ".", 2)
 	//log.Print(ruleValue)
 	//log.Print("len(ruleValue) = ", len(ruleValue))
