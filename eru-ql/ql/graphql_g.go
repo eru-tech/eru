@@ -12,6 +12,7 @@ import (
 	"log"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -385,7 +386,6 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 							}
 						}
 						tempArray = append(tempArray, fmt.Sprint("( ", strings.Join(innerTempArray, " or "), " )"))
-
 					} else {
 						op := ""
 						switch v.String() {
@@ -425,7 +425,16 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 							if !ok {
 								log.Print("between clause is not a map")
 							}
-							btwClauseStr := fmt.Sprint("'", btwClause["from_date"], "' and '", btwClause["to_date"], "'")
+							preFix := "'"
+							//checking only from value to determine with values recevied are int/float to avoid adding single quote in sql
+							_, Interr := strconv.Atoi(btwClause["from"].(string))
+							if Interr == nil {
+								preFix = ""
+							}
+							if _, flErr := strconv.ParseFloat(btwClause["from"].(string), 64); flErr == nil {
+								preFix = ""
+							}
+							btwClauseStr := fmt.Sprint(preFix, btwClause["from"], preFix, " and ", preFix, btwClause["to"], preFix)
 							tempArray = append(tempArray, fmt.Sprint(parentKey, op, btwClauseStr))
 						case "$null":
 							nullValue := fmt.Sprint(reflect.ValueOf(newVal))

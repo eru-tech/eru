@@ -8,6 +8,7 @@ import (
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"log"
+	"reflect"
 	"strings"
 )
 
@@ -39,21 +40,40 @@ func (sqd *SQLData) Execute(projectId string, datasources map[string]*module_mod
 		var str string
 		switch tp := v.(type) {
 		case float64:
-
 			str = fmt.Sprint(v.(float64))
+			break
 		case string:
-
 			str = v.(string)
+			break
 		case map[string]interface{}:
 			strBytes, strBytesErr := json.Marshal(v)
 			err = strBytesErr
 			str = string(strBytes)
+			break
+		case []interface{}:
+			log.Print("[]interface {}:")
+			if iArray, ok := v.([]interface{}); ok {
+				log.Print(iArray)
+				for i, strText := range iArray {
+					log.Print(strText)
+					sep := ""
+					if i > 0 {
+						sep = " , "
+					}
+					str = fmt.Sprint(str, sep, "'", strText, "'")
+				}
+				log.Print(str)
+			}
+			break
 		default:
+			log.Print("from default")
 			log.Print(tp)
+			log.Print(reflect.TypeOf(v))
 			// do noting
+			break
 		}
 		log.Print(k, " = ", str)
-		sqd.Query = strings.Replace(sqd.Query, fmt.Sprint("$", k), str, 10)
+		sqd.Query = strings.Replace(sqd.Query, fmt.Sprint("$", k), str, -1)
 	}
 	queryObj := QueryObject{}
 	queryObj.Query = sqd.Query

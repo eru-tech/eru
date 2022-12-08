@@ -247,6 +247,9 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			str = strings.Replace(str, "\\u0000", "", -1)
 			return
 		},
+		"mul": func(a float64, b float64) (result float64) {
+			return a * b
+		},
 	}
 
 	buf := &bytes.Buffer{}
