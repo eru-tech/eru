@@ -38,8 +38,10 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			token := r.Header.Get(authorizer.TokenHeaderKey)
 			log.Print(token)
 			if token == "" {
+				log.Print("token = \"\"")
 				server_handlers.FormatResponse(w, http.StatusUnauthorized)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
+				log.Print(http.StatusUnauthorized)
 				return
 			}
 			log.Println("token  == ", token)
