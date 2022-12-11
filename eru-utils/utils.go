@@ -280,7 +280,7 @@ func CsvToMap(csvData [][]string) (jsonData []map[string]interface{}, err error)
 		if i > 0 {
 			jsonMap := make(map[string]interface{})
 			for j, field := range line {
-				jsonMap[strings.Replace(csvData[0][j], " ", "_", -1)] = field
+				jsonMap[strings.Replace(strings.Replace(csvData[0][j], " ", "_", -1), ".", "", -1)] = field
 			}
 			jsonData = append(jsonData, jsonMap)
 		}
