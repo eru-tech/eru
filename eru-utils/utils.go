@@ -166,6 +166,7 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 			req.Header.Add(k, vv)
 		}
 	}
+
 	reqParams := req.URL.Query()
 	for k, v := range params {
 		reqParams.Add(k, v)
@@ -215,8 +216,8 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 		req.Header.Set("Content-Length", strconv.Itoa(len(data.Encode())))
 		req.ContentLength = int64(len(data.Encode()))
 	}
-	log.Println(req)
-	PrintRequestBody(req, "printing request body from utils before http call")
+	log.Println(req.Header)
+	PrintRequestBody(req, "printing request body from file_utils before http call")
 	resp, err := httpClient.Do(req)
 	statusCode = resp.StatusCode
 
@@ -252,12 +253,12 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 			if err != nil {
 				log.Println(err)
 			}
-			log.Println(body)
+			//log.Println(body)
 			resBody := make(map[string]interface{})
 			resBody["body"] = string(body)
 			res = resBody
 		}
-		log.Println(res)
+		//log.Println(res)
 	}
 	if resp.StatusCode >= 400 {
 		log.Print("error in httpClient.Do - response status code >=400 ")
@@ -270,6 +271,19 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 		}
 		err = errors.New(strings.Replace(string(resBytes), "\"", "", -1))
 		return nil, nil, nil, statusCode, err
+	}
+	return
+}
+
+func CsvToMap(csvData [][]string) (jsonData []map[string]interface{}, err error) {
+	for i, line := range csvData {
+		if i > 0 {
+			jsonMap := make(map[string]interface{})
+			for j, field := range line {
+				jsonMap[strings.Replace(csvData[0][j], " ", "_", -1)] = field
+			}
+			jsonData = append(jsonData, jsonMap)
+		}
 	}
 	return
 }

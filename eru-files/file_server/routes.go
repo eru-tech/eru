@@ -28,8 +28,10 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	fileRouter := serverRouter.PathPrefix("/files/{project}").Subrouter()
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/upload").HandlerFunc(file_handlers.FileUploadHandler(sh.Store))
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/uploadb64").HandlerFunc(file_handlers.FileUploadHandlerB64(sh.Store))
+	fileRouter.Methods(http.MethodPost).Path("/{storagename}/uploadfromurl").HandlerFunc(file_handlers.FileUploadHandlerFromUrl(sh.Store))
 	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/{storagename}/download").HandlerFunc(file_handlers.FileDownloadHandler(sh.Store))
 	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/{storagename}/downloadb64").HandlerFunc(file_handlers.FileDownloadHandlerB64(sh.Store))
+	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/{storagename}/downloadunzip").HandlerFunc(file_handlers.FileDownloadHandlerUnzip(sh.Store))
 	//fileRouter.Methods(http.MethodPost).Path("/testEncrypt/{text}").HandlerFunc(file_handlers.TestEncrypt(sh.Store))
 	//fileRouter.Methods(http.MethodPost).Path("/testAesEncrypt/{text}/{keyname}").HandlerFunc(file_handlers.TestAesEncrypt(sh.Store))
 }

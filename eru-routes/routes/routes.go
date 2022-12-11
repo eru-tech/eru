@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
-	utils "github.com/eru-tech/eru/eru-utils"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -231,7 +230,7 @@ func (route *Route) getTargetHost() (targetHost TargetHost, err error) {
 func (route *Route) Execute(request *http.Request, url string) (response *http.Response, trResVars *TemplateVars, err error) {
 	log.Println("inside route.Execute")
 	log.Println("url = ", url)
-	utils.PrintRequestBody(request, "printing request from route Execute")
+	//file_utils.PrintRequestBody(request, "printing request from route Execute")
 	//log.Print(request.Header)
 
 	trReqVars, err := route.transformRequest(request, url)
@@ -250,7 +249,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	log.Println(route.TargetHosts)
 	log.Println(request.Header)
 	request.Header.Set("accept-encoding", "identity")
-	printRequestBody(request, "printing request Before httpClient.Do of route Execute")
+	//printRequestBody(request, "printing request Before httpClient.Do of route Execute")
 	log.Print("request.Host = ", request.Host)
 	if request.Host != "" {
 		response, err = httpClient.Do(request)
@@ -284,16 +283,16 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 			log.Println(err)
 			return
 		}
-		//printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
+		printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
 	}
 	return
-
 }
 
 func (route *Route) transformRequest(request *http.Request, url string) (vars *TemplateVars, err error) {
 	log.Println("inside route.transformRequest")
 	//printRequestBody(request,"body from route transformRequest")
-
+	log.Print("printing route from transformRequest")
+	log.Print(route)
 	reqVarsLoaded := false
 
 	vars = &TemplateVars{}

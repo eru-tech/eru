@@ -89,7 +89,7 @@ func SmsGatewaySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(smsGateway, "")
+			err := file_utils.ValidateStruct(smsGateway, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -142,7 +142,7 @@ func EmailGatewaySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(emailGateway, "")
+			err := file_utils.ValidateStruct(emailGateway, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -257,7 +257,7 @@ func GatewaySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			//err := utils.ValidateStruct(storageObj, "") //TODO to uncomment this code and validate the incoming json
+			//err := file_utils.ValidateStruct(storageObj, "") //TODO to uncomment this code and validate the incoming json
 			//if err != nil {
 			//	server_handlers.FormatResponse(w, 400)
 			//	json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})

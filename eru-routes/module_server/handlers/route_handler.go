@@ -24,7 +24,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Println(r.Header.Get("Content-Length"))
 		// Close the body of the request
-		//defer utils.CloseTheCloser(request.Body)  //TODO to add request body close in all handlers across projects
+		//defer file_utils.CloseTheCloser(request.Body)  //TODO to add request body close in all handlers across projects
 		defer r.Body.Close()
 		// Extract the host and url from incoming request
 		host, url := extractHostUrl(r)
