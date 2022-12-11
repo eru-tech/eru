@@ -114,7 +114,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		defer response.Body.Close()
+		//defer response.Body.Close()
 		for k, v := range response.Header {
 			w.Header()[k] = v
 		}
