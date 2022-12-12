@@ -371,8 +371,8 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 
 // parseAstValue returns an interface that can be casted to string
 func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, error) {
-	log.Println("inside ParseAstValue for ")
-	log.Print(value.GetKind())
+	//log.Println("inside ParseAstValue for ")
+	//log.Print(value.GetKind())
 	switch value.GetKind() {
 	case kinds.ObjectValue:
 
@@ -470,7 +470,7 @@ func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, e
 
 	case kinds.Variable:
 		t := value.(*ast.Variable)
-		log.Println("t = ", t.Name.Value)
+		//log.Println("t = ", t.Name.Value)
 		if strings.HasPrefix(t.Name.Value, "$") {
 			log.Println("key has $ prefix")
 		}

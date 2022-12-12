@@ -501,7 +501,7 @@ func (sqr *SqlMaker) ExecuteMutationQuery(datasource *module_model.DataSource, m
 	sqr.QueryType = mrm.QueryType
 	sqr.DBQuery = mrm.DBQuery
 	sqr.PreparedQuery = mrm.PreparedQuery
-	log.Println("sqr.MutationRecords printed below after conversion from mrm")
+	//log.Println("sqr.MutationRecords printed below after conversion from mrm")
 	//log.Println(sqr.MutationRecords)
 	var errMsgs []string
 	ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond) //TODO: to get context as argument
@@ -570,15 +570,15 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 			}
 		} else {
 			//TODO to handle if sqr.MutationRecords is nil - one of the reason it is passed as nil is when table or table join is not found
-			log.Println("docs printed below from ds line 573")
-			log.Println(docs)
+			//log.Println("docs printed below from ds line 573")
+			//log.Println(docs)
 			for _, d := range docs {
 				finalValues = append(finalValues, d.NonNestedValues...)
 			}
 			query = strings.Replace(sqr.MutationRecords[0].DBQuery, "$ColsPlaceholder", myself.GetPreparedQueryPlaceholder(len(sqr.MutationRecords), len(sqr.MutationRecords[0].Values), false), 1)
 		}
-		log.Println("finalValues = ", finalValues)
-		log.Print(query)
+		//log.Println("finalValues = ", finalValues)
+		//log.Print(query)
 		res, err = sqr.executeMutationQueriesinDB(ctx, query, tableName, datasource, myself, isNested, docNo, 0, finalValues)
 		if err != nil {
 			errMsgs = append(errMsgs, err.Error())
@@ -769,7 +769,7 @@ func (sqr *SqlMaker) executeMutationQueriesinDB(ctx context.Context, query strin
 			}
 			res = append(res, resDoc)
 		}
-		log.Println(res)
+		//log.Println(res)
 		//}
 	}
 	log.Print("!sqr.TxnFlag && !isNested", sqr.TxnFlag, " ", !isNested)
