@@ -68,7 +68,7 @@ func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		file, err := s.DownloadFile(projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"])
+		file, mimeType, err := s.DownloadFile(projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"])
 		if err != nil {
 			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
@@ -77,8 +77,8 @@ func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		//server_handlers.FormatResponse(w,http.StatusOK)
 		w.WriteHeader(http.StatusOK)
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", "attachment; filename=test.pdf")
+		w.Header().Set("Content-Type", mimeType)
+		w.Header().Set("Content-Disposition", fmt.Sprint("attachment; filename=", strings.Replace(dfFromObj["file_name"], ".enc", "", -1)))
 		_, _ = io.Copy(w, bytes.NewReader(file))
 	}
 }
@@ -107,7 +107,7 @@ func FileDownloadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		fileB64, err := s.DownloadFileB64(projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"])
+		fileB64, mimeType, err := s.DownloadFileB64(projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"])
 		if err != nil {
 			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
@@ -115,7 +115,7 @@ func FileDownloadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		server_handlers.FormatResponse(w, http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]interface{}{"file": fileB64})
+		json.NewEncoder(w).Encode(map[string]interface{}{"file": fileB64, "file_type": mimeType})
 	}
 }
 func FileDownloadHandlerUnzip(s module_store.ModuleStoreI) http.HandlerFunc {

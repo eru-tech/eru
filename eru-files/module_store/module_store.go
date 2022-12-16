@@ -54,8 +54,8 @@ type ModuleStoreI interface {
 	UploadFile(projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string) (docId string, err error)
 	UploadFileB64(projectId string, storageName string, file []byte, fileName string, docType string, fodlerPath string) (docId string, err error)
 	UploadFileFromUrl(projectId string, storageName string, url string, fileName string, docType string, fodlerPath string, fileType string) (docId string, err error)
-	DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, err error)
-	DownloadFileB64(projectId string, storageName string, folderPath string, fileName string) (fileB64 string, err error)
+	DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, mimeType string, err error)
+	DownloadFileB64(projectId string, storageName string, folderPath string, fileName string) (fileB64 string, mimeType string, err error)
 	DownloadFileUnzip(projectId string, storageName string, fileDownloadRequest FileDownloadRequest) (files map[string]FileObj, err error)
 	//TestEncrypt(projectId string, text string)
 	//TestAesEncrypt(projectId string, text string, keyName string)
@@ -238,12 +238,12 @@ func (ms *ModuleStore) UploadFileFromUrl(projectId string, storageName string, u
 	}
 }
 
-func (ms *ModuleStore) DownloadFileB64(projectId string, storageName string, folderPath string, fileName string) (fileB64 string, err error) {
-	f, e := ms.DownloadFile(projectId, storageName, folderPath, fileName)
-	return base64.StdEncoding.EncodeToString(f), e
+func (ms *ModuleStore) DownloadFileB64(projectId string, storageName string, folderPath string, fileName string) (fileB64 string, mimeType string, err error) {
+	f, mt, e := ms.DownloadFile(projectId, storageName, folderPath, fileName)
+	return base64.StdEncoding.EncodeToString(f), mt, e
 }
 func (ms *ModuleStore) DownloadFileUnzip(projectId string, storageName string, fileDownloadRequest FileDownloadRequest) (files map[string]FileObj, err error) {
-	f, e := ms.DownloadFile(projectId, storageName, fileDownloadRequest.FolderPath, fileDownloadRequest.FileName)
+	f, _, e := ms.DownloadFile(projectId, storageName, fileDownloadRequest.FolderPath, fileDownloadRequest.FileName)
 	zipReader, err := zip.NewReader(bytes.NewReader(f), int64(len(f)))
 	if err != nil {
 		log.Print(err)
@@ -295,7 +295,7 @@ func (ms *ModuleStore) DownloadFileUnzip(projectId string, storageName string, f
 	}
 	return files, e
 }
-func (ms *ModuleStore) DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, err error) {
+func (ms *ModuleStore) DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, mimeType string, err error) {
 	log.Println("inside DownloadFile")
 	prj, err := ms.GetProjectConfig(projectId)
 	if err != nil {
@@ -315,7 +315,7 @@ func (ms *ModuleStore) DownloadFile(projectId string, storageName string, folder
 		}
 		log.Print(keyName.(string))
 		file, err = storageObj.DownloadFile(folderPath, fileName, prj.AesKeys[keyName.(string)])
-		return file, err
+		return file, mimetype.Detect(file).String(), err
 	}
 }
 

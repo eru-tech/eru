@@ -18,9 +18,9 @@ type SQLData struct {
 	Cols    string `json:"cols"`
 }
 
-func (sqd *SQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool) {
+func (sqd *SQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) {
 	log.Print("inside SetQLData of SQLData")
-	sqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj, isPublic)
+	sqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj, isPublic, outputType)
 	//sqd.Query=mq.Query
 	//sqd.Variables=mq.Vars
 	sqd.DBAlias = mq.DBAlias
@@ -80,9 +80,15 @@ func (sqd *SQLData) Execute(projectId string, datasources map[string]*module_mod
 	queryObj.Cols = sqd.Cols
 	log.Print("sqd.ExecuteFlag = ", sqd.ExecuteFlag)
 	if sqd.ExecuteFlag {
-		result, err = sr.ExecutePreparedQuery(sqd.Query, datasource)
-		log.Print(err)
-		res = append(res, result)
+		if sqd.OutputType == "csv" {
+			result, err = sr.ExecuteQueryForCsv(sqd.Query, datasource)
+			log.Print(err)
+			res = append(res, result)
+		} else {
+			result, err = sr.ExecutePreparedQuery(sqd.Query, datasource)
+			log.Print(err)
+			res = append(res, result)
+		}
 	}
 	queryObjs = append(queryObjs, queryObj)
 	return res, queryObjs, err

@@ -18,6 +18,7 @@ type QLData struct {
 	ExecuteFlag    bool                       `json:"-"`
 	SecurityRule   security_rule.SecurityRule `json:"security_rule"`
 	IsPublic       bool                       `json:"is_public"`
+	OutputType     string                     `json:"output_type"`
 }
 
 type QueryObject struct {
@@ -28,11 +29,11 @@ type QueryObject struct {
 
 type QL interface {
 	Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI) (res []map[string]interface{}, queryObjs []QueryObject, err error)
-	SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool)
+	SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string)
 	ProcessTransformRule(tr module_model.TransformRule) (outputObj map[string]interface{}, err error)
 }
 
-func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool) (err error) {
+func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) (err error) {
 	if mq.Vars == nil {
 		mq.Vars = make(map[string]interface{})
 	}
@@ -41,6 +42,7 @@ func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]inte
 	qld.Variables = mq.Vars
 	qld.ExecuteFlag = executeFlag
 	qld.IsPublic = isPublic
+	qld.OutputType = outputType
 	err = qld.SetFinalVars(vars)
 	qld.FinalVariables[module_model.RULEPREFIX_TOKEN] = tokenObj
 	return err
@@ -67,6 +69,7 @@ func (qld *QLData) SetFinalVars(vars map[string]interface{}) (err error) {
 	return nil
 }
 func (qld *QLData) ProcessTransformRule(tr module_model.TransformRule) (outputObj map[string]interface{}, err error) {
+	log.Print("inside ProcessTransformRule")
 	if tr.RuleType == module_model.RULETYPE_NONE {
 		outputObj = make(map[string]interface{})
 		return
