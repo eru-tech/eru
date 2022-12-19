@@ -455,10 +455,12 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(query string, datasource *module_model.D
 				innerResultLabel = append(innerResultLabel, colType.Name())
 			}
 			if mapping[colType.Name()] != nil {
+				//log.Print(colType.Name())
+				//log.Print(reflect.TypeOf(mapping[colType.Name()]).String(), " - ", colType.DatabaseTypeName())
 				if reflect.TypeOf(mapping[colType.Name()]).String() == "[]uint8" && colType.DatabaseTypeName() == "NUMERIC" {
 					f := 0.0
 					f, err = strconv.ParseFloat(string(mapping[colType.Name()].([]byte)), 64)
-					mapping[colType.Name()] = strconv.FormatFloat(f, 'E', -1, 64)
+					mapping[colType.Name()] = strconv.FormatFloat(f, 'f', -1, 64)
 					if err != nil {
 						log.Print(err)
 						return nil, err
@@ -470,13 +472,17 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(query string, datasource *module_model.D
 				} else if reflect.TypeOf(mapping[colType.Name()]).String() == "bool" {
 					mapping[colType.Name()] = strconv.FormatBool(mapping[colType.Name()].(bool))
 				} else if reflect.TypeOf(mapping[colType.Name()]).String() == "time.Time" {
-					mapping[colType.Name()] = mapping[colType.Name()].(time.Time).String()
+					if colType.DatabaseTypeName() == "DATE" {
+						mapping[colType.Name()] = mapping[colType.Name()].(time.Time).Format("02-Jan-2006")
+					} else {
+						mapping[colType.Name()] = mapping[colType.Name()].(time.Time).String()
+					}
 				} else if strings.HasPrefix(reflect.TypeOf(mapping[colType.Name()]).String(), "int") {
 					//if reflect.TypeOf(mapping[colType.Name()]).String() == "int64" {
 					n := mapping[colType.Name()].(int64)
 					mapping[colType.Name()] = fmt.Sprintf("%d", n)
 					//}
-				} else if (colType.DatabaseTypeName() == "JSONB" || colType.DatabaseTypeName() == "JSON") && mapping[colType.Name()] != nil {
+				} else if (colType.DatabaseTypeName() == "JSONB" || colType.DatabaseTypeName() == "JSON") || colType.DatabaseTypeName() == "BPCHAR" {
 					mapping[colType.Name()] = string(mapping[colType.Name()].([]byte))
 				}
 			}
