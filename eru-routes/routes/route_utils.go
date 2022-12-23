@@ -270,6 +270,9 @@ func processMultipart(request *http.Request, formDataRemove []string, formData [
 				if errPart == io.EOF {
 					break
 				}
+				log.Print(errPart)
+				log.Print(part)
+
 				log.Println("formDataRemove = ", formDataRemove)
 				if formDataRemove != nil {
 					for _, v := range formDataRemove {

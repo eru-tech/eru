@@ -1,6 +1,7 @@
 package module_store
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-routes/module_model"
@@ -180,19 +181,30 @@ func (ms *ModuleStore) RemoveRoute(routeName string, projectId string, realStore
 }
 
 func (ms *ModuleStore) GetAndValidateRoute(routeName string, projectId string, host string, url string, method string, headers http.Header) (route routes.Route, err error) {
+	cloneRoute := routes.Route{}
 	if prg, ok := ms.Projects[projectId]; ok {
 		if route, ok = prg.Routes[routeName]; !ok {
-			return route, errors.New(fmt.Sprint("Route ", routeName, " does not exists"))
+			return cloneRoute, errors.New(fmt.Sprint("Route ", routeName, " does not exists"))
 		}
-		route.TokenSecret = prg.ProjectConfig.TokenSecret
+		routeI, jmErr := json.Marshal(route)
+		if jmErr != nil {
+			log.Print()
+			return cloneRoute, errors.New("route marshal failed")
+		}
+		jmErr = json.Unmarshal(routeI, &cloneRoute)
+		if jmErr != nil {
+			log.Print()
+			return cloneRoute, errors.New("route unmarshal failed")
+		}
+		cloneRoute.TokenSecret = prg.ProjectConfig.TokenSecret
 	} else {
-		return route, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		return cloneRoute, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 	}
-	err = route.Validate(host, url, method, headers)
+	err = cloneRoute.Validate(host, url, method, headers)
 	if err != nil {
-		return
+		return cloneRoute, err
 	}
-	return
+	return cloneRoute, nil
 }
 
 func (ms *ModuleStore) GetAndValidateFunc(funcName string, projectId string, host string, url string, method string, headers http.Header) (funcGroup routes.FuncGroup, err error) {

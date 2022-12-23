@@ -41,18 +41,23 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		defer response.Body.Close()
 		log.Println(response.Body)
-		for k, v := range response.Header {
-			w.Header()[k] = v
-		}
-		w.WriteHeader(response.StatusCode)
-		_, err = io.Copy(w, response.Body)
-		if err != nil {
-			log.Println("================")
-			log.Println(err)
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		if response.StatusCode >= 300 && response.StatusCode <= 399 {
+			http.Redirect(w, r, response.Header.Get("Location"), response.StatusCode)
+		} else {
+
+			for k, v := range response.Header {
+				w.Header()[k] = v
+			}
+			w.WriteHeader(response.StatusCode)
+			_, err = io.Copy(w, response.Body)
+			if err != nil {
+				log.Println("================")
+				log.Println(err)
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
 			return
 		}
-		return
 	}
 }

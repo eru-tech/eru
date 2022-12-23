@@ -284,6 +284,7 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 			return
 		}
 		printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
+		log.Print(trResVars)
 	}
 	return
 }
@@ -477,8 +478,9 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 	//a, e := json.Marshal(trReqVars)
 	//log.Print(string(a))
 	//log.Print(e)
-
+	log.Print("route.Redirect for route ", route.RouteName, "is ", route.Redirect)
 	if route.Redirect {
+		log.Print("inside route.Redirect")
 		finalRedirectUrl := route.RedirectUrl
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = trReqVars
@@ -518,6 +520,7 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 			paramStr = fmt.Sprint(paramStr, v.Key, "=", finalParamValue)
 		}
 		route.FinalRedirectUrl = fmt.Sprint(route.RedirectScheme, "://", finalRedirectUrl, paramStr)
+		log.Print("route.FinalRedirectUrl =", route.FinalRedirectUrl)
 		return
 	}
 
