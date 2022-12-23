@@ -420,6 +420,9 @@ func processHeaderTemplates(request *http.Request, headersToRemove []string, hea
 			fvars.Vars = vars
 			fvars.ResVars = resVars
 			fvars.ReqVars = reqVars
+			log.Print(vars)
+			log.Print(resVars["login"])
+			log.Print(reqVars)
 			output, err := processTemplate(h.Key, h.Value, fvars, "string", tokenSecretKey, jwkUrl)
 			if err != nil {
 				log.Println(err)

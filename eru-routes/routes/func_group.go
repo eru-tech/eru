@@ -82,12 +82,12 @@ func (funcStep *FuncStep) execute(request *http.Request, reqVars map[string]*Tem
 	log.Println(resVars[funcStep.RouteName])
 
 	//response *http.Response, trReqVars TemplateVars, resHeaders []Headers, removeHeaders []string, templateName string, templateString string,tokenHeaderKey string,jwkUrl string) (trResVars TemplateVars , err error)
-	if funcStep.TransformResponse != "" {
-		resVars[funcStep.RouteName], err = funcStep.transformResponse(response, resVars[funcStep.RouteName], reqVars, resVars)
-		if err != nil {
-			return
-		}
+	//if funcStep.TransformResponse != "" {
+	resVars[funcStep.RouteName], err = funcStep.transformResponse(response, resVars[funcStep.RouteName], reqVars, resVars)
+	if err != nil {
+		return
 	}
+	//}
 	//log.Println("resVars[funcStep.RouteName] for ",funcStep.RouteName, " after funcStep.transformResponse")
 	//log.Println(resVars[funcStep.RouteName])
 	if funcStep.Route.Redirect {
