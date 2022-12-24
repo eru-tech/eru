@@ -276,16 +276,16 @@ func (route *Route) Execute(request *http.Request, url string) (response *http.R
 	}
 	trResVars = &TemplateVars{}
 
-	if route.TransformResponse != "" {
-		trResVars, err = route.transformResponse(response, trReqVars)
+	//if route.TransformResponse != "" {
+	trResVars, err = route.transformResponse(response, trReqVars)
 
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
-		log.Print(trResVars)
+	if err != nil {
+		log.Println(err)
+		return
 	}
+	printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
+
+	//}
 	return
 }
 
@@ -473,7 +473,7 @@ func (route *Route) transformRequest(request *http.Request, url string) (vars *T
 }
 
 func (route *Route) transformResponse(response *http.Response, trReqVars *TemplateVars) (trResVars *TemplateVars, err error) {
-
+	trResVars = &TemplateVars{}
 	log.Println("inside transformResponse")
 	//a, e := json.Marshal(trReqVars)
 	//log.Print(string(a))
@@ -524,7 +524,6 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 		return
 	}
 
-	trResVars = &TemplateVars{}
 	//printResponseBody(response,"printing response from route TransformResponse")
 	for _, h := range route.ResponseHeaders {
 		response.Header.Set(h.Key, h.Value)

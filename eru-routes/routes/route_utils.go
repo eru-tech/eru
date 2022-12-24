@@ -221,9 +221,7 @@ func makeMultipart(request *http.Request, formData []Headers, fileData []FilePar
 				log.Println(err)
 				return nil, nil, err
 			}
-
 		}
-
 		multipartWriter.Close()
 		request.Body = ioutil.NopCloser(&reqBody)
 		//request.Header.Set("Content-Type","application/pdf" )
@@ -260,14 +258,19 @@ func processMultipart(request *http.Request, formDataRemove []string, formData [
 			log.Print("error from request.MultipartReader()")
 			requestHasMultipart = false
 			//return nil, nil, err
+			log.Print(request.MultipartForm.Value)
 		}
 		log.Print("requestHasMultipart = ", requestHasMultipart)
+		i := 0
 		if requestHasMultipart {
 			for {
+				i++
+				log.Print(i)
 				log.Println("inside for loop - multiPart.NextRawPart() ")
 				removeFlag := false
 				part, errPart := multiPart.NextRawPart()
 				if errPart == io.EOF {
+					log.Print("breaking becuase of eof")
 					break
 				}
 				log.Print(errPart)
@@ -282,7 +285,7 @@ func processMultipart(request *http.Request, formDataRemove []string, formData [
 						}
 					}
 				}
-				if !removeFlag {
+				if !removeFlag && part != nil {
 					log.Println("inside !removeFlag")
 					if part.FileName() != "" {
 						log.Println(part.FileName())
@@ -328,6 +331,9 @@ func processMultipart(request *http.Request, formDataRemove []string, formData [
 						varsFormData[formName] = buf.String()
 						varsFormDataKeyArray = append(varsFormDataKeyArray, formName)
 					}
+				} else {
+					//break the for loop
+					break
 				}
 			}
 		}
@@ -420,9 +426,6 @@ func processHeaderTemplates(request *http.Request, headersToRemove []string, hea
 			fvars.Vars = vars
 			fvars.ResVars = resVars
 			fvars.ReqVars = reqVars
-			log.Print(vars)
-			log.Print(resVars["login"])
-			log.Print(reqVars)
 			output, err := processTemplate(h.Key, h.Value, fvars, "string", tokenSecretKey, jwkUrl)
 			if err != nil {
 				log.Println(err)
