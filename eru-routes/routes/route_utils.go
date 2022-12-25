@@ -93,11 +93,17 @@ func processTemplate(templateName string, templateString string, vars *FuncTempl
 		log.Println(err)
 		return nil, err
 	} else {
-		output, err = json.Marshal(outputObj)
+		buffer := &bytes.Buffer{}
+		encoder := json.NewEncoder(buffer)
+		encoder.SetEscapeHTML(false)
+		err = encoder.Encode(outputObj)
+		//output, err = json.Marshal(outputObj)
 		if err != nil {
 			log.Println(err)
 			return nil, err
 		}
+		//json encoder adds new line at the end by default - removing the same
+		output = []byte(strings.TrimSuffix(buffer.String(), "\n"))
 		return
 	}
 }

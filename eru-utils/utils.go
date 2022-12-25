@@ -239,27 +239,27 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 	respCookies = resp.Cookies()
 	defer resp.Body.Close()
 	log.Println("resp.ContentLength = ", resp.ContentLength)
-	if resp.ContentLength > 0 || reqContentType == encodedForm {
-		log.Println(resp.Header.Get("content-type"))
-		if strings.Split(resp.Header.Get("content-type"), ";")[0] == "application/json" {
-			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
-				log.Print("error in json.NewDecoder of resp.Body")
-				log.Print(resp.Body)
-				log.Print(err)
-				return nil, nil, nil, 0, err
-			}
-		} else {
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				log.Println(err)
-			}
-			//log.Println(body)
-			resBody := make(map[string]interface{})
-			resBody["body"] = string(body)
-			res = resBody
+	//if resp.ContentLength > 0 || reqContentType == encodedForm {
+	log.Println(resp.Header.Get("content-type"))
+	if strings.Split(resp.Header.Get("content-type"), ";")[0] == "application/json" {
+		if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
+			log.Print("error in json.NewDecoder of resp.Body")
+			log.Print(resp.Body)
+			log.Print(err)
+			return nil, nil, nil, 0, err
 		}
-		//log.Println(res)
+	} else {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Println(err)
+		}
+		//log.Println(body)
+		resBody := make(map[string]interface{})
+		resBody["body"] = string(body)
+		res = resBody
 	}
+	//	log.Println(res)
+	//}
 	if resp.StatusCode >= 400 {
 		log.Print("error in httpClient.Do - response status code >=400 ")
 		statusCode = resp.StatusCode
