@@ -72,11 +72,41 @@ func stringifyRule(cd CustomRuleDetails, conditionType string, vars map[string]i
 		valSuffix = "'"
 	}
 	switch cd.Operator {
+	case "btw":
+		op = " between "
+		break
+	case "gte":
+		op = " >= "
+		break
+	case "lte":
+		op = " <= "
+		break
+	case "gt":
+		op = " > "
+		break
+	case "lt":
+		op = " < "
+		break
 	case "eq":
 		op = " = "
 		break
-	case "neq":
+	case "ne":
 		op = " <> "
+		break
+	case "in":
+		op = " in "
+		break
+	case "nin":
+		op = " not in "
+		break
+	case "like":
+		op = " like "
+		break
+	case "eq_null":
+		op = " is null "
+		break
+	case "neq_null":
+		op = " is not null "
 		break
 	default:
 		//do nothing

@@ -151,6 +151,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 			if singleTxn && i == len(op.SelectionSet.Selections)-1 {
 				closeTxn = true
 			}
+			//TODO - to handle if no directive/dbalias is received - conn is not getting closed as there is panic error in below line
 			dbAlias := v.(*ast.Field).Directives[0].Name.Value
 			datasource := datasources[dbAlias]
 			if datasource == nil {

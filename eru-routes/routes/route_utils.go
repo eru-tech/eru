@@ -459,7 +459,12 @@ func printRequestBody(request *http.Request, msg string) {
 		log.Println(err)
 	}
 	log.Println(msg)
-	log.Println(string(body))
+	cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
+	if cl > 1000 {
+		log.Println(string(body)[1:1000])
+	} else {
+		log.Println(string(body))
+	}
 	log.Println(request.Header.Get("Content-Length"))
 	request.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
