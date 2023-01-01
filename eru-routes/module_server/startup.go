@@ -13,6 +13,13 @@ import (
 const StoreTableName = "eruroutes_config"
 
 func StartUp() (module_store.ModuleStoreI, error) {
+	eruqlbaseurl := os.Getenv("ERUQL_BASEURL")
+	if eruqlbaseurl == "" {
+		eruqlbaseurl = "http://localhost:8087"
+		log.Print("'eruqlbaseurl' environment variable not found - setting default value as http://localhost:8087")
+	}
+	//s.Eruqlbaseurl=eruqlbaseurl
+	module_store.Eruqlbaseurl = eruqlbaseurl
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
 	if storeType == "" {
 		storeType = "STANDALONE"

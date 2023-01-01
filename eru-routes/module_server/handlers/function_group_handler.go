@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"github.com/eru-tech/eru/eru-routes/module_store"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"io"
 	"log"
@@ -27,20 +28,21 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		funcGroup, err := s.GetAndValidateFunc(funcName, projectId, host, url, r.Method, r.Header)
 		if err != nil {
 			log.Println(err)
-			w.WriteHeader(http.StatusBadRequest)
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+		log.Print(funcGroup)
 		response, err := funcGroup.Execute(r)
 		if err != nil {
 			log.Println(" httpClient.Do error ")
 			log.Println(err)
-			w.WriteHeader(http.StatusBadRequest)
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 		defer response.Body.Close()
-		log.Println(response.Body)
+ 		log.Println(response.Body)
 		if response.StatusCode >= 300 && response.StatusCode <= 399 {
 			http.Redirect(w, r, response.Header.Get("Location"), response.StatusCode)
 		} else {

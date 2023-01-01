@@ -4,6 +4,7 @@ import (
 	"bytes"
 	b64 "encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	erujwt "github.com/eru-tech/eru/eru-crypto/jwt"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
@@ -39,8 +40,6 @@ func createFormFile(w *multipart.Writer, contentType string, fieldName string, f
 
 func loadRequestVars(vars *TemplateVars, request *http.Request) (err error) {
 	log.Println("inside loadRequestVars")
-	//log.Println(vars)
-	//file_utils.PrintRequestBody(request, "printing request body from loadRequestVars")
 	vars.Headers = make(map[string]interface{})
 	for k, v := range request.Header {
 		vars.Headers[k] = v
@@ -73,6 +72,7 @@ func loadRequestVars(vars *TemplateVars, request *http.Request) (err error) {
 
 	}
 	vars.Vars = make(map[string]interface{})
+	vars.OrgBody = vars.Body
 	return
 }
 
@@ -89,6 +89,7 @@ func processTemplate(templateName string, templateString string, vars *FuncTempl
 	}
 	goTmpl := gotemplate.GoTemplate{templateName, templateString}
 	outputObj, err := goTmpl.Execute(vars, outputType)
+	log.Print(outputObj)
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -110,6 +111,8 @@ func processTemplate(templateName string, templateString string, vars *FuncTempl
 func makeMultipart(request *http.Request, formData []Headers, fileData []FilePart, vars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, tokenSecretKey string, jwkUrl string) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, err error) {
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	log.Print("reqContentType from makeMultipart = ", reqContentType)
+	log.Print("fileData")
+	log.Print(fileData)
 	varsFormData = make(map[string]interface{})
 	if reqContentType == encodedForm || reqContentType == multiPartForm {
 		log.Println("===========================")
@@ -417,16 +420,22 @@ func processParams(request *http.Request, queryParamsRemove []string, queryParam
 }
 
 func processHeaderTemplates(request *http.Request, headersToRemove []string, headers []Headers, reqVarsLoaded bool, vars *TemplateVars, tokenSecretKey string, jwkUrl string, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (err error) {
+	//TODO remove reqVarsLoaded unused parameter
 	for _, h := range headers {
 		if h.IsTemplate {
-			if !reqVarsLoaded {
-				err = loadRequestVars(vars, request)
-				if err != nil {
-					log.Println(err)
-					return
+
+			//TODO check if commenting below block as an impact elsewhere as we are loading vars only once before transform request is called.
+			/*
+				if !reqVarsLoaded {
+					err = loadRequestVars(vars, request)
+					if err != nil {
+						log.Println(err)
+						return
+					}
+					reqVarsLoaded = true
 				}
-				reqVarsLoaded = true
-			}
+			*/
+
 			log.Println("processTemplate called for header value ", h.Key)
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = vars
@@ -484,4 +493,128 @@ func printResponseBody(response *http.Response, msg string) {
 	}
 	log.Println(response.Header.Get("Content-Length"))
 	response.Body = ioutil.NopCloser(bytes.NewReader(body))
+}
+
+func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs []error) (response *http.Response, trResVar *TemplateVars, err error) {
+	//check error of first record only as it is same host
+	log.Print("len(responses) = ", len(responses))
+	//log.Print("len(trVars) = ", len(trVars))
+	log.Print("len(errs) = ", len(errs))
+
+	var errMsg []string
+	errorFound := false
+	for _, e := range errs {
+		if e != nil {
+			errorFound = true
+			errMsg = append(errMsg, e.Error())
+		} else {
+			errMsg = append(errMsg, "-")
+		}
+
+	}
+	//trResVar - copying all attributes of first element as it will be same except response body
+	trResVar = &TemplateVars{}
+	if trResVars != nil {
+		if trResVars[0] != nil {
+			trResVar.LoopVars = trResVars[0].LoopVars
+			trResVar.Vars = trResVars[0].Vars
+			trResVar.FormData = trResVars[0].FormData
+			trResVar.Params = trResVars[0].Params
+			trResVar.Headers = trResVars[0].Headers
+			trResVar.FormDataKeyArray = trResVars[0].FormDataKeyArray
+			trResVar.Token = trResVars[0].Token
+			var resBody []interface{}
+			for _, tr := range trResVars {
+				resBody = append(resBody, tr.Body)
+			}
+			trResVar.Body = resBody
+		}
+	}
+
+	if errorFound {
+		log.Println(" httpClient.Do error ")
+		log.Println(errMsg)
+		return nil, trResVar, errors.New(strings.Join(errMsg, " , "))
+	}
+
+	defer func(resps []*http.Response) {
+		for _, resp := range resps {
+			resp.Body.Close()
+		}
+	}(responses)
+
+	respHeader := http.Header{}
+	for k, v := range responses[0].Header {
+		// for loop, content length is calculcated below based on all responses
+		if k != "Content-Length" { //TODO is this needed? || route.LoopVariable == ""
+			for _, h := range v {
+				respHeader.Set(k, h)
+			}
+		}
+	}
+	var rJsonArray []interface{}
+	for _, rp := range responses {
+		var rJson interface{}
+		err = json.NewDecoder(rp.Body).Decode(&rJson)
+		if err != nil {
+			log.Println("================")
+			log.Println(err)
+			return nil, trResVar, err
+		}
+		rJson = stripSingleElement(rJson)
+		rJsonArray = append(rJsonArray, rJson)
+	}
+	rJsonArrayBytes, eee := json.Marshal(rJsonArray)
+	if eee != nil {
+		return nil, trResVar, eee
+	}
+	respHeader.Set("Content-Length", fmt.Sprint(len(rJsonArrayBytes)))
+
+	response = &http.Response{
+		StatusCode:    http.StatusOK,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Body:          ioutil.NopCloser(bytes.NewBuffer(rJsonArrayBytes)),
+		ContentLength: int64(len(rJsonArrayBytes)),
+		Request:       responses[0].Request,
+		Header:        respHeader,
+	}
+	return
+}
+
+func stripSingleElement(obj interface{}) interface{} {
+	if objArray, ok := obj.([]interface{}); !ok {
+		return obj
+	} else if len(objArray) == 1 {
+		return objArray[0]
+	} else {
+		return obj
+	}
+}
+
+func protect(f func()) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("Recovered: %v", err)
+		}
+	}()
+
+	f()
+}
+
+func errorResponse(errMsg string, request *http.Request) (response *http.Response) {
+	errRespHeader := http.Header{}
+	errRespHeader.Set("Content-Type", "application/json")
+	response = &http.Response{
+		StatusCode:    http.StatusBadRequest,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Body:          ioutil.NopCloser(bytes.NewBufferString(errMsg)),
+		ContentLength: int64(len(errMsg)),
+		Request:       request,
+		Header:        errRespHeader,
+	}
+	return
 }

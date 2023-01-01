@@ -146,12 +146,33 @@ func PrintRequestBody(request *http.Request, msg string) {
 	request.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
 
-func CallHttp(method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
+func CallParallelHttp(method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}, rc chan *http.Response) (err error) {
+	resp, err := callHttp(method, url, headers, formData, reqCookies, params, postBody)
+	if err == nil {
+		rc <- resp
+	}
+	return err
+}
+
+func ExecuteParallelHttp(req *http.Request, rc chan *http.Response) (err error) {
+	resp, err := ExecuteHttp(req)
+	if err == nil {
+		rc <- resp
+	}
+	return err
+}
+
+func ExecuteHttp(req *http.Request) (resp *http.Response, err error) {
+	resp, err = httpClient.Do(req)
+	return
+}
+
+func callHttp(method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (resp *http.Response, err error) {
 	reqBody, err := json.Marshal(postBody)
 	if err != nil {
 		log.Print("error in json.Marshal(postBody)")
 		log.Print(err)
-		return nil, nil, nil, 0, err
+		return nil, err
 	}
 	req, err := http.NewRequest(method, url, bytes.NewBuffer(reqBody))
 	if err != nil {
@@ -182,18 +203,18 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 		multipartWriter := multipart.NewWriter(&reqBodyNew)
 		if err != nil {
 			log.Println(err)
-			return nil, nil, nil, 0, err
+			return nil, err
 		}
 		for fk, fd := range formData {
 			fieldWriter, err := multipartWriter.CreateFormField(fk)
 			if err != nil {
 				log.Println(err)
-				return nil, nil, nil, 0, err
+				return nil, err
 			}
 			_, err = fieldWriter.Write([]byte(fd))
 			if err != nil {
 				log.Println(err)
-				return nil, nil, nil, 0, err
+				return nil, err
 			}
 		}
 		multipartWriter.Close()
@@ -216,11 +237,14 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 		req.Header.Set("Content-Length", strconv.Itoa(len(data.Encode())))
 		req.ContentLength = int64(len(data.Encode()))
 	}
-	log.Println(req.Header)
-	PrintRequestBody(req, "printing request body from file_utils before http call")
-	resp, err := httpClient.Do(req)
-	statusCode = resp.StatusCode
+	//log.Println(req)
+	//PrintRequestBody(req, "printing request body from utils before http call")
+	return ExecuteHttp(req)
+}
 
+func CallHttp(method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
+	resp, err := callHttp(method, url, headers, formData, reqCookies, params, postBody)
+	statusCode = resp.StatusCode
 	if err != nil {
 		log.Print("error in httpClient.Do")
 		log.Print(err)
@@ -239,14 +263,27 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 	respCookies = resp.Cookies()
 	defer resp.Body.Close()
 	log.Println("resp.ContentLength = ", resp.ContentLength)
-	//if resp.ContentLength > 0 || reqContentType == encodedForm {
-	log.Println(resp.Header.Get("content-type"))
-	if strings.Split(resp.Header.Get("content-type"), ";")[0] == "application/json" {
-		if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
-			log.Print("error in json.NewDecoder of resp.Body")
-			log.Print(resp.Body)
-			log.Print(err)
-			return nil, nil, nil, 0, err
+
+  //todo - check if below change from reqContentType to header.get breaks anything
+	//todo - merge conflict - main had below first if commented
+  if resp.ContentLength > 0 || strings.Split(headers.Get("Content-type"), ";")[0] == encodedForm {
+		log.Println(resp.Header.Get("content-type"))
+		if strings.Split(resp.Header.Get("content-type"), ";")[0] == "application/json" {
+			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
+				log.Print("error in json.NewDecoder of resp.Body")
+				log.Print(resp.Body)
+				log.Print(err)
+				return nil, nil, nil, 0, err
+			}
+		} else {
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Println(err)
+			}
+			log.Println(body)
+			resBody := make(map[string]interface{})
+			resBody["body"] = string(body)
+			res = resBody
 		}
 	} else {
 		body, err := ioutil.ReadAll(resp.Body)
