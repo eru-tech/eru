@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+var Eruqlbaseurl = "http://localhost:8087"
+
 type StoreHolder struct {
 	Store ModuleStoreI
 }
@@ -223,9 +225,40 @@ func (ms *ModuleStore) GetAndValidateFunc(funcName string, projectId string, hos
 func (ms *ModuleStore) loadRoutesForFunction(funcStep *routes.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header) (err error) {
 	log.Println("inside loadRoutesForFunction for route = ", funcStep.RouteName)
 	var errArray []string
-	r, err := ms.GetAndValidateRoute(routeName, projectId, host, url, method, headers)
-	if err != nil {
-		return
+	r := routes.Route{}
+	if funcStep.QueryName != "" {
+		log.Print("making dummy route for query name ", funcStep.QueryName)
+		r.RouteName = funcStep.QueryName
+		r.Url = "/"
+		r.MatchType = "PREFIX"
+		r.RewriteUrl = fmt.Sprint("/store/", projectId, "/myquery/execute/", funcStep.QueryName)
+		tg := routes.TargetHost{}
+		tg.Method = "POST"
+		tmpSplit := strings.Split(Eruqlbaseurl, "://")
+		tg.Host = Eruqlbaseurl
+		tg.Scheme = "https"
+		if len(tmpSplit) > 0 {
+			tg.Scheme = tmpSplit[0]
+			tg.Host = tmpSplit[1]
+		}
+		tg.Allocation = 100
+		r.LoopVariable = ""
+		r.Condition = ""
+		r.TargetHosts = append(r.TargetHosts, tg)
+	} else if funcStep.Api.Host != "" {
+		log.Print("making dummy route for query name ", funcStep.QueryName)
+		r.RouteName = "FuncApi"
+		r.Url = "/"
+		r.MatchType = "PREFIX"
+		r.RewriteUrl = funcStep.ApiPath
+		r.LoopVariable = ""
+		r.Condition = ""
+		r.TargetHosts = append(r.TargetHosts, funcStep.Api)
+	} else {
+		r, err = ms.GetAndValidateRoute(routeName, projectId, host, url, method, headers)
+		if err != nil {
+			return
+		}
 	}
 	funcStep.Route = r
 	for ck, cv := range funcStep.FuncSteps {

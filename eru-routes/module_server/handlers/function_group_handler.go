@@ -32,6 +32,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+		log.Print(funcGroup)
 		response, err := funcGroup.Execute(r)
 		if err != nil {
 			log.Println(" httpClient.Do error ")

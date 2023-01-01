@@ -114,6 +114,7 @@ type TemplateVars struct {
 	Params           map[string]interface{}
 	Vars             map[string]interface{}
 	Body             interface{}
+	OrgBody          interface{}
 	Token            interface{}
 	FormDataKeyArray []string
 	LoopVars         interface{}
@@ -157,7 +158,16 @@ func (route *Route) GetTargetSchemeHostPortPath(url string) (scheme string, host
 	method = targetHost.Method
 	switch route.MatchType {
 	case MatchTypePrefix:
-		path = fmt.Sprint(route.RewriteUrl, strings.TrimPrefix(strings.Split(url, route.RouteName)[1], route.Url))
+		if url == "" {
+			path = route.RewriteUrl
+		} else {
+			urlSplit := strings.Split(url, route.RouteName)
+			if len(urlSplit) > 0 {
+				path = fmt.Sprint(route.RewriteUrl, strings.TrimPrefix(urlSplit[1], route.Url))
+			} else {
+				path = route.RewriteUrl
+			}
+		}
 	case MatchTypeExact:
 		path = route.RewriteUrl
 	default:
@@ -352,6 +362,7 @@ func (route *Route) Execute(request *http.Request, url string, async bool, async
 	var jobs = make(chan Job, 10)
 	var results = make(chan Result, 10)
 	startTime := time.Now()
+	log.Print("url before allocate = ", url)
 	go allocate(request, url, trReqVars, loopArray, jobs, async, asyncMsg)
 	done := make(chan bool)
 	//go result(done,results,responses, trResVars,errs)
@@ -398,6 +409,7 @@ func (route *Route) Execute(request *http.Request, url string, async bool, async
 
 func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateVars, async bool, asyncMsg string) (response *http.Response, trResVars *TemplateVars, err error) {
 	log.Print("inside RunRoute")
+	log.Print("url from RunRoute = ", url)
 	log.Print(trReqVars.LoopVars)
 	//clone request for parallel execution
 
@@ -414,7 +426,7 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 		return
 	}
 	log.Println("Before httpClient.Do of route Execute")
-	//log.Print(trReqVars)
+	log.Print(trReqVars)
 	//log.Println(request.URL)
 	//log.Println(request.Method)
 	//log.Print("printing request header beofre route.Execute")
@@ -506,15 +518,17 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 	}
 
 	trResVars = &TemplateVars{}
-	if route.TransformResponse != "" {
-		trResVars, err = route.transformResponse(response, trReqVars)
+	//if route.TransformResponse != "" {
+	trResVars, err = route.transformResponse(response, trReqVars)
 
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		//printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
+	if err != nil {
+		log.Println(err)
+		return
 	}
+	//printResponseBody(response, "printing response After httpClient.Do of route Execute after transformResponse")
+	//}
+	//log.Print("printing trResVars")
+	//log.Print(trResVars)
 	return
 }
 
@@ -527,6 +541,7 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 
 	vars.FormData = make(map[string]interface{})
 	vars.Body = make(map[string]interface{})
+	vars.OrgBody = make(map[string]interface{})
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	if reqContentType == encodedForm || reqContentType == multiPartForm {
 		vars.FormData["dummy"] = nil
@@ -546,6 +561,7 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 		}
 	*/
 
+	log.Print("url = ", url)
 	scheme, host, port, path, method, err := route.GetTargetSchemeHostPortPath(url)
 	if err != nil {
 		return
@@ -558,7 +574,6 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 	// http: Request.RequestURI can't be set in client requests.
 	// http://golang.org/src/pkg/net/http/client.go
 	request.RequestURI = ""
-
 	request.Host = host
 	request.URL.Host = fmt.Sprint(host, port)
 	request.URL.Path = path
@@ -667,6 +682,7 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 				log.Println(err)
 				return err
 			}
+			vars.OrgBody = vars.Body
 			request.Body = ioutil.NopCloser(bytes.NewBuffer(output))
 			request.Header.Set("Content-Length", strconv.Itoa(len(output)))
 			request.ContentLength = int64(len(output))
@@ -683,6 +699,7 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 			log.Print(string(body))
 			log.Print("printing vars recevied")
 			log.Print(vars.Body)
+			vars.OrgBody = vars.Body
 			err = json.Unmarshal(body, &vars.Body)
 			if err != nil {
 				log.Print("error in json.Unmarshal(body, &vars.Body)")
@@ -773,6 +790,7 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 		trReqVars.Vars = make(map[string]interface{})
 	}
 	trReqVars.Vars["Body"] = trReqVars.Body
+	trReqVars.Vars["OrgBody"] = trReqVars.OrgBody
 
 	trResVars.Vars = trReqVars.Vars
 	var res interface{}
@@ -805,6 +823,7 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 		log.Println(err)
 		return &TemplateVars{}, err
 	}
+	trResVars.OrgBody = trResVars.Body
 	//log.Print(trResVars)
 	if route.TransformResponse != "" {
 

@@ -120,7 +120,7 @@ func ProjectMyQueryConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Print(time.Now(), " Start --------------------------------------------------- ")
-		time.Sleep(time.Duration(3000) * time.Millisecond)
+		//time.Sleep(time.Duration(3000) * time.Millisecond)
 		log.Print(time.Now(), " End --------------------------------------------------- ")
 		claims := r.Header.Get("claims")
 		log.Println(claims)

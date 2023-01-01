@@ -73,6 +73,7 @@ func loadRequestVars(vars *TemplateVars, request *http.Request) (err error) {
 
 	}
 	vars.Vars = make(map[string]interface{})
+	vars.OrgBody = vars.Body
 	return
 }
 

@@ -78,7 +78,6 @@ func allocate(req *http.Request, u string, vars *TemplateVars, loopArray []inter
 		jobs <- job
 		loopCounter++
 	}
-	log.Print("len(jobs) = ", len(jobs))
 	close(jobs)
 }
 
@@ -134,7 +133,6 @@ func allocateFuncInner(req *http.Request, funcStep *FuncStep, reqVars map[string
 			log.Print("goroutine paniqued allocateFuncInner: ", r)
 		}
 	}()
-	log.Print("inside allocateFuncInner")
 	loopCounter := 0
 	for loopCounter < len(loopArray) {
 		reqVars[funcStep.RouteName].LoopVars = loopArray[loopCounter]
@@ -142,7 +140,6 @@ func allocateFuncInner(req *http.Request, funcStep *FuncStep, reqVars map[string
 		funcJobs <- funcJob
 		loopCounter++
 	}
-	log.Print("len(funcJobs) allocateFuncInner= ", len(funcJobs))
 	close(funcJobs)
 }
 

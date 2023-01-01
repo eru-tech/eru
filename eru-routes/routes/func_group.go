@@ -39,6 +39,9 @@ type FuncStep struct {
 	LoopVariable         string
 	LoopInParallel       bool
 	RouteName            string
+	QueryName            string
+	Api                  TargetHost
+	ApiPath              string
 	Path                 string
 	Route                Route `json:"-"`
 	RequestHeaders       []Headers
@@ -58,7 +61,6 @@ func (funcGroup *FuncGroup) Execute(request *http.Request) (response *http.Respo
 	reqVars := make(map[string]*TemplateVars)
 	resVars := make(map[string]*TemplateVars)
 	log.Print("len(funcGroup.FuncSteps) = ", len(funcGroup.FuncSteps))
-
 	var responses []*http.Response
 	var errs []error
 
@@ -108,6 +110,7 @@ func (funcGroup *FuncGroup) Execute(request *http.Request) (response *http.Respo
 
 func (funcStep *FuncStep) RunFuncStep(req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string) (response *http.Response, err error) {
 	log.Println("*******************funcStep execute start for ", funcStep.RouteName, " *******************")
+	log.Print(funcStep.Route)
 	request, err := cloneRequest(req)
 	var responses []*http.Response
 	var errs []error
@@ -496,15 +499,25 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 		fvars.Vars = vars
 		fvars.ResVars = resVars
 		fvars.ReqVars = reqVars
+		log.Print("vars.LoopVars")
+		log.Print(vars.LoopVars)
 		output, err := processTemplate(funcStep.RouteName, funcStep.TransformRequest, fvars, "json", funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl)
 		if err != nil {
 			log.Println(err)
 			return req, &TemplateVars{}, err
 		}
+		err = json.Unmarshal(output, &vars.Body)
+		if err != nil {
+			log.Println(err)
+			return req, &TemplateVars{}, err
+		}
+		log.Print("printing output from func transform request")
+		log.Print(string(output))
 		req.Body = ioutil.NopCloser(bytes.NewBuffer(output))
 		req.Header.Set("Content-Length", strconv.Itoa(len(output)))
 		req.ContentLength = int64(len(output))
 	} else if !makeMultiPartCalled {
+		vars.OrgBody = vars.Body
 		rb, err1 := json.Marshal(vars.Body)
 		if err1 != nil {
 			err = err1
@@ -577,6 +590,7 @@ func (funcStep *FuncStep) transformResponse(response *http.Response, trReqVars *
 		tempBody["data"] = string(body)
 		vars.Body = tempBody
 	}
+	vars.OrgBody = vars.Body
 	//log.Print(vars.Body)
 	if funcStep.TransformResponse != "" {
 		fvars := &FuncTemplateVars{}
