@@ -36,12 +36,17 @@ type FuncResult struct {
 }
 
 func worker(route *Route, wg *sync.WaitGroup, jobs chan Job, results chan Result) {
+	//var currentJob Job
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print("goroutine paniqued worker: ", r)
+			//output := Result{currentJob, nil, nil, errors.New(fmt.Sprint(r))}
+			//results <- output
+			wg.Done()
 		}
 	}()
 	for job := range jobs {
+		//currentJob = job
 		resp, r, e := route.RunRoute(job.request, job.url, job.vars, job.async, job.asyncMsg)
 		output := Result{job, resp, r, e}
 		results <- output
@@ -53,6 +58,7 @@ func createWorkerPool(route *Route, noOfWorkers int, jobs chan Job, results chan
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print("goroutine paniqued createWorkerPool: ", r)
+			return
 		}
 	}()
 	var wg sync.WaitGroup
@@ -111,12 +117,17 @@ func createWorkerPoolFunc(noOfWorkers int, funcJobs chan FuncJob, funcResults ch
 	close(funcResults)
 }
 func workerFunc(wg *sync.WaitGroup, funcJobs chan FuncJob, funcResults chan FuncResult) {
+	//var currentJob FuncJob
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print("goroutine paniqued workerFunc: ", r)
+			//output := FuncResult{currentJob, nil, nil, errors.New(fmt.Sprint(r))}
+			//funcResults <- output
+			wg.Done()
 		}
 	}()
 	for funcJob := range funcJobs {
+		//currentJob = funcJob
 		resp, e := funcJob.funcStep.RunFuncStep(funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.funcStep.RouteName)
 		if e != nil {
 			log.Print("print RunFuncStep error = ", e.Error())
@@ -158,14 +169,17 @@ func createWorkerPoolFuncInner(noOfWorkers int, funcJobs chan FuncJob, funcResul
 	close(funcResults)
 }
 func workerFuncInner(wg *sync.WaitGroup, funcJobs chan FuncJob, funcResults chan FuncResult) {
+	//var currentJob FuncJob
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print("goroutine paniqued workerFuncInner: ", r)
-			//output := FuncResult{nil, nil, nil, errors.New(r.(string))}
+			//output := FuncResult{currentJob, nil, nil, errors.New(fmt.Sprint(r))}
 			//funcResults <- output
+			wg.Done()
 		}
 	}()
 	for funcJob := range funcJobs {
+		//currentJob = funcJob
 		resp, e := funcJob.funcStep.RunFuncStepInner(funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.funcStep.RouteName, funcJob.asyncMessage)
 		if e != nil {
 			log.Print("print RunFuncStepInner error = ", e.Error())

@@ -278,6 +278,7 @@ func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string
 	//utils.PrintRequestBody(request,"printing from RunFuncStepInner")
 	log.Print("inside RunFuncStepInner")
 	log.Print(reqVars[funcStep.RouteName].LoopVars)
+	oldContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
 	request, vars, trErr := funcStep.transformRequest(req, reqVars, resVars, mainRouteName)
 	if trErr != nil {
 		err = trErr
@@ -307,7 +308,7 @@ func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string
 	//TODO - add response to routevars - check this
 
 	//response *http.Response, trReqVars TemplateVars, resHeaders []Headers, removeHeaders []string, templateName string, templateString string,tokenHeaderKey string,jwkUrl string) (trResVars TemplateVars , err error)
-	
+
 	// in case of error - no need to call  transformResponse
 	if err == nil {
 		var trespErr error
@@ -320,15 +321,15 @@ func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string
 	}
 	//log.Println("resVars[funcStep.RouteName] for ",funcStep.RouteName, " after funcStep.transformResponse")
 	//log.Println(resVars[funcStep.RouteName])
-	
-  if funcStep.Route.Redirect {
+
+	if funcStep.Route.Redirect {
 		log.Print(funcStep.Route.FinalRedirectUrl)
 		response.StatusCode = http.StatusSeeOther
 		response.Header.Set("Location", funcStep.Route.FinalRedirectUrl)
 		//http.Redirect(w, r, route.FinalRedirectUrl, http.StatusSeeOther)
 		return
 	}
-  log.Print("len(funcStep.FuncSteps) = ", len(funcStep.FuncSteps))
+	log.Print("len(funcStep.FuncSteps) = ", len(funcStep.FuncSteps))
 
 	for _, cv := range funcStep.FuncSteps {
 		if oldContentType == encodedForm || oldContentType == multiPartForm {
@@ -450,7 +451,7 @@ func cloneRequest(request *http.Request) (req *http.Request, err error) {
 func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string) (req *http.Request, vars *TemplateVars, err error) {
 	log.Println("inside funcStep.transformRequest")
 
-	oldContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
+	//oldContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	req, err = cloneRequest(request)
 
 	//printRequestBody(req,"body from funcstep transformRequest - after clone")

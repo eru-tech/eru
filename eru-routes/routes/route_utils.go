@@ -544,11 +544,15 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 	}(responses)
 
 	respHeader := http.Header{}
-	for k, v := range responses[0].Header {
-		// for loop, content length is calculcated below based on all responses
-		if k != "Content-Length" { //TODO is this needed? || route.LoopVariable == ""
-			for _, h := range v {
-				respHeader.Set(k, h)
+	newR := &http.Request{}
+	if len(responses) > 0 {
+		newR = responses[0].Request
+		for k, v := range responses[0].Header {
+			// for loop, content length is calculcated below based on all responses
+			if k != "Content-Length" { //TODO is this needed? || route.LoopVariable == ""
+				for _, h := range v {
+					respHeader.Set(k, h)
+				}
 			}
 		}
 	}
@@ -577,7 +581,7 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 		ProtoMinor:    1,
 		Body:          ioutil.NopCloser(bytes.NewBuffer(rJsonArrayBytes)),
 		ContentLength: int64(len(rJsonArrayBytes)),
-		Request:       responses[0].Request,
+		Request:       newR,
 		Header:        respHeader,
 	}
 	return
