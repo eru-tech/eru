@@ -452,7 +452,12 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(query string, datasource *module_model.D
 		}
 		for _, colType := range colsType {
 			if firstRow {
-				innerResultLabel = append(innerResultLabel, colType.Name())
+				colHeader := colType.Name()
+				colHeaderArray := strings.Split(colType.Name(), "**")
+				if len(colHeaderArray) > 1 {
+					colHeader = colHeaderArray[1]
+				}
+				innerResultLabel = append(innerResultLabel, colHeader)
 			}
 			if mapping[colType.Name()] != nil {
 				//log.Print(colType.Name())
