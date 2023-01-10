@@ -2,16 +2,13 @@ package routes
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"io/ioutil"
 	"log"
-	"mime/multipart"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -60,7 +57,6 @@ func (funcGroup *FuncGroup) Execute(request *http.Request) (response *http.Respo
 	log.Println("inside funGroup Execute")
 	reqVars := make(map[string]*TemplateVars)
 	resVars := make(map[string]*TemplateVars)
-	log.Print("len(funcGroup.FuncSteps) = ", len(funcGroup.FuncSteps))
 	var responses []*http.Response
 	var errs []error
 
@@ -90,44 +86,42 @@ func (funcGroup *FuncGroup) Execute(request *http.Request) (response *http.Respo
 		noOfWorkers = len(funcGroup.FuncSteps)
 	}
 
-	log.Print("noOfWorkers = ", noOfWorkers)
 	createWorkerPoolFunc(noOfWorkers, funcJobs, funcResults)
 	<-done
-	log.Print("after done")
-	log.Print("len(responses) = ", len(responses))
-	//log.Print("len(trVars) = ", len(trResVars))
-	log.Print("len(errs) = ", len(errs))
 	endTime := time.Now()
 	diff := endTime.Sub(startTime)
 	fmt.Println("total time taken ", diff.Seconds(), "seconds")
-	//for _, v := range funcGroup.FuncSteps {
-	//	response, err = v.execute(request, reqVars, resVars, v.RouteName)
-	//	utils.PrintResponseBody(response,"printing response from (funcGroup *FuncGroup) Execute")
-	//}
 	response, _, err = clubResponses(responses, nil, errs)
 	return
 }
 
 func (funcStep *FuncStep) RunFuncStep(req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string) (response *http.Response, err error) {
 	log.Println("*******************funcStep execute start for ", funcStep.RouteName, " *******************")
-	log.Print(funcStep.Route)
-	request, err := cloneRequest(req)
-	var responses []*http.Response
-	var errs []error
-	reqVars[funcStep.RouteName] = &TemplateVars{}
-	//var trResVars []*TemplateVars
-	//var errs []error
-	lrErr := loadRequestVars(reqVars[funcStep.RouteName], request)
-	if lrErr != nil {
-		log.Println(lrErr)
-		err = lrErr
-		response = errorResponse(err.Error(), request)
+
+	//first step is to transform the request which in turn will clone the request before transforming keeping original request as is for further use.
+	request, vars, trErr := funcStep.transformRequest(req, reqVars, resVars, mainRouteName)
+	if trErr != nil {
+		err = trErr
+		log.Println(err)
 		return
 	}
+
+	var responses []*http.Response
+	var errs []error
+	log.Print("printing vars after transformRequest")
+	log.Print(vars.FormData)
+	reqVars[funcStep.RouteName] = vars
+
+	//reqVars[funcStep.RouteName] = &TemplateVars{}
+	//reqVars[funcStep.RouteName].FormData = make(map[string]interface{})
+	//reqVars[funcStep.RouteName].Body = make(map[string]interface{})
+	//reqVars[funcStep.RouteName].OrgBody = make(map[string]interface{})
 
 	if funcStep.Condition != "" {
 		avars := &FuncTemplateVars{}
 		avars.Vars = reqVars[funcStep.RouteName]
+		log.Print("evaluating condition = ", funcStep.Condition)
+		log.Print(avars.Vars.Body)
 		output, outputErr := processTemplate(funcStep.RouteName, funcStep.Condition, avars, "string", "", "")
 		log.Print(string(output))
 		if outputErr != nil {
@@ -143,6 +137,7 @@ func (funcStep *FuncStep) RunFuncStep(req *http.Request, reqVars map[string]*Tem
 			response = errorResponse(err.Error(), request)
 			return
 		}
+		log.Print("strCond == ", strCond)
 		if strCond == "false" {
 			cfmBody := "{}"
 			if funcStep.ConditionFailMessage != "" {
@@ -193,12 +188,23 @@ func (funcStep *FuncStep) RunFuncStep(req *http.Request, reqVars map[string]*Tem
 		}
 		asyncMessage = string(output)
 	}
-
 	var loopArray []interface{}
+	lerr := false
+	if funcStep.LoopVariable != "" {
+		loopArray, lerr = vars.LoopVars.([]interface{})
+		if !lerr {
+			err = errors.New("func loop variable is not an array")
+			log.Println(err)
+			response = errorResponse(err.Error(), request)
+			return
+		}
+	}
+	/*var loopArray []interface{}
 	if funcStep.LoopVariable != "" {
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = reqVars[funcStep.RouteName]
 		output, outputErr := processTemplate(funcStep.RouteName, funcStep.LoopVariable, fvars, "json", "", "")
+		log.Print("loop variable after template processing")
 		log.Print(string(output))
 		if outputErr != nil {
 			log.Println(outputErr)
@@ -227,10 +233,11 @@ func (funcStep *FuncStep) RunFuncStep(req *http.Request, reqVars map[string]*Tem
 		//dummy row added to create a job
 		loopArray = append(loopArray, make(map[string]interface{}))
 	}
-
+	*/
 	var jobs = make(chan FuncJob, 10)
 	var results = make(chan FuncResult, 10)
 	startTime := time.Now()
+
 	go allocateFuncInner(request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs)
 	done := make(chan bool)
 	//go result(done,results,responses, trResVars,errs)
@@ -258,15 +265,8 @@ func (funcStep *FuncStep) RunFuncStep(req *http.Request, reqVars map[string]*Tem
 		}
 	}
 
-	log.Print("noOfWorkers = ", noOfWorkers)
 	createWorkerPoolFuncInner(noOfWorkers, jobs, results)
 	<-done
-	log.Print("after done")
-	log.Print("len(responses) = ", len(responses))
-	log.Print("len(trVars) = ", len(trResVars))
-	log.Print(&trResVars)
-	log.Print("len(errs) = ", len(errs))
-	log.Print("calling clubResponses from route")
 	response, _, err = clubResponses(responses, trResVars, errs)
 	endTime := time.Now()
 	diff := endTime.Sub(startTime)
@@ -275,39 +275,34 @@ func (funcStep *FuncStep) RunFuncStep(req *http.Request, reqVars map[string]*Tem
 	return
 }
 func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, asyncMsg string) (response *http.Response, err error) {
-	//utils.PrintRequestBody(request,"printing from RunFuncStepInner")
-	log.Print("inside RunFuncStepInner")
-	log.Print(reqVars[funcStep.RouteName].LoopVars)
-	oldContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
-	request, vars, trErr := funcStep.transformRequest(req, reqVars, resVars, mainRouteName)
-	if trErr != nil {
-		err = trErr
-		log.Println(err)
-		return
-	}
-	reqVars[funcStep.RouteName] = vars
-	defer req.Body.Close()
+	log.Print("inside RunFuncStepInner for ", funcStep.RouteName)
 
+	request := req
+	if funcStep.LoopVariable != "" {
+		request, _, err = funcStep.transformRequest(req, reqVars, resVars, mainRouteName)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	}
 	routevars := &TemplateVars{}
 	_ = routevars
-	response, routevars, err = funcStep.Route.Execute(request, funcStep.Path, funcStep.Async, asyncMsg)
-	log.Print("print after funcStep.Route.Execute")
-	log.Print(response)
-	log.Print(routevars)
+	utils.PrintRequestBody(request, "before funcStep.Route.Execute")
+	log.Print(reqVars["route_redesign"].LoopVars)
+	log.Print(reqVars["route_redesign"].LoopVar)
+	log.Print(reqVars["route_redesign"].Body)
+	log.Print(reqVars["route_redesign"].OrgBody)
 
+	response, routevars, err = funcStep.Route.Execute(request, funcStep.Path, funcStep.Async, asyncMsg, reqVars[funcStep.RouteName])
 	if err != nil {
 		log.Print(err)
 	}
+	resVars[funcStep.RouteName] = routevars
 
 	if funcStep.Route.OnError == "STOP" && response.StatusCode >= 400 {
 		log.Print("inside funcStep.Route.OnError == \"STOP\" && response.StatusCode >= 400")
 		return
 	}
-	log.Print("routevars is nil : ", routevars == nil)
-	resVars[funcStep.RouteName] = routevars
-	//TODO - add response to routevars - check this
-
-	//response *http.Response, trReqVars TemplateVars, resHeaders []Headers, removeHeaders []string, templateName string, templateString string,tokenHeaderKey string,jwkUrl string) (trResVars TemplateVars , err error)
 
 	// in case of error - no need to call  transformResponse
 	if err == nil {
@@ -319,9 +314,7 @@ func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string
 			return
 		}
 	}
-	//log.Println("resVars[funcStep.RouteName] for ",funcStep.RouteName, " after funcStep.transformResponse")
-	//log.Println(resVars[funcStep.RouteName])
-
+	log.Print("funcStep.Route.Redirect = ", funcStep.Route.Redirect)
 	if funcStep.Route.Redirect {
 		log.Print(funcStep.Route.FinalRedirectUrl)
 		response.StatusCode = http.StatusSeeOther
@@ -329,121 +322,14 @@ func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string
 		//http.Redirect(w, r, route.FinalRedirectUrl, http.StatusSeeOther)
 		return
 	}
-	log.Print("len(funcStep.FuncSteps) = ", len(funcStep.FuncSteps))
 
 	for _, cv := range funcStep.FuncSteps {
-		if oldContentType == encodedForm || oldContentType == multiPartForm {
-			// in case of multipart or form data, send cloned request to child as multipart cannot be processed twice
-			response, err = cv.RunFuncStep(req, reqVars, resVars, mainRouteName)
-		} else {
-			response, err = cv.RunFuncStep(request, reqVars, resVars, mainRouteName)
-		}
-	}
-	log.Print("after loop of funcStep.FuncSteps")
-	log.Print(err)
-	log.Print(response)
-	//		loopCounter++
-	//}
-	return
-}
-
-func cloneRequest(request *http.Request) (req *http.Request, err error) {
-	log.Println("clone request")
-	req = request.Clone(context.Background())
-
-	//Only request.clone does not work - need to handle multipart request as under
-
-	reqContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
-	log.Print("reqContentType = ", reqContentType)
-	if reqContentType == encodedForm || reqContentType == multiPartForm {
-		log.Println("inside encodedForm || multiPartForm")
-		var reqBody bytes.Buffer
-		var reqOldBody bytes.Buffer
-		multipartWriter := multipart.NewWriter(&reqBody)
-		multiPart, err1 := request.MultipartReader()
-		if err1 != nil {
-			//err = err1
-			log.Println("----------------------------")
-			log.Println(err1)
-			//return
-		} else {
-			for {
-				part, errPart := multiPart.NextRawPart()
-				if errPart == io.EOF {
-					log.Println("inside EOF error")
-					break
-				}
-				if part.FileName() != "" {
-					log.Println(part.FileName())
-					log.Println(part)
-					var tempFile *os.File
-					tempFile, err = ioutil.TempFile(os.TempDir(), "spa")
-					defer tempFile.Close()
-					if err != nil {
-						log.Println("Temp file creation failed")
-					}
-					//_, err = io.Copy(tempFile, part)
-					//if err != nil {
-					//	log.Println(err)
-					//	return
-					//}
-					fileWriter, err2 := createFormFileCopy(multipartWriter, part)
-					//fileWriter, err := multipartWriter.CreateFormFile(part.FormName(), part.FileName())
-					if err2 != nil {
-						err = err2
-						log.Println(err)
-						return
-					}
-					//_, err = fileWriter.Write()
-					_, err = io.Copy(fileWriter, part)
-					if err != nil {
-						log.Println(err)
-						return
-					}
-
-				} else {
-					buf := new(bytes.Buffer)
-					buf.ReadFrom(part)
-					fieldWriter, err3 := multipartWriter.CreateFormField(part.FormName())
-					if err3 != nil {
-						err = err3
-						log.Println(err)
-						return
-					}
-					_, err = fieldWriter.Write(buf.Bytes())
-					if err != nil {
-						log.Println(err)
-						return
-					}
-				}
-			}
-		}
-		multipartWriter.Close()
-		reqOldBody = reqBody
-		req.Body = ioutil.NopCloser(&reqBody)
-		log.Println(multipartWriter.FormDataContentType())
-		req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
-		req.Header.Set("Content-Length", strconv.Itoa(reqBody.Len()))
-		req.ContentLength = int64(reqBody.Len())
-
-		request.Body = ioutil.NopCloser(&reqOldBody)
-		request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
-		request.Header.Set("Content-Length", strconv.Itoa(reqOldBody.Len()))
-		request.ContentLength = int64(reqOldBody.Len())
-		log.Print("printing content type in clone for old and new request body")
-		log.Print(request.Header.Get("Content-Type"))
-		log.Print(req.Header.Get("Content-Type"))
-	} else {
-		body, err3 := ioutil.ReadAll(req.Body)
-		if err3 != nil {
-			err = err3
-			log.Println(err)
-			return
-		}
-		//log.Println("body from clonerequest - else part")
-		//log.Println(string(body))
-		request.Body = ioutil.NopCloser(bytes.NewReader(body))
-		req.Body = ioutil.NopCloser(bytes.NewReader(body))
+		//if oldContentType == encodedForm || oldContentType == multiPartForm {
+		// in case of multipart or form data, send cloned request to child as multipart cannot be processed twice
+		//	response, err = cv.RunFuncStep(req, reqVars, resVars, mainRouteName)
+		//} else {
+		response, err = cv.RunFuncStep(request, reqVars, resVars, mainRouteName)
+		//}
 	}
 	return
 }
@@ -451,80 +337,87 @@ func cloneRequest(request *http.Request) (req *http.Request, err error) {
 func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string) (req *http.Request, vars *TemplateVars, err error) {
 	log.Println("inside funcStep.transformRequest")
 
-	//oldContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
+	//first step in transforming is to make a clone of the original request
 	req, err = cloneRequest(request)
-
-	//printRequestBody(req,"body from funcstep transformRequest - after clone")
 	if err != nil {
-		log.Println(err)
-		return req, &TemplateVars{}, err
+		log.Print(err)
+		return
 	}
 
-	makeMultiPartCalled := false
-	//printRequestBody(request,"body from funcStep transformRequest")
-	//defer request.Body.Close()
+	// next we read the request and loads vars to be used for transforming request
+	// we load vars only once for one thread of func step - thus the check of mainroutename
 	vars = &TemplateVars{}
-
 	vars.FormData = make(map[string]interface{})
 	vars.Body = make(map[string]interface{})
-	oldContentTypeFull := request.Header.Get("Content-type")
-	oldContentType := strings.Split(oldContentTypeFull, ";")[0]
-	if oldContentType == encodedForm || oldContentType == multiPartForm {
-		vars.FormData["dummy"] = nil
-		// addding the same so loadvars will get length > 0 and avoid processing body
-		// this dummy record will get overwritten as part of return value from process multipart
-	}
-	if mainRouteName == funcStep.RouteName {
+	vars.OrgBody = make(map[string]interface{})
+	if reqVars[mainRouteName] == nil {
 		err = loadRequestVars(vars, req)
 		if err != nil {
 			log.Println(err)
 			return
 		}
 	} else {
-		log.Println("vars = reqVars[mainRouteName]")
 		vars = reqVars[mainRouteName]
 	}
 
-	//reqVarsLoaded := false
-	//vars.FormData = make(map[string]interface{})
-	//vars.FormData = reqVars[funcStep.RouteName].FormData
-	//vars.FormDataKeyArray = reqVars[funcStep.RouteName].FormDataKeyArray
-	//vars.Headers = reqVars[funcStep.RouteName].Headers
-	//vars.Params = reqVars[funcStep.RouteName].Params
-	//vars.ReqVars = reqVars
-	//vars.ResVars = resVars
+	var loopArray []interface{}
+	if funcStep.LoopVariable != "" {
+		fvars := &FuncTemplateVars{}
+		fvars.Vars = vars
+		output, outputErr := processTemplate(funcStep.RouteName, funcStep.LoopVariable, fvars, "json", "", "")
+		log.Print("loop variable after template processing")
+		log.Print(string(output))
+		if outputErr != nil {
+			log.Println(outputErr)
+			err = outputErr
+			return
+		}
+		var loopJson interface{}
+		loopJsonErr := json.Unmarshal(output, &loopJson)
+		if loopJsonErr != nil {
+			err = errors.New("func loop variable is not a json")
+			log.Print(loopJsonErr)
+		}
 
-	//vars.FormData , vars.FormDataKeyArray, err = processMultipart(request,funcStep.RemoveParams.FormData,funcStep.FormData)
-	//if err != nil {
-	//	return
-	//}
+		ok := false
+		if loopArray, ok = loopJson.([]interface{}); !ok {
+			err = errors.New("func loop variable is not an array")
+			log.Print(err)
+			return
+		}
+		log.Print("loopArray = ", loopArray)
 
-	req, err = cloneRequest(request)
-	if err != nil {
-		log.Println(err)
-		return req, &TemplateVars{}, err
+	} else {
+		//dummy row added to create a job
+		loopArray = append(loopArray, make(map[string]interface{}))
 	}
-	newContentTypeFull := req.Header.Get("Content-type")
+	vars.LoopVars = loopArray
+
+	// setting new headers in request which are not template based - direct values.
+	oldContentTypeFull := req.Header.Get("Content-type")
+	oldContentType := strings.Split(oldContentTypeFull, ";")[0]
 	for _, h := range funcStep.RequestHeaders {
 		if !h.IsTemplate {
 			req.Header.Set(h.Key, h.Value)
 		}
 	}
-	newContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
-	//vars.FormData , vars.FormDataKeyArray, err = processMultipart(request,funcStep.RemoveParams.FormData,funcStep.FormData)
-	//if err != nil {
-	//	return
-	//}
+	newContentTypeFull := req.Header.Get("Content-type")
+	newContentType := strings.Split(newContentTypeFull, ";")[0]
+
 	log.Print("newContentType = ", newContentType)
 	log.Print("oldContentType = ", oldContentType)
+
+	//first check if original request is not multipart but the new request to be forwarded to target host is multipart - then make multipart body from json body
+	// else if original request is multipart/form , we process the same
+	makeMultiPartCalled := false
 	if (newContentType == encodedForm || newContentType == multiPartForm) && newContentType != oldContentType {
-		log.Println(vars.FormData)
 		vars.FormData, vars.FormDataKeyArray, err = makeMultipart(req, funcStep.FormData, funcStep.FileData, vars, reqVars, resVars, funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl)
 		makeMultiPartCalled = true
 		if err != nil {
+			log.Print(err)
 			return
 		}
-	} else if oldContentType == multiPartForm {
+	} else if oldContentType == multiPartForm || oldContentType == encodedForm {
 		makeMultiPartCalled = true
 		mpvars := &FuncTemplateVars{}
 		mpvars.ResVars = resVars
@@ -540,45 +433,55 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 					log.Println(err)
 					return
 				}
-				log.Print("form data template processed")
 				outputStr, fduErr := strconv.Unquote(string(output))
 				if fduErr != nil {
 					err = fduErr
 					log.Println(err)
 					return
 				}
-				log.Print(outputStr)
+				vars.FormData[fd.Key] = outputStr
+				vars.FormDataKeyArray = append(vars.FormDataKeyArray, fd.Key)
 				funcStep.FormData[i].Value = outputStr
 			}
 		}
-		req.Header.Set("Content-type", newContentTypeFull)
-		vars.FormData, vars.FormDataKeyArray, err = processMultipart(req, funcStep.RemoveParams.FormData, funcStep.FormData)
-		if err != nil {
-			log.Print("printing error recd from processMultipart")
-			log.Print(err)
-			return
-		}
-		req.Header.Set("Content-type", newContentType)
-	} else if oldContentType == encodedForm {
-		rpfErr := req.ParseForm()
-		if rpfErr != nil {
-			err = rpfErr
-			log.Print("error from request.ParseForm() = ", err.Error())
-			return
-		}
-		if req.PostForm != nil {
-			for k, v := range req.PostForm {
-				vars.FormData[k] = strings.Join(v, ",")
+		if oldContentType == multiPartForm {
+			//resetting it back to old content type as processMultipart will not be able to read the request body
+			req.Header.Set("Content-type", oldContentTypeFull)
+			vars.FormData, vars.FormDataKeyArray, err = processMultipart(oldContentType, req, funcStep.RemoveParams.FormData, funcStep.FormData)
+			if err != nil {
+				log.Print("printing error recd from processMultipart")
+				log.Print(err)
+				return
+			}
+			//changing it back to new content type once process multipart has read the request body and loaded vars.formdata
+			req.Header.Set("Content-type", newContentType)
+		} else if oldContentType == encodedForm {
+			rpfErr := req.ParseForm()
+			if rpfErr != nil {
+				err = rpfErr
+				log.Print("error from request.ParseForm() = ", err.Error())
+				return
+			}
+			if req.PostForm != nil {
+				for k, v := range req.PostForm {
+					vars.FormData[k] = strings.Join(v, ",")
+					vars.FormDataKeyArray = append(vars.FormDataKeyArray, k)
+				}
 			}
 		}
 	}
+	log.Print(vars.FormData)
+	log.Print("printing vars.FormData")
+
+	//next we process and transform query params and set it in request
 	err = processParams(req, funcStep.RemoveParams.QueryParams, funcStep.QueryParams, vars, reqVars, resVars)
 	if err != nil {
+		log.Print(err)
 		return
 	}
 
+	//next we process and transform request body only if it is not multipart and set it in request
 	log.Println("funcStep.TransformRequest = ", funcStep.TransformRequest)
-	//vars := module_model.TemplateVars{}
 	if funcStep.TransformRequest != "" {
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = vars
@@ -591,20 +494,16 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 			log.Println(err)
 			return req, &TemplateVars{}, err
 		}
-		// TODO transform request -  output to be added to vars
 		err = json.Unmarshal(output, &vars.Body)
 		if err != nil {
 			log.Println(err)
 			return req, &TemplateVars{}, err
 		}
-		log.Print("printing output from func transform request")
-		log.Print(string(output))
 		req.Body = ioutil.NopCloser(bytes.NewBuffer(output))
 		req.Header.Set("Content-Length", strconv.Itoa(len(output)))
 		req.ContentLength = int64(len(output))
 	} else if !makeMultiPartCalled {
 		log.Print("inside !makeMultiPartCalled")
-		vars.OrgBody = vars.Body
 		rb, err1 := json.Marshal(vars.Body)
 		if err1 != nil {
 			err = err1
@@ -614,9 +513,9 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 		req.Body = ioutil.NopCloser(bytes.NewBuffer(rb))
 		req.Header.Set("Content-Length", strconv.Itoa(len(rb)))
 		req.ContentLength = int64(len(rb))
-		//log.Println(req.Header.Get("Content-Length"))
 	}
-	defer req.Body.Close()
+
+	// lastly we process and transform template based headers and set it in request
 	err = processHeaderTemplates(req, funcStep.RemoveParams.RequestHeaders, funcStep.RequestHeaders, false, vars, funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl, reqVars, resVars)
 	if err != nil {
 		log.Println(err)
@@ -625,13 +524,10 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 	return req, vars, err
 }
 
-func (funcStep *FuncStep) transformResponse(response *http.Response, trReqVars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (vars *TemplateVars, err error) {
+func (funcStep *FuncStep) transformResponse(response *http.Response, trResVars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (vars *TemplateVars, err error) {
 	log.Println("inside funcStep transformResponse")
-	vars = trReqVars
-	log.Print(response)
-	//printResponseBody(response,"printing response from funcStep TransformResponse")
-	//vars.ReqVars = reqVars
-	//vars.ResVars = resVars
+	utils.PrintResponseBody(response, "response printed from inside funcStep transformResponse")
+	vars = trResVars
 
 	for _, h := range funcStep.ResponseHeaders {
 		response.Header.Set(h.Key, h.Value)
@@ -644,23 +540,17 @@ func (funcStep *FuncStep) transformResponse(response *http.Response, trReqVars *
 	for k, v := range response.Header {
 		vars.Headers[k] = v
 	}
+
 	if vars.Params == nil {
 		vars.Params = make(map[string]interface{})
 	}
 	if vars.Vars == nil {
 		vars.Vars = make(map[string]interface{})
 	}
-	//log.Println("++++++++++++++++++++++++++++++")
-	//for k, v := range vars.Vars {
-	//	log.Println(k)
-	//	log.Println(v)
-	//}
 
 	tmplBodyFromRes := json.NewDecoder(response.Body)
 	tmplBodyFromRes.DisallowUnknownFields()
 	if err = tmplBodyFromRes.Decode(&vars.Body); err != nil {
-		log.Println("tmplBodyFromRes.Decode error from func")
-		log.Println(err)
 		body, readErr := ioutil.ReadAll(tmplBodyFromRes.Buffered())
 		if readErr != nil {
 			err = readErr
@@ -669,21 +559,16 @@ func (funcStep *FuncStep) transformResponse(response *http.Response, trReqVars *
 			return
 		}
 		err = nil
-		log.Print("string(body) = ", string(body))
 		tempBody := make(map[string]string)
 		tempBody["data"] = string(body)
 		vars.Body = tempBody
 	}
 	vars.OrgBody = vars.Body
-	//log.Print(vars.Body)
 	if funcStep.TransformResponse != "" {
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = vars
 		fvars.ResVars = resVars
 		fvars.ReqVars = reqVars
-
-		log.Print("fvars.ReqVars")
-		log.Print(fvars.ReqVars["generateotp"])
 
 		output, err := processTemplate(funcStep.RouteName, funcStep.TransformResponse, fvars, "json", funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl)
 		if err != nil {

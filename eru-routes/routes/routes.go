@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	encodedForm   = "application/x-www-form-urlencoded"
-	multiPartForm = "multipart/form-data"
+	encodedForm     = "application/x-www-form-urlencoded"
+	multiPartForm   = "multipart/form-data"
+	applicationjson = "application/json"
 )
 const MatchTypePrefix = "PREFIX"
 const MatchTypeExact = "EXACT"
@@ -118,6 +119,7 @@ type TemplateVars struct {
 	Token            interface{}
 	FormDataKeyArray []string
 	LoopVars         interface{}
+	LoopVar          interface{}
 	//ReqVars map[string]*TemplateVars
 	//ResVars map[string]*TemplateVars
 }
@@ -249,20 +251,20 @@ func (route *Route) getTargetHost() (targetHost TargetHost, err error) {
 	return
 }
 
-func (route *Route) Execute(request *http.Request, url string, async bool, asyncMsg string) (response *http.Response, trResVar *TemplateVars, resErr error) {
+func (route *Route) Execute(request *http.Request, url string, async bool, asyncMsg string, trReqVars *TemplateVars) (response *http.Response, trResVar *TemplateVars, resErr error) {
 	log.Println("*******************route execute start for ", route.RouteName, "*******************")
-	//log.Println("url = ", url)
-	//utils.PrintRequestBody(request, "printing request from route Execute")
-	//log.Print(request.Header)
+
+	if trReqVars == nil {
+		trReqVars = &TemplateVars{}
+	}
 	var responses []*http.Response
-	trReqVars := &TemplateVars{}
 	var trResVars []*TemplateVars
 	var errs []error
-	err := loadRequestVars(trReqVars, request)
-	if err != nil {
-		log.Println(err)
-		resErr = err
-		response = errorResponse(resErr.Error(), request)
+
+	resErr = route.transformRequest(request, url, trReqVars)
+	if resErr != nil {
+		log.Println("error from transformRequest")
+		log.Println(resErr)
 		return
 	}
 
@@ -270,7 +272,6 @@ func (route *Route) Execute(request *http.Request, url string, async bool, async
 		avars := &FuncTemplateVars{}
 		avars.Vars = trReqVars
 		output, outputErr := processTemplate(route.RouteName, route.Condition, avars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
-		log.Print(string(output))
 		if outputErr != nil {
 			log.Println(outputErr)
 			resErr = outputErr
@@ -280,7 +281,7 @@ func (route *Route) Execute(request *http.Request, url string, async bool, async
 		strCond, strCondErr := strconv.Unquote(string(output))
 		if strCondErr != nil {
 			log.Println(strCondErr)
-			resErr = err
+			resErr = strCondErr
 			response = errorResponse(resErr.Error(), request)
 			return
 		}
@@ -290,10 +291,9 @@ func (route *Route) Execute(request *http.Request, url string, async bool, async
 				cfmvars := &FuncTemplateVars{}
 				cfmvars.Vars = trReqVars
 				cfmOutput, cfmOutputErr := processTemplate(route.RouteName, route.ConditionFailMessage, avars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
-				log.Print(string(cfmOutput))
 				if cfmOutputErr != nil {
 					log.Println(cfmOutputErr)
-					resErr = err
+					resErr = cfmOutputErr
 					response = errorResponse(resErr.Error(), request)
 					return
 				}
@@ -323,31 +323,44 @@ func (route *Route) Execute(request *http.Request, url string, async bool, async
 	}
 
 	var loopArray []interface{}
+	lerr := false
+	log.Print("route.LoopVariable = ", route.LoopVariable)
+	if route.LoopVariable != "" {
+		log.Print("inside route.LoopVariable != \"\"")
+		loopArray, lerr = trReqVars.LoopVars.([]interface{})
+		if !lerr {
+			resErr = errors.New("func loop variable is not an array")
+			log.Println(resErr)
+			response = errorResponse(resErr.Error(), request)
+			return
+		}
+	} else {
+		//dummy row added to create a job
+		loopArray = append(loopArray, make(map[string]interface{}))
+	}
+	/*var loopArray []interface{}
 	if route.LoopVariable != "" {
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = trReqVars
 		output, outputErr := processTemplate(route.RouteName, route.LoopVariable, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
-		log.Print(string(output))
 		if outputErr != nil {
 			log.Println(outputErr)
-			resErr = err
+			resErr = outputErr
 			response = errorResponse(resErr.Error(), request)
 			return
 		}
 		var loopJson interface{}
 		loopJsonErr := json.Unmarshal(output, &loopJson)
 		if loopJsonErr != nil {
-			err = errors.New("route loop variable is not a json")
 			log.Print(loopJsonErr)
-			resErr = err
+			resErr = errors.New("route loop variable is not a json")
 			response = errorResponse(resErr.Error(), request)
 		}
 
 		ok := false
 		if loopArray, ok = loopJson.([]interface{}); !ok {
-			err = errors.New("route loop variable is not an array")
-			log.Print(err)
-			resErr = err
+			resErr = errors.New("route loop variable is not an array")
+			log.Print(resErr)
 			response = errorResponse(resErr.Error(), request)
 			return
 		}
@@ -357,10 +370,13 @@ func (route *Route) Execute(request *http.Request, url string, async bool, async
 		//dummy row added to create a job
 		loopArray = append(loopArray, make(map[string]interface{}))
 	}
+	*/
+
 	var jobs = make(chan Job, 10)
 	var results = make(chan Result, 10)
 	startTime := time.Now()
 	log.Print("url before allocate = ", url)
+	log.Print("loopArray before allocate = ", loopArray)
 	go allocate(request, url, trReqVars, loopArray, jobs, async, asyncMsg)
 	done := make(chan bool)
 	//go result(done,results,responses, trResVars,errs)
@@ -388,15 +404,8 @@ func (route *Route) Execute(request *http.Request, url string, async bool, async
 		}
 	}
 
-	log.Print("noOfWorkers = ", noOfWorkers)
 	createWorkerPool(route, noOfWorkers, jobs, results)
 	<-done
-	log.Print("after done")
-	log.Print("len(responses) = ", len(responses))
-	log.Print("len(trVars) = ", len(trResVars))
-	log.Print(&trResVars)
-	log.Print("len(errs) = ", len(errs))
-	log.Print("calling clubResponses from route")
 	response, trResVar, resErr = clubResponses(responses, trResVars, errs)
 	endTime := time.Now()
 	diff := endTime.Sub(startTime)
@@ -407,30 +416,31 @@ func (route *Route) Execute(request *http.Request, url string, async bool, async
 
 func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateVars, async bool, asyncMsg string) (response *http.Response, trResVars *TemplateVars, err error) {
 	log.Print("inside RunRoute")
-	log.Print("url from RunRoute = ", url)
-	log.Print(trReqVars.LoopVars)
-	//clone request for parallel execution
-
-	request, err := cloneRequest(req)
-	if err != nil {
-		log.Println("error from cloneRequest")
-		log.Println(err)
-		return
-	}
-	err = route.transformRequest(request, url, trReqVars)
-	if err != nil {
-		log.Println("error from transformRequest")
-		log.Println(err)
-		return
-	}
-	log.Println("Before httpClient.Do of route Execute")
-	log.Print(trReqVars)
-
 	//TODO commented below line - chk this and take it in route config
 	//request.Header.Set("accept-encoding", "identity")
 
 	//printRequestBody(request, "printing request Before httpClient.Do of route Execute")
 	//log.Print("request.Host = ", request.Host)
+	request := req
+	if route.LoopVariable != "" {
+		if route.LoopInParallel {
+			// cloning request for parallel execution of loop
+			request, err = cloneRequest(req)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+		}
+		if trReqVars == nil {
+			trReqVars = &TemplateVars{}
+		}
+		err = route.transformRequest(request, url, trReqVars)
+		if err != nil {
+			log.Println("error from transformRequest")
+			log.Println(err)
+			return
+		}
+	}
 
 	if request.Host != "" {
 		if route.Async || async {
@@ -458,7 +468,6 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 				avars := &FuncTemplateVars{}
 				avars.Vars = trReqVars
 				output, outputErr := processTemplate(route.RouteName, route.AsyncMessage, avars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
-				log.Print(string(output))
 				if outputErr != nil {
 					err = outputErr
 					log.Println(err)
@@ -523,32 +532,23 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 
 func (route *Route) transformRequest(request *http.Request, url string, vars *TemplateVars) (err error) {
 	log.Println("inside route.transformRequest")
-	//printRequestBody(request,"body from route transformRequest")
 
-	//reqVarsLoaded := false
-	//vars = &TemplateVars{}
-
-	vars.FormData = make(map[string]interface{})
-	vars.Body = make(map[string]interface{})
-	vars.OrgBody = make(map[string]interface{})
-	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
-	if reqContentType == encodedForm || reqContentType == multiPartForm {
-		vars.FormData["dummy"] = nil
-		// addding the same so loadvars will get length > 0 and avoid processing body
-		// this dummy record will get overwritten as part of return value from process multipart
+	if vars.FormData == nil {
+		vars.FormData = make(map[string]interface{})
 	}
 
-	//TODO check if commenting below block has any impact - loading vars only once now
-	/*
-		if !reqVarsLoaded {
-			err = loadRequestVars(vars, request)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			reqVarsLoaded = true
+	if vars.Body == nil {
+		vars.Body = make(map[string]interface{})
+		vars.OrgBody = make(map[string]interface{})
+
+		err = loadRequestVars(vars, request)
+		if err != nil {
+			log.Println(err)
+			return
 		}
-	*/
+	}
+
+	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 
 	log.Print("url = ", url)
 	scheme, host, port, path, method, err := route.GetTargetSchemeHostPortPath(url)
@@ -559,6 +559,41 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 	if port != "" {
 		port = fmt.Sprint(":", port)
 	}
+	//log.Print("vars after loadvars")
+	//log.Print(vars)
+	var loopArray []interface{}
+	if route.LoopVariable != "" {
+		fvars := &FuncTemplateVars{}
+		fvars.Vars = vars
+		log.Print("route.LoopVariable == ", route.LoopVariable)
+		output, outputErr := processTemplate(route.RouteName, route.LoopVariable, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+		if outputErr != nil {
+			log.Println(outputErr)
+			err = outputErr
+			return
+		}
+		log.Print("output of loopvariable after processtemplate")
+		log.Print(string(output))
+		var loopJson interface{}
+		loopJsonErr := json.Unmarshal(output, &loopJson)
+		if loopJsonErr != nil {
+			log.Print(loopJsonErr)
+			err = errors.New("route loop variable is not a json")
+			return
+		}
+		ok := false
+		if loopArray, ok = loopJson.([]interface{}); !ok {
+			err = errors.New("route loop variable is not an array")
+			log.Print(err)
+			return
+		}
+		log.Print("loopArray = ", loopArray)
+
+	} else {
+		//dummy row added to create a job
+		loopArray = append(loopArray, make(map[string]interface{}))
+	}
+	vars.LoopVars = loopArray
 
 	// http: Request.RequestURI can't be set in client requests.
 	// http://golang.org/src/pkg/net/http/client.go
@@ -600,16 +635,14 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 		*/
 		mpvars.Vars = vars
 		routesFormData := route.FormData
+
 		for i, fd := range routesFormData {
 			if fd.IsTemplate {
-				log.Print("inside route.FormData")
-				log.Print(fd.Key)
 				output, err := processTemplate(fd.Key, fd.Value, mpvars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
 				if err != nil {
 					log.Println(err)
 					return err
 				}
-				log.Print("form data template processed")
 				outputStr, err := strconv.Unquote(string(output))
 				if err != nil {
 					log.Println(err)
@@ -619,14 +652,19 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 				routesFormData[i].Value = outputStr
 			}
 		}
-		vars.FormData, vars.FormDataKeyArray, err = processMultipart(request, route.RemoveParams.FormData, routesFormData)
+		for k, v := range vars.FormData {
+			h := Headers{}
+			h.Key = k
+			h.Value = v.(string)
+			routesFormData = append(routesFormData, h)
+		}
+		vars.FormData, vars.FormDataKeyArray, err = processMultipart(reqContentType, request, route.RemoveParams.FormData, routesFormData)
 		if err != nil {
 			log.Print("printing error recd from processMultipart")
 			log.Print(err)
 			return
 		}
-		log.Print("vars.FormData")
-		log.Print(vars.FormData)
+
 	} else if reqContentType == encodedForm {
 		rpfErr := request.ParseForm()
 		if rpfErr != nil {
@@ -673,7 +711,6 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 				log.Println(err)
 				return err
 			}
-			vars.OrgBody = vars.Body
 			request.Body = ioutil.NopCloser(bytes.NewBuffer(output))
 			request.Header.Set("Content-Length", strconv.Itoa(len(output)))
 			request.ContentLength = int64(len(output))
@@ -687,7 +724,6 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 				log.Println(err)
 				return
 			}
-			vars.OrgBody = vars.Body
 			err = json.Unmarshal(body, &vars.Body)
 			if err != nil {
 				log.Print("error in json.Unmarshal(body, &vars.Body)")

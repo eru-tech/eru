@@ -77,9 +77,13 @@ func allocate(req *http.Request, u string, vars *TemplateVars, loopArray []inter
 		}
 	}()
 	loopCounter := 0
+	log.Print("printing loopArray from allocate = ", loopArray)
+	log.Print(len(loopArray))
 	for loopCounter < len(loopArray) {
 		laVars := *vars
-		laVars.LoopVars = loopArray[loopCounter]
+		laVars.LoopVar = loopArray[loopCounter]
+		log.Print(laVars.LoopVars)
+		log.Print(laVars.LoopVar)
 		job := Job{loopCounter, req, u, &laVars, async, asyncMsg}
 		jobs <- job
 		loopCounter++
@@ -146,8 +150,17 @@ func allocateFuncInner(req *http.Request, funcStep *FuncStep, reqVars map[string
 	}()
 	loopCounter := 0
 	for loopCounter < len(loopArray) {
-		reqVars[funcStep.RouteName].LoopVars = loopArray[loopCounter]
-		funcJob := FuncJob{loopCounter, req, funcStep, reqVars, resVars, asyncMessage}
+		reqVarsI, err := cloneInterface(reqVars)
+		if err != nil {
+			log.Print(err)
+		}
+		reqVarsClone, errC := reqVarsI.(map[string]*TemplateVars)
+		if !errC {
+			log.Print(errC)
+		}
+		reqVarsClone[funcStep.RouteName].LoopVar = loopArray[loopCounter]
+		log.Print("reqVarsClone[funcStep.RouteName].LoopVar = ", reqVarsClone[funcStep.RouteName].LoopVar)
+		funcJob := FuncJob{loopCounter, req, funcStep, reqVarsClone, resVars, asyncMessage}
 		funcJobs <- funcJob
 		loopCounter++
 	}
@@ -180,6 +193,7 @@ func workerFuncInner(wg *sync.WaitGroup, funcJobs chan FuncJob, funcResults chan
 	}()
 	for funcJob := range funcJobs {
 		//currentJob = funcJob
+		log.Print("funcJob.reqVars[\"route_redesign\"].LoopVar = ", funcJob.reqVars["route_redesign"].LoopVar)
 		resp, e := funcJob.funcStep.RunFuncStepInner(funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.funcStep.RouteName, funcJob.asyncMessage)
 		if e != nil {
 			log.Print("print RunFuncStepInner error = ", e.Error())
