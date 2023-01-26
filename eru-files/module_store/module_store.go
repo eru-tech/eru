@@ -270,6 +270,7 @@ func (ms *ModuleStore) DownloadFileUnzip(projectId string, storageName string, f
 				err = ziperr
 				log.Println(err)
 			}
+			mimetype.SetLimit(1000)
 			fMime := mimetype.Detect(unzippedFileBytes)
 			log.Print("fileDownloadRequest.CsvAsJson = ", fileDownloadRequest.CsvAsJson)
 			log.Print("fMime = ", fMime)
