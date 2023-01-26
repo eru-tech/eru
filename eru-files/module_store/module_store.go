@@ -31,10 +31,11 @@ type FileObj struct {
 }
 
 type FileDownloadRequest struct {
-	FileName       string   `json:"file_name" eru:"required"`
-	FolderPath     string   `json:"folder_path" eru:"required"`
-	InnerFileNames []string `json:"inner_file_names" eru:"required"`
-	CsvAsJson      bool     `json:"csv_as_json"`
+	FileName        string   `json:"file_name" eru:"required"`
+	FolderPath      string   `json:"folder_path" eru:"required"`
+	InnerFileNames  []string `json:"inner_file_names" eru:"required"`
+	CsvAsJson       bool     `json:"csv_as_json"`
+	LowerCaseHeader bool     `json:"lower_case_header"`
 }
 
 const (
@@ -279,7 +280,7 @@ func (ms *ModuleStore) DownloadFileUnzip(projectId string, storageName string, f
 					log.Print(err)
 					return
 				}
-				jsonData, jsonErr := utils.CsvToMap(csvData)
+				jsonData, jsonErr := utils.CsvToMap(csvData, fileDownloadRequest.LowerCaseHeader)
 				if jsonErr != nil {
 					err = jsonErr
 					log.Print(err)
