@@ -271,6 +271,8 @@ func (ms *ModuleStore) DownloadFileUnzip(projectId string, storageName string, f
 				log.Println(err)
 			}
 			fMime := mimetype.Detect(unzippedFileBytes)
+			log.Print("fileDownloadRequest.CsvAsJson = ", fileDownloadRequest.CsvAsJson)
+			log.Print("fMime = ", fMime)
 			if fileDownloadRequest.CsvAsJson && fMime.Is(MIME_CSV) {
 				log.Print("csv to json to be converted")
 				csvReader := csv.NewReader(bytes.NewReader(unzippedFileBytes))
