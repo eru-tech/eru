@@ -36,6 +36,7 @@ type FileDownloadRequest struct {
 	InnerFileNames  []string `json:"inner_file_names" eru:"required"`
 	CsvAsJson       bool     `json:"csv_as_json"`
 	LowerCaseHeader bool     `json:"lower_case_header"`
+	Mime_Limit      uint32   `json:"mime_limit"`
 }
 
 const (
@@ -270,10 +271,14 @@ func (ms *ModuleStore) DownloadFileUnzip(projectId string, storageName string, f
 				err = ziperr
 				log.Println(err)
 			}
-			mimetype.SetLimit(1000)
+			mimetype.SetLimit(2000)
+			if fileDownloadRequest.Mime_Limit > 0 {
+				mimetype.SetLimit(fileDownloadRequest.Mime_Limit)
+			}
 			fMime := mimetype.Detect(unzippedFileBytes)
 			log.Print("fileDownloadRequest.CsvAsJson = ", fileDownloadRequest.CsvAsJson)
 			log.Print("fMime = ", fMime)
+			log.Print("fileDownloadRequest.Mime_Limit = ", fileDownloadRequest.Mime_Limit)
 			if fileDownloadRequest.CsvAsJson && fMime.Is(MIME_CSV) {
 				log.Print("csv to json to be converted")
 				csvReader := csv.NewReader(bytes.NewReader(unzippedFileBytes))
