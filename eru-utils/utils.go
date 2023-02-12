@@ -13,6 +13,7 @@ import (
 	"net/http"
 	httpurl "net/url"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -312,12 +313,24 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 	return
 }
 
-func CsvToMap(csvData [][]string) (jsonData []map[string]interface{}, err error) {
+func CsvToMap(csvData [][]string, lowerCaseHeader bool) (jsonData []map[string]interface{}, err error) {
+	charsToRemove := []string{"."}
+	for j, _ := range csvData[0] {
+		csvData[0][j] = regexp.MustCompile(`[^a-zA-Z0-9 ]+`).ReplaceAllString(csvData[0][j], "")
+		if lowerCaseHeader {
+			csvData[0][j] = strings.ToLower(csvData[0][j])
+		}
+		csvData[0][j] = strings.Replace(csvData[0][j], " ", "_", -1)
+		for _, v := range charsToRemove {
+			csvData[0][j] = strings.Replace(csvData[0][j], v, "", -1)
+		}
+	}
+
 	for i, line := range csvData {
 		if i > 0 {
 			jsonMap := make(map[string]interface{})
 			for j, field := range line {
-				jsonMap[strings.Replace(strings.Replace(csvData[0][j], " ", "_", -1), ".", "", -1)] = field
+				jsonMap[csvData[0][j]] = field
 			}
 			jsonData = append(jsonData, jsonMap)
 		}

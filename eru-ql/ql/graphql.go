@@ -207,7 +207,12 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					qrm.QuerySubLevel = sqlObj.querySubLevel
 					qrm.SQLQuery = sqlObj.DBQuery
 
-					result, err = graphQLs[i].ExecuteQuery(datasource, qrm)
+					if gqd.OutputType == "csv" {
+						result, err = graphQLs[i].ExecuteQueryForCsv(qrm.SQLQuery, datasource)
+						log.Print(err)
+					} else {
+						result, err = graphQLs[i].ExecuteQuery(datasource, qrm)
+					}
 					if err != nil {
 						log.Print("error printed below fromc all of ExecuteQuery")
 						log.Print(err)
