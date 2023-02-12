@@ -92,7 +92,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				r.Header.Add("claims", string(claimsBytes))
 			}
 		}
-		response, _, err := route.Execute(r, url, false, "", nil)
+		response, _, err := route.Execute(r, url, false, "", nil, module_store.LoopThreads)
 		log.Print("err = ", err)
 		if route.Redirect {
 			log.Print(route.FinalRedirectUrl)

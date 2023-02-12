@@ -130,7 +130,13 @@ func PrintResponseBody(response *http.Response, msg string) {
 		log.Println(err)
 	}
 	log.Println(msg)
-	log.Println(string(body))
+	cl, _ := strconv.Atoi(response.Header.Get("Content-Length"))
+	if cl > 1000 {
+		log.Println(string(body)[1:1000])
+	} else {
+		log.Println(string(body))
+	}
+	//log.Println(string(body))
 	log.Println(response.Header.Get("Content-Length"))
 	response.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
@@ -141,7 +147,13 @@ func PrintRequestBody(request *http.Request, msg string) {
 		log.Println(err)
 	}
 	log.Println(msg)
-	log.Println(string(body))
+	cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
+	if cl > 1000 {
+		log.Println(string(body)[1:1000])
+	} else {
+		log.Println(string(body))
+	}
+	//log.Println(string(body))
 	log.Println(request.Header.Get("Content-Length"))
 	request.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
@@ -264,9 +276,9 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 	defer resp.Body.Close()
 	log.Println("resp.ContentLength = ", resp.ContentLength)
 
-  //todo - check if below change from reqContentType to header.get breaks anything
+	//todo - check if below change from reqContentType to header.get breaks anything
 	//todo - merge conflict - main had below first if commented
-  if resp.ContentLength > 0 || strings.Split(headers.Get("Content-type"), ";")[0] == encodedForm {
+	if resp.ContentLength > 0 || strings.Split(headers.Get("Content-type"), ";")[0] == encodedForm {
 		log.Println(resp.Header.Get("content-type"))
 		if strings.Split(resp.Header.Get("content-type"), ";")[0] == "application/json" {
 			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {

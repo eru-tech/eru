@@ -13,6 +13,8 @@ import (
 )
 
 var Eruqlbaseurl = "http://localhost:8087"
+var FuncThreads = 3
+var LoopThreads = 3
 
 type StoreHolder struct {
 	Store ModuleStoreI
@@ -235,7 +237,7 @@ func (ms *ModuleStore) GetAndValidateFunc(funcName string, projectId string, hos
 }
 
 func (ms *ModuleStore) loadRoutesForFunction(funcStep *routes.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header) (err error) {
-	log.Println("inside loadRoutesForFunction for route = ", funcStep.RouteName)
+	log.Println("inside loadRoutesForFunction for route = ", funcStep.GetRouteName())
 	var errArray []string
 	r := routes.Route{}
 	if funcStep.QueryName != "" {
@@ -258,8 +260,8 @@ func (ms *ModuleStore) loadRoutesForFunction(funcStep *routes.FuncStep, routeNam
 		r.Condition = ""
 		r.TargetHosts = append(r.TargetHosts, tg)
 	} else if funcStep.Api.Host != "" {
-		log.Print("making dummy route for query name ", funcStep.QueryName)
-		r.RouteName = "FuncApi"
+		log.Print("making dummy route for query name ", funcStep.Api.Host)
+		r.RouteName = strings.Replace(funcStep.Api.Host, ".", "", -1)
 		r.Url = "/"
 		r.MatchType = "PREFIX"
 		r.RewriteUrl = funcStep.ApiPath

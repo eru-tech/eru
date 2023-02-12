@@ -484,7 +484,8 @@ func processMultipart(reqContentType string, request *http.Request, formDataRemo
 }
 
 func processParams(request *http.Request, queryParamsRemove []string, queryParams []Headers, vars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (err error) {
-
+	log.Print("inside processParams")
+	log.Print(queryParams)
 	pvars := &FuncTemplateVars{}
 	pvars.Vars = vars
 	pvars.ReqVars = reqVars
@@ -500,15 +501,17 @@ func processParams(request *http.Request, queryParamsRemove []string, queryParam
 				return
 			}
 			valueStr, uerr := strconv.Unquote(string(valueBytes))
-			if terr != nil {
+			if uerr != nil {
 				err = uerr
 				log.Print(err)
 				return
 			}
 			log.Print("valueStr = ", valueStr)
 			params.Set(p.Key, valueStr)
+			vars.Params[p.Key] = valueStr
 		} else {
 			params.Set(p.Key, p.Value)
+			vars.Params[p.Key] = p.Value
 		}
 	}
 
@@ -517,6 +520,7 @@ func processParams(request *http.Request, queryParamsRemove []string, queryParam
 			params.Del(v)
 		}
 	}
+	log.Print("params")
 	log.Print(params)
 	request.URL.RawQuery = params.Encode()
 	return
@@ -603,6 +607,13 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 	log.Print("len(responses) = ", len(responses))
 	//log.Print("len(trVars) = ", len(trVars))
 	log.Print("len(errs) = ", len(errs))
+	if len(errs) > 0 {
+		log.Print(err)
+	}
+
+	//for _, r := range responses{
+	//	utils.PrintResponseBody(r, "printing response from clubResponses")
+	//}
 
 	var errMsg []string
 	errorFound := false

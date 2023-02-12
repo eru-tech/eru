@@ -33,7 +33,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		log.Print(funcGroup)
-		response, err := funcGroup.Execute(r)
+		response, err := funcGroup.Execute(r, module_store.FuncThreads, module_store.LoopThreads)
 		if err != nil {
 			log.Println(" httpClient.Do error ")
 			log.Println(err)
@@ -42,7 +42,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		defer response.Body.Close()
- 		log.Println(response.Body)
+		log.Println(response.Body)
 		if response.StatusCode >= 300 && response.StatusCode <= 399 {
 			http.Redirect(w, r, response.Header.Get("Location"), response.StatusCode)
 		} else {

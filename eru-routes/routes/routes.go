@@ -251,7 +251,7 @@ func (route *Route) getTargetHost() (targetHost TargetHost, err error) {
 	return
 }
 
-func (route *Route) Execute(request *http.Request, url string, async bool, asyncMsg string, trReqVars *TemplateVars) (response *http.Response, trResVar *TemplateVars, resErr error) {
+func (route *Route) Execute(request *http.Request, url string, async bool, asyncMsg string, trReqVars *TemplateVars, loopThread int) (response *http.Response, trResVar *TemplateVars, resErr error) {
 	log.Println("*******************route execute start for ", route.RouteName, "*******************")
 
 	if trReqVars == nil {
@@ -388,9 +388,13 @@ func (route *Route) Execute(request *http.Request, url string, async bool, async
 			}
 		}()
 		for res := range results {
+			//utils.PrintResponseBody(res.response, "printing res.response from route Execute")
 			responses = append(responses, res.response)
 			trResVars = append(trResVars, res.responseVars)
-			errs = append(errs, res.responseErr)
+			//log.Print("res.responseErr from route Execute is " , res.responseErr)
+			if res.responseErr != nil {
+				errs = append(errs, res.responseErr)
+			}
 		}
 		done <- true
 	}(done, results)
@@ -398,7 +402,7 @@ func (route *Route) Execute(request *http.Request, url string, async bool, async
 	//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
 	noOfWorkers := 1
 	if route.LoopInParallel && route.LoopVariable != "" {
-		noOfWorkers = 5
+		noOfWorkers = loopThread
 		if len(loopArray) < noOfWorkers {
 			noOfWorkers = len(loopArray)
 		}
@@ -490,12 +494,15 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 			}
 
 		} else {
+			utils.PrintRequestBody(request, "printing request just before utils.ExecuteHttp")
+			log.Print(request.URL)
 			response, err = utils.ExecuteHttp(request)
 			if err != nil {
 				log.Println(" httpClient.Do error from route execute function")
 				log.Println(err)
 				return
 			}
+			utils.PrintResponseBody(response, "printing response immediately after utils.ExecuteHttp")
 		}
 
 		//response = <-routeChan
