@@ -8,7 +8,8 @@ import (
 )
 
 type AuthI interface {
-	Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error)
+	//Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error)
+	Login(loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error)
 	Logout(req *http.Request) (res interface{}, resStatusCode int, err error)
 	VerifyToken(tokenType string, token string) (res interface{}, err error)
 	GetAttribute(attributeName string) (attributeValue interface{}, err error)
@@ -19,11 +20,21 @@ type AuthI interface {
 	PerformPreDeleteTask() (err error)
 	GetUser(userId string) (identity Identity, err error)
 	UpdateUser(identityToUpdate Identity) (err error)
+	ChangePassword(req *http.Request, changePasswordObj ChangePassword) (err error)
+	GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (recoveryCode map[string]string, err error)
+}
+type ChangePassword struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
 }
 
 type LoginPostBody struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+type RecoveryPostBody struct {
+	Username string `json:"username"`
 }
 
 type Identity struct {
@@ -55,6 +66,10 @@ type Auth struct {
 
 func (auth *Auth) MakeFromJson(rj *json.RawMessage) error {
 	return errors.New("MakeFromJson Method not implemented")
+}
+
+func (auth *Auth) GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (recoveryCode map[string]string, err error) {
+	return nil, errors.New("GenerateRecoveryCode Method not implemented")
 }
 
 func (auth *Auth) VerifyToken(tokenType string, token string) (res interface{}, err error) {
@@ -97,12 +112,16 @@ func (auth *Auth) FetchTokens(refresh_token string) (res interface{}, err error)
 	return nil, errors.New("FetchTokens Method not implemented")
 }
 
-func (auth *Auth) Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error) {
-	return nil, nil, errors.New("Login Method not implemented")
+func (auth *Auth) Login(loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
+	return Identity{}, LoginSuccess{}, errors.New("Login Method not implemented")
 }
 
 func (auth *Auth) Logout(req *http.Request) (res interface{}, resStatusCode int, err error) {
 	return nil, 400, errors.New("Login Method not implemented")
+}
+
+func (auth *Auth) ChangePassword(req *http.Request, changePasswordObj ChangePassword) (err error) {
+	return errors.New("ChangePassword Method not implemented")
 }
 
 func GetAuth(authType string) AuthI {

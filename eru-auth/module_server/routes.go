@@ -38,6 +38,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	// routes for file events
 	authRouter := serverRouter.PathPrefix("/{project}").Subrouter()
 	authRouter.Methods(http.MethodGet).PathPrefix("/generateotp/{gatewaytype}/{channel}/{messagetype}").HandlerFunc(module_handlers.GenerateOtpHandler(sh.Store))
+	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/getrecoverycode").HandlerFunc(module_handlers.GetRecoveryCodeHandler(sh.Store))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/login").HandlerFunc(module_handlers.LoginHandler(sh.Store))
 	authRouter.Methods(http.MethodDelete).PathPrefix("/{authname}/logout").HandlerFunc(module_handlers.LogoutHandler(sh.Store))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/verify/{tokentype}").HandlerFunc(module_handlers.VerifyTokenHandler(sh.Store))
@@ -45,6 +46,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/fetchtokens").HandlerFunc(module_handlers.FetchTokensHandler(sh.Store))
 	authRouter.Methods(http.MethodGet).PathPrefix("/{authname}/getuser").HandlerFunc(module_handlers.GetUser(sh.Store))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/updateuser").HandlerFunc(module_handlers.UpdateUser(sh.Store))
+	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/changepassword").HandlerFunc(module_handlers.ChangePassword(sh.Store))
 	authRouter.Methods(http.MethodGet).PathPrefix("/hydralogin").HandlerFunc(module_handlers.LoginHydraHandler(sh.Store))
 
 }

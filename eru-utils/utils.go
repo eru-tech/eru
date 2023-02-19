@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	encodedForm   = "application/x-www-form-urlencoded"
-	multiPartForm = "multipart/form-data"
+	encodedForm     = "application/x-www-form-urlencoded"
+	multiPartForm   = "multipart/form-data"
+	applicationJson = "application/json"
 )
 
 var httpClient = http.Client{
@@ -268,6 +269,7 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 	log.Println(resp.Cookies())
 	log.Println(resp.StatusCode)
 	log.Println(resp.Status)
+	log.Print(resp)
 	respHeaders = resp.Header
 	//respHeaders = make(map[string][]string)
 	//for k, v := range resp.Header {
@@ -279,21 +281,23 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 
 	//todo - check if below change from reqContentType to header.get breaks anything
 	//todo - merge conflict - main had below first if commented
-	if resp.ContentLength > 0 || strings.Split(headers.Get("Content-type"), ";")[0] == encodedForm {
-		log.Println(resp.Header.Get("content-type"))
-		if strings.Split(resp.Header.Get("content-type"), ";")[0] == "application/json" {
+	contentType := strings.Split(headers.Get("Content-type"), ";")[0]
+	log.Print("contentType = ", contentType)
+	if resp.ContentLength > 0 || contentType == encodedForm || contentType == applicationJson {
+		if strings.Split(resp.Header.Get("content-type"), ";")[0] == applicationJson {
+			//PrintResponseBody(resp,"printing response body before json decode in utils.callhttp")
 			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
 				log.Print("error in json.NewDecoder of resp.Body")
-				log.Print(resp.Body)
+				//log.Print(resp.Body)
 				log.Print(err)
-				return nil, nil, nil, 0, err
+				return nil, nil, nil, resp.StatusCode, err
 			}
 		} else {
 			body, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
 				log.Println(err)
 			}
-			log.Println(body)
+			//log.Println(body)
 			resBody := make(map[string]interface{})
 			resBody["body"] = string(body)
 			res = resBody
@@ -319,7 +323,8 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 			log.Print(bytesErr)
 			return nil, nil, nil, statusCode, bytesErr
 		}
-		err = errors.New(strings.Replace(string(resBytes), "\"", "", -1))
+		//err = errors.New(strings.Replace(string(resBytes), "\"", "", -1))
+		err = errors.New(string(resBytes))
 		return nil, nil, nil, statusCode, err
 	}
 	return

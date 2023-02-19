@@ -6,11 +6,12 @@ import (
 	"errors"
 	"fmt"
 	utils "github.com/eru-tech/eru/eru-utils"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -20,7 +21,7 @@ var httpClient = http.Client{
 	},
 }
 
-//TODO to read this from kratos schema
+// TODO to read this from kratos schema
 var kratosTraits = [...]string{"email", "phone", "name", "role"}
 
 type KratosHydraAuth struct {
@@ -107,8 +108,14 @@ type KratosSessionBody struct {
 	AuthenticationMethods       []KratosAuthenticationMethods `json:"authentication_methods"`
 	IssuedAt                    time.Time                     `json:"issued_at"`
 	Identity                    KratosIdentity                `json:"identity"`
+	Devices                     []KratosDevice                `json:"devices"`
 }
-
+type KratosDevice struct {
+	Id        string `json:"id"`
+	IP        string `json:"ip_address"`
+	Location  string `json:"location"`
+	UserAgent string `json:"user_agent"`
+}
 type KratosIdentity struct {
 	Id                  string                  `json:"id"`
 	SchemaId            string                  `json:"schema_id"`
@@ -119,6 +126,7 @@ type KratosIdentity struct {
 	VerifiableAddresses []KratosIdentityAddress `json:"verifiable_addresses"`
 	RecoveryAddresses   []KratosIdentityAddress `json:"recovery_addresses"`
 	MetaDataPublic      map[string]interface{}  `json:"metadata_public"`
+	MetaDataAdmin       map[string]interface{}  `json:"metadata_admin"`
 	CreatedAt           time.Time               `json:"created_at"`
 	UpdatedAt           time.Time               `json:"updated_at"`
 }
@@ -204,7 +212,7 @@ func (kratosHydraAuth *KratosHydraAuth) ensureCookieFlowId(flowType string, r *h
 		newR.Header.Set("Content-Length", strconv.Itoa(0))
 		//newR.RequestURI = ""
 		//newR.Host = kratosHydraAuth.Kratos.PublicHost
-		log.Println(newR)
+		//log.Println(newR)
 		flowRes, flowErr := httpClient.Do(&newR)
 		if flowErr != nil {
 			log.Println(" httpClient.Do error ")
@@ -214,15 +222,15 @@ func (kratosHydraAuth *KratosHydraAuth) ensureCookieFlowId(flowType string, r *h
 		}
 		loginFLowFromRes := json.NewDecoder(flowRes.Body)
 		loginFLowFromRes.DisallowUnknownFields()
-		log.Print(loginFLowFromRes)
+		//log.Print(loginFLowFromRes)
 		var loginFlow KratosFlow
 
 		if err = loginFLowFromRes.Decode(&loginFlow); err != nil {
 			log.Println(err)
 			return
 		}
-		log.Println(loginFlow)
-		log.Println(flowRes.Header)
+		//log.Println(loginFlow)
+		//log.Println(flowRes.Header)
 		cirf_token = ""
 		for _, node := range loginFlow.UI.Nodes {
 			if node.Attributes.Name == "csrf_token" {
@@ -234,6 +242,46 @@ func (kratosHydraAuth *KratosHydraAuth) ensureCookieFlowId(flowType string, r *h
 	}
 	return
 }
+
+func (kratosHydraAuth *KratosHydraAuth) getFlowId(flowType string) (flow_id string, err error) {
+
+	port := kratosHydraAuth.Kratos.PublicPort
+	if port != "" {
+		port = fmt.Sprint(":", port)
+	}
+	url := url.URL{
+		Scheme: kratosHydraAuth.Kratos.PublicScheme,
+		Host:   fmt.Sprint(kratosHydraAuth.Kratos.PublicHost, port),
+		Path:   fmt.Sprint("/self-service/", flowType, "/api"),
+	}
+
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Content-Length", strconv.Itoa(0))
+
+	flowRes, _, _, _, flowErr := utils.CallHttp(http.MethodGet, url.String(), headers, nil, nil, nil, nil)
+	if flowErr != nil {
+		log.Println(" httpClient.Do error ")
+		log.Println(flowErr)
+		err = flowErr
+		return
+	}
+	loginFLowFromRes, loginFLowFromResErr := json.Marshal(flowRes)
+	if loginFLowFromResErr != nil {
+		err = loginFLowFromResErr
+		log.Print(err)
+		return
+	}
+	//	log.Print(loginFLowFromRes)
+	var loginFlow KratosFlow
+	if err = json.Unmarshal(loginFLowFromRes, &loginFlow); err != nil {
+		log.Println(err)
+		return
+	}
+	//	log.Println(loginFlow)
+	return loginFlow.Id, nil
+}
+
 func (kratosHydraAuth *KratosHydraAuth) Logout(req *http.Request) (res interface{}, resStatusCode int, err error) {
 	sessionToken := ""
 	tokenObj := make(map[string]interface{})
@@ -313,6 +361,251 @@ func (kratosHydraAuth *KratosHydraAuth) Logout(req *http.Request) (res interface
 	}
 	return res, resStatusCode, err
 }
+
+func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (recoveryCode map[string]string, err error) {
+	userid := ""
+	port := kratosHydraAuth.Kratos.AdminPort
+	if port != "" {
+		port = fmt.Sprint(":", port)
+	}
+
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Content-Length", strconv.Itoa(0))
+
+	iUrl := url.URL{
+		Scheme: kratosHydraAuth.Kratos.AdminScheme,
+		Host:   fmt.Sprint(kratosHydraAuth.Kratos.AdminHost, port),
+		Path:   fmt.Sprint("/admin/identities"),
+	}
+
+	iParams := make(map[string]string)
+	iParams["credentials_identifier"] = recoveryIdentifier.Username
+
+	iRes, _, _, _, iResErr := utils.CallHttp(http.MethodGet, iUrl.String(), headers, nil, nil, iParams, nil)
+
+	if iResErr != nil {
+		err = iResErr
+		log.Print("iResErr printed below")
+		log.Print(err)
+		return
+	}
+	iResBytes, iResBytesErr := json.Marshal(iRes)
+	if iResBytesErr != nil {
+		err = iResBytesErr
+		log.Print("iResBytesErr printed below")
+		log.Print(err)
+		return
+	}
+	iResJson := json.NewDecoder(bytes.NewReader(iResBytes))
+	iResJson.DisallowUnknownFields()
+	var kratosIdentities []KratosIdentity
+	if iResDecodeErr := iResJson.Decode(&kratosIdentities); iResDecodeErr == nil {
+		userFound := false
+
+		for _, v := range kratosIdentities {
+			if v.Traits["email"] == recoveryIdentifier.Username {
+				userFound = true
+				userid = v.Id
+				break
+			}
+		}
+		if !userFound {
+			err = errors.New(fmt.Sprint("user not found with email ", recoveryIdentifier.Username))
+			log.Println(err)
+			return
+		}
+	} else {
+		err = iResDecodeErr
+		log.Print("iResJson.Decode(&kratosIdentities) failed")
+		log.Print(err)
+		return
+	}
+	log.Println("userid = ", userid)
+	recoveryPostBody := make(map[string]string)
+	recoveryPostBody["identity_id"] = userid
+
+	url := url.URL{
+		Scheme: kratosHydraAuth.Kratos.AdminScheme,
+		Host:   fmt.Sprint(kratosHydraAuth.Kratos.AdminHost, port),
+		Path:   fmt.Sprint("/admin/recovery/code"),
+	}
+
+	rcRes, _, _, _, rcResErr := utils.CallHttp(http.MethodPost, url.String(), headers, nil, nil, nil, recoveryPostBody)
+	log.Println(rcRes)
+	log.Println(rcResErr)
+
+	if rcResErr != nil {
+		err = rcResErr
+		log.Print("rcResErr printed below")
+		log.Print(err)
+		return
+	}
+	rcResBytes, rcResBytesErr := json.Marshal(rcRes)
+	if rcResBytesErr != nil {
+		err = rcResBytesErr
+		log.Print("rcResBytesErr printed below")
+		log.Print(err)
+		return
+	}
+	rcResMap := make(map[string]interface{})
+	rcResUmErr := json.Unmarshal(rcResBytes, &rcResMap)
+	if rcResUmErr != nil {
+		err = rcResUmErr
+		log.Print("rcResUmErr printed below")
+		log.Print(err)
+		return
+	}
+	log.Println(rcResMap["recovery_code"])
+	if recoveryCode == nil {
+		recoveryCode = make(map[string]string)
+	}
+	recoveryCode["code"] = rcResMap["recovery_code"].(string)
+	return
+}
+func (kratosHydraAuth *KratosHydraAuth) Login(loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
+
+	flowId, flowErr := kratosHydraAuth.getFlowId("login")
+	if flowErr != nil {
+		log.Print(flowErr)
+		return Identity{}, LoginSuccess{}, flowErr
+	}
+
+	port := kratosHydraAuth.Kratos.PublicPort
+	if port != "" {
+		port = fmt.Sprint(":", port)
+	}
+	url := url.URL{
+		Scheme: kratosHydraAuth.Kratos.PublicScheme,
+		Host:   fmt.Sprint(kratosHydraAuth.Kratos.PublicHost, port),
+		Path:   fmt.Sprint("/self-service/login"),
+	}
+	params := make(map[string]string)
+	params["flow"] = flowId
+
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Content-Length", strconv.Itoa(0))
+
+	kratosLoginPostBody := KratosLoginPostBody{}
+
+	kratosLoginPostBody.Identifier = loginPostBody.Username
+	kratosLoginPostBody.Password = loginPostBody.Password
+	kratosLoginPostBody.Method = kratosHydraAuth.Kratos.LoginMethod
+
+	loginRes, _, _, _, loginErr := utils.CallHttp(http.MethodPost, url.String(), headers, nil, nil, params, kratosLoginPostBody)
+	loginResBytes := []byte("")
+	if loginErr != nil {
+		err = loginErr
+		log.Print("loginErr printed below")
+		log.Print(err)
+		loginResBytes = []byte(loginErr.Error())
+		//return
+	} else {
+		loginResJson, loginResJsonErr := json.Marshal(loginRes)
+		if loginResJsonErr != nil {
+			log.Print(loginResJsonErr)
+			return
+		}
+		loginResBytes = loginResJson
+	}
+	log.Print("loginResBytes printed below")
+	log.Print(string(loginResBytes))
+
+	loginBodyFromRes := json.NewDecoder(bytes.NewReader(loginResBytes))
+	loginBodyFromRes.DisallowUnknownFields()
+	//	log.Print("loginBodyFromRes printed below")
+	//log.Print(loginBodyFromRes)
+	var kratosSession KratosSession
+	var kratosLoginFlow KratosFlow
+	kratosLoginSucceed := true
+	if loginBodyFromResDecodeErr := loginBodyFromRes.Decode(&kratosSession); loginBodyFromResDecodeErr != nil {
+		kratosLoginSucceed = false
+		log.Println(loginBodyFromResDecodeErr)
+		loginBodyFromRes = json.NewDecoder(bytes.NewReader(loginResBytes))
+		loginBodyFromRes.DisallowUnknownFields()
+		if err = loginBodyFromRes.Decode(&kratosLoginFlow); err != nil {
+			log.Println(err)
+			return
+		}
+	}
+	//log.Print("kratosLoginSucceed = ", kratosLoginSucceed)
+	log.Println(kratosSession)
+	log.Println(kratosLoginFlow)
+
+	if kratosLoginSucceed {
+		identity.Id = kratosSession.Session.Identity.Id
+		identity.CreatedAt = kratosSession.Session.Identity.CreatedAt
+		identity.UpdatedAt = kratosSession.Session.Identity.UpdatedAt
+		identity.OtherInfo = make(map[string]interface{})
+		identity.OtherInfo["schema_id"] = kratosSession.Session.Identity.SchemaId
+		identity.OtherInfo["state_changed_at"] = kratosSession.Session.Identity.StateChangedAt
+		identity.Status = kratosSession.Session.Identity.State
+		identity.AuthDetails = IdentityAuth{}
+		identity.AuthDetails.SessionId = kratosSession.Session.Id
+		identity.AuthDetails.SessionToken = kratosSession.SessionToken
+		identity.AuthDetails.AuthenticatedAt = kratosSession.Session.AuthenticatedAt
+		for _, v := range kratosSession.Session.AuthenticationMethods {
+			identity.AuthDetails.AuthenticationMethods = append(identity.AuthDetails.AuthenticationMethods, v)
+		}
+		identity.AuthDetails.AuthenticatorAssuranceLevel = kratosSession.Session.AuthenticatorAssuranceLevel
+		identity.AuthDetails.ExpiresAt = kratosSession.Session.ExpiresAt
+		identity.AuthDetails.IssuedAt = kratosSession.Session.IssuedAt
+		identity.AuthDetails.SessionStatus = kratosSession.Session.Active
+		//ok := false
+		//if identity.Attributes, ok = kratosSession.Session.Identity.Traits.(map[string]interface{}); ok {
+		if identity.Attributes == nil {
+			identity.Attributes = make(map[string]interface{})
+		}
+		identity.Attributes["sub"] = kratosSession.Session.Identity.Id
+		for k, v := range kratosSession.Session.Identity.Traits {
+			if _, chkKey := identity.Attributes[k]; !chkKey { // check if key already exists then silemtly ignore the value from public metadata
+				identity.Attributes[k] = v
+			}
+		}
+		//if pubMetadata, ok := kratosSession.Session.Identity.MetaDataPublic.(map[string]interface{}); ok {
+		for k, v := range kratosSession.Session.Identity.MetaDataPublic {
+			if _, chkKey := identity.Attributes[k]; !chkKey { // check if key already exists then silemtly ignore the value from public metadata
+				identity.Attributes[k] = v
+			}
+		}
+
+		if withTokens {
+			loginChallenge, loginChallengeCookies, loginChallengeErr := kratosHydraAuth.getLoginChallenge()
+			if loginChallengeErr != nil {
+				err = loginChallengeErr
+				log.Println(err)
+				return
+			}
+			//log.Println("loginChallenge = ", loginChallenge)
+
+			consentChallenge, loginAcceptRequestCookies, loginAcceptErr := kratosHydraAuth.Hydra.acceptLoginRequest(kratosSession.Session.Identity.Id, loginChallenge, loginChallengeCookies)
+			//log.Println("consentChallenge = " , consentChallenge)
+			//	log.Println("loginAcceptRequestCookies = " , loginAcceptRequestCookies)
+			if loginAcceptErr != nil {
+				log.Println(loginAcceptErr)
+				err = loginAcceptErr
+				return
+			}
+			identityHolder := make(map[string]interface{})
+			identityHolder["identity"] = identity
+			tokens, cosentAcceptErr := kratosHydraAuth.Hydra.acceptConsentRequest(identityHolder, consentChallenge, loginAcceptRequestCookies)
+			if cosentAcceptErr != nil {
+				log.Println(cosentAcceptErr)
+				err = cosentAcceptErr
+				return
+			}
+			return identity, tokens, nil
+		}
+		return identity, LoginSuccess{}, nil
+	} else {
+		err = errors.New(fmt.Sprint("Login Failed : ", kratosLoginFlow.UI.Messages))
+		return
+	}
+	return
+}
+
+/*
 func (kratosHydraAuth *KratosHydraAuth) Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error) {
 	//loginPostBodyMap := loginPostBody.(map[string]interface{})
 	//username := loginPostBodyMap["identifier"]
@@ -329,7 +622,7 @@ func (kratosHydraAuth *KratosHydraAuth) Login(req *http.Request) (res interface{
 	log.Println("cirf_token == ", cirf_token)
 	log.Println(err)
 
-	loginChallenge, loginChallengeCookies, err := kratosHydraAuth.ensureLoginChallenge(req)
+	loginChallenge, loginChallengeCookies, err := kratosHydraAuth.getLoginChallenge()
 	if err != nil {
 		log.Println(err)
 		return
@@ -521,7 +814,7 @@ func (kratosHydraAuth *KratosHydraAuth) Login(req *http.Request) (res interface{
 		return
 		//reject Hudra login request
 	}
-}
+} */
 
 func (kratosConfig KratosConfig) getPublicUrl() (url string) {
 	port := ""
@@ -608,6 +901,160 @@ func (kratosHydraAuth *KratosHydraAuth) UpdateUser(identityToUpdate Identity) (e
 	}
 	log.Println(res)
 	return
+}
+
+func (kratosHydraAuth *KratosHydraAuth) ChangePassword(req *http.Request, changePassword ChangePassword) (err error) {
+	sessionToken := ""
+	identifier := ""
+	tokenObj := make(map[string]interface{})
+	//todo - remove hardcoding of claims and change it to projectConfig.TokenSecret.HeaderKey
+	tokenStr := req.Header.Get("Claims")
+	log.Print("tokenStr = ", tokenStr)
+	if tokenStr != "" {
+		err = json.Unmarshal([]byte(tokenStr), &tokenObj)
+		if err != nil {
+			return err
+		}
+	}
+	if identity, ok := tokenObj["identity"]; ok {
+		log.Print("inside tokenObj[\"identity\"]")
+		log.Print(identity)
+		i, e := json.Marshal(identity)
+		identityMap := Identity{}
+		ee := json.Unmarshal(i, &identityMap)
+		log.Print(e)
+		log.Print(ee)
+		log.Print(identityMap)
+		sessionToken = identityMap.AuthDetails.SessionToken
+		identifier = identityMap.Attributes["email"].(string)
+		//if identityMap, iOk := json.NewDecoder(json.Marshal(identity))  identity.(Identity); iOk {
+		//	log.Print("inside identity.(Identity)")
+		//	sessionToken = identityMap.AuthDetails.SessionToken
+	}
+	log.Print(sessionToken)
+	if sessionToken == "" {
+		err = errors.New("session token not found")
+		log.Print(err)
+		return err
+	}
+	var loginPostBody LoginPostBody
+	loginPostBody.Username = identifier
+	loginPostBody.Password = changePassword.OldPassword
+	_, _, loginErr := kratosHydraAuth.Login(loginPostBody, false)
+	if loginErr != nil {
+		err = errors.New("Incorrect Old Password")
+		return
+	}
+	req.Header.Set("X-Session-Token", sessionToken)
+	port := kratosHydraAuth.Kratos.PublicPort
+	if port != "" {
+		port = fmt.Sprint(":", port)
+	}
+
+	res, _, _, resStatusCode, resErr := utils.CallHttp(http.MethodGet, fmt.Sprint(kratosHydraAuth.Kratos.PublicScheme, "://", kratosHydraAuth.Kratos.PublicHost, port, "/self-service/settings/api"), req.Header, nil, nil, nil, nil)
+	if resErr != nil {
+		log.Println(" httpClient.Do error ")
+		log.Print(err)
+		err = resErr
+		return
+	}
+	log.Print(res)
+	log.Print(resStatusCode)
+
+	flowParams := make(map[string]string)
+	if resMap, ok := res.(map[string]interface{}); ok {
+		if flowId, fOk := resMap["id"]; fOk {
+			flowParams["flow"] = flowId.(string)
+		} else {
+			err = errors.New("flow id not found")
+			log.Println(err)
+			return
+		}
+	} else {
+		err = errors.New("incorrect getflow response")
+		log.Println(err)
+		return
+	}
+
+	changePasswordBody := make(map[string]string)
+	changePasswordBody["method"] = "password"
+	changePasswordBody["password"] = changePassword.NewPassword
+
+	cpRes, _, _, cpResStatusCode, cpResErr := utils.CallHttp(http.MethodPost, fmt.Sprint(kratosHydraAuth.Kratos.PublicScheme, "://", kratosHydraAuth.Kratos.PublicHost, port, "/self-service/settings"), req.Header, nil, nil, flowParams, changePasswordBody)
+	if cpResErr != nil {
+		log.Println(" httpClient.Do error ")
+		err = cpResErr
+		log.Println(err)
+		errMap := make(map[string]interface{})
+
+		errBytesUmErr := json.Unmarshal([]byte(err.Error()), &errMap)
+		if errBytesUmErr == nil {
+			if actualError, aeOk := errMap["error"]; aeOk {
+				if actualErrorMap, aemOk := actualError.(map[string]interface{}); aemOk {
+					errFinalMsg := ""
+					if errMsg, emOk := actualErrorMap["message"]; emOk {
+						errFinalMsg = fmt.Sprint(errMsg.(string), ".")
+					}
+					if errMsg, emOk := actualErrorMap["reason"]; emOk {
+						errFinalMsg = fmt.Sprint(errFinalMsg, " ", errMsg.(string), ".")
+					}
+					err = errors.New(errFinalMsg)
+				} else {
+					log.Print("actualError.(map[string]interface{}) failed")
+				}
+			} else if uiError, uiOk := errMap["ui"]; uiOk {
+				if uiErrorMap, uiMapOk := uiError.(map[string]interface{}); uiMapOk {
+					if uiErrorNodes, uiNodesOk := uiErrorMap["nodes"]; uiNodesOk {
+						if uiErrorNodesArray, uiNodeArrayOk := uiErrorNodes.([]interface{}); uiNodeArrayOk {
+							for _, node := range uiErrorNodesArray {
+								if uiNode, nodeOk := node.(map[string]interface{}); nodeOk {
+									if uiAttrs, attrOk := uiNode["attributes"]; attrOk {
+										if uiAttrsMap, attrMapOk := uiAttrs.(map[string]interface{}); attrMapOk {
+											if uiName, nameOk := uiAttrsMap["name"]; nameOk {
+												log.Print(uiName)
+												if uiName == "password" {
+													if uiMsg, msgOk := uiNode["messages"]; msgOk {
+														if uiMsgArray, msgArrayOk := uiMsg.([]interface{}); msgArrayOk {
+															if uiMsgMap, msgMapOk := uiMsgArray[0].(map[string]interface{}); msgMapOk {
+																if uiReason, reasonOk := uiMsgMap["text"]; reasonOk {
+																	err = errors.New(uiReason.(string))
+																	return
+																}
+															}
+														}
+													}
+													break
+												}
+											}
+										}
+									}
+								}
+							}
+						} else {
+							log.Print(reflect.TypeOf(uiErrorNodes))
+							log.Print("uiErrorNodes.([]map[string]interface{}) failed")
+						}
+					} else {
+						log.Print("uiErrorMap[\"nodes\"] not found")
+					}
+				} else {
+					log.Print("uiError.(map[string]interface{}) failed")
+				}
+
+			} else {
+				log.Print("ui or error attribute not found in errMap")
+			}
+		} else {
+			log.Print(errBytesUmErr)
+			log.Print("json.Unmarshal(errBytes,&errMap) failed")
+		}
+		err = errors.New(strings.Replace(err.Error(), "\"", "", -1))
+		return
+	}
+	log.Print(cpRes)
+	log.Print(cpResStatusCode)
+
+	return err
 }
 
 func convertToIdentity(kratosIdentity KratosIdentity) (identity Identity, err error) {
