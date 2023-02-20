@@ -251,25 +251,26 @@ func callHttp(method string, url string, headers http.Header, formData map[strin
 		req.Header.Set("Content-Length", strconv.Itoa(len(data.Encode())))
 		req.ContentLength = int64(len(data.Encode()))
 	}
-	//log.Println(req)
-	//PrintRequestBody(req, "printing request body from utils before http call")
+	PrintRequestBody(req, "printing request body from utils before http call")
+	log.Println(req)
 	return ExecuteHttp(req)
 }
 
 func CallHttp(method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
 	resp, err := callHttp(method, url, headers, formData, reqCookies, params, postBody)
 	statusCode = resp.StatusCode
-	if err != nil {
-		log.Print("error in httpClient.Do")
-		log.Print(err)
-		return nil, nil, nil, 0, err
-	}
 	log.Println("resp from CallHttp")
 	log.Println(resp.Header)
 	log.Println(resp.Cookies())
 	log.Println(resp.StatusCode)
 	log.Println(resp.Status)
 	log.Print(resp)
+	if err != nil {
+		log.Print("error in httpClient.Do")
+		log.Print(err)
+		return nil, resp.Header, resp.Cookies(), resp.StatusCode, err
+	}
+
 	respHeaders = resp.Header
 	//respHeaders = make(map[string][]string)
 	//for k, v := range resp.Header {
@@ -325,7 +326,7 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 		}
 		//err = errors.New(strings.Replace(string(resBytes), "\"", "", -1))
 		err = errors.New(string(resBytes))
-		return nil, nil, nil, statusCode, err
+		return nil, resp.Header, resp.Cookies(), statusCode, err
 	}
 	return
 }

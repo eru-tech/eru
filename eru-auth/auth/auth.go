@@ -22,6 +22,7 @@ type AuthI interface {
 	UpdateUser(identityToUpdate Identity) (err error)
 	ChangePassword(req *http.Request, changePasswordObj ChangePassword) (err error)
 	GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (recoveryCode map[string]string, err error)
+	CompleteRecovery(recoveryPassword RecoveryPassword) (msg string, err error)
 }
 type ChangePassword struct {
 	OldPassword string `json:"old_password"`
@@ -35,6 +36,11 @@ type LoginPostBody struct {
 
 type RecoveryPostBody struct {
 	Username string `json:"username"`
+}
+
+type RecoveryPassword struct {
+	Code     string `json:"code"`
+	Password string `json:"password"`
 }
 
 type Identity struct {
@@ -70,6 +76,10 @@ func (auth *Auth) MakeFromJson(rj *json.RawMessage) error {
 
 func (auth *Auth) GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (recoveryCode map[string]string, err error) {
 	return nil, errors.New("GenerateRecoveryCode Method not implemented")
+}
+
+func (auth *Auth) CompleteRecovery(recoveryPassword RecoveryPassword) (msg string, err error) {
+	return "", errors.New("CompleteRecovery Method not implemented")
 }
 
 func (auth *Auth) VerifyToken(tokenType string, token string) (res interface{}, err error) {

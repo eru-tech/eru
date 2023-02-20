@@ -32,32 +32,32 @@ func (gqd *GraphQLData) SetQLData(mq module_model.MyQuery, vars map[string]inter
 }
 
 /*
-func (gqd *GraphQLData) CheckIfMutationByQuery() (selectQuery []string, err error) {
-	log.Print("inside CheckIfMutationByQuery __________________________________________________________")
-	doc, err := gqd.parseGraphQL()
-	if err != nil {
-		log.Print(err)
-		return nil, err
-	}
-	for _, docDef := range doc.Definitions {
-		op := ast.Node(docDef).(*ast.OperationDefinition)
-		switch op.Operation {
-		case "mutation":
-			for _, v := range op.SelectionSet.Selections {
-				field := v.(*ast.Field)
-				for _, ff := range field.Arguments {
-					if ff.Name.Value == "query" {
-						selectQuery = append(selectQuery, ff.Value.GetValue().(string))
+	func (gqd *GraphQLData) CheckIfMutationByQuery() (selectQuery []string, err error) {
+		log.Print("inside CheckIfMutationByQuery __________________________________________________________")
+		doc, err := gqd.parseGraphQL()
+		if err != nil {
+			log.Print(err)
+			return nil, err
+		}
+		for _, docDef := range doc.Definitions {
+			op := ast.Node(docDef).(*ast.OperationDefinition)
+			switch op.Operation {
+			case "mutation":
+				for _, v := range op.SelectionSet.Selections {
+					field := v.(*ast.Field)
+					for _, ff := range field.Arguments {
+						if ff.Name.Value == "query" {
+							selectQuery = append(selectQuery, ff.Value.GetValue().(string))
+						}
 					}
 				}
+			default:
+				//do nothing
 			}
-		default:
-			//do nothing
 		}
+		log.Print(selectQuery)
+		return selectQuery, err
 	}
-	log.Print(selectQuery)
-	return selectQuery, err
-}
 */
 func (gqd *GraphQLData) parseGraphQL() (d *ast.Document, err error) {
 	s := source.NewSource(&source.Source{
