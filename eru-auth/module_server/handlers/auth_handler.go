@@ -394,7 +394,52 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
+func VerifyRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		log.Println(projectId)
+		log.Println(authName)
 
+		authObjI, err := s.GetAuth(projectId, authName)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		recoveryReq := json.NewDecoder(r.Body)
+		recoveryReq.DisallowUnknownFields()
+
+		var recoveryPassword auth.RecoveryPassword
+
+		if err = recoveryReq.Decode(&recoveryPassword); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		log.Println(recoveryPassword)
+		var cookies []*http.Cookie
+		res := make(map[string]string)
+		res, cookies, err = authObjI.VerifyRecovery(recoveryPassword)
+		if err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			for _, c := range cookies {
+				http.SetCookie(w, c)
+				log.Println(c)
+			}
+			server_handlers.FormatResponse(w, http.StatusOK)
+			_ = json.NewEncoder(w).Encode(res)
+			log.Println(w.Header())
+			return
+		}
+	}
+}
 func CompleteRecoveryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -422,18 +467,13 @@ func CompleteRecoveryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		log.Println(recoveryPassword)
 		msg := ""
-		var cookies []*http.Cookie
-		msg, cookies, err = authObjI.CompleteRecovery(recoveryPassword)
+		msg, err = authObjI.CompleteRecovery(recoveryPassword, r.Cookies())
 		if err != nil {
 			log.Println(err)
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			for _, c := range cookies {
-				http.SetCookie(w, c)
-				log.Println(c)
-			}
 			server_handlers.FormatResponse(w, http.StatusOK)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": msg})
 			log.Println(w.Header())

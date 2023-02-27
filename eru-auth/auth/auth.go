@@ -27,7 +27,8 @@ type AuthI interface {
 	UpdateUser(identityToUpdate Identity) (err error)
 	ChangePassword(req *http.Request, changePasswordObj ChangePassword) (err error)
 	GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (msg string, err error)
-	CompleteRecovery(recoveryPassword RecoveryPassword) (msg string, cookies []*http.Cookie, err error)
+	CompleteRecovery(recoveryPassword RecoveryPassword, cookies []*http.Cookie) (msg string, err error)
+	VerifyRecovery(recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error)
 }
 type ChangePassword struct {
 	OldPassword string `json:"old_password"`
@@ -45,6 +46,7 @@ type RecoveryPostBody struct {
 
 type RecoveryPassword struct {
 	Code     string `json:"code"`
+	Id       string `json:"id"`
 	Password string `json:"password"`
 }
 
@@ -113,8 +115,12 @@ func (auth *Auth) sendRecoveryCode(email_id string, recovery_code string, recove
 	return respErr
 }
 
-func (auth *Auth) CompleteRecovery(recoveryPassword RecoveryPassword) (msg string, cookies []*http.Cookie, err error) {
-	return "", nil, errors.New("CompleteRecovery Method not implemented")
+func (auth *Auth) CompleteRecovery(recoveryPassword RecoveryPassword, cookies []*http.Cookie) (msg string, err error) {
+	return "", errors.New("CompleteRecovery Method not implemented")
+}
+
+func (auth *Auth) VerifyRecovery(recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error) {
+	return nil, nil, errors.New("CompleteRecovery Method not implemented")
 }
 
 func (auth *Auth) VerifyToken(tokenType string, token string) (res interface{}, err error) {

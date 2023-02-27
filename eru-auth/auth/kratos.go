@@ -361,7 +361,295 @@ func (kratosHydraAuth *KratosHydraAuth) Logout(req *http.Request) (res interface
 	}
 	return res, resStatusCode, err
 }
-func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword RecoveryPassword) (msg string, cookies []*http.Cookie, err error) {
+
+func (kratosHydraAuth *KratosHydraAuth) VerifyRecovery(recoveryPassword RecoveryPassword) (rcMap map[string]string, cookies []*http.Cookie, err error) {
+	recoveryCodeArray := strings.Split(recoveryPassword.Code, "__")
+	log.Println("len(recoveryCodeArray) = ", len(recoveryCodeArray))
+	if len(recoveryCodeArray) <= 1 {
+		err = errors.New("incorrect recovery code")
+		log.Println(err)
+		return
+	}
+
+	recoveryFlow := recoveryCodeArray[0]
+	recoveryCode := recoveryCodeArray[1]
+
+	log.Println("recoveryFlow = ", recoveryFlow)
+	log.Println("recoveryCode = ", recoveryCode)
+
+	port := kratosHydraAuth.Kratos.PublicPort
+	if port != "" {
+		port = fmt.Sprint(":", port)
+	}
+
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Content-Length", strconv.Itoa(0))
+
+	iUrl := url.URL{
+		Scheme: kratosHydraAuth.Kratos.PublicScheme,
+		Host:   fmt.Sprint(kratosHydraAuth.Kratos.PublicHost, port),
+		Path:   fmt.Sprint("/self-service/recovery"),
+	}
+	iParams := make(map[string]string)
+	iParams["flow"] = recoveryFlow
+
+	postBody := make(map[string]string)
+	postBody["code"] = recoveryCode
+	postBody["method"] = "code"
+	flowId := ""
+	resBytes := []byte("")
+	res, resHeaders, resCookies, resStatusCode, resErr := utils.CallHttp(http.MethodPost, iUrl.String(), headers, nil, nil, iParams, postBody)
+	log.Println(resHeaders)
+	log.Println("resCookies printed after self-service/recovery call")
+	log.Println(resCookies)
+	if resErr != nil {
+		err = resErr
+		log.Print("resErr printed below")
+		log.Print(err)
+		if resStatusCode != 422 {
+			err = errors.New("incorrect recovery code. please try again")
+			return
+		}
+		resBytes = []byte(resErr.Error())
+		err = nil
+	} else {
+		resBytesTmp, resBytesErr := json.Marshal(res)
+		if resBytesErr != nil {
+			err = resBytesErr
+			log.Print("resBytesErr printed below")
+			log.Print(err)
+			return
+		}
+		resBytes = resBytesTmp
+	}
+	log.Println("resBytes printed below")
+	log.Println(string(resBytes))
+	resMap := make(map[string]interface{})
+	resBody := json.NewDecoder(bytes.NewReader(resBytes))
+	resBody.DisallowUnknownFields()
+
+	if resBodyErr := resBody.Decode(&resMap); resBodyErr != nil {
+		err = resBodyErr
+		log.Print("resBodyErr printed below")
+		log.Print(err)
+		return
+	}
+	log.Println("resMap printed below")
+	log.Println(resMap)
+	if redirectLink, rOk := resMap["redirect_browser_to"]; rOk {
+		redirectLinkSplit := strings.Split(redirectLink.(string), "flow=")
+		if len(redirectLinkSplit) <= 0 {
+			err = errors.New(fmt.Sprint("failed to fetch flow id from redirect link :", redirectLink))
+			log.Println(err)
+			return
+		}
+		flowId = redirectLinkSplit[1]
+	} else if resUiMap, resUiMapOk := resMap["ui"]; resUiMapOk {
+		kratosUi := KratosUI{}
+		pResMapUiBytes, pResMapUiBytesErr := json.Marshal(resUiMap)
+		if pResMapUiBytesErr != nil {
+			err = errors.New("json.Marshal(resUiMap) failed")
+			log.Println(err)
+			return nil, nil, err
+		}
+		kratosUiErr := json.Unmarshal(pResMapUiBytes, &kratosUi)
+		if kratosUiErr != nil {
+			err = errors.New("json.Unmarshal(pResMapUiBytes,&kratosUi) failed")
+			log.Println(err)
+			return nil, nil, err
+		}
+		log.Println(kratosUi)
+		log.Println("len(kratosUi.Messages = ", len(kratosUi.Messages))
+		if len(kratosUi.Messages) >= 1 {
+			err = errors.New(kratosUi.Messages[0].Text)
+			log.Println(err)
+			return
+		}
+	} else {
+		err = errors.New("failed to verify recovery code in ui. please try again")
+		log.Println(err)
+		return
+	}
+	log.Println("flowId = ", flowId)
+	if rcMap == nil {
+		rcMap = make(map[string]string)
+	}
+	rcMap["id"] = flowId
+	return rcMap, resCookies, nil
+}
+
+func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword RecoveryPassword, cookies []*http.Cookie) (msg string, err error) {
+
+	port := kratosHydraAuth.Kratos.PublicPort
+	if port != "" {
+		port = fmt.Sprint(":", port)
+	}
+
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Content-Length", strconv.Itoa(0))
+
+	fUrl := url.URL{
+		Scheme: kratosHydraAuth.Kratos.PublicScheme,
+		Host:   fmt.Sprint(kratosHydraAuth.Kratos.PublicHost, port),
+		Path:   fmt.Sprint("/self-service/settings/api"),
+	}
+
+	log.Println("flowId = ", recoveryPassword.Id)
+
+	fParams := make(map[string]string)
+	fParams["flow"] = recoveryPassword.Id
+
+	pRes, pResHeaders, pResCookies, pResStatusCode, pResErr := utils.CallHttp(http.MethodGet, fUrl.String(), headers, nil, cookies, fParams, nil)
+	log.Println(pRes)
+	log.Println(pResHeaders)
+	log.Println(pResCookies)
+	log.Println(pResStatusCode)
+	log.Println(pResErr)
+	pResCookies = append(pResCookies, cookies...)
+	csrf_token := ""
+	kratosUi := KratosUI{}
+	if pResMap, pResMapOk := pRes.(map[string]interface{}); pResMapOk {
+		if pResMapUi, pResMapUiOk := pResMap["ui"]; pResMapUiOk {
+			log.Println(pResMapUi)
+			pResMapUiBytes, pResMapUiBytesErr := json.Marshal(pResMapUi)
+			if pResMapUiBytesErr != nil {
+				err = errors.New("json.Marshal(pResMapUi) failed")
+				log.Println(err)
+				return "", err
+			}
+
+			kratosUiErr := json.Unmarshal(pResMapUiBytes, &kratosUi)
+			if kratosUiErr != nil {
+				err = errors.New("json.Unmarshal(pResMapUiBytes,&kratosUi) failed")
+				log.Println(err)
+				return "", err
+			}
+
+			nodeFound := false
+			for _, v := range kratosUi.Nodes {
+				if v.Attributes.Name == "csrf_token" {
+					nodeFound = true
+					csrf_token = v.Attributes.Value
+					break
+				}
+			}
+			if !nodeFound {
+				err = errors.New("csrf_token not found")
+				log.Println(err)
+				return "", err
+			}
+		} else {
+			err = errors.New("pResMap[\"ui\"]  failed")
+			log.Println(err)
+			return "", err
+		}
+	} else {
+		err = errors.New("invalid session")
+		log.Println(err)
+		return "", err
+	}
+	log.Println("csrf_token = ", csrf_token)
+
+	sfUrl := url.URL{
+		Scheme: kratosHydraAuth.Kratos.PublicScheme,
+		Host:   fmt.Sprint(kratosHydraAuth.Kratos.PublicHost, port),
+		Path:   fmt.Sprint("/self-service/settings"),
+	}
+
+	sfPostBody := make(map[string]string)
+	sfPostBody["method"] = "password"
+	sfPostBody["password"] = recoveryPassword.Password
+	sfPostBody["csrf_token"] = csrf_token
+
+	sfRes, _, _, sfResStatusCode, sfResErr := utils.CallHttp(http.MethodPost, sfUrl.String(), headers, nil, pResCookies, fParams, sfPostBody)
+	log.Println(sfRes)
+	log.Println(sfResStatusCode)
+	log.Println(sfResErr)
+	log.Println("-----------------------------------------")
+	kratosMsgUi := KratosUI{}
+
+	sfResBytes := []byte("")
+	if sfResErr != nil {
+		err = sfResErr
+		log.Print("sfResErr printed below")
+		log.Print(err)
+		sfResBytes = []byte(sfResErr.Error())
+		err = nil
+	} else {
+		sfResBytesTmp, sfResBytesErr := json.Marshal(sfRes)
+		if sfResBytesErr != nil {
+			err = sfResBytesErr
+			log.Print("sfResBytesErr printed below")
+			log.Print(err)
+			return "", err
+		}
+		sfResBytes = sfResBytesTmp
+	}
+	log.Println("sfResBytes printded below")
+	log.Println(string(sfResBytes))
+
+	sfResMap := make(map[string]interface{})
+	sfResJson := json.NewDecoder(bytes.NewReader(sfResBytes))
+	sfResJson.DisallowUnknownFields()
+
+	if sfResJsonErr := sfResJson.Decode(&sfResMap); sfResJsonErr != nil {
+		err = sfResJsonErr
+		log.Print("sfResJsonErr printed below")
+		log.Print(err)
+		return "", err
+	}
+
+	//if sfResMap, sfResMapOk := sfRes.(map[string]interface{}); sfResMapOk {
+	if sfResMapUi, sfResMapUiOk := sfResMap["ui"]; sfResMapUiOk {
+		log.Println(sfResMapUi)
+		sfResMapUiBytes, sfResMapUiBytesErr := json.Marshal(sfResMapUi)
+		if sfResMapUiBytesErr != nil {
+			err = errors.New("jjson.Marshal(sfResMapUi) failed")
+			log.Println(err)
+			return "", err
+		}
+		kratosMsgErr := json.Unmarshal(sfResMapUiBytes, &kratosMsgUi)
+		if kratosMsgErr != nil {
+			err = errors.New("json.Unmarshal(sfResMapUiBytes, &kratosMsgUi) failed")
+			log.Println(err)
+			return "", err
+		}
+	} else {
+		err = errors.New("sfResMap[\"ui\"] failed")
+		log.Println(err)
+		return "", err
+	}
+	//}
+	//else {
+	//	err = errors.New("sfRes.(map[string]interface{}) failed")
+	//	log.Println(err)
+	//	return
+	//}
+	if sfResErr == nil {
+		for _, m := range kratosMsgUi.Messages {
+			if msg != "" {
+				msg = fmt.Sprint(msg, " , ")
+			}
+			msg = fmt.Sprint(msg, m.Text)
+		}
+	} else {
+		for _, n := range kratosMsgUi.Nodes {
+			for _, m := range n.Messages {
+				if msg != "" {
+					msg = fmt.Sprint(msg, " , ")
+				}
+				msg = fmt.Sprint(msg, m.Text)
+			}
+		}
+		err = errors.New(msg)
+		msg = ""
+	}
+	return msg, nil
+}
+
+func (kratosHydraAuth *KratosHydraAuth) CompleteRecoveryOld_Todel(recoveryPassword RecoveryPassword) (msg string, cookies []*http.Cookie, err error) {
 	recoveryCodeArray := strings.Split(recoveryPassword.Code, "__")
 	if len(recoveryCodeArray) <= 0 {
 		err = errors.New("incorrect recovery code")
