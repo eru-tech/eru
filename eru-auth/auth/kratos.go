@@ -586,7 +586,6 @@ func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword Recove
 			return "", err
 		}
 		sfResBytes = sfResBytesTmp
-		sfResErr = nil
 	}
 	log.Println("sfResBytes printed below")
 	log.Println(string(sfResBytes))
@@ -636,7 +635,9 @@ func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword Recove
 			msg = fmt.Sprint(msg, m.Text)
 		}
 	} else {
+		log.Println("looping on kratosMsgUi.Nodes")
 		for _, n := range kratosMsgUi.Nodes {
+			log.Println("looping on n.Messages")
 			for _, m := range n.Messages {
 				if msg != "" {
 					msg = fmt.Sprint(msg, " , ")
@@ -647,7 +648,7 @@ func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword Recove
 		err = errors.New(msg)
 		msg = ""
 	}
-	return msg, nil
+	return msg, err
 }
 
 func (kratosHydraAuth *KratosHydraAuth) CompleteRecoveryOld_Todel(recoveryPassword RecoveryPassword) (msg string, cookies []*http.Cookie, err error) {
