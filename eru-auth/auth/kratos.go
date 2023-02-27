@@ -586,8 +586,9 @@ func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword Recove
 			return "", err
 		}
 		sfResBytes = sfResBytesTmp
+		sfResErr = nil
 	}
-	log.Println("sfResBytes printded below")
+	log.Println("sfResBytes printed below")
 	log.Println(string(sfResBytes))
 
 	sfResMap := make(map[string]interface{})
