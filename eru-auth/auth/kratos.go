@@ -361,7 +361,7 @@ func (kratosHydraAuth *KratosHydraAuth) Logout(req *http.Request) (res interface
 	}
 	return res, resStatusCode, err
 }
-func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword RecoveryPassword) (msg string, err error) {
+func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword RecoveryPassword) (msg string, cookies []*http.Cookie, err error) {
 	recoveryCodeArray := strings.Split(recoveryPassword.Code, "__")
 	if len(recoveryCodeArray) <= 0 {
 		err = errors.New("incorrect recovery code")
@@ -475,14 +475,14 @@ func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword Recove
 			if pResMapUiBytesErr != nil {
 				err = errors.New("json.Marshal(pResMapUi) failed")
 				log.Println(err)
-				return
+				return "", pResCookies, err
 			}
 
 			kratosUiErr := json.Unmarshal(pResMapUiBytes, &kratosUi)
 			if kratosUiErr != nil {
 				err = errors.New("json.Unmarshal(pResMapUiBytes,&kratosUi) failed")
 				log.Println(err)
-				return
+				return "", pResCookies, err
 			}
 
 			nodeFound := false
@@ -496,17 +496,17 @@ func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword Recove
 			if !nodeFound {
 				err = errors.New("csrf_token not found")
 				log.Println(err)
-				return
+				return "", pResCookies, err
 			}
 		} else {
 			err = errors.New("pResMap[\"ui\"]  failed")
 			log.Println(err)
-			return
+			return "", pResCookies, err
 		}
 	} else {
 		err = errors.New("pRes.(map[string]interface{}) failed")
 		log.Println(err)
-		return
+		return "", pResCookies, err
 	}
 	log.Println("csrf_token = ", csrf_token)
 
@@ -541,7 +541,7 @@ func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword Recove
 			err = sfResBytesErr
 			log.Print("sfResBytesErr printed below")
 			log.Print(err)
-			return
+			return "", pResCookies, err
 		}
 		sfResBytes = sfResBytesTmp
 	}
@@ -556,7 +556,7 @@ func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword Recove
 		err = sfResJsonErr
 		log.Print("sfResJsonErr printed below")
 		log.Print(err)
-		return
+		return "", pResCookies, err
 	}
 
 	//if sfResMap, sfResMapOk := sfRes.(map[string]interface{}); sfResMapOk {
@@ -566,18 +566,18 @@ func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword Recove
 		if sfResMapUiBytesErr != nil {
 			err = errors.New("jjson.Marshal(sfResMapUi) failed")
 			log.Println(err)
-			return
+			return "", pResCookies, err
 		}
 		kratosMsgErr := json.Unmarshal(sfResMapUiBytes, &kratosMsgUi)
 		if kratosMsgErr != nil {
 			err = errors.New("json.Unmarshal(sfResMapUiBytes, &kratosMsgUi) failed")
 			log.Println(err)
-			return
+			return "", pResCookies, err
 		}
 	} else {
 		err = errors.New("sfResMap[\"ui\"] failed")
 		log.Println(err)
-		return
+		return "", pResCookies, err
 	}
 	//}
 	//else {
@@ -604,12 +604,12 @@ func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword Recove
 		err = errors.New(msg)
 		msg = ""
 	}
-
-	return
+	return msg, pResCookies, nil
 }
 
-func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (recoveryCode map[string]string, err error) {
+func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (msg string, err error) {
 	userid := ""
+	firstName := ""
 	port := kratosHydraAuth.Kratos.AdminPort
 	if port != "" {
 		port = fmt.Sprint(":", port)
@@ -653,6 +653,9 @@ func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(recoveryIdentifier 
 			if v.Traits["email"] == recoveryIdentifier.Username {
 				userFound = true
 				userid = v.Id
+				if nameObj, nameObjOk := v.Traits["name"].(map[string]interface{}); nameObjOk {
+					firstName = nameObj["first"].(string)
+				}
 				break
 			}
 		}
@@ -703,6 +706,7 @@ func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(recoveryIdentifier 
 		return
 	}
 	log.Println(rcResMap["recovery_code"])
+	log.Println(rcResMap["expires_at"])
 	log.Println(rcResMap["recovery_link"])
 	log.Println(strings.Split(rcResMap["recovery_link"].(string), "flow=")[1])
 
@@ -712,12 +716,16 @@ func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(recoveryIdentifier 
 		log.Print(err)
 		return
 	}
+	rCode := fmt.Sprint(recovery_link[1], "__", rcResMap["recovery_code"].(string))
+	rExpiryStr := rcResMap["expires_at"].(string)
+	rExpiryStr = rExpiryStr[0:strings.LastIndex(rExpiryStr, ".")]
 
-	if recoveryCode == nil {
-		recoveryCode = make(map[string]string)
-	}
-	recoveryCode["code"] = fmt.Sprint(recovery_link[1], "__", rcResMap["recovery_code"].(string))
-	return
+	//err = kratosHydraAuth.sendRecoveryCode(recoveryIdentifier.Username, rCode, fmt.Sprint(rExpiryStr, " GMT"), firstName)
+	//if err != nil {
+	//	return "", err
+	//}
+	_ = firstName
+	return rCode, nil
 }
 func (kratosHydraAuth *KratosHydraAuth) Login(loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
 

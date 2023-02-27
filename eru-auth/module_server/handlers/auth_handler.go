@@ -388,7 +388,7 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		} else {
 			server_handlers.FormatResponse(w, http.StatusOK)
-			_ = json.NewEncoder(w).Encode(res)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": res})
 			log.Println(w.Header())
 			return
 		}
@@ -422,7 +422,8 @@ func CompleteRecoveryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		log.Println(recoveryPassword)
 		msg := ""
-		msg, err = authObjI.CompleteRecovery(recoveryPassword)
+		var cookies []*http.Cookie
+		msg, cookies, err = authObjI.CompleteRecovery(recoveryPassword)
 		if err != nil {
 			log.Println(err)
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
@@ -430,6 +431,10 @@ func CompleteRecoveryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		} else {
 			server_handlers.FormatResponse(w, http.StatusOK)
+			for _, c := range cookies {
+				log.Println(c)
+				http.SetCookie(w, c)
+			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": msg})
 			log.Println(w.Header())
 			return

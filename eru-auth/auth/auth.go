@@ -3,7 +3,12 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"github.com/eru-tech/eru/eru-routes/routes"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -21,8 +26,8 @@ type AuthI interface {
 	GetUser(userId string) (identity Identity, err error)
 	UpdateUser(identityToUpdate Identity) (err error)
 	ChangePassword(req *http.Request, changePasswordObj ChangePassword) (err error)
-	GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (recoveryCode map[string]string, err error)
-	CompleteRecovery(recoveryPassword RecoveryPassword) (msg string, err error)
+	GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (msg string, err error)
+	CompleteRecovery(recoveryPassword RecoveryPassword) (msg string, cookies []*http.Cookie, err error)
 }
 type ChangePassword struct {
 	OldPassword string `json:"old_password"`
@@ -68,18 +73,48 @@ type Auth struct {
 	AuthType       string
 	AuthName       string
 	TokenHeaderKey string
+	Hooks          AuthHooks
+}
+
+type AuthHooks struct {
+	SRC routes.Route
 }
 
 func (auth *Auth) MakeFromJson(rj *json.RawMessage) error {
 	return errors.New("MakeFromJson Method not implemented")
 }
 
-func (auth *Auth) GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (recoveryCode map[string]string, err error) {
-	return nil, errors.New("GenerateRecoveryCode Method not implemented")
+func (auth *Auth) GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (msg string, err error) {
+	return "", errors.New("GenerateRecoveryCode Method not implemented")
 }
 
-func (auth *Auth) CompleteRecovery(recoveryPassword RecoveryPassword) (msg string, err error) {
-	return "", errors.New("CompleteRecovery Method not implemented")
+func (auth *Auth) sendRecoveryCode(email_id string, recovery_code string, recovery_time string, name string) (err error) {
+	trReqVars := &routes.TemplateVars{}
+	if trReqVars.Vars == nil {
+		trReqVars.Vars = make(map[string]interface{})
+	}
+	trReqVars.Vars["email_id"] = email_id
+	trReqVars.Vars["recovery_code"] = recovery_code
+	trReqVars.Vars["recovery_time"] = recovery_time
+	trReqVars.Vars["name"] = name
+	r := &http.Request{}
+	url := url.URL{
+		Scheme: "",
+		Host:   "",
+		Path:   "/",
+	}
+	r.URL = &url
+	r.Body = io.NopCloser(strings.NewReader("{}"))
+	h := http.Header{}
+	h.Set("content-type", "application/json")
+	r.Header = h
+	response, _, respErr := auth.Hooks.SRC.Execute(r, "/", false, "", trReqVars, 1)
+	utils.PrintResponseBody(response, "send recovery code response")
+	return respErr
+}
+
+func (auth *Auth) CompleteRecovery(recoveryPassword RecoveryPassword) (msg string, cookies []*http.Cookie, err error) {
+	return "", nil, errors.New("CompleteRecovery Method not implemented")
 }
 
 func (auth *Auth) VerifyToken(tokenType string, token string) (res interface{}, err error) {

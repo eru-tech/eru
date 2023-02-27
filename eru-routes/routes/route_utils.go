@@ -82,7 +82,7 @@ func loadRequestVars(vars *TemplateVars, request *http.Request) (err error) {
 	return
 }
 
-func cloneRequest(request *http.Request) (req *http.Request, err error) {
+func CloneRequest(request *http.Request) (req *http.Request, err error) {
 	log.Println("clone request")
 	req = request.Clone(request.Context())
 
@@ -189,7 +189,7 @@ func cloneRequest(request *http.Request) (req *http.Request, err error) {
 
 func processTemplate(templateName string, templateString string, vars *FuncTemplateVars, outputType string, tokenHeaderKey string, jwkUrl string) (output []byte, err error) {
 	log.Println("inside processTemplate")
-
+	//log.Println(templateString)
 	if strings.Contains(templateString, "{{.token") {
 		strToken := vars.Vars.Headers[tokenHeaderKey]
 		log.Println("strToken = ", strToken)
@@ -216,6 +216,7 @@ func processTemplate(templateName string, templateString string, vars *FuncTempl
 		}
 		//json encoder adds new line at the end by default - removing the same
 		output = []byte(strings.TrimSuffix(buffer.String(), "\n"))
+		//log.Println(string(output))
 		return
 	}
 }

@@ -164,7 +164,9 @@ func (route *Route) GetTargetSchemeHostPortPath(url string) (scheme string, host
 			path = route.RewriteUrl
 		} else {
 			urlSplit := strings.Split(url, route.RouteName)
-			if len(urlSplit) > 0 {
+			log.Println(urlSplit)
+			log.Println(len(urlSplit))
+			if len(urlSplit) > 1 {
 				path = fmt.Sprint(route.RewriteUrl, strings.TrimPrefix(urlSplit[1], route.Url))
 			} else {
 				path = route.RewriteUrl
@@ -429,7 +431,7 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 	if route.LoopVariable != "" {
 		if route.LoopInParallel {
 			// cloning request for parallel execution of loop
-			request, err = cloneRequest(req)
+			request, err = CloneRequest(req)
 			if err != nil {
 				log.Println(err)
 				return
@@ -512,6 +514,8 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 		//log.Print(response.ContentLength)
 		//printResponseBody(response, "printing response After httpClient.Do of route Execute before transformResponse")
 	} else {
+		utils.PrintRequestBody(request, "printing request in empty host execution")
+		log.Println(request.Header)
 		response = &http.Response{Header: http.Header{}, StatusCode: http.StatusOK}
 		rb, err := json.Marshal(make(map[string]interface{}))
 		if err != nil {
@@ -521,7 +525,7 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 			response.Body = ioutil.NopCloser(bytes.NewReader(rb))
 		}
 	}
-
+	log.Println(trReqVars)
 	trResVars = &TemplateVars{}
 	//if route.TransformResponse != "" {
 	trResVars, err = route.transformResponse(response, trReqVars)
@@ -751,15 +755,18 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 		log.Print("error from processHeaderTemplates")
 		return
 	}
+	log.Println("vars after processHeaderTemplates")
+	log.Println(vars.Headers)
+	log.Println(vars)
 	return
 }
 
 func (route *Route) transformResponse(response *http.Response, trReqVars *TemplateVars) (trResVars *TemplateVars, err error) {
 	trResVars = &TemplateVars{}
 	log.Println("inside transformResponse")
-	//a, e := json.Marshal(trReqVars)
-	//log.Print(string(a))
-	//log.Print(e)
+	a, e := json.Marshal(trReqVars)
+	log.Print(string(a))
+	log.Print(e)
 	log.Print("route.Redirect for route ", route.RouteName, "is ", route.Redirect)
 	if route.Redirect {
 		log.Print("inside route.Redirect")

@@ -385,7 +385,7 @@ func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string
 func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string) (req *http.Request, vars *TemplateVars, err error) {
 	log.Println("inside funcStep.transformRequest")
 	//first step in transforming is to make a clone of the original request
-	req, err = cloneRequest(request)
+	req, err = CloneRequest(request)
 	if err != nil {
 		log.Print(err)
 		return
