@@ -616,8 +616,13 @@ func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(recoveryPassword Recove
 			log.Println(err)
 			return "", err
 		}
+	} else if sfResMapErr, sfResMapErrOk := sfResMap["error"].(map[string]interface{}); sfResMapErrOk {
+		errMsg := sfResMapErr["message"].(string)
+		errReason := sfResMapErr["reason"].(string)
+		err = errors.New(fmt.Sprint(errMsg, ". ", errReason))
+		return "", err
 	} else {
-		err = errors.New("sfResMap[\"ui\"] failed")
+		err = errors.New("failed to read error from source")
 		log.Println(err)
 		return "", err
 	}
