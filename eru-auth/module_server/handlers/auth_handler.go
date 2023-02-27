@@ -426,27 +426,15 @@ func CompleteRecoveryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		msg, cookies, err = authObjI.CompleteRecovery(recoveryPassword)
 		if err != nil {
 			log.Println(err)
-			for _, c := range cookies {
-				log.Println(c)
-				log.Println(c.Domain)
-				log.Println(r.URL.Host)
-				c.Domain = r.URL.Host
-				http.SetCookie(w, c)
-				log.Println(c)
-			}
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			server_handlers.FormatResponse(w, http.StatusOK)
 			for _, c := range cookies {
-				log.Println(c)
-				log.Println(c.Domain)
-				log.Println(r.URL.Host)
-				c.Domain = r.URL.Host
 				http.SetCookie(w, c)
 				log.Println(c)
 			}
+			server_handlers.FormatResponse(w, http.StatusOK)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": msg})
 			log.Println(w.Header())
 			return
