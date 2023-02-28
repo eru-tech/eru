@@ -1211,6 +1211,7 @@ func (kratosHydraAuth *KratosHydraAuth) UpdateUser(identityToUpdate Identity) (e
 }
 
 func (kratosHydraAuth *KratosHydraAuth) ChangePassword(req *http.Request, changePassword ChangePassword) (err error) {
+	req.Header.Set("Origin", "")
 	sessionToken := ""
 	identifier := ""
 	tokenObj := make(map[string]interface{})
