@@ -363,16 +363,9 @@ func (kratosHydraAuth *KratosHydraAuth) Logout(req *http.Request) (res interface
 }
 
 func (kratosHydraAuth *KratosHydraAuth) VerifyRecovery(recoveryPassword RecoveryPassword) (rcMap map[string]string, cookies []*http.Cookie, err error) {
-	recoveryCodeArray := strings.Split(recoveryPassword.Code, "__")
-	log.Println("len(recoveryCodeArray) = ", len(recoveryCodeArray))
-	if len(recoveryCodeArray) <= 1 {
-		err = errors.New("incorrect recovery code")
-		log.Println(err)
-		return
-	}
 
-	recoveryFlow := recoveryCodeArray[0]
-	recoveryCode := recoveryCodeArray[1]
+	recoveryFlow := recoveryPassword.Id
+	recoveryCode := recoveryPassword.Code
 
 	log.Println("recoveryFlow = ", recoveryFlow)
 	log.Println("recoveryCode = ", recoveryCode)
@@ -765,7 +758,8 @@ func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(recoveryIdentifier 
 		log.Print(err)
 		return
 	}
-	rCode := fmt.Sprint(recovery_link[1], "__", rcResMap["recovery_code"].(string))
+	//rCode := fmt.Sprint(recovery_link[1], "__", rcResMap["recovery_code"].(string))
+	rCode := rcResMap["recovery_code"].(string)
 	rExpiryStr := rcResMap["expires_at"].(string)
 	rExpiryStr = rExpiryStr[0:strings.LastIndex(rExpiryStr, ".")]
 
@@ -774,7 +768,7 @@ func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(recoveryIdentifier 
 		return "", err
 	}
 	//_ = firstName
-	return "recovery code sent by email", nil
+	return recovery_link[1], nil
 }
 func (kratosHydraAuth *KratosHydraAuth) Login(loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
 

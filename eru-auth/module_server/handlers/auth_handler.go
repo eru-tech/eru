@@ -388,7 +388,7 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		} else {
 			server_handlers.FormatResponse(w, http.StatusOK)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": res})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": res})
 			log.Println(w.Header())
 			return
 		}
