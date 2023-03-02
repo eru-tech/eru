@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -40,7 +41,6 @@ func createFormFile(w *multipart.Writer, contentType string, fieldName string, f
 
 func loadRequestVars(vars *TemplateVars, request *http.Request) (err error) {
 	log.Println("inside loadRequestVars")
-	log.Println(vars)
 	vars.Headers = make(map[string]interface{})
 	for k, v := range request.Header {
 		vars.Headers[k] = v
@@ -51,34 +51,145 @@ func loadRequestVars(vars *TemplateVars, request *http.Request) (err error) {
 	}
 
 	// if formData is found, no need to add body to vars
-	log.Println("if formData is found, no need to add body to vars")
-	log.Println(len(vars.FormData))
-	if len(vars.FormData) <= 0 {
-		log.Println("inside len(vars.FormData) <= 0 ")
+
+	//log.Println("if formData is found, no need to add body to vars")
+	//log.Println(len(vars.FormData))
+	//if len(vars.FormData) <= 0 {
+	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
+	log.Print("reqContentType = ", reqContentType)
+	if reqContentType == applicationjson {
+		log.Println("inside reqContentType == applicationjson ")
 		tmplBodyFromReq := json.NewDecoder(request.Body)
 		tmplBodyFromReq.DisallowUnknownFields()
 		if err = tmplBodyFromReq.Decode(&vars.Body); err != nil {
 			log.Println("error decode request body")
 			log.Println(err)
-			err = nil
-			//return err
+			return err
 		}
 		body, err := json.Marshal(vars.Body)
 		if err != nil {
 			log.Println(err)
 		}
+		request.Body = ioutil.NopCloser(bytes.NewReader(body))
 		request.Header.Set("Content-Length", strconv.Itoa(len(body)))
 		request.ContentLength = int64(len(body))
-		request.Body = ioutil.NopCloser(bytes.NewReader(body))
-
 	}
-	vars.Vars = make(map[string]interface{})
+	if vars.Vars == nil {
+		vars.Vars = make(map[string]interface{})
+	}
 	vars.OrgBody = vars.Body
+	log.Print()
+	return
+}
+
+func cloneRequest(request *http.Request) (req *http.Request, err error) {
+	log.Println("clone request")
+	req = request.Clone(request.Context())
+
+	/*
+		body,err := ioutil.ReadAll(request.Body)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+		request.Body = ioutil.NopCloser(bytes.NewReader(body))
+		req.Body = ioutil.NopCloser(bytes.NewReader(body))
+	*/
+
+	//Only request.clone does not work - need to handle multipart request as under
+
+	reqContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
+	log.Print("reqContentType = ", reqContentType)
+	if reqContentType == encodedForm || reqContentType == multiPartForm {
+		log.Println("inside encodedForm || multiPartForm")
+		var reqBody bytes.Buffer
+		var reqOldBody bytes.Buffer
+		multipartWriter := multipart.NewWriter(&reqBody)
+		multiPart, err1 := request.MultipartReader()
+		if err1 != nil {
+			log.Println("----------------------------")
+			log.Println(err1)
+			//return
+		} else {
+			for {
+				part, errPart := multiPart.NextRawPart()
+				if errPart == io.EOF {
+					log.Println("inside EOF error")
+					break
+				}
+				if part.FileName() != "" {
+					log.Println(part.FileName())
+					log.Println(part)
+					var tempFile *os.File
+					tempFile, err = ioutil.TempFile(os.TempDir(), "spa")
+					defer tempFile.Close()
+					if err != nil {
+						log.Println("Temp file creation failed")
+					}
+					//_, err = io.Copy(tempFile, part)
+					//if err != nil {
+					//	log.Println(err)
+					//	return
+					//}
+					fileWriter, err2 := createFormFileCopy(multipartWriter, part)
+					//fileWriter, err := multipartWriter.CreateFormFile(part.FormName(), part.FileName())
+					if err2 != nil {
+						err = err2
+						log.Println(err)
+						return
+					}
+					//_, err = fileWriter.Write()
+					_, err = io.Copy(fileWriter, part)
+					if err != nil {
+						log.Println(err)
+						return
+					}
+
+				} else {
+					buf := new(bytes.Buffer)
+					buf.ReadFrom(part)
+					fieldWriter, err3 := multipartWriter.CreateFormField(part.FormName())
+					if err3 != nil {
+						err = err3
+						log.Println(err)
+						return
+					}
+					_, err = fieldWriter.Write(buf.Bytes())
+					if err != nil {
+						log.Println(err)
+						return
+					}
+				}
+			}
+		}
+		multipartWriter.Close()
+		reqOldBody = reqBody
+		req.Body = ioutil.NopCloser(&reqBody)
+		req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+		req.Header.Set("Content-Length", strconv.Itoa(reqBody.Len()))
+		req.ContentLength = int64(reqBody.Len())
+		request.Body = ioutil.NopCloser(&reqOldBody)
+		request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+		request.Header.Set("Content-Length", strconv.Itoa(reqOldBody.Len()))
+		request.ContentLength = int64(reqOldBody.Len())
+
+	} else {
+		body, err3 := ioutil.ReadAll(req.Body)
+		if err3 != nil {
+			err = err3
+			log.Println(err)
+			return
+		}
+		request.Body = ioutil.NopCloser(bytes.NewReader(body))
+		req.Body = ioutil.NopCloser(bytes.NewReader(body))
+	}
+
 	return
 }
 
 func processTemplate(templateName string, templateString string, vars *FuncTemplateVars, outputType string, tokenHeaderKey string, jwkUrl string) (output []byte, err error) {
 	log.Println("inside processTemplate")
+
 	if strings.Contains(templateString, "{{.token") {
 		strToken := vars.Vars.Headers[tokenHeaderKey]
 		log.Println("strToken = ", strToken)
@@ -90,20 +201,27 @@ func processTemplate(templateName string, templateString string, vars *FuncTempl
 	}
 	goTmpl := gotemplate.GoTemplate{templateName, templateString}
 	outputObj, err := goTmpl.Execute(vars, outputType)
-	log.Print(outputObj)
 	if err != nil {
 		log.Println(err)
 		return nil, err
 	} else {
-		output, err = json.Marshal(outputObj)
+		buffer := &bytes.Buffer{}
+		encoder := json.NewEncoder(buffer)
+		encoder.SetEscapeHTML(false)
+		err = encoder.Encode(outputObj)
+		//output, err = json.Marshal(outputObj)
 		if err != nil {
 			log.Println(err)
 			return nil, err
 		}
+		//json encoder adds new line at the end by default - removing the same
+		output = []byte(strings.TrimSuffix(buffer.String(), "\n"))
 		return
 	}
 }
 func makeMultipart(request *http.Request, formData []Headers, fileData []FilePart, vars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, tokenSecretKey string, jwkUrl string) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, err error) {
+	log.Print("inside makeMultipart")
+
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	log.Print("reqContentType from makeMultipart = ", reqContentType)
 	log.Print("fileData")
@@ -198,6 +316,7 @@ func makeMultipart(request *http.Request, formData []Headers, fileData []FilePar
 			}
 			//log.Println(filecontentStr)
 			decodeBytes := []byte("")
+			//TODO make temp file name unique
 			decodeBytes, err = b64.StdEncoding.DecodeString(filecontentStr)
 			if err != nil {
 				log.Println(err)
@@ -224,34 +343,25 @@ func makeMultipart(request *http.Request, formData []Headers, fileData []FilePar
 				log.Println(err)
 				return nil, nil, err
 			}
-
 		}
-
 		multipartWriter.Close()
 		request.Body = ioutil.NopCloser(&reqBody)
-		//request.Header.Set("Content-Type","application/pdf" )
-		log.Println("--------------------multipartWriter.FormDataContentType()--------------------")
-		log.Println(multipartWriter.FormDataContentType())
 		request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
 		request.Header.Set("Content-Length", strconv.Itoa(reqBody.Len()))
 		request.ContentLength = int64(reqBody.Len())
-		log.Println("request.Header.Get(\"Content-Type\")")
-		log.Println(request.Header.Get("Content-Type"))
-		defer request.Body.Close()
+		//defer request.Body.Close()
 	}
 	//printRequestBody(request, "request body from makemultipart")
 	return
 }
 
-func processMultipart(request *http.Request, formDataRemove []string, formData []Headers) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, err error) {
-	log.Print("formData printed from processMultipart")
-	log.Print(formData)
-	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
+func processMultipart(reqContentType string, request *http.Request, formDataRemove []string, formData []Headers) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, err error) {
+	//reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	log.Print("reqContentType = ", reqContentType)
 	varsFormData = make(map[string]interface{})
 	if reqContentType == encodedForm || reqContentType == multiPartForm {
 		log.Println("===========================")
-		log.Println("inside encodedForm || multiPartForm")
+		log.Println("inside encodedForm || multiPartForm of processMultipart")
 		var reqBody bytes.Buffer
 		multipartWriter := multipart.NewWriter(&reqBody)
 		log.Println("|||||||||||||||||||||||||||||||||||||||")
@@ -263,16 +373,22 @@ func processMultipart(request *http.Request, formDataRemove []string, formData [
 			log.Print("error from request.MultipartReader()")
 			requestHasMultipart = false
 			//return nil, nil, err
+			log.Print(request.MultipartForm.Value)
 		}
 		log.Print("requestHasMultipart = ", requestHasMultipart)
+		i := 0
 		if requestHasMultipart {
 			for {
+				i++
+				log.Print(i)
 				log.Println("inside for loop - multiPart.NextRawPart() ")
 				removeFlag := false
 				part, errPart := multiPart.NextRawPart()
 				if errPart == io.EOF {
+					log.Print("breaking becuase of eof")
 					break
 				}
+
 				log.Println("formDataRemove = ", formDataRemove)
 				if formDataRemove != nil {
 					for _, v := range formDataRemove {
@@ -282,11 +398,9 @@ func processMultipart(request *http.Request, formDataRemove []string, formData [
 						}
 					}
 				}
-				if !removeFlag {
+				if !removeFlag && part != nil {
 					log.Println("inside !removeFlag")
 					if part.FileName() != "" {
-						log.Println(part.FileName())
-						log.Println(part)
 						var tempFile *os.File
 						tempFile, err = ioutil.TempFile(os.TempDir(), "spa")
 						defer tempFile.Close()
@@ -324,48 +438,54 @@ func processMultipart(request *http.Request, formDataRemove []string, formData [
 							log.Println(err)
 							return nil, nil, err
 						}
-						varsFormData[part.FormName()] = buf.String()
-						varsFormDataKeyArray = append(varsFormDataKeyArray, part.FormName())
+						formName := strings.Replace(strings.Replace(part.FormName(), "[", "", -1), "]", "", -1)
+						varsFormData[formName] = buf.String()
+						varsFormDataKeyArray = append(varsFormDataKeyArray, formName)
 					}
+				} else {
+					//break the for loop
+					break
 				}
 			}
 		}
 		log.Println(" ++++++++++++++++++ formData ++++++++++++++++")
 		log.Println(formData)
 		for _, fd := range formData {
-
-			fieldWriter, err := multipartWriter.CreateFormField(fd.Key)
-			if err != nil {
-				log.Println(err)
-				return nil, nil, err
+			toIgnore := false
+			for _, k := range varsFormDataKeyArray {
+				if k == fd.Key {
+					toIgnore = true
+					break
+				}
 			}
-			_, err = fieldWriter.Write([]byte(fd.Value))
-			if err != nil {
-				log.Println(err)
-				return nil, nil, err
+			if !toIgnore {
+				fieldWriter, err := multipartWriter.CreateFormField(fd.Key)
+				if err != nil {
+					log.Println(err)
+					return nil, nil, err
+				}
+				_, err = fieldWriter.Write([]byte(fd.Value))
+				if err != nil {
+					log.Println(err)
+					return nil, nil, err
+				}
+				varsFormData[fd.Key] = fd.Value
+				varsFormDataKeyArray = append(varsFormDataKeyArray, fd.Key)
 			}
-			varsFormData[fd.Key] = fd.Value
-			varsFormDataKeyArray = append(varsFormDataKeyArray, fd.Key)
 		}
 		multipartWriter.Close()
 		request.Body = ioutil.NopCloser(&reqBody)
-		//request.Header.Set("Content-Type","application/pdf" )
-		log.Println(multipartWriter.FormDataContentType())
-		log.Print("multipartWriter.Boundary() = ", multipartWriter.Boundary())
-		log.Println(" ++++++++++++++++++ varsFormData ++++++++++++++++")
-		log.Println(varsFormData)
-		log.Println(varsFormDataKeyArray)
 		request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
 		request.Header.Set("Content-Length", strconv.Itoa(reqBody.Len()))
 		request.ContentLength = int64(reqBody.Len())
-		log.Print("Content-Type = ", request.Header.Get("Content-Type"))
-		log.Print("Content-Length = ", request.Header.Get("Content-Length"))
+		//defer request.Body.Close()
 	}
 	return
 }
 
 func processParams(request *http.Request, queryParamsRemove []string, queryParams []Headers, vars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (err error) {
-
+	log.Print("inside processParams")
+	log.Print(queryParams)
 	pvars := &FuncTemplateVars{}
 	pvars.Vars = vars
 	pvars.ReqVars = reqVars
@@ -381,15 +501,17 @@ func processParams(request *http.Request, queryParamsRemove []string, queryParam
 				return
 			}
 			valueStr, uerr := strconv.Unquote(string(valueBytes))
-			if terr != nil {
+			if uerr != nil {
 				err = uerr
 				log.Print(err)
 				return
 			}
 			log.Print("valueStr = ", valueStr)
 			params.Set(p.Key, valueStr)
+			vars.Params[p.Key] = valueStr
 		} else {
 			params.Set(p.Key, p.Value)
+			vars.Params[p.Key] = p.Value
 		}
 	}
 
@@ -398,6 +520,7 @@ func processParams(request *http.Request, queryParamsRemove []string, queryParam
 			params.Del(v)
 		}
 	}
+	log.Print("params")
 	log.Print(params)
 	request.URL.RawQuery = params.Encode()
 	return
@@ -452,7 +575,12 @@ func printRequestBody(request *http.Request, msg string) {
 		log.Println(err)
 	}
 	log.Println(msg)
-	log.Println(string(body))
+	cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
+	if cl > 1000 {
+		log.Println(string(body)[1:1000])
+	} else {
+		log.Println(string(body))
+	}
 	log.Println(request.Header.Get("Content-Length"))
 	request.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
@@ -464,7 +592,12 @@ func printResponseBody(response *http.Response, msg string) {
 	}
 	log.Println(msg)
 	//log.Println(body)
-	log.Println(string(body))
+	cl, _ := strconv.Atoi(response.Header.Get("Content-Length"))
+	if cl > 1000 {
+		log.Println(string(body)[1:1000])
+	} else {
+		log.Println(string(body))
+	}
 	log.Println(response.Header.Get("Content-Length"))
 	response.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
@@ -474,6 +607,13 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 	log.Print("len(responses) = ", len(responses))
 	//log.Print("len(trVars) = ", len(trVars))
 	log.Print("len(errs) = ", len(errs))
+	if len(errs) > 0 {
+		log.Print(err)
+	}
+
+	//for _, r := range responses{
+	//	utils.PrintResponseBody(r, "printing response from clubResponses")
+	//}
 
 	var errMsg []string
 	errorFound := false
@@ -518,15 +658,20 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 	}(responses)
 
 	respHeader := http.Header{}
-	for k, v := range responses[0].Header {
-		// for loop, content length is calculcated below based on all responses
-		if k != "Content-Length" { //TODO is this needed? || route.LoopVariable == ""
-			for _, h := range v {
-				respHeader.Set(k, h)
+	newR := &http.Request{}
+	if len(responses) > 0 {
+		newR = responses[0].Request
+		for k, v := range responses[0].Header {
+			// for loop, content length is calculcated below based on all responses
+			if k != "Content-Length" { //TODO is this needed? || route.LoopVariable == ""
+				for _, h := range v {
+					respHeader.Set(k, h)
+				}
 			}
 		}
 	}
 	var rJsonArray []interface{}
+	statusCode := http.StatusOK
 	for _, rp := range responses {
 		var rJson interface{}
 		err = json.NewDecoder(rp.Body).Decode(&rJson)
@@ -537,21 +682,23 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 		}
 		rJson = stripSingleElement(rJson)
 		rJsonArray = append(rJsonArray, rJson)
+		//this will set status code of last response which will be passed
+		statusCode = rp.StatusCode
 	}
-	rJsonArrayBytes, eee := json.Marshal(rJsonArray)
+	rJsonArrayBytes, eee := json.Marshal(stripSingleElement(rJsonArray))
 	if eee != nil {
 		return nil, trResVar, eee
 	}
 	respHeader.Set("Content-Length", fmt.Sprint(len(rJsonArrayBytes)))
 
 	response = &http.Response{
-		StatusCode:    http.StatusOK,
+		StatusCode:    statusCode,
 		Proto:         "HTTP/1.1",
 		ProtoMajor:    1,
 		ProtoMinor:    1,
 		Body:          ioutil.NopCloser(bytes.NewBuffer(rJsonArrayBytes)),
 		ContentLength: int64(len(rJsonArrayBytes)),
-		Request:       responses[0].Request,
+		Request:       newR,
 		Header:        respHeader,
 	}
 	return
@@ -591,4 +738,19 @@ func errorResponse(errMsg string, request *http.Request) (response *http.Respons
 		Header:        errRespHeader,
 	}
 	return
+}
+
+func cloneInterface(i interface{}) (iClone interface{}, err error) {
+	iBytes, err := json.Marshal(i)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	iCloneI := reflect.New(reflect.TypeOf(i))
+	err = json.Unmarshal(iBytes, iCloneI.Interface())
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	return iCloneI.Elem().Interface(), nil
 }

@@ -57,7 +57,8 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			decodeBytes, err := b64.StdEncoding.DecodeString(str)
 			if err != nil {
 				log.Println(err)
-				return "", err
+				//return empty string with nil error to silently proceed even if base64 conversion fails
+				return "", nil
 			}
 			return string(decodeBytes), nil
 		},
@@ -110,6 +111,8 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return aesObj.Key, nil
 		},
 		"shaHash": func(b string, bits int) (string, error) {
+			log.Print("printing input to shaHash")
+			log.Print(b)
 			switch bits {
 			case 256:
 				return hex.EncodeToString(erusha.NewSHA256([]byte(b))), nil
@@ -139,6 +142,8 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			for _, k := range keys {
 				str = fmt.Sprint(str, k, "=", vars[k], "|")
 			}
+			log.Print("printing result from concatMapKeyVal")
+			log.Print(str)
 			return str
 		},
 		"concatMapKeyValUnordered": func(vars map[string]interface{}, seprator string) string {
@@ -182,6 +187,16 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			}
 			delete(newMap, key)
 			return newMap, nil
+		},
+		"getMapValue": func(orgMap map[string]interface{}, key string) (d interface{}, err error) {
+			if err != nil {
+				return orgMap, err
+			}
+			d, ok := orgMap[key]
+			if !ok {
+				return orgMap, err
+			}
+			return d, nil
 		},
 		"logobject": func(v interface{}) (err error) {
 			vobj, err := json.Marshal(v)
@@ -227,6 +242,18 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			str = strings.Join(inStr, sep)
 			return
 		},
+		"replace": func(txt string, oldStr string, newStr string, num int) (str string, err error) {
+			str = strings.Replace(txt, oldStr, newStr, num)
+			return
+		},
+		"removenull": func(txt string) (str string, err error) {
+			str = strings.Replace(txt, "\u0000", "", -1)
+			str = strings.Replace(str, "\\u0000", "", -1)
+			return
+		},
+		"mul": func(a float64, b float64) (result float64) {
+			return a * b
+		},
 	}
 
 	buf := &bytes.Buffer{}
@@ -234,6 +261,11 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 	//log.Println("goTmpl.Template = ", goTmpl.Template)
 
 	t := template.Must(template.New(goTmpl.Name).Funcs(funcs).Parse(goTmpl.Template))
+
+	//log.Print("printing vars from inside execute template" )
+	//objJ, _ := json.Marshal(obj)
+	//log.Print(string(objJ))
+
 	if err := t.Execute(buf, obj); err != nil {
 		return "", err
 	}

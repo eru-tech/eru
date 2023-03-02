@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"log"
 )
 
@@ -103,17 +102,17 @@ func EncryptECB(plainBytes []byte, aesKey []byte) (encryptedBytes []byte, err er
 		log.Println(err.Error())
 		return
 	}
-	log.Println("len(plainBytes) = ", len(plainBytes))
-	log.Println(fmt.Sprint(plainBytes))
+	//log.Println("len(plainBytes) = ", len(plainBytes))
+	//log.Println(fmt.Sprint(plainBytes))
 	plaintext := Pad(plainBytes, block.BlockSize())
-	log.Println("len(plaintext) = ", len(plaintext))
-	log.Println(string(plaintext))
+	//log.Println("len(plaintext) = ", len(plaintext))
+	//log.Println(string(plaintext))
 
 	ecbObj := NewECBEncrypter(block)
 	encryptedBytes = make([]byte, len(plaintext))
 	ecbObj.CryptBlocks(encryptedBytes, plaintext)
-	log.Println("len(encryptedBytes) = ", len(encryptedBytes))
-	log.Println("len(plaintext) = ", len(plaintext))
+	//log.Println("len(encryptedBytes) = ", len(encryptedBytes))
+	//log.Println("len(plaintext) = ", len(plaintext))
 	/*ecbdObj := NewECBDecrypter(block)
 	plainBytesBeforeUnpad := make([]byte,len(encryptedBytes))
 	log.Println("len(plainBytesBeforeUnpad) = ",len(plainBytesBeforeUnpad))

@@ -21,13 +21,17 @@ type Result struct {
 	responseErr  error
 }
 type FuncJob struct {
-	id           int
-	request      *http.Request
-	funcStep     *FuncStep
-	reqVars      map[string]*TemplateVars
-	resVars      map[string]*TemplateVars
-	asyncMessage string
+	id            int
+	request       *http.Request
+	funcStep      *FuncStep
+	reqVars       map[string]*TemplateVars
+	resVars       map[string]*TemplateVars
+	asyncMessage  string
+	mainRouteName string
+	funcThread    int
+	loopThread    int
 }
+
 type FuncResult struct {
 	job          FuncJob
 	response     *http.Response
@@ -36,12 +40,17 @@ type FuncResult struct {
 }
 
 func worker(route *Route, wg *sync.WaitGroup, jobs chan Job, results chan Result) {
+	//var currentJob Job
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print("goroutine paniqued worker: ", r)
+			//output := Result{currentJob, nil, nil, errors.New(fmt.Sprint(r))}
+			//results <- output
+			wg.Done()
 		}
 	}()
 	for job := range jobs {
+		//currentJob = job
 		resp, r, e := route.RunRoute(job.request, job.url, job.vars, job.async, job.asyncMsg)
 		output := Result{job, resp, r, e}
 		results <- output
@@ -53,6 +62,7 @@ func createWorkerPool(route *Route, noOfWorkers int, jobs chan Job, results chan
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print("goroutine paniqued createWorkerPool: ", r)
+			return
 		}
 	}()
 	var wg sync.WaitGroup
@@ -71,9 +81,13 @@ func allocate(req *http.Request, u string, vars *TemplateVars, loopArray []inter
 		}
 	}()
 	loopCounter := 0
+	log.Print("printing loopArray from allocate = ", loopArray)
+	log.Print(len(loopArray))
 	for loopCounter < len(loopArray) {
 		laVars := *vars
-		laVars.LoopVars = loopArray[loopCounter]
+		laVars.LoopVar = loopArray[loopCounter]
+		log.Print(laVars.LoopVars)
+		log.Print(laVars.LoopVar)
 		job := Job{loopCounter, req, u, &laVars, async, asyncMsg}
 		jobs <- job
 		loopCounter++
@@ -81,7 +95,7 @@ func allocate(req *http.Request, u string, vars *TemplateVars, loopArray []inter
 	close(jobs)
 }
 
-func allocateFunc(req *http.Request, funcSteps map[string]*FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, funcJobs chan FuncJob) {
+func allocateFunc(req *http.Request, funcSteps map[string]*FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print("goroutine paniqued allocateFunc: ", r)
@@ -89,7 +103,7 @@ func allocateFunc(req *http.Request, funcSteps map[string]*FuncStep, reqVars map
 	}()
 	loopCounter := 0
 	for _, fs := range funcSteps {
-		funcJob := FuncJob{loopCounter, req, fs, reqVars, resVars, ""}
+		funcJob := FuncJob{loopCounter, req, fs, reqVars, resVars, "", mainRouteName, funcThread, loopThread}
 		funcJobs <- funcJob
 		loopCounter++
 	}
@@ -111,32 +125,51 @@ func createWorkerPoolFunc(noOfWorkers int, funcJobs chan FuncJob, funcResults ch
 	close(funcResults)
 }
 func workerFunc(wg *sync.WaitGroup, funcJobs chan FuncJob, funcResults chan FuncResult) {
+	//var currentJob FuncJob
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print("goroutine paniqued workerFunc: ", r)
+			//output := FuncResult{currentJob, nil, nil, errors.New(fmt.Sprint(r))}
+			//funcResults <- output
+			wg.Done()
 		}
 	}()
 	for funcJob := range funcJobs {
-		resp, e := funcJob.funcStep.RunFuncStep(funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.funcStep.RouteName)
+		//currentJob = funcJob
+		if funcJob.mainRouteName == "" {
+			funcJob.mainRouteName = funcJob.funcStep.GetRouteName()
+		}
+		resp, e := funcJob.funcStep.RunFuncStep(funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.funcThread, funcJob.loopThread)
 		if e != nil {
 			log.Print("print RunFuncStep error = ", e.Error())
 		}
+		//utils.PrintResponseBody(resp, fmt.Sprint("prinitng response before assiging to FuncResult in workerFunc for ",funcJob.funcStep.GetRouteName()))
 		output := FuncResult{funcJob, resp, nil, e}
 		funcResults <- output
 	}
 	wg.Done()
 }
 
-func allocateFuncInner(req *http.Request, funcStep *FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, loopArray []interface{}, asyncMessage string, funcJobs chan FuncJob) {
+func allocateFuncInner(req *http.Request, funcStep *FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, loopArray []interface{}, asyncMessage string, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print("goroutine paniqued allocateFuncInner: ", r)
 		}
 	}()
 	loopCounter := 0
+	log.Print("len(loopArray) from allocateFuncInner", len(loopArray))
 	for loopCounter < len(loopArray) {
-		reqVars[funcStep.RouteName].LoopVars = loopArray[loopCounter]
-		funcJob := FuncJob{loopCounter, req, funcStep, reqVars, resVars, asyncMessage}
+		reqVarsI, err := cloneInterface(reqVars)
+		if err != nil {
+			log.Print(err)
+		}
+		reqVarsClone, errC := reqVarsI.(map[string]*TemplateVars)
+		if !errC {
+			log.Print(errC)
+		}
+		reqVarsClone[funcStep.GetRouteName()].LoopVar = loopArray[loopCounter]
+		log.Print("reqVarsClone[funcStep.GetRouteName()].LoopVar = ", reqVarsClone[funcStep.GetRouteName()].LoopVar)
+		funcJob := FuncJob{loopCounter, req, funcStep, reqVarsClone, resVars, asyncMessage, mainRouteName, funcThread, loopThread}
 		funcJobs <- funcJob
 		loopCounter++
 	}
@@ -158,18 +191,27 @@ func createWorkerPoolFuncInner(noOfWorkers int, funcJobs chan FuncJob, funcResul
 	close(funcResults)
 }
 func workerFuncInner(wg *sync.WaitGroup, funcJobs chan FuncJob, funcResults chan FuncResult) {
+	log.Print("inside workerFuncInner")
+	log.Print("len(funcJobs) = ", len(funcJobs))
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print("goroutine paniqued workerFuncInner: ", r)
-			//output := FuncResult{nil, nil, nil, errors.New(r.(string))}
+			//output := FuncResult{currentJob, nil, nil, errors.New(fmt.Sprint(r))}
 			//funcResults <- output
+			wg.Done()
 		}
 	}()
 	for funcJob := range funcJobs {
-		resp, e := funcJob.funcStep.RunFuncStepInner(funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.funcStep.RouteName, funcJob.asyncMessage)
+		//currentJob = funcJob
+		log.Print("funcJob.reqVars[funcJob.funcStep.GetRouteName()].LoopVar = ", funcJob.reqVars[funcJob.funcStep.GetRouteName()].LoopVar)
+		if funcJob.mainRouteName == "" {
+			funcJob.mainRouteName = funcJob.funcStep.GetRouteName()
+		}
+		resp, e := funcJob.funcStep.RunFuncStepInner(funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.asyncMessage, funcJob.funcThread, funcJob.loopThread)
 		if e != nil {
 			log.Print("print RunFuncStepInner error = ", e.Error())
 		}
+		//utils.PrintResponseBody(resp, fmt.Sprint("prinitng response before assiging to FuncResult in workerFuncInner for ",funcJob.funcStep.GetRouteName()))
 		output := FuncResult{funcJob, resp, nil, e}
 		funcResults <- output
 	}

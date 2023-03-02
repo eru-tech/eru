@@ -24,8 +24,8 @@ type GraphQLData struct {
 
 var KeyWords = []string{"null"}
 
-func (gqd *GraphQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool) {
-	gqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj, isPublic)
+func (gqd *GraphQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) {
+	gqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj, isPublic, outputType)
 	//gqd.Query=mq.Query
 	//gqd.Variables=mq.Vars
 	//gqd.SetFinalVars(vars)
@@ -93,7 +93,7 @@ func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]
 		log.Print(err)
 		return err
 	}
-	qlInterface.SetQLData(mq, gqd.FinalVariables, false, tokenObj, isPublic) //passing false as we only need the query in execute function and not actual result
+	qlInterface.SetQLData(mq, gqd.FinalVariables, false, tokenObj, isPublic, "") //passing false as we only need the query in execute function and not actual result
 	_, queryObjs, err := qlInterface.Execute(projectId, datasources, s)
 	//log.Print("queryObjs[0].Type ==", queryObjs[0].Type)
 	for i, q := range queryObjs {
@@ -151,6 +151,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 			if singleTxn && i == len(op.SelectionSet.Selections)-1 {
 				closeTxn = true
 			}
+			//TODO - to handle if no directive/dbalias is received - conn is not getting closed as there is panic error in below line
 			dbAlias := v.(*ast.Field).Directives[0].Name.Value
 			datasource := datasources[dbAlias]
 			if datasource == nil {
@@ -176,6 +177,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				if sqlObj.OverwriteDoc == nil {
 					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
 				}
+
 				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, module_model.QUERY_TYPE_SELECT)
 				if err != nil {
 					errMsg = err.Error()
@@ -185,7 +187,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)
 				}
-				sqlObj.SecurityClause[sqlObj.MainTableName], err = getTableSecurityRule(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.Variables)
+				sqlObj.SecurityClause[sqlObj.MainTableName], err = getTableSecurityRule(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.FinalVariables)
 				if err != nil {
 					errMsg = err.Error()
 					errFound = true
@@ -205,7 +207,12 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					qrm.QuerySubLevel = sqlObj.querySubLevel
 					qrm.SQLQuery = sqlObj.DBQuery
 
-					result, err = graphQLs[i].ExecuteQuery(datasource, qrm)
+					if gqd.OutputType == "csv" {
+						result, err = graphQLs[i].ExecuteQueryForCsv(qrm.SQLQuery, datasource)
+						log.Print(err)
+					} else {
+						result, err = graphQLs[i].ExecuteQuery(datasource, qrm)
+					}
 					if err != nil {
 						log.Print("error printed below fromc all of ExecuteQuery")
 						log.Print(err)
@@ -371,8 +378,8 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 
 // parseAstValue returns an interface that can be casted to string
 func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, error) {
-	log.Println("inside ParseAstValue for ")
-	log.Print(value.GetKind())
+	//log.Println("inside ParseAstValue for ")
+	//log.Print(value.GetKind())
 	switch value.GetKind() {
 	case kinds.ObjectValue:
 
@@ -470,7 +477,7 @@ func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, e
 
 	case kinds.Variable:
 		t := value.(*ast.Variable)
-		log.Println("t = ", t.Name.Value)
+		//log.Println("t = ", t.Name.Value)
 		if strings.HasPrefix(t.Name.Value, "$") {
 			log.Println("key has $ prefix")
 		}
@@ -599,6 +606,7 @@ func adjustObjectKey(key string) string {
 }
 
 func (gqd *GraphQLData) setOverwriteDoc(projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, queryType string) (overwriteDoc map[string]interface{}, err error) {
+	log.Print("calling for GetTableTransformation = ", tableName)
 	tr, err := s.GetTableTransformation(projectId, dbAlias, tableName)
 	if err != nil {
 		log.Print("error from GetTableTransformation = ", err.Error())

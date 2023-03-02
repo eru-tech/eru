@@ -10,6 +10,7 @@ import (
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
+	gomail "gopkg.in/gomail.v2"
 	"log"
 	"net/http"
 )
@@ -89,7 +90,7 @@ func SmsGatewaySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(smsGateway, "")
+			err := file_utils.ValidateStruct(smsGateway, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -142,7 +143,7 @@ func EmailGatewaySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(emailGateway, "")
+			err := file_utils.ValidateStruct(emailGateway, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -257,7 +258,7 @@ func GatewaySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			//err := utils.ValidateStruct(storageObj, "") //TODO to uncomment this code and validate the incoming json
+			//err := file_utils.ValidateStruct(storageObj, "") //TODO to uncomment this code and validate the incoming json
 			//if err != nil {
 			//	server_handlers.FormatResponse(w, 400)
 			//	json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -371,7 +372,35 @@ func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		return
 	}
 }
+func TestEmail(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 
+		msg := gomail.NewMessage()
+		//msg.SetHeader("From", "altaf@smartvalues.co.in")
+		//msg.SetHeader("From", "altaf@eru-tech.com")
+		msg.SetHeader("From", "altaf.baradia@stayvista.com")
+		//msg.SetHeader("From", "altaf.baradia@artfine.in")
+		msg.SetHeader("To", "abaradia@gmail.com")
+		msg.SetHeader("Subject", "Hi")
+		msg.SetBody("text/html", "<b>This is the body of the mail</b>")
+		//msg.Attach("/home/User/cat.jpg")
+
+		//n := gomail.NewDialer("smtp.office365.com", 587, "altaf@smartvalues.co.in", "Smart@123")
+		//n := gomail.NewDialer("smtp.gmail.com", 587, "altaf.baradia@artfine.in", "Artfine@123")
+		n := gomail.NewDialer("hmail.smartvalues.co.in", 587, "info@hmail.smartvalues.co.in", "Info@123")
+
+		// Send the email
+		if err := n.DialAndSend(msg); err != nil {
+			log.Print(err)
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": "Email Sent Successfully!"})
+
+	}
+}
 func AuthRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Print("inside AuthRemoveHandler")

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	httpurl "net/url"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -130,7 +131,13 @@ func PrintResponseBody(response *http.Response, msg string) {
 		log.Println(err)
 	}
 	log.Println(msg)
-	log.Println(string(body))
+	cl, _ := strconv.Atoi(response.Header.Get("Content-Length"))
+	if cl > 1000 {
+		log.Println(string(body)[1:1000])
+	} else {
+		log.Println(string(body))
+	}
+	//log.Println(string(body))
 	log.Println(response.Header.Get("Content-Length"))
 	response.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
@@ -141,7 +148,13 @@ func PrintRequestBody(request *http.Request, msg string) {
 		log.Println(err)
 	}
 	log.Println(msg)
-	log.Println(string(body))
+	cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
+	if cl > 1000 {
+		log.Println(string(body)[1:1000])
+	} else {
+		log.Println(string(body))
+	}
+	//log.Println(string(body))
 	log.Println(request.Header.Get("Content-Length"))
 	request.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
@@ -187,6 +200,7 @@ func callHttp(method string, url string, headers http.Header, formData map[strin
 			req.Header.Add(k, vv)
 		}
 	}
+
 	reqParams := req.URL.Query()
 	for k, v := range params {
 		reqParams.Add(k, v)
@@ -262,7 +276,9 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 	respCookies = resp.Cookies()
 	defer resp.Body.Close()
 	log.Println("resp.ContentLength = ", resp.ContentLength)
+
 	//todo - check if below change from reqContentType to header.get breaks anything
+	//todo - merge conflict - main had below first if commented
 	if resp.ContentLength > 0 || strings.Split(headers.Get("Content-type"), ";")[0] == encodedForm {
 		log.Println(resp.Header.Get("content-type"))
 		if strings.Split(resp.Header.Get("content-type"), ";")[0] == "application/json" {
@@ -282,8 +298,18 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 			resBody["body"] = string(body)
 			res = resBody
 		}
-		log.Println(res)
+	} else {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Println(err)
+		}
+		//log.Println(body)
+		resBody := make(map[string]interface{})
+		resBody["body"] = string(body)
+		res = resBody
 	}
+	//	log.Println(res)
+	//}
 	if resp.StatusCode >= 400 {
 		log.Print("error in httpClient.Do - response status code >=400 ")
 		statusCode = resp.StatusCode
@@ -295,6 +321,31 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 		}
 		err = errors.New(strings.Replace(string(resBytes), "\"", "", -1))
 		return nil, nil, nil, statusCode, err
+	}
+	return
+}
+
+func CsvToMap(csvData [][]string, lowerCaseHeader bool) (jsonData []map[string]interface{}, err error) {
+	charsToRemove := []string{"."}
+	for j, _ := range csvData[0] {
+		csvData[0][j] = regexp.MustCompile(`[^a-zA-Z0-9 ]+`).ReplaceAllString(csvData[0][j], "")
+		if lowerCaseHeader {
+			csvData[0][j] = strings.ToLower(csvData[0][j])
+		}
+		csvData[0][j] = strings.Replace(csvData[0][j], " ", "_", -1)
+		for _, v := range charsToRemove {
+			csvData[0][j] = strings.Replace(csvData[0][j], v, "", -1)
+		}
+	}
+
+	for i, line := range csvData {
+		if i > 0 {
+			jsonMap := make(map[string]interface{})
+			for j, field := range line {
+				jsonMap[csvData[0][j]] = field
+			}
+			jsonData = append(jsonData, jsonMap)
+		}
 	}
 	return
 }

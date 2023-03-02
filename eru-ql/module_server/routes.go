@@ -27,6 +27,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodGet).Path("/{project}/myquery/list/{querytype}").HandlerFunc(module_handlers.ProjectMyQueryListHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/myquery/config/{queryname}").HandlerFunc(module_handlers.ProjectMyQueryConfigHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/myquery/execute/{queryname}").HandlerFunc(module_handlers.ProjectMyQueryExecuteHandler(sh.Store))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/myquery/execute/{queryname}/{outputtype}").HandlerFunc(module_handlers.ProjectMyQueryExecuteHandler(sh.Store))
 
 	storeRouter.Methods(http.MethodGet).Path("/{project}/datasource/defaultdriverconfig/{dbtype}").HandlerFunc(module_handlers.DefaultDriverConfigHandler())
 	storeRouter.Methods(http.MethodGet).Path("/{project}/datasource/defaultotherdbconfig/{dbtype}").HandlerFunc(module_handlers.DefaultOtherDBConfigHandler())

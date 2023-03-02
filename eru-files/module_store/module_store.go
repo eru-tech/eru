@@ -1,6 +1,10 @@
 package module_store
 
 import (
+	"archive/zip"
+	"bytes"
+	"encoding/base64"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
@@ -8,13 +12,37 @@ import (
 	"github.com/eru-tech/eru/eru-files/file_model"
 	"github.com/eru-tech/eru/eru-files/storage"
 	"github.com/eru-tech/eru/eru-store/store"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/gabriel-vasile/mimetype"
+	"github.com/gobwas/glob"
+	"io/ioutil"
 	"log"
 	"mime/multipart"
+	"net/http"
 )
 
 type StoreHolder struct {
 	Store ModuleStoreI
 }
+
+type FileObj struct {
+	FileType string      `json:"file_type"`
+	File     interface{} `json:"file"`
+}
+
+type FileDownloadRequest struct {
+	FileName        string   `json:"file_name" eru:"required"`
+	FolderPath      string   `json:"folder_path" eru:"required"`
+	InnerFileNames  []string `json:"inner_file_names" eru:"required"`
+	CsvAsJson       bool     `json:"csv_as_json"`
+	LowerCaseHeader bool     `json:"lower_case_header"`
+	Mime_Limit      uint32   `json:"mime_limit"`
+}
+
+const (
+	MIME_CSV = "text/csv"
+)
+
 type ModuleStoreI interface {
 	store.StoreI
 	SaveProject(projectId string, realStore ModuleStoreI, persist bool) error
@@ -26,7 +54,11 @@ type ModuleStoreI interface {
 	GenerateRsaKeyPair(projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (rsaKeyPair erursa.RsaKeyPair, err error)
 	GenerateAesKey(projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (aesKey eruaes.AesKey, err error)
 	UploadFile(projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string) (docId string, err error)
-	DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, err error)
+	UploadFileB64(projectId string, storageName string, file []byte, fileName string, docType string, fodlerPath string) (docId string, err error)
+	UploadFileFromUrl(projectId string, storageName string, url string, fileName string, docType string, fodlerPath string, fileType string) (docId string, err error)
+	DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, mimeType string, err error)
+	DownloadFileB64(projectId string, storageName string, folderPath string, fileName string) (fileB64 string, mimeType string, err error)
+	DownloadFileUnzip(projectId string, storageName string, fileDownloadRequest FileDownloadRequest) (files map[string]FileObj, err error)
 	//TestEncrypt(projectId string, text string)
 	//TestAesEncrypt(projectId string, text string, keyName string)
 }
@@ -151,7 +183,128 @@ func (ms *ModuleStore) UploadFile(projectId string, storageName string, file mul
 	}
 }
 
-func (ms *ModuleStore) DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, err error) {
+func (ms *ModuleStore) UploadFileB64(projectId string, storageName string, file []byte, fileName string, docType string, folderPath string) (docId string, err error) {
+	log.Println("inside UploadFile")
+	log.Println(docType)
+	prj, err := ms.GetProjectConfig(projectId)
+	if err != nil {
+		log.Print("error in GetProjectConfig ", err)
+		return
+	}
+
+	if storageObj, ok := prj.Storages[storageName]; !ok {
+		err = errors.New(fmt.Sprint("storage ", storageName, " not found"))
+		return
+	} else {
+		keyName, kpErr := storageObj.GetAttribute("KeyPair")
+		if err != nil {
+			err = kpErr
+			log.Print(err)
+			return
+		}
+		log.Print(keyName.(string))
+		docId, err = storageObj.UploadFileB64(file, fileName, docType, folderPath, prj.AesKeys[keyName.(string)])
+		return
+	}
+}
+
+func (ms *ModuleStore) UploadFileFromUrl(projectId string, storageName string, url string, fileName string, docType string, folderPath string, fileType string) (docId string, err error) {
+	log.Print(url)
+	reqHeaders := http.Header{}
+	res, respHeaders, _, _, err := utils.CallHttp(http.MethodGet, url, reqHeaders, nil, nil, nil, nil)
+	_ = res
+	if err != nil {
+		log.Print(err)
+		return "", err
+	}
+	log.Print(respHeaders.Get("Content-Type"))
+	log.Print(fileType)
+	if respHeaders.Get("Content-Type") != fileType {
+		log.Print("mismatch file type")
+
+	}
+	respBody := ""
+	if respMap, ok := res.(map[string]interface{}); ok {
+		if respBodyI, okb := respMap["body"]; okb {
+			respBody = respBodyI.(string)
+			return ms.UploadFileB64(projectId, storageName, []byte(respBody), fileName, docType, folderPath)
+		} else {
+			err = errors.New("response body or file attribute not found")
+			log.Print(err)
+			return "", err
+		}
+	} else {
+		err = errors.New("response is not a map")
+		log.Print(err)
+		return "", err
+	}
+}
+
+func (ms *ModuleStore) DownloadFileB64(projectId string, storageName string, folderPath string, fileName string) (fileB64 string, mimeType string, err error) {
+	f, mt, e := ms.DownloadFile(projectId, storageName, folderPath, fileName)
+	return base64.StdEncoding.EncodeToString(f), mt, e
+}
+func (ms *ModuleStore) DownloadFileUnzip(projectId string, storageName string, fileDownloadRequest FileDownloadRequest) (files map[string]FileObj, err error) {
+	f, _, e := ms.DownloadFile(projectId, storageName, fileDownloadRequest.FolderPath, fileDownloadRequest.FileName)
+	zipReader, err := zip.NewReader(bytes.NewReader(f), int64(len(f)))
+	if err != nil {
+		log.Print(err)
+	}
+	// Read all the files from zip archive
+	fo := FileObj{}
+	files = make(map[string]FileObj)
+	for _, zipFile := range zipReader.File {
+		fileToUnzip := false
+		for _, ifn := range fileDownloadRequest.InnerFileNames {
+			g := glob.MustCompile(ifn)
+			if g.Match(zipFile.Name) {
+				fileToUnzip = true
+			}
+		}
+		if len(fileDownloadRequest.InnerFileNames) == 0 {
+			fileToUnzip = true
+		}
+		if fileToUnzip {
+			log.Print("Reading file:", zipFile.Name)
+			unzippedFileBytes, ziperr := readZipFile(zipFile)
+			if ziperr != nil {
+				err = ziperr
+				log.Println(err)
+			}
+			mimetype.SetLimit(2000)
+			if fileDownloadRequest.Mime_Limit > 0 {
+				mimetype.SetLimit(fileDownloadRequest.Mime_Limit)
+			}
+			fMime := mimetype.Detect(unzippedFileBytes)
+			log.Print("fileDownloadRequest.CsvAsJson = ", fileDownloadRequest.CsvAsJson)
+			log.Print("fMime = ", fMime)
+			log.Print("fileDownloadRequest.Mime_Limit = ", fileDownloadRequest.Mime_Limit)
+			if fileDownloadRequest.CsvAsJson && fMime.Is(MIME_CSV) {
+				log.Print("csv to json to be converted")
+				csvReader := csv.NewReader(bytes.NewReader(unzippedFileBytes))
+				csvData, csvErr := csvReader.ReadAll()
+				if csvErr != nil {
+					err = csvErr
+					log.Print(err)
+					return
+				}
+				jsonData, jsonErr := utils.CsvToMap(csvData, fileDownloadRequest.LowerCaseHeader)
+				if jsonErr != nil {
+					err = jsonErr
+					log.Print(err)
+					return
+				}
+				fo.File = jsonData
+			} else {
+				fo.File = base64.StdEncoding.EncodeToString(unzippedFileBytes)
+			}
+			fo.FileType = fMime.String()
+			files[zipFile.Name] = fo
+		}
+	}
+	return files, e
+}
+func (ms *ModuleStore) DownloadFile(projectId string, storageName string, folderPath string, fileName string) (file []byte, mimeType string, err error) {
 	log.Println("inside DownloadFile")
 	prj, err := ms.GetProjectConfig(projectId)
 	if err != nil {
@@ -171,7 +324,7 @@ func (ms *ModuleStore) DownloadFile(projectId string, storageName string, folder
 		}
 		log.Print(keyName.(string))
 		file, err = storageObj.DownloadFile(folderPath, fileName, prj.AesKeys[keyName.(string)])
-		return file, err
+		return file, mimetype.Detect(file).String(), err
 	}
 }
 
@@ -248,4 +401,14 @@ func (ms *ModuleStore) GetProjectList() []map[string]interface{} {
 		i++
 	}
 	return projects
+}
+
+func readZipFile(zipFile *zip.File) ([]byte, error) {
+	zf, err := zipFile.Open()
+	if err != nil {
+		log.Print(err)
+		return nil, err
+	}
+	defer zf.Close()
+	return ioutil.ReadAll(zf)
 }

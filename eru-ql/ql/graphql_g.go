@@ -12,6 +12,7 @@ import (
 	"log"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -66,7 +67,9 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_m
 
 	//log.Print("len(field.Arguments) = " + string(len(field.Arguments)))
 	for _, ff := range field.Arguments { //TODO to add join to main table without having to add
-		v, _ := ParseAstValue(ff.Value, vars)
+
+		v, e := ParseAstValue(ff.Value, vars)
+		log.Print(e)
 		switch ff.Name.Value {
 		case "where":
 			sqlObj.WhereClause = v
@@ -91,10 +94,13 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_m
 			}
 			sqlObj.Limit = v.(int)
 		case "skip":
-			if ff.Value.GetKind() != kinds.IntValue {
+			if reflect.TypeOf(v).Kind() == reflect.Float64 {
+				v = int(v.(float64))
+			}
+			if reflect.TypeOf(v).Kind() != reflect.Int {
 				return errors.New("Non Integer value received - skip clause need integer value")
 			}
-			v, _ := ParseAstValue(ff.Value, vars)
+			//v, e := ParseAstValue(ff.Value, vars)
 			sqlObj.Skip = v.(int)
 		default:
 		}
@@ -309,7 +315,7 @@ func (sqlObj *SQLObjectQ) processColumnList(sel []ast.Selection, tableName strin
 					sqlObj.SecurityClause = make(map[string]string)
 				}
 				sqlObj.SecurityClause[colTableName], e = getTableSecurityRule(sqlObj.ProjectId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables)
-				log.Print("-----------printing sqlObj.SecurityClause ----------------")
+				log.Print("-----------printing sqlObj.SecurityClause ----------------   ", colTableName)
 				log.Print(sqlObj.SecurityClause)
 				log.Print(e)
 				if e != nil {
@@ -380,10 +386,11 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 							}
 						}
 						tempArray = append(tempArray, fmt.Sprint("( ", strings.Join(innerTempArray, " or "), " )"))
-
 					} else {
 						op := ""
 						switch v.String() {
+						case "$btw":
+							op = " between "
 						case "$gte":
 							op = " >= "
 						case "$lte":
@@ -410,6 +417,25 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, reflect.ValueOf(newVal), valSuffix))
 						case "$like":
 							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, "%", reflect.ValueOf(newVal), "%", valSuffix))
+						case "$btw":
+							log.Print("printing between clause")
+							log.Print(reflect.ValueOf(newVal))
+							log.Print(reflect.TypeOf(newVal))
+							btwClause, ok := reflect.ValueOf(newVal).Interface().(map[string]interface{})
+							if !ok {
+								log.Print("between clause is not a map")
+							}
+							preFix := "'"
+							//checking only from value to determine with values recevied are int/float to avoid adding single quote in sql
+							_, Interr := strconv.Atoi(btwClause["from"].(string))
+							if Interr == nil {
+								preFix = ""
+							}
+							if _, flErr := strconv.ParseFloat(btwClause["from"].(string), 64); flErr == nil {
+								preFix = ""
+							}
+							btwClauseStr := fmt.Sprint(preFix, btwClause["from"], preFix, " and ", preFix, btwClause["to"], preFix)
+							tempArray = append(tempArray, fmt.Sprint(parentKey, op, btwClauseStr))
 						case "$null":
 							nullValue := fmt.Sprint(reflect.ValueOf(newVal))
 							if nullValue == "true" {

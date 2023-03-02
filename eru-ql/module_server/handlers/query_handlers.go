@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"github.com/eru-tech/eru/eru-ql/ql"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -127,6 +130,7 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		queryName := vars["queryname"]
+		outputType := vars["outputtype"]
 		log.Print("projectID = ", projectID)
 
 		projectConfig, err := s.GetProjectConfigObject(projectID)
@@ -190,7 +194,7 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				// do nothing - silently execute with is_public as false
 			}
 
-			qlInterface.SetQLData(myQuery, postBody, true, tokenObj, isPublic)
+			qlInterface.SetQLData(myQuery, postBody, true, tokenObj, isPublic, outputType)
 			res, _, err = qlInterface.Execute(projectID, datasources, s)
 			/*
 				if err != nil {
@@ -211,6 +215,41 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
+		} else if outputType == "csv" {
+			//tmpFileName := fmt.Sprint(uuid.New().String(),".csv")
+			//	csvFile, csvErr := os.Create(tmpFileName)
+			//if csvErr != nil {
+			//	err = errors.New(fmt.Sprint("failed creating csv file"))
+			//	log.Print(csvErr)
+			//		server_handlers.FormatResponse(w, 400)
+			//		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			//	}
+			//ww := csv.NewWriter(csvFile)
+			b := &bytes.Buffer{} // creates IO Writer
+			ww := csv.NewWriter(b)
+			for _, v := range res {
+				for _, csvData := range v {
+					if records, ok := csvData.([][]string); ok {
+						ww.WriteAll(records)
+					} else {
+						err = errors.New(fmt.Sprint("inccorect csv data format"))
+						server_handlers.FormatResponse(w, 400)
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					}
+				}
+			}
+			//	defer func() {
+			//		csvFile.Close()
+			//		e := os.Remove(tmpFileName)
+			//		if e != nil {
+			//			log.Print(e)
+			//		}
+			//	}()
+			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Content-Type", "text/csv")
+			w.Header().Set("Content-Disposition", "attachment; filename=query.csv")
+			_, _ = io.Copy(w, bytes.NewReader(b.Bytes()))
+			return
 		} else {
 			server_handlers.FormatResponse(w, 200)
 		}

@@ -1,6 +1,7 @@
 package module_store
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-routes/module_model"
@@ -12,6 +13,8 @@ import (
 )
 
 var Eruqlbaseurl = "http://localhost:8087"
+var FuncThreads = 3
+var LoopThreads = 3
 
 type StoreHolder struct {
 	Store ModuleStoreI
@@ -182,19 +185,30 @@ func (ms *ModuleStore) RemoveRoute(routeName string, projectId string, realStore
 }
 
 func (ms *ModuleStore) GetAndValidateRoute(routeName string, projectId string, host string, url string, method string, headers http.Header) (route routes.Route, err error) {
+	cloneRoute := routes.Route{}
 	if prg, ok := ms.Projects[projectId]; ok {
 		if route, ok = prg.Routes[routeName]; !ok {
-			return route, errors.New(fmt.Sprint("Route ", routeName, " does not exists"))
+			return cloneRoute, errors.New(fmt.Sprint("Route ", routeName, " does not exists"))
 		}
-		route.TokenSecret = prg.ProjectConfig.TokenSecret
+		routeI, jmErr := json.Marshal(route)
+		if jmErr != nil {
+			log.Print()
+			return cloneRoute, errors.New("route marshal failed")
+		}
+		jmErr = json.Unmarshal(routeI, &cloneRoute)
+		if jmErr != nil {
+			log.Print()
+			return cloneRoute, errors.New("route unmarshal failed")
+		}
+		cloneRoute.TokenSecret = prg.ProjectConfig.TokenSecret
 	} else {
-		return route, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		return cloneRoute, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 	}
-	err = route.Validate(host, url, method, headers)
+	err = cloneRoute.Validate(host, url, method, headers)
 	if err != nil {
-		return
+		return cloneRoute, err
 	}
-	return
+	return cloneRoute, nil
 }
 
 func (ms *ModuleStore) GetAndValidateFunc(funcName string, projectId string, host string, url string, method string, headers http.Header) (funcGroup routes.FuncGroup, err error) {
@@ -223,7 +237,7 @@ func (ms *ModuleStore) GetAndValidateFunc(funcName string, projectId string, hos
 }
 
 func (ms *ModuleStore) loadRoutesForFunction(funcStep *routes.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header) (err error) {
-	log.Println("inside loadRoutesForFunction for route = ", funcStep.RouteName)
+	log.Println("inside loadRoutesForFunction for route = ", funcStep.GetRouteName())
 	var errArray []string
 	r := routes.Route{}
 	if funcStep.QueryName != "" {
@@ -246,8 +260,8 @@ func (ms *ModuleStore) loadRoutesForFunction(funcStep *routes.FuncStep, routeNam
 		r.Condition = ""
 		r.TargetHosts = append(r.TargetHosts, tg)
 	} else if funcStep.Api.Host != "" {
-		log.Print("making dummy route for query name ", funcStep.QueryName)
-		r.RouteName = "FuncApi"
+		log.Print("making dummy route for query name ", funcStep.Api.Host)
+		r.RouteName = strings.Replace(funcStep.Api.Host, ".", "", -1)
 		r.Url = "/"
 		r.MatchType = "PREFIX"
 		r.RewriteUrl = funcStep.ApiPath

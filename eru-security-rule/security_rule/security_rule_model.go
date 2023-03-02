@@ -30,6 +30,7 @@ type SecurityRule struct {
 }
 
 func (sr SecurityRule) Stringify(vars map[string]interface{}, ignoreIfNotFound bool) (str string, err error) {
+	log.Print(vars)
 	if len(sr.CustomRule.AND) > 0 {
 		str, err = processRuleClause(sr.CustomRule.AND, "and", vars, ignoreIfNotFound)
 		return
@@ -71,11 +72,41 @@ func stringifyRule(cd CustomRuleDetails, conditionType string, vars map[string]i
 		valSuffix = "'"
 	}
 	switch cd.Operator {
+	case "btw":
+		op = " between "
+		break
+	case "gte":
+		op = " >= "
+		break
+	case "lte":
+		op = " <= "
+		break
+	case "gt":
+		op = " > "
+		break
+	case "lt":
+		op = " < "
+		break
 	case "eq":
 		op = " = "
 		break
-	case "neq":
+	case "ne":
 		op = " <> "
+		break
+	case "in":
+		op = " in "
+		break
+	case "nin":
+		op = " not in "
+		break
+	case "like":
+		op = " like "
+		break
+	case "eq_null":
+		op = " is null "
+		break
+	case "neq_null":
+		op = " is not null "
 		break
 	default:
 		//do nothing
@@ -94,7 +125,7 @@ func stringifyRule(cd CustomRuleDetails, conditionType string, vars map[string]i
 	} else if ignoreIfNotFound && err.Error() != "no variable prefix found" {
 		return "", nil
 	}
-
+	log.Print(fmt.Sprint(cd.Variable1, op, cd.Variable2))
 	return fmt.Sprint(cd.Variable1, op, cd.Variable2), nil
 }
 

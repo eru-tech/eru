@@ -18,6 +18,7 @@ type QLData struct {
 	ExecuteFlag    bool                       `json:"-"`
 	SecurityRule   security_rule.SecurityRule `json:"security_rule"`
 	IsPublic       bool                       `json:"is_public"`
+	OutputType     string                     `json:"output_type"`
 }
 
 type QueryObject struct {
@@ -28,20 +29,22 @@ type QueryObject struct {
 
 type QL interface {
 	Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI) (res []map[string]interface{}, queryObjs []QueryObject, err error)
-	SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool)
+	SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string)
 	ProcessTransformRule(tr module_model.TransformRule) (outputObj map[string]interface{}, err error)
 }
 
-func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool) (err error) {
+func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) (err error) {
 	if mq.Vars == nil {
 		mq.Vars = make(map[string]interface{})
 	}
-	mq.Vars[module_model.RULEPREFIX_TOKEN] = tokenObj
+	//mq.Vars[module_model.RULEPREFIX_TOKEN] = tokenObj
 	qld.Query = mq.Query
 	qld.Variables = mq.Vars
 	qld.ExecuteFlag = executeFlag
 	qld.IsPublic = isPublic
+	qld.OutputType = outputType
 	err = qld.SetFinalVars(vars)
+	qld.FinalVariables[module_model.RULEPREFIX_TOKEN] = tokenObj
 	return err
 }
 func (qld *QLData) SetFinalVars(vars map[string]interface{}) (err error) {
@@ -66,6 +69,7 @@ func (qld *QLData) SetFinalVars(vars map[string]interface{}) (err error) {
 	return nil
 }
 func (qld *QLData) ProcessTransformRule(tr module_model.TransformRule) (outputObj map[string]interface{}, err error) {
+	log.Print("inside ProcessTransformRule")
 	if tr.RuleType == module_model.RULETYPE_NONE {
 		outputObj = make(map[string]interface{})
 		return
@@ -106,6 +110,7 @@ func processSecurityRule(sr security_rule.SecurityRule, vars map[string]interfac
 
 func processTemplate(templateName string, templateString string, vars map[string]interface{}, outputType string, key string) (output []byte, err error) {
 	//log.Println("inside processTemplate with template = ", templateString)
+	//log.Print(vars)
 	ruleValue := strings.SplitN(templateString, ".", 2)
 	//log.Print(ruleValue)
 	//log.Print("len(ruleValue) = ", len(ruleValue))
@@ -148,7 +153,8 @@ func processTemplate(templateName string, templateString string, vars map[string
 			outputBytes = nil
 		}
 	} else if ruleValue[0] == module_model.RULEPREFIX_NONE {
-		return executeTemplate(templateName, templateStr, make(map[string]interface{}), outputType)
+		log.Print(vars)
+		return executeTemplate(templateName, templateStr, vars, outputType)
 	}
 	return
 }

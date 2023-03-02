@@ -33,7 +33,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		log.Print(funcGroup)
-		response, err := funcGroup.Execute(r)
+		response, err := funcGroup.Execute(r, module_store.FuncThreads, module_store.LoopThreads)
 		if err != nil {
 			log.Println(" httpClient.Do error ")
 			log.Println(err)
@@ -42,18 +42,24 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		defer response.Body.Close()
-		for k, v := range response.Header {
-			w.Header()[k] = v
-		}
-		w.WriteHeader(response.StatusCode)
-		_, err = io.Copy(w, response.Body)
-		if err != nil {
-			log.Println("================")
-			log.Println(err)
-			server_handlers.FormatResponse(w, http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		log.Println(response.Body)
+		if response.StatusCode >= 300 && response.StatusCode <= 399 {
+			http.Redirect(w, r, response.Header.Get("Location"), response.StatusCode)
+		} else {
+
+			for k, v := range response.Header {
+				w.Header()[k] = v
+			}
+			w.WriteHeader(response.StatusCode)
+			_, err = io.Copy(w, response.Body)
+			if err != nil {
+				log.Println("================")
+				log.Println(err)
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
 			return
 		}
-		return
 	}
 }

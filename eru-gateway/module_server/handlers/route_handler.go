@@ -33,12 +33,15 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-
+		log.Print("authorizer.AuthorizerName = ", authorizer.AuthorizerName)
 		if authorizer.AuthorizerName != "" {
 			token := r.Header.Get(authorizer.TokenHeaderKey)
+			log.Print(token)
 			if token == "" {
+				log.Print("token = \"\"")
 				server_handlers.FormatResponse(w, http.StatusUnauthorized)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
+				log.Print(http.StatusUnauthorized)
 				return
 			}
 			log.Println("token  == ", token)
@@ -111,7 +114,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		defer response.Body.Close()
+		//defer response.Body.Close()
 		for k, v := range response.Header {
 			w.Header()[k] = v
 		}

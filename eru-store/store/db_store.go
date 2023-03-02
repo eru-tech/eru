@@ -54,6 +54,7 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 		return nil, err
 	}
 	defer db.Close()
+	log.Print("db connection succesfull - fetch config from ", store.StoreTableName)
 	rows, err := db.Queryx(fmt.Sprint("select * from ", store.StoreTableName, " limit 1"))
 	if err != nil {
 		log.Print(err)
@@ -61,6 +62,7 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 		//store.SaveStore("", nil)
 		return nil, err
 	}
+	log.Print("config fetched succesfully")
 	mapping := make(map[string]interface{})
 	var storeData interface{}
 	for rows.Next() {
@@ -84,6 +86,7 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 		//store.SaveStore("", nil)
 		return nil, errors.New("no config data retrived from db")
 	}
+	log.Print("config loaded successfully")
 	return storeData.([]byte), err
 }
 
