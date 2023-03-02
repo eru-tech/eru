@@ -111,7 +111,7 @@ func (auth *Auth) sendRecoveryCode(email_id string, recovery_code string, recove
 	h := http.Header{}
 	h.Set("content-type", "application/json")
 	r.Header = h
-	log.Println("auth.Hooks.SRC")
+	log.Println("len(auth.Hooks.SRC.TargetHosts) = ", len(auth.Hooks.SRC.TargetHosts))
 	if len(auth.Hooks.SRC.TargetHosts) > 1 {
 		response, _, respErr := auth.Hooks.SRC.Execute(r, "/", false, "", trReqVars, 1)
 		utils.PrintResponseBody(response, "send recovery code response")
