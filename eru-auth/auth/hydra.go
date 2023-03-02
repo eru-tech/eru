@@ -400,7 +400,7 @@ func (hydraConfig HydraConfig) acceptLoginRequest(subject string, loginChallenge
 	headers.Add("content-type", "application/json")
 	paramsMap := make(map[string]string)
 	paramsMap["login_challenge"] = loginChallenge
-	postUrl := fmt.Sprint(hydraConfig.getAminUrl(), "/oauth2/auth/requests/login/accept")
+	postUrl := fmt.Sprint(hydraConfig.getAminUrl(), "/admin/oauth2/auth/requests/login/accept")
 	resp, respHeaders, respCookies, statusCode, err := utils.CallHttp(http.MethodPut, postUrl, headers, dummyMap, cookies, paramsMap, hydraALR)
 	log.Println(respHeaders)
 	log.Println(statusCode)
@@ -465,9 +465,9 @@ func (hydraConfig HydraConfig) acceptConsentRequest(identityHolder map[string]in
 
 	paramsMap := make(map[string]string)
 	paramsMap["consent_challenge"] = consentChallenge
-	postUrl := fmt.Sprint(hydraConfig.getAminUrl(), "/oauth2/auth/requests/consent/accept")
+	postUrl := fmt.Sprint(hydraConfig.getAminUrl(), "/admin/oauth2/auth/requests/consent/accept")
 	resp, respHeaders, respCookies, statusCode, err := utils.CallHttp(http.MethodPut, postUrl, headers, dummyMap, loginCookies, paramsMap, hydraCLR)
-	log.Println("(respHeaders from oauth2/auth/requests/consent/accept")
+	log.Println("(respHeaders from admin/oauth2/auth/requests/consent/accept")
 	log.Println(respHeaders)
 	log.Println(statusCode)
 	respCookies = append(respCookies, loginCookies...)
