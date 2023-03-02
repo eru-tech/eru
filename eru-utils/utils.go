@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	encodedForm   = "application/x-www-form-urlencoded"
-	multiPartForm = "multipart/form-data"
+	encodedForm     = "application/x-www-form-urlencoded"
+	multiPartForm   = "multipart/form-data"
+	applicationJson = "application/json"
 )
 
 var httpClient = http.Client{
@@ -131,7 +132,13 @@ func PrintResponseBody(response *http.Response, msg string) {
 		log.Println(err)
 	}
 	log.Println(msg)
-	log.Println(string(body))
+	cl, _ := strconv.Atoi(response.Header.Get("Content-Length"))
+	if cl > 1000 {
+		log.Println(string(body)[1:1000])
+	} else {
+		log.Println(string(body))
+	}
+	//log.Println(string(body))
 	log.Println(response.Header.Get("Content-Length"))
 	response.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
@@ -142,17 +149,44 @@ func PrintRequestBody(request *http.Request, msg string) {
 		log.Println(err)
 	}
 	log.Println(msg)
-	log.Println(string(body))
+	cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
+	if cl > 1000 {
+		log.Println(string(body)[1:1000])
+	} else {
+		log.Println(string(body))
+	}
+	//log.Println(string(body))
 	log.Println(request.Header.Get("Content-Length"))
 	request.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
 
-func CallHttp(method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
+func CallParallelHttp(method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}, rc chan *http.Response) (err error) {
+	resp, err := callHttp(method, url, headers, formData, reqCookies, params, postBody)
+	if err == nil {
+		rc <- resp
+	}
+	return err
+}
+
+func ExecuteParallelHttp(req *http.Request, rc chan *http.Response) (err error) {
+	resp, err := ExecuteHttp(req)
+	if err == nil {
+		rc <- resp
+	}
+	return err
+}
+
+func ExecuteHttp(req *http.Request) (resp *http.Response, err error) {
+	resp, err = httpClient.Do(req)
+	return
+}
+
+func callHttp(method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (resp *http.Response, err error) {
 	reqBody, err := json.Marshal(postBody)
 	if err != nil {
 		log.Print("error in json.Marshal(postBody)")
 		log.Print(err)
-		return nil, nil, nil, 0, err
+		return nil, err
 	}
 	req, err := http.NewRequest(method, url, bytes.NewBuffer(reqBody))
 	if err != nil {
@@ -183,18 +217,18 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 		multipartWriter := multipart.NewWriter(&reqBodyNew)
 		if err != nil {
 			log.Println(err)
-			return nil, nil, nil, 0, err
+			return nil, err
 		}
 		for fk, fd := range formData {
 			fieldWriter, err := multipartWriter.CreateFormField(fk)
 			if err != nil {
 				log.Println(err)
-				return nil, nil, nil, 0, err
+				return nil, err
 			}
 			_, err = fieldWriter.Write([]byte(fd))
 			if err != nil {
 				log.Println(err)
-				return nil, nil, nil, 0, err
+				return nil, err
 			}
 		}
 		multipartWriter.Close()
@@ -217,21 +251,26 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 		req.Header.Set("Content-Length", strconv.Itoa(len(data.Encode())))
 		req.ContentLength = int64(len(data.Encode()))
 	}
-	log.Println(req.Header)
-	PrintRequestBody(req, "printing request body from file_utils before http call")
-	resp, err := httpClient.Do(req)
-	statusCode = resp.StatusCode
+	PrintRequestBody(req, "printing request body from utils before http call")
+	log.Println(req)
+	return ExecuteHttp(req)
+}
 
-	if err != nil {
-		log.Print("error in httpClient.Do")
-		log.Print(err)
-		return nil, nil, nil, 0, err
-	}
+func CallHttp(method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
+	resp, err := callHttp(method, url, headers, formData, reqCookies, params, postBody)
+	statusCode = resp.StatusCode
 	log.Println("resp from CallHttp")
 	log.Println(resp.Header)
 	log.Println(resp.Cookies())
 	log.Println(resp.StatusCode)
 	log.Println(resp.Status)
+	log.Print(resp)
+	if err != nil {
+		log.Print("error in httpClient.Do")
+		log.Print(err)
+		return nil, resp.Header, resp.Cookies(), resp.StatusCode, err
+	}
+
 	respHeaders = resp.Header
 	//respHeaders = make(map[string][]string)
 	//for k, v := range resp.Header {
@@ -240,14 +279,29 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 	respCookies = resp.Cookies()
 	defer resp.Body.Close()
 	log.Println("resp.ContentLength = ", resp.ContentLength)
-	//if resp.ContentLength > 0 || reqContentType == encodedForm {
-	log.Println(resp.Header.Get("content-type"))
-	if strings.Split(resp.Header.Get("content-type"), ";")[0] == "application/json" {
-		if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
-			log.Print("error in json.NewDecoder of resp.Body")
-			log.Print(resp.Body)
-			log.Print(err)
-			return nil, nil, nil, 0, err
+
+	//todo - check if below change from reqContentType to header.get breaks anything
+	//todo - merge conflict - main had below first if commented
+	contentType := strings.Split(headers.Get("Content-type"), ";")[0]
+	log.Print("contentType = ", contentType)
+	if resp.ContentLength > 0 || contentType == encodedForm || contentType == applicationJson {
+		if strings.Split(resp.Header.Get("content-type"), ";")[0] == applicationJson {
+			//PrintResponseBody(resp,"printing response body before json decode in utils.callhttp")
+			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
+				log.Print("error in json.NewDecoder of resp.Body")
+				//log.Print(resp.Body)
+				log.Print(err)
+				return nil, nil, nil, resp.StatusCode, err
+			}
+		} else {
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Println(err)
+			}
+			//log.Println(body)
+			resBody := make(map[string]interface{})
+			resBody["body"] = string(body)
+			res = resBody
 		}
 	} else {
 		body, err := ioutil.ReadAll(resp.Body)
@@ -270,8 +324,9 @@ func CallHttp(method string, url string, headers http.Header, formData map[strin
 			log.Print(bytesErr)
 			return nil, nil, nil, statusCode, bytesErr
 		}
-		err = errors.New(strings.Replace(string(resBytes), "\"", "", -1))
-		return nil, nil, nil, statusCode, err
+		//err = errors.New(strings.Replace(string(resBytes), "\"", "", -1))
+		err = errors.New(string(resBytes))
+		return nil, resp.Header, resp.Cookies(), statusCode, err
 	}
 	return
 }

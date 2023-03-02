@@ -261,6 +261,11 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 	//log.Println("goTmpl.Template = ", goTmpl.Template)
 
 	t := template.Must(template.New(goTmpl.Name).Funcs(funcs).Parse(goTmpl.Template))
+
+	//log.Print("printing vars from inside execute template" )
+	//objJ, _ := json.Marshal(obj)
+	//log.Print(string(objJ))
+
 	if err := t.Execute(buf, obj); err != nil {
 		return "", err
 	}

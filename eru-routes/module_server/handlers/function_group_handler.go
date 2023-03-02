@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"github.com/eru-tech/eru/eru-routes/module_store"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"io"
 	"log"
@@ -27,15 +28,16 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		funcGroup, err := s.GetAndValidateFunc(funcName, projectId, host, url, r.Method, r.Header)
 		if err != nil {
 			log.Println(err)
-			w.WriteHeader(http.StatusBadRequest)
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-		response, err := funcGroup.Execute(r)
+		log.Print(funcGroup)
+		response, err := funcGroup.Execute(r, module_store.FuncThreads, module_store.LoopThreads)
 		if err != nil {
 			log.Println(" httpClient.Do error ")
 			log.Println(err)
-			w.WriteHeader(http.StatusBadRequest)
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}

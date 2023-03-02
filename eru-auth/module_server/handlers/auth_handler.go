@@ -264,6 +264,7 @@ func VerifyTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
+/*
 func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -301,6 +302,180 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			cookie := http.Cookie{Name: "abc", Value: "xyz", Path: "/"}
 			http.SetCookie(w, &cookie)
 			_ = json.NewEncoder(w).Encode(res)
+			log.Println(w.Header())
+			return
+		}
+	}
+}*/
+
+func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		log.Println(projectId)
+		log.Println(authName)
+
+		authObjI, err := s.GetAuth(projectId, authName)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		loginPostBodyFromReq := json.NewDecoder(r.Body)
+		loginPostBodyFromReq.DisallowUnknownFields()
+
+		var loginPostBody auth.LoginPostBody
+
+		if err = loginPostBodyFromReq.Decode(&loginPostBody); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		log.Println(loginPostBody)
+
+		res, tokens, err := authObjI.Login(loginPostBody, true)
+		if err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			server_handlers.FormatResponse(w, http.StatusOK)
+			if tokens.IdToken != "" {
+				_ = json.NewEncoder(w).Encode(tokens)
+			} else {
+				_ = json.NewEncoder(w).Encode(res)
+			}
+			log.Println(w.Header())
+			return
+		}
+	}
+}
+
+func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		log.Println(projectId)
+		log.Println(authName)
+
+		authObjI, err := s.GetAuth(projectId, authName)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		recoveryReq := json.NewDecoder(r.Body)
+		recoveryReq.DisallowUnknownFields()
+
+		var recoveryPostBody auth.RecoveryPostBody
+
+		if err = recoveryReq.Decode(&recoveryPostBody); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		log.Println(recoveryPostBody)
+
+		res, err := authObjI.GenerateRecoveryCode(recoveryPostBody)
+		if err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			server_handlers.FormatResponse(w, http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": res})
+			log.Println(w.Header())
+			return
+		}
+	}
+}
+func VerifyRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		log.Println(projectId)
+		log.Println(authName)
+
+		authObjI, err := s.GetAuth(projectId, authName)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		recoveryReq := json.NewDecoder(r.Body)
+		recoveryReq.DisallowUnknownFields()
+
+		var recoveryPassword auth.RecoveryPassword
+
+		if err = recoveryReq.Decode(&recoveryPassword); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		log.Println(recoveryPassword)
+		var cookies []*http.Cookie
+		res := make(map[string]string)
+		res, cookies, err = authObjI.VerifyRecovery(recoveryPassword)
+		if err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			for _, c := range cookies {
+				http.SetCookie(w, c)
+				log.Println(c)
+			}
+			server_handlers.FormatResponse(w, http.StatusOK)
+			_ = json.NewEncoder(w).Encode(res)
+			log.Println(w.Header())
+			return
+		}
+	}
+}
+func CompleteRecoveryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		log.Println(projectId)
+		log.Println(authName)
+
+		authObjI, err := s.GetAuth(projectId, authName)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		recoveryReq := json.NewDecoder(r.Body)
+		recoveryReq.DisallowUnknownFields()
+
+		var recoveryPassword auth.RecoveryPassword
+
+		if err = recoveryReq.Decode(&recoveryPassword); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		log.Println(recoveryPassword)
+		msg := ""
+		msg, err = authObjI.CompleteRecovery(recoveryPassword, r.Cookies())
+		if err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			server_handlers.FormatResponse(w, http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": msg})
 			log.Println(w.Header())
 			return
 		}
@@ -482,6 +657,46 @@ func UpdateUser(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		server_handlers.FormatResponse(w, http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": "user updated successfully"})
+		return
+	}
+}
+
+func ChangePassword(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		log.Println(authName)
+		log.Println(projectId)
+
+		changePasswordReq := json.NewDecoder(r.Body)
+		changePasswordReq.DisallowUnknownFields()
+		changePasswordObj := auth.ChangePassword{}
+		//storageObj := new(storage.Storage)
+		if err := changePasswordReq.Decode(&changePasswordObj); err != nil {
+			log.Println(err)
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		log.Print(changePasswordObj)
+		authObjI, err := s.GetAuth(projectId, authName)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		err = authObjI.ChangePassword(r, changePasswordObj)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": "password updated successfully"})
 		return
 	}
 }

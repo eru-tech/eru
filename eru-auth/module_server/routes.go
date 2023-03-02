@@ -33,10 +33,14 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove/gateway/{gatewayname}/{gatewaytype}/{channel}").HandlerFunc(module_handlers.GatewayRemoveHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save/auth").HandlerFunc(module_handlers.AuthSaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove/auth/{authname}").HandlerFunc(module_handlers.AuthRemoveHandler(sh.Store))
+	storeRouter.Methods(http.MethodPost).Path("/testemail").HandlerFunc(module_handlers.TestEmail(sh.Store))
 
 	// routes for file events
 	authRouter := serverRouter.PathPrefix("/{project}").Subrouter()
 	authRouter.Methods(http.MethodGet).PathPrefix("/generateotp/{gatewaytype}/{channel}/{messagetype}").HandlerFunc(module_handlers.GenerateOtpHandler(sh.Store))
+	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/getrecoverycode").HandlerFunc(module_handlers.GetRecoveryCodeHandler(sh.Store))
+	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/verifyrecoverycode").HandlerFunc(module_handlers.VerifyRecoveryCodeHandler(sh.Store))
+	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/completerecovery").HandlerFunc(module_handlers.CompleteRecoveryHandler(sh.Store))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/login").HandlerFunc(module_handlers.LoginHandler(sh.Store))
 	authRouter.Methods(http.MethodDelete).PathPrefix("/{authname}/logout").HandlerFunc(module_handlers.LogoutHandler(sh.Store))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/verify/{tokentype}").HandlerFunc(module_handlers.VerifyTokenHandler(sh.Store))
@@ -44,6 +48,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/fetchtokens").HandlerFunc(module_handlers.FetchTokensHandler(sh.Store))
 	authRouter.Methods(http.MethodGet).PathPrefix("/{authname}/getuser").HandlerFunc(module_handlers.GetUser(sh.Store))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/updateuser").HandlerFunc(module_handlers.UpdateUser(sh.Store))
+	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/changepassword").HandlerFunc(module_handlers.ChangePassword(sh.Store))
 	authRouter.Methods(http.MethodGet).PathPrefix("/hydralogin").HandlerFunc(module_handlers.LoginHydraHandler(sh.Store))
 
 }

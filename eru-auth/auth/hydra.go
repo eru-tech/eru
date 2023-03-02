@@ -64,52 +64,44 @@ type HydraClient struct {
 	Scope                   string   `json:"scope"`
 }
 
-func (kratosHydraAuth *KratosHydraAuth) ensureLoginChallenge(r *http.Request) (loginChallenge string, cookies []*http.Cookie, err error) {
-	//ctx := context.Background()
-	// fetch flowID from url query parameters
-	loginChallenge = r.URL.Query().Get("login_challenge")
+func (kratosHydraAuth *KratosHydraAuth) getLoginChallenge() (loginChallenge string, cookies []*http.Cookie, err error) {
+	log.Println("inside getLoginChallenge")
+	b := make([]byte, 32)
+	_, err = rand.Read(b)
+	if err != nil {
+		log.Println("generate state failed: %v", err)
+		return
+	}
+	state := base64.StdEncoding.EncodeToString(b)
 
-	if loginChallenge == "" {
-		log.Println("inside loginChallenge == \"\"")
-		b := make([]byte, 32)
-		_, err = rand.Read(b)
-		if err != nil {
-			log.Println("generate state failed: %v", err)
-			return
-		}
-		state := base64.StdEncoding.EncodeToString(b)
-		//setSessionValue(w, r, "oauth2State", state)
+	hydraClientId := ""
+	for _, v := range kratosHydraAuth.Hydra.HydraClients {
+		hydraClientId = v.ClientId
+		break
+	}
+	outhConfig, ocErr := kratosHydraAuth.Hydra.getOauthConfig(hydraClientId)
+	if ocErr != nil {
+		log.Println("generate state failed: %v", err)
+		err = ocErr
+		return
+	}
+	log.Println(outhConfig)
+	redirectTo := outhConfig.AuthCodeURL(state)
 
-		// start oauth2 authorization code flow
-		hydraClientId := ""
-		for _, v := range kratosHydraAuth.Hydra.HydraClients {
-			hydraClientId = v.ClientId
-			break
-		}
-		outhConfig, ocErr := kratosHydraAuth.Hydra.getOauthConfig(hydraClientId)
-		if ocErr != nil {
-			log.Println("generate state failed: %v", err)
-			err = ocErr
-			return
-		}
-		log.Println(outhConfig)
-		redirectTo := outhConfig.AuthCodeURL(state)
-
-		log.Println("redirect to hydra, url: %s", redirectTo)
-		res, headers, respCookies, statusCode, err := utils.CallHttp("GET", redirectTo, nil, nil, nil, nil, nil)
-		log.Println(res)
-		log.Println(headers)
-		cookies = respCookies
-		log.Println(cookies)
-		log.Println(statusCode)
-		log.Println(err)
-		if statusCode >= 300 && statusCode < 400 {
-			redirectLocation := headers["Location"][0]
-			log.Println(redirectLocation)
-			params := strings.Split(redirectLocation, "?")[1]
-			log.Println(params)
-			loginChallenge = strings.Split(params, "=")[1]
-		}
+	log.Println("redirect to hydra, url: %s", redirectTo)
+	res, headers, respCookies, statusCode, err := utils.CallHttp(http.MethodGet, redirectTo, nil, nil, nil, nil, nil)
+	log.Println(res)
+	log.Println(headers)
+	cookies = respCookies
+	log.Println(cookies)
+	log.Println(statusCode)
+	log.Println(err)
+	if statusCode >= 300 && statusCode < 400 {
+		redirectLocation := headers["Location"][0]
+		log.Println(redirectLocation)
+		params := strings.Split(redirectLocation, "?")[1]
+		log.Println(params)
+		loginChallenge = strings.Split(params, "=")[1]
 	}
 	return
 }
@@ -409,7 +401,7 @@ func (hydraConfig HydraConfig) acceptLoginRequest(subject string, loginChallenge
 	paramsMap := make(map[string]string)
 	paramsMap["login_challenge"] = loginChallenge
 	postUrl := fmt.Sprint(hydraConfig.getAminUrl(), "/oauth2/auth/requests/login/accept")
-	resp, respHeaders, respCookies, statusCode, err := utils.CallHttp("PUT", postUrl, headers, dummyMap, cookies, paramsMap, hydraALR)
+	resp, respHeaders, respCookies, statusCode, err := utils.CallHttp(http.MethodPut, postUrl, headers, dummyMap, cookies, paramsMap, hydraALR)
 	log.Println(respHeaders)
 	log.Println(statusCode)
 	log.Println(respCookies)
@@ -421,7 +413,7 @@ func (hydraConfig HydraConfig) acceptLoginRequest(subject string, loginChallenge
 	if respMap, ok := resp.(map[string]interface{}); ok {
 		if redirectUrl, ok1 := respMap["redirect_to"]; ok1 {
 			log.Print(redirectUrl)
-			resp2, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp("GET", redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
+			resp2, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
 			log.Println(resp2)
 			log.Println(respHeaders2)
 			log.Println(statusCode2)
@@ -453,11 +445,12 @@ func (hydraConfig HydraConfig) acceptLoginRequest(subject string, loginChallenge
 	return
 }
 
-func (hydraConfig HydraConfig) acceptConsentRequest(identityClaims interface{}, consentChallenge string, loginCookies []*http.Cookie) (tokens interface{}, respCookies []*http.Cookie, err error) {
+func (hydraConfig HydraConfig) acceptConsentRequest(identityHolder map[string]interface{}, consentChallenge string, loginCookies []*http.Cookie) (tokens LoginSuccess, err error) {
+
 	hydraCLR := hydraAcceptConsentRequest{}
 	hydraCLR.Remember = true
 	hydraCLR.RememberFor = 0
-	hydraCLR.Session.IdToken = identityClaims
+	hydraCLR.Session.IdToken = identityHolder
 	for _, v := range hydraConfig.HydraClients {
 		log.Println("v.GrantTypes")
 		log.Println(v.Scope)
@@ -473,7 +466,7 @@ func (hydraConfig HydraConfig) acceptConsentRequest(identityClaims interface{}, 
 	paramsMap := make(map[string]string)
 	paramsMap["consent_challenge"] = consentChallenge
 	postUrl := fmt.Sprint(hydraConfig.getAminUrl(), "/oauth2/auth/requests/consent/accept")
-	resp, respHeaders, respCookies, statusCode, err := utils.CallHttp("PUT", postUrl, headers, dummyMap, loginCookies, paramsMap, hydraCLR)
+	resp, respHeaders, respCookies, statusCode, err := utils.CallHttp(http.MethodPut, postUrl, headers, dummyMap, loginCookies, paramsMap, hydraCLR)
 	log.Println("(respHeaders from oauth2/auth/requests/consent/accept")
 	log.Println(respHeaders)
 	log.Println(statusCode)
@@ -483,20 +476,20 @@ func (hydraConfig HydraConfig) acceptConsentRequest(identityClaims interface{}, 
 	//headerMap["cookie"] = strings.Join(respCookies, " ; ")
 	if err != nil {
 		log.Println(err)
-		return nil, nil, err
+		return LoginSuccess{}, err
 	}
 	code := ""
 	if respMap, ok := resp.(map[string]interface{}); ok {
 		if redirectUrl, ok1 := respMap["redirect_to"]; ok1 {
 			log.Print(redirectUrl)
-			resp2, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp("GET", redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
+			resp2, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
 			log.Println(resp2)
 			log.Println(respHeaders2)
 			log.Println(statusCode2)
 			log.Println(err2)
 			respCookies = append(respCookies, respCookies2...)
 			if err != nil {
-				return nil, nil, err
+				return LoginSuccess{}, err
 			}
 			if statusCode2 >= 300 && statusCode2 < 400 {
 				redirectLocation := respHeaders2["Location"][0]
@@ -541,7 +534,7 @@ func (hydraConfig HydraConfig) acceptConsentRequest(identityClaims interface{}, 
 				//log.Println(loginSuccess)
 				log.Println("respCookies before returning")
 				log.Println(respCookies)
-				return loginSuccess, respCookies, nil
+				return loginSuccess, nil
 			}
 		} else {
 			err = errors.New("redirect_to attribute not found in response")

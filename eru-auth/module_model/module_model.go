@@ -21,19 +21,19 @@ type Project struct {
 }
 
 /*
-type SmsGateway struct {
-	GatewayName   string `eru:"required"`
-	GatewayUrl    string `eru:"required"`
-	GatewayMethod string `eru:"required"`
-	Allocation    int    `eru:"required"`
-}
+	type SmsGateway struct {
+		GatewayName   string `eru:"required"`
+		GatewayUrl    string `eru:"required"`
+		GatewayMethod string `eru:"required"`
+		Allocation    int    `eru:"required"`
+	}
 
-type EmailGateway struct {
-	GatewayName   string `eru:"required"`
-	GatewayUrl    string `eru:"required"`
-	GatewayMethod string `eru:"required"`
-	Allocation    int    `eru:"required"`
-}
+	type EmailGateway struct {
+		GatewayName   string `eru:"required"`
+		GatewayUrl    string `eru:"required"`
+		GatewayMethod string `eru:"required"`
+		Allocation    int    `eru:"required"`
+	}
 */
 type MessageTemplate struct {
 	GatewayName  string `eru:"required"`
