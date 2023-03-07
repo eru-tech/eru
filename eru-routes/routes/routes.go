@@ -735,12 +735,15 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 				log.Println(err)
 				return
 			}
-			err = json.Unmarshal(body, &vars.Body)
-			if err != nil {
-				log.Print("error in json.Unmarshal(body, &vars.Body)")
-				log.Println(err)
-				return err
+			if len(body) > 0 {
+				err = json.Unmarshal(body, &vars.Body)
+				if err != nil {
+					log.Print("error in json.Unmarshal(body, &vars.Body)")
+					log.Println(err)
+					return err
+				}
 			}
+
 			//log.Println("body from route transformRequest - else part")
 			//log.Println(string(body))
 			//log.Println(request.Header.Get("Content-Length"))
