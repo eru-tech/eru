@@ -525,7 +525,7 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 			response.Body = ioutil.NopCloser(bytes.NewReader(rb))
 		}
 	}
-	log.Println(trReqVars)
+	//log.Println(trReqVars)
 	trResVars = &TemplateVars{}
 	//if route.TransformResponse != "" {
 	trResVars, err = route.transformResponse(response, trReqVars)
@@ -760,16 +760,16 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 	}
 	log.Println("vars after processHeaderTemplates")
 	log.Println(vars.Headers)
-	log.Println(vars)
+	//log.Println(vars)
 	return
 }
 
 func (route *Route) transformResponse(response *http.Response, trReqVars *TemplateVars) (trResVars *TemplateVars, err error) {
 	trResVars = &TemplateVars{}
 	log.Println("inside transformResponse")
-	a, e := json.Marshal(trReqVars)
-	log.Print(string(a))
-	log.Print(e)
+	//a, e := json.Marshal(trReqVars)
+	//log.Print(string(a))
+	//log.Print(e)
 	log.Print("route.Redirect for route ", route.RouteName, "is ", route.Redirect)
 	if route.Redirect {
 		log.Print("inside route.Redirect")
