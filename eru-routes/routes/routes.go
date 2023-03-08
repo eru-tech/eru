@@ -647,7 +647,7 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 		mpvars.Vars = vars
 		routesFormData := route.FormData
 
-		for i, fd := range routesFormData {
+		for _, fd := range routesFormData {
 			if fd.IsTemplate {
 				output, err := processTemplate(fd.Key, fd.Value, mpvars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
 				if err != nil {
@@ -660,16 +660,22 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 					return err
 				}
 				log.Print(outputStr)
-				routesFormData[i].Value = outputStr
+				//routesFormData[i].Value = outputStr
+				vars.FormData[fd.Key] = outputStr
+			} else {
+				vars.FormData[fd.Key] = fd.Value
 			}
 		}
-		for k, v := range vars.FormData {
+
+		/*for k, v := range vars.FormData {
 			h := Headers{}
 			h.Key = k
 			h.Value = v.(string)
 			routesFormData = append(routesFormData, h)
 		}
-		vars.FormData, vars.FormDataKeyArray, err = processMultipart(reqContentType, request, route.RemoveParams.FormData, routesFormData)
+
+		*/
+		vars.FormData, vars.FormDataKeyArray, err = processMultipart(reqContentType, request, route.RemoveParams.FormData, vars.FormData)
 		if err != nil {
 			log.Print("printing error recd from processMultipart")
 			log.Print(err)
