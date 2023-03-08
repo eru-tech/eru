@@ -525,7 +525,7 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 			response.Body = ioutil.NopCloser(bytes.NewReader(rb))
 		}
 	}
-	log.Println(trReqVars)
+	//log.Println(trReqVars)
 	trResVars = &TemplateVars{}
 	//if route.TransformResponse != "" {
 	trResVars, err = route.transformResponse(response, trReqVars)
@@ -647,7 +647,7 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 		mpvars.Vars = vars
 		routesFormData := route.FormData
 
-		for i, fd := range routesFormData {
+		for _, fd := range routesFormData {
 			if fd.IsTemplate {
 				output, err := processTemplate(fd.Key, fd.Value, mpvars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
 				if err != nil {
@@ -660,16 +660,22 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 					return err
 				}
 				log.Print(outputStr)
-				routesFormData[i].Value = outputStr
+				//routesFormData[i].Value = outputStr
+				vars.FormData[fd.Key] = outputStr
+			} else {
+				vars.FormData[fd.Key] = fd.Value
 			}
 		}
-		for k, v := range vars.FormData {
+
+		/*for k, v := range vars.FormData {
 			h := Headers{}
 			h.Key = k
 			h.Value = v.(string)
 			routesFormData = append(routesFormData, h)
 		}
-		vars.FormData, vars.FormDataKeyArray, err = processMultipart(reqContentType, request, route.RemoveParams.FormData, routesFormData)
+
+		*/
+		vars.FormData, vars.FormDataKeyArray, err = processMultipart(reqContentType, request, route.RemoveParams.FormData, vars.FormData)
 		if err != nil {
 			log.Print("printing error recd from processMultipart")
 			log.Print(err)
@@ -735,12 +741,15 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 				log.Println(err)
 				return
 			}
-			err = json.Unmarshal(body, &vars.Body)
-			if err != nil {
-				log.Print("error in json.Unmarshal(body, &vars.Body)")
-				log.Println(err)
-				return err
+			if len(body) > 0 {
+				err = json.Unmarshal(body, &vars.Body)
+				if err != nil {
+					log.Print("error in json.Unmarshal(body, &vars.Body)")
+					log.Println(err)
+					return err
+				}
 			}
+
 			//log.Println("body from route transformRequest - else part")
 			//log.Println(string(body))
 			//log.Println(request.Header.Get("Content-Length"))
@@ -757,16 +766,16 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 	}
 	log.Println("vars after processHeaderTemplates")
 	log.Println(vars.Headers)
-	log.Println(vars)
+	//log.Println(vars)
 	return
 }
 
 func (route *Route) transformResponse(response *http.Response, trReqVars *TemplateVars) (trResVars *TemplateVars, err error) {
 	trResVars = &TemplateVars{}
 	log.Println("inside transformResponse")
-	a, e := json.Marshal(trReqVars)
-	log.Print(string(a))
-	log.Print(e)
+	//a, e := json.Marshal(trReqVars)
+	//log.Print(string(a))
+	//log.Print(e)
 	log.Print("route.Redirect for route ", route.RouteName, "is ", route.Redirect)
 	if route.Redirect {
 		log.Print("inside route.Redirect")

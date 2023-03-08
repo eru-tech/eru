@@ -6,6 +6,7 @@ import (
 	"github.com/eru-tech/eru/eru-routes/routes"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -110,9 +111,15 @@ func (auth *Auth) sendRecoveryCode(email_id string, recovery_code string, recove
 	h := http.Header{}
 	h.Set("content-type", "application/json")
 	r.Header = h
-	response, _, respErr := auth.Hooks.SRC.Execute(r, "/", false, "", trReqVars, 1)
-	utils.PrintResponseBody(response, "send recovery code response")
-	return respErr
+	log.Println("len(auth.Hooks.SRC.TargetHosts) = ", len(auth.Hooks.SRC.TargetHosts))
+	if len(auth.Hooks.SRC.TargetHosts) > 0 {
+		response, _, respErr := auth.Hooks.SRC.Execute(r, "/", false, "", trReqVars, 1)
+		utils.PrintResponseBody(response, "send recovery code response")
+		return respErr
+	} else {
+		log.Println("SRC hook not defined for auth. Thus no email was triggered.")
+	}
+	return
 }
 
 func (auth *Auth) CompleteRecovery(recoveryPassword RecoveryPassword, cookies []*http.Cookie) (msg string, err error) {

@@ -475,7 +475,7 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 		mpvars.ResVars = resVars
 		mpvars.ReqVars = reqVars
 		mpvars.Vars = vars
-		for i, fd := range funcStep.FormData {
+		for _, fd := range funcStep.FormData {
 			if fd.IsTemplate {
 				log.Print("inside route.FormData")
 				log.Print(fd.Key)
@@ -493,13 +493,17 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 				}
 				vars.FormData[fd.Key] = outputStr
 				vars.FormDataKeyArray = append(vars.FormDataKeyArray, fd.Key)
-				funcStep.FormData[i].Value = outputStr
+				//commented as this was getting stored in store and picked up in next request
+				//funcStep.FormData[i].Value = outputStr
+			} else {
+				vars.FormData[fd.Key] = fd.Value
+				vars.FormDataKeyArray = append(vars.FormDataKeyArray, fd.Key)
 			}
 		}
 		if oldContentType == multiPartForm {
 			//resetting it back to old content type as processMultipart will not be able to read the request body
 			req.Header.Set("Content-type", oldContentTypeFull)
-			vars.FormData, vars.FormDataKeyArray, err = processMultipart(oldContentType, req, funcStep.RemoveParams.FormData, funcStep.FormData)
+			vars.FormData, vars.FormDataKeyArray, err = processMultipart(oldContentType, req, funcStep.RemoveParams.FormData, vars.FormData)
 			if err != nil {
 				log.Print("printing error recd from processMultipart")
 				log.Print(err)

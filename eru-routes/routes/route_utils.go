@@ -356,7 +356,7 @@ func makeMultipart(request *http.Request, formData []Headers, fileData []FilePar
 	return
 }
 
-func processMultipart(reqContentType string, request *http.Request, formDataRemove []string, formData []Headers) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, err error) {
+func processMultipart(reqContentType string, request *http.Request, formDataRemove []string, formData map[string]interface{}) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, err error) {
 	//reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	log.Print("reqContentType = ", reqContentType)
 	varsFormData = make(map[string]interface{})
@@ -451,27 +451,27 @@ func processMultipart(reqContentType string, request *http.Request, formDataRemo
 		}
 		log.Println(" ++++++++++++++++++ formData ++++++++++++++++")
 		log.Println(formData)
-		for _, fd := range formData {
+		for fk, fd := range formData {
 			toIgnore := false
 			for _, k := range varsFormDataKeyArray {
-				if k == fd.Key {
+				if k == fk {
 					toIgnore = true
 					break
 				}
 			}
 			if !toIgnore {
-				fieldWriter, err := multipartWriter.CreateFormField(fd.Key)
+				fieldWriter, err := multipartWriter.CreateFormField(fk)
 				if err != nil {
 					log.Println(err)
 					return nil, nil, err
 				}
-				_, err = fieldWriter.Write([]byte(fd.Value))
+				_, err = fieldWriter.Write([]byte(fd.(string)))
 				if err != nil {
 					log.Println(err)
 					return nil, nil, err
 				}
-				varsFormData[fd.Key] = fd.Value
-				varsFormDataKeyArray = append(varsFormDataKeyArray, fd.Key)
+				varsFormData[fk] = fd
+				varsFormDataKeyArray = append(varsFormDataKeyArray, fk)
 			}
 		}
 		multipartWriter.Close()
