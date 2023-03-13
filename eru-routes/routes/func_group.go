@@ -148,7 +148,7 @@ func (funcStep *FuncStep) RunFuncStep(req *http.Request, reqVars map[string]*Tem
 	//reqVars[funcStep.GetRouteName()].FormData = make(map[string]interface{})
 	//reqVars[funcStep.GetRouteName()].Body = make(map[string]interface{})
 	//reqVars[funcStep.GetRouteName()].OrgBody = make(map[string]interface{})
-
+	log.Println("funcStep.Condition = ", funcStep.Condition)
 	if funcStep.Condition != "" {
 		avars := &FuncTemplateVars{}
 		avars.Vars = reqVars[funcStep.GetRouteName()]
@@ -318,7 +318,6 @@ func (funcStep *FuncStep) RunFuncStep(req *http.Request, reqVars map[string]*Tem
 }
 func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, asyncMsg string, funcThread int, loopThread int) (response *http.Response, err error) {
 	log.Print("inside RunFuncStepInner for ", funcStep.GetRouteName())
-
 	request := req
 	if funcStep.LoopVariable != "" {
 		request, _, err = funcStep.transformRequest(req, reqVars, resVars, mainRouteName)
@@ -336,27 +335,26 @@ func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string
 	log.Print(reqVars[funcStep.GetRouteName()].OrgBody)
 
 	response, routevars, err = funcStep.Route.Execute(request, funcStep.Path, funcStep.Async, asyncMsg, reqVars[funcStep.GetRouteName()], loopThread)
-	if err != nil {
-		log.Print(err)
-	}
-	resVars[funcStep.GetRouteName()] = routevars
 
+	resVars[funcStep.GetRouteName()] = routevars
 	if funcStep.Route.OnError == "STOP" && response.StatusCode >= 400 {
 		log.Print("inside funcStep.Route.OnError == \"STOP\" && response.StatusCode >= 400")
 		return
 	} else {
-		log.Print("Ignoring route execution error : ", err.Error())
-		err = nil
-		cfmBody := "{}"
-		response = &http.Response{
-			StatusCode:    http.StatusOK,
-			Proto:         "HTTP/1.1",
-			ProtoMajor:    1,
-			ProtoMinor:    1,
-			Body:          ioutil.NopCloser(bytes.NewBufferString(cfmBody)),
-			ContentLength: int64(len(cfmBody)),
-			Request:       request,
-			Header:        http.Header{},
+		if err != nil {
+			log.Print("Ignoring route execution error : ", err.Error())
+			err = nil
+			cfmBody := "{}"
+			response = &http.Response{
+				StatusCode:    http.StatusOK,
+				Proto:         "HTTP/1.1",
+				ProtoMajor:    1,
+				ProtoMinor:    1,
+				Body:          ioutil.NopCloser(bytes.NewBufferString(cfmBody)),
+				ContentLength: int64(len(cfmBody)),
+				Request:       request,
+				Header:        http.Header{},
+			}
 		}
 	}
 
