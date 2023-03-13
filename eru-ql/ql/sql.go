@@ -7,6 +7,7 @@ import (
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
+	"github.com/eru-tech/eru/eru-writes/eru_writes"
 	"log"
 	"reflect"
 	"strings"
@@ -27,7 +28,7 @@ func (sqd *SQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface
 	sqd.Cols = mq.Cols
 	//sqd.SetFinalVars(vars)
 }
-func (sqd *SQLData) Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI) (res []map[string]interface{}, queryObjs []QueryObject, err error) {
+func (sqd *SQLData) Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error) {
 	log.Print("inside ExecuteSQL of SQLData")
 	datasource := datasources[sqd.DBAlias]
 	if datasource == nil {
@@ -74,14 +75,15 @@ func (sqd *SQLData) Execute(projectId string, datasources map[string]*module_mod
 		}
 		log.Print(k, " = ", str)
 		sqd.Query = strings.Replace(sqd.Query, fmt.Sprint("$", k), str, -1)
+
 	}
 	queryObj := QueryObject{}
 	queryObj.Query = sqd.Query
 	queryObj.Cols = sqd.Cols
 	log.Print("sqd.ExecuteFlag = ", sqd.ExecuteFlag)
 	if sqd.ExecuteFlag {
-		if sqd.OutputType == "csv" {
-			result, err = sr.ExecuteQueryForCsv(sqd.Query, datasource)
+		if sqd.OutputType == eru_writes.OutputTypeCsv || sqd.OutputType == eru_writes.OutputTypeExcel {
+			result, err = sr.ExecuteQueryForCsv(sqd.Query, datasource, "Results")
 			log.Print(err)
 			res = append(res, result)
 		} else {

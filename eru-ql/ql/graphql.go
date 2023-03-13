@@ -6,6 +6,7 @@ import (
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
+	"github.com/eru-tech/eru/eru-writes/eru_writes"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/kinds"
 	"github.com/graphql-go/graphql/language/parser"
@@ -86,15 +87,14 @@ func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]
 		log.Print(err)
 		return err
 	}
-	log.Print("mq == ", mq)
 	qlInterface := GetQL(mq.QueryType)
 	if qlInterface == nil {
 		err = errors.New("Invalid Query Type")
 		log.Print(err)
 		return err
 	}
-	qlInterface.SetQLData(mq, gqd.FinalVariables, false, tokenObj, isPublic, "") //passing false as we only need the query in execute function and not actual result
-	_, queryObjs, err := qlInterface.Execute(projectId, datasources, s)
+	qlInterface.SetQLData(mq, gqd.FinalVariables, false, tokenObj, isPublic, gqd.OutputType) //passing false as we only need the query in execute function and not actual result
+	_, queryObjs, err := qlInterface.Execute(projectId, datasources, s, gqd.OutputType)
 	//log.Print("queryObjs[0].Type ==", queryObjs[0].Type)
 	for i, q := range queryObjs {
 		queryObjs[i].Type = strings.ToUpper(strings.Split(q.Query, " ")[0])
@@ -104,7 +104,7 @@ func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]
 		gqd.QueryObject = make(map[string]QueryObject)
 	}
 	gqd.QueryObject[query] = queryObjs[0] // setting first result as query used in mutation select will usually be single query
-	log.Print("queryObjs[0] = ", queryObjs[0])
+	//log.Print("queryObjs[0] = ", queryObjs[0])
 	//log.Print("gqd.QueryObject[query]")
 	//log.Print(gqd.QueryObject[query])
 	//log.Print("gqd.MutationSelect")
@@ -112,7 +112,7 @@ func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]
 	return nil
 }
 
-func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI) (res []map[string]interface{}, queryObjs []QueryObject, err error) {
+func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error) {
 	log.Print("inside Execute of GraphQL")
 	singleTxn := false
 	errFound := false
@@ -173,7 +173,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				sqlObj.FinalVariables = gqd.QLData.FinalVariables
 				field := v.(*ast.Field)
 				sqlObj.MainTableName = strings.Replace(field.Name.Value, "___", ".", -1) //replacing schema___tablename with schema.tablename
-
+				sqlObj.MainAliasName = field.Alias.Value
 				if sqlObj.OverwriteDoc == nil {
 					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
 				}
@@ -182,6 +182,13 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				if err != nil {
 					errMsg = err.Error()
 					errFound = true
+				}
+
+				err = gqd.getSqlForQuery(projectId, datasources, sqlObj.MainTableName, s, nil, gqd.IsPublic)
+				sqlObj.WithQuery = gqd.QueryObject[sqlObj.MainTableName].Query
+
+				if err != nil {
+					log.Print(err)
 				}
 
 				if sqlObj.SecurityClause == nil {
@@ -193,7 +200,7 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					errFound = true
 				}
 
-				err = sqlObj.ProcessGraphQL(v, datasource, graphQLs[i], gqd.FinalVariables, s) //TODO to handle if err recd.
+				err = sqlObj.ProcessGraphQL(v, datasource, graphQLs[i], gqd.FinalVariables, s, gqd.ExecuteFlag) //TODO to handle if err recd.
 
 				queryObj.Query = sqlObj.DBQuery
 				queryObj.Cols = strings.Join(sqlObj.Columns.ColNames, " , ")
@@ -207,8 +214,8 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					qrm.QuerySubLevel = sqlObj.querySubLevel
 					qrm.SQLQuery = sqlObj.DBQuery
 
-					if gqd.OutputType == "csv" {
-						result, err = graphQLs[i].ExecuteQueryForCsv(qrm.SQLQuery, datasource)
+					if gqd.OutputType == eru_writes.OutputTypeCsv || gqd.OutputType == eru_writes.OutputTypeExcel {
+						result, err = graphQLs[i].ExecuteQueryForCsv(qrm.SQLQuery, datasource, mainAliasNames[i])
 						log.Print(err)
 					} else {
 						result, err = graphQLs[i].ExecuteQuery(datasource, qrm)
@@ -221,10 +228,12 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					}
 					//log.Print("result is printed below")
 					//log.Print(result)
-					if result != nil {
-						res = append(res, result)
-					}
 				}
+
+				if result != nil {
+					res = append(res, result)
+				}
+
 			case "mutation":
 				sqlObj := SQLObjectM{}
 				field := v.(*ast.Field)
@@ -371,8 +380,6 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 			return res, queryObjs, errors.New("ERROR")
 		}
 	}
-	//log.Print(res)
-	//log.Print(queryObjs)
 	return res, queryObjs, err
 }
 

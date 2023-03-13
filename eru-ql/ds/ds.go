@@ -94,7 +94,7 @@ type SqlMakerI interface {
 	ExecuteQuery(datasource *module_model.DataSource, qrm module_model.QueryResultMaker) (res map[string]interface{}, err error)
 	ExecuteMutationQuery(datasource *module_model.DataSource, myself SqlMakerI, mrm module_model.MutationResultMaker) (res []map[string]interface{}, err error)
 	ExecutePreparedQuery(query string, datasource *module_model.DataSource) (res map[string]interface{}, err error)
-	ExecuteQueryForCsv(query string, datasource *module_model.DataSource) (res map[string]interface{}, err error)
+	ExecuteQueryForCsv(query string, datasource *module_model.DataSource, aliasName string) (res map[string]interface{}, err error)
 	RollbackQuery() (err error)
 	GetTableList(query string, datasource *module_model.DataSource, myself SqlMakerI) (err error)
 	GetTableMetaDataSQL() string
@@ -424,9 +424,8 @@ func (sqr *SqlMaker) ProcessGraphQL(sel ast.Selection, vars map[string]interface
 }
 */
 
-func (sqr *SqlMaker) ExecuteQueryForCsv(query string, datasource *module_model.DataSource) (res map[string]interface{}, err error) {
+func (sqr *SqlMaker) ExecuteQueryForCsv(query string, datasource *module_model.DataSource, aliasName string) (res map[string]interface{}, err error) {
 	log.Print("inside ExecuteQueryForCsv")
-	log.Print(query)
 	//ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond) //TODO: to get context as argument
 	//defer cancel()
 	rows, e := datasource.Con.Queryx(query)
@@ -441,11 +440,11 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(query string, datasource *module_model.D
 		return nil, ee
 	}
 	sqr.result = make(map[string]interface{})
-	var innerResult [][]string
+	var innerResult [][]interface{}
 	firstRow := true
 	for rows.Next() {
-		var innerResultRow []string
-		var innerResultLabel []string
+		var innerResultRow []interface{}
+		var innerResultLabel []interface{}
 		ee = rows.MapScan(mapping)
 		if ee != nil {
 			return nil, ee
@@ -500,7 +499,6 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(query string, datasource *module_model.D
 				err = errors.New(fmt.Sprint("value of ", colType.Name(), " is not a string"))
 				return nil, err
 			}
-
 		}
 		if firstRow {
 			innerResult = append(innerResult, innerResultLabel)
@@ -509,9 +507,10 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(query string, datasource *module_model.D
 		innerResult = append(innerResult, innerResultRow)
 	}
 	if len(innerResult) == 0 {
-		innerResult = append(innerResult, make([]string, 1))
+		innerResult = append(innerResult, []interface{}{})
 	}
-	sqr.result["Results"] = innerResult
+	log.Print("aliasName = ", aliasName)
+	sqr.result[aliasName] = innerResult
 	return sqr.result, nil
 }
 

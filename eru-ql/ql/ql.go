@@ -28,7 +28,7 @@ type QueryObject struct {
 }
 
 type QL interface {
-	Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI) (res []map[string]interface{}, queryObjs []QueryObject, err error)
+	Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error)
 	SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string)
 	ProcessTransformRule(tr module_model.TransformRule) (outputObj map[string]interface{}, err error)
 }

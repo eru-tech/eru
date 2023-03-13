@@ -10,12 +10,13 @@ import (
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-ql/ql"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
+	eru_writes "github.com/eru-tech/eru/eru-writes/eru_writes"
 	"github.com/gorilla/mux"
 	"io"
 	"log"
 	"net/http"
+	"reflect"
 	"strconv"
-	"time"
 	//"../server"
 )
 
@@ -122,9 +123,9 @@ func ProjectMyQueryConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Print(time.Now(), " Start --------------------------------------------------- ")
+		//log.Print(time.Now(), " Start --------------------------------------------------- ")
 		//time.Sleep(time.Duration(3000) * time.Millisecond)
-		log.Print(time.Now(), " End --------------------------------------------------- ")
+		//log.Print(time.Now(), " End --------------------------------------------------- ")
 		claims := r.Header.Get("claims")
 		log.Println(claims)
 		vars := mux.Vars(r)
@@ -195,7 +196,7 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			}
 
 			qlInterface.SetQLData(myQuery, postBody, true, tokenObj, isPublic, outputType)
-			res, _, err = qlInterface.Execute(projectID, datasources, s)
+			res, _, err = qlInterface.Execute(projectID, datasources, s, outputType)
 			/*
 				if err != nil {
 					server_handlers.FormatResponse(w, 400)
@@ -215,22 +216,61 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
-		} else if outputType == "csv" {
-			//tmpFileName := fmt.Sprint(uuid.New().String(),".csv")
-			//	csvFile, csvErr := os.Create(tmpFileName)
-			//if csvErr != nil {
-			//	err = errors.New(fmt.Sprint("failed creating csv file"))
-			//	log.Print(csvErr)
-			//		server_handlers.FormatResponse(w, 400)
-			//		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			//	}
-			//ww := csv.NewWriter(csvFile)
+		} else if outputType == eru_writes.OutputTypeExcel {
+			ewd := eru_writes.ExcelWriteData{}
+			ewd.ColumnarDataHeaderFirstRow = true
+			//cf := eru_writes.CellFormatter{}
+			//cf.DataTypes = []string{"int", "string", "boolean", "float", "date"}
+			//ewd.CellFormat = cf
+
+			var b []byte // creates IO Writer
+			for _, v := range res {
+				for k, excelData := range v {
+					log.Print(reflect.TypeOf(excelData))
+					if records, ok := excelData.([][]interface{}); ok {
+						if ewd.ColumnarDataMap == nil {
+							ewd.ColumnarDataMap = make(map[string][][]interface{})
+						}
+						ewd.ColumnarDataMap[k] = records
+					} else {
+						err = errors.New(fmt.Sprint("incorrect excel data format"))
+						server_handlers.FormatResponse(w, 400)
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					}
+				}
+			}
+
+			b, err = ewd.WriteColumnar()
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			}
+
+			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+			w.Header().Set("Content-Disposition", "attachment; filename=query.xlsx")
+			_, _ = io.Copy(w, bytes.NewReader(b))
+			return
+		} else if outputType == eru_writes.OutputTypeCsv {
 			b := &bytes.Buffer{} // creates IO Writer
 			ww := csv.NewWriter(b)
 			for _, v := range res {
 				for _, csvData := range v {
-					if records, ok := csvData.([][]string); ok {
-						ww.WriteAll(records)
+					if records, ok := csvData.([][]interface{}); ok {
+						var csvStrData [][]string
+						tmpArray, tmpErr := json.Marshal(records)
+						if tmpErr != nil {
+							err = tmpErr
+							server_handlers.FormatResponse(w, 400)
+							_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+						}
+						tmpErr = json.Unmarshal(tmpArray, &csvStrData)
+						if tmpErr != nil {
+							err = tmpErr
+							server_handlers.FormatResponse(w, 400)
+							_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+						}
+						ww.WriteAll(csvStrData)
 					} else {
 						err = errors.New(fmt.Sprint("inccorect csv data format"))
 						server_handlers.FormatResponse(w, 400)
@@ -263,7 +303,7 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		log.Print(projectID)
-
+		outputType := vars["outputtype"]
 		projectConfig, err := s.GetProjectConfigObject(projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -356,7 +396,7 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				}
 			}
 		*/
-		res, queryObjs, err := gqd.Execute(projectID, datasources, s)
+		res, queryObjs, err := gqd.Execute(projectID, datasources, s, outputType)
 		_ = queryObjs
 		//log.Print("queryObjs printed below")
 		//log.Print(queryObjs)
@@ -381,7 +421,7 @@ func SqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		log.Print(projectID)
-
+		outputType := vars["outputtype"]
 		projectConfig, err := s.GetProjectConfigObject(projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -430,7 +470,7 @@ func SqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		sqd.Variables[module_model.RULEPREFIX_TOKEN] = tokenObj
 		sqd.FinalVariables = sqd.Variables
 		sqd.ExecuteFlag = true
-		res, queryObjs, err := sqd.Execute(projectID, datasources, s)
+		res, queryObjs, err := sqd.Execute(projectID, datasources, s, outputType)
 		_ = queryObjs
 		//log.Print("queryObjs printed below")
 		//log.Print(queryObjs)

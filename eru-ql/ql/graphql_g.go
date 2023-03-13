@@ -37,6 +37,7 @@ type SQLObjectQ struct {
 	DBQuery         string
 	OverwriteDoc    map[string]map[string]interface{} `json:"-"`
 	SecurityClause  map[string]string                 `json:"-"`
+	WithQuery       string                            `json:"-"`
 }
 
 type SQLCols struct {
@@ -45,7 +46,7 @@ type SQLCols struct {
 	GroupClause  []string
 }
 
-func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_model.DataSource, sqlMaker ds.SqlMakerI, vars map[string]interface{}, s module_store.ModuleStoreI) (err error) {
+func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_model.DataSource, sqlMaker ds.SqlMakerI, vars map[string]interface{}, s module_store.ModuleStoreI, withColAlias bool) (err error) {
 	field := sel.(*ast.Field)
 	sqlObj.MainTableName = strings.Replace(field.Name.Value, "___", ".", -1) //replacing schema___tablename with schema.tablename
 	if field.Alias != nil {
@@ -109,14 +110,15 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_m
 	if field.SelectionSet == nil {
 		var tmpSelSet []ast.Selection
 		sqlCols, _ = sqlObj.processColumnList(tmpSelSet, sqlObj.MainTableName, vars, 0, 0, datasource, s)
-		sqlCols.ColWithAlias[0] = " * "
+		sqlCols.ColWithAlias = append(sqlCols.ColWithAlias, " * ")
+		//sqlCols.ColWithAlias[0] = " * "
 	} else {
 		sqlCols, _ = sqlObj.processColumnList(field.SelectionSet.Selections, sqlObj.MainTableName, vars, 0, 0, datasource, s)
 	}
 	log.Print("sqlCols is printed below")
 	log.Print(sqlCols)
 	sqlObj.Columns = sqlCols
-	err = sqlObj.MakeQuery(sqlMaker)
+	err = sqlObj.MakeQuery(sqlMaker, withColAlias)
 	log.Print("query printed below")
 	log.Print(sqlObj.DBQuery)
 	return err
@@ -125,7 +127,6 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_m
 func (sqlObj *SQLObjectQ) processColumnList(sel []ast.Selection, tableName string, vars map[string]interface{}, level int, sublevel int, datasource *module_model.DataSource, s module_store.ModuleStoreI) (sqlCols SQLCols, err string) {
 	//log.Print(fmt.Sprint("level = ", level, " sublevel = ", sublevel))
 	//log.Print("tableName === ", tableName)
-	log.Print("inside processColumnList")
 	if sqlObj.queryLevel < level {
 		sqlObj.queryLevel = level
 	}
@@ -646,21 +647,26 @@ func (sqlObj *SQLObjectQ) processJoins(val []*OrderedMap) (strJoinClause string)
 	return strJoinClause
 }
 
-func (sqlObj *SQLObjectQ) MakeQuery(sqlMaker ds.SqlMakerI) (err error) {
+func (sqlObj *SQLObjectQ) MakeQuery(sqlMaker ds.SqlMakerI, withColAlias bool) (err error) {
 	strDistinct := ""
 	strGroupClause := ""
-	strColumsWithAlias := strings.Join(sqlObj.Columns.ColWithAlias, " , ")
-	log.Print("sqlObj.Columns.ColWithAlias = ", sqlObj.Columns.ColWithAlias)
+	strColums := ""
+	if withColAlias {
+		strColums = strings.Join(sqlObj.Columns.ColWithAlias, " , ")
+	} else {
+		strColums = strings.Join(sqlObj.Columns.ColNames, " , ")
+	}
+	//log.Print("sqlObj.Columns.ColWithAlias = ", sqlObj.Columns.ColWithAlias)
 
 	//strColumns := strings.Join(sqlObj.Columns.ColNames, " , ")
-	log.Print("sqlObj.JoinClause === ", sqlObj.JoinClause)
+	//log.Print("sqlObj.JoinClause === ", sqlObj.JoinClause)
 	strJoinClause := sqlObj.processJoins(sqlObj.JoinClause)
-	log.Print("strJoinClause == ", strJoinClause)
+	//log.Print("strJoinClause == ", strJoinClause)
 	strWhereClause, e := processWhereClause(sqlObj.WhereClause, "", sqlObj.MainTableName, false)
 	if e != "" {
 		err = errors.New(e)
 	}
-	log.Print("sqlObj.SecurityClause[sqlObj.MainTableName] = ", sqlObj.SecurityClause[sqlObj.MainTableName])
+	//log.Print("sqlObj.SecurityClause[sqlObj.MainTableName] = ", sqlObj.SecurityClause[sqlObj.MainTableName])
 
 	strAnd := ""
 	strSecurityClause := ""
@@ -690,7 +696,14 @@ func (sqlObj *SQLObjectQ) MakeQuery(sqlMaker ds.SqlMakerI) (err error) {
 	if sqlObj.DistinctResults {
 		strDistinct = " distinct "
 	}
-	sqlObj.DBQuery = fmt.Sprint("select ", strDistinct, strColumsWithAlias, " from ", sqlObj.MainTableName, " ", strJoinClause, " ", strWhereClause, " ", strGroupClause, strSortClause)
+
+	fromTable := sqlObj.MainTableName
+	withClause := ""
+	if sqlObj.WithQuery != "" {
+		fromTable = fmt.Sprint("( ", sqlObj.WithQuery, " ) ", sqlObj.MainTableName)
+	}
+	sqlObj.DBQuery = fmt.Sprint(withClause, "select ", strDistinct, strColums, " from ", fromTable, " ", strJoinClause, " ", strWhereClause, " ", strGroupClause, strSortClause)
+
 	sqlObj.DBQuery = sqlMaker.AddLimitSkipClause(sqlObj.DBQuery, sqlObj.Limit, sqlObj.Skip, 1000)
 	return err
 }

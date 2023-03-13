@@ -11,11 +11,11 @@ import (
 	erumd5 "github.com/eru-tech/eru/eru-crypto/md5"
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
+	"github.com/xuri/excelize/v2"
 	"log"
 	"strconv"
 	"strings"
 	"time"
-
 	//"strconv"
 	"github.com/google/uuid"
 	"text/template"
@@ -47,7 +47,10 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return d, err
 		},
 		"unmarshalJSON": func(b []byte) (d interface{}, err error) {
+			log.Println("inside unmarshalJSON")
+			log.Println(string(b))
 			err = json.Unmarshal(b, &d)
+			log.Println(d)
 			return
 		},
 		"b64Encode": func(str []byte) (string, error) {
@@ -96,9 +99,12 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return string(b)
 		},
 		"stringToByte": func(s string) []byte {
+			log.Println(s)
 			return []byte(s)
 		},
 		"unquote": func(s string) string {
+			log.Println("inside unquote")
+			log.Println(s)
 			str, uerr := strconv.Unquote(string(s))
 			log.Print(uerr)
 			return str
@@ -209,7 +215,7 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return
 		},
 		"logstring": func(str interface{}) (err error) {
-			log.Println(str)
+			log.Println("logstring = ", str)
 			return
 		},
 		"uuid": func() (uuidStr string, err error) {
@@ -254,6 +260,10 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		"mul": func(a float64, b float64) (result float64) {
 			return a * b
 		},
+		"excelToJson": func(fData string, sheetNames string, firstRowHeader string, headers string, keys string) (fJson interface{}, err error) {
+
+			return excelToJson(fData, sheetNames, firstRowHeader, headers, keys)
+		},
 	}
 
 	buf := &bytes.Buffer{}
@@ -286,4 +296,122 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		}
 	}
 	return nil, errors.New(fmt.Sprint("Unknown output format : ", outputFormat))
+}
+
+func excelToJson(fData string, sheetNames string, firstRowHeader string, headers string, mapKeys string) (fJson interface{}, err error) {
+	//log.Println("sheetNames = ", sheetNames)
+	sheetNameArray := strings.Split(sheetNames, ",")
+	//log.Println("len(sheetNames) = ", len(sheetNames))
+
+	//log.Println("headers = ", headers)
+	sheetHeadersArray := strings.Split(headers, ",")
+	//log.Println("len(sheetHeadersArray) = ", len(sheetHeadersArray))
+
+	//log.Println("firstRowHeader = ", firstRowHeader)
+	firstRowHeaderArray := strings.Split(firstRowHeader, ",")
+	//log.Println("len(firstRowHeaderArray) = ", len(firstRowHeaderArray))
+
+	//log.Println("mapKeys = ", mapKeys)
+	mapKeysArray := strings.Split(mapKeys, ",")
+	//log.Println("len(mapKeysArray) = ", len(mapKeysArray))
+
+	//if sheetHeadersArray[0] == "" && !firstRowHeader {
+	//	return map[string]string{"error": "header information missing"}, nil
+	//}
+
+	result := make(map[string][]map[string]interface{})
+	fDataDecoded, err := b64.StdEncoding.DecodeString(fData)
+	if err != nil {
+		log.Println(err)
+		//return empty string with nil error to silently proceed even if base64 conversion fails
+		return "", nil
+	}
+	f, err := excelize.OpenReader(bytes.NewReader(fDataDecoded))
+	if err != nil {
+		log.Println(err)
+		return "", err
+	}
+	defer func() {
+		// Close the spreadsheet.
+		if err := f.Close(); err != nil {
+			log.Println(err)
+		}
+	}()
+	sheetFound := false
+	if sheetNameArray[0] == "" {
+		sheetFound = true
+	}
+	for sNo, sheetName := range f.GetSheetList() {
+		outputSheetName := sheetName
+		for _, sn := range sheetNameArray {
+			if sn == sheetName {
+				sheetFound = true
+				break
+			}
+		}
+		if sheetFound {
+			if sNo < len(mapKeysArray) {
+				if mapKeysArray[sNo] != "" {
+					outputSheetName = mapKeysArray[sNo]
+				}
+			}
+			resultRow := make(map[string]interface{})
+			isFirstRowHeader := false
+			if sNo < len(firstRowHeaderArray) {
+				isFirstRowHeader, err = strconv.ParseBool(firstRowHeaderArray[sNo])
+				if err != nil {
+					log.Println(err)
+					isFirstRowHeader = false
+				}
+			}
+			if sNo >= len(sheetHeadersArray) && !isFirstRowHeader {
+				resultRow["error"] = "header information missing"
+				result[outputSheetName] = append(result[outputSheetName], resultRow)
+			} else if sheetHeadersArray[0] == "" && !isFirstRowHeader {
+				resultRow["error"] = "header information missing"
+				result[outputSheetName] = append(result[outputSheetName], resultRow)
+			} else {
+				var keys []string
+				if sNo < len(sheetHeadersArray) {
+					keys = strings.Split(sheetHeadersArray[sNo], "|")
+				}
+
+				rows, rErr := f.GetRows(sheetName)
+				if rErr != nil {
+					err = rErr
+					log.Println(err)
+					return
+				}
+				for rNo, row := range rows {
+					resultRow = make(map[string]interface{})
+					skipRow := false
+					for cNo, colCell := range row {
+						skipRow = false
+						if rNo == 0 && isFirstRowHeader {
+							skipRow = true
+							if cNo >= len(keys) {
+								keys = append(keys, colCell)
+							} else if keys[cNo] == "" {
+								keys[cNo] = colCell
+							}
+						} else {
+							k := ""
+							if cNo >= len(keys) {
+								k = fmt.Sprint("C", cNo)
+							} else if keys[cNo] == "" {
+								k = fmt.Sprint("C", cNo)
+							} else {
+								k = keys[cNo]
+							}
+							resultRow[k] = colCell
+						}
+					}
+					if !skipRow {
+						result[outputSheetName] = append(result[outputSheetName], resultRow)
+					}
+				}
+			}
+		}
+	}
+	return result, nil
 }
