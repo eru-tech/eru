@@ -402,17 +402,18 @@ func processMultipart(reqContentType string, request *http.Request, formDataRemo
 				if !removeFlag && part != nil {
 					log.Println("inside !removeFlag")
 					if part.FileName() != "" {
-						var tempFile *os.File
-						tempFile, err = ioutil.TempFile(os.TempDir(), "spa")
-						defer tempFile.Close()
-						if err != nil {
-							log.Println("Temp file creation failed")
-						}
+						//var tempFile *os.File
+						//	tempFile, err = ioutil.TempFile(os.TempDir(), "spa")
+						//defer tempFile.Close()
+						//if err != nil {
+						//		log.Println("Temp file creation failed")
+						//	}
 						//_, err = io.Copy(tempFile, part)
 						//if err != nil {
 						//	log.Println(err)
 						//	return
 						//}
+
 						fileWriter, err := createFormFileCopy(multipartWriter, part)
 						//fileWriter, err := multipartWriter.CreateFormFile(part.FormName(), part.FileName())
 						if err != nil {
@@ -420,11 +421,31 @@ func processMultipart(reqContentType string, request *http.Request, formDataRemo
 							return nil, nil, err
 						}
 						//_, err = fileWriter.Write()
+						buf := new(bytes.Buffer)
+						_, err = buf.ReadFrom(part)
+						if err != nil {
+							log.Println(err)
+							return nil, nil, err
+						}
+						_, ferr := fileWriter.Write(buf.Bytes())
+						if ferr != nil {
+							err = ferr
+							log.Println(err)
+							return nil, nil, err
+						}
+						//log.Println(buf.String())
+						fk := fmt.Sprint("file_", i)
+						varsFormData[fk] = b64.StdEncoding.EncodeToString(buf.Bytes())
+						varsFormDataKeyArray = append(varsFormDataKeyArray, fk)
+
 						_, err = io.Copy(fileWriter, part)
 						if err != nil {
 							log.Println(err)
 							return nil, nil, err
 						}
+						//log.Print("reqBody printed from multipart below")
+						//log.Print(reqBody.String())
+
 					} else {
 						log.Println("inside else of part.FileName() != \"\"", part.FormName())
 						buf := new(bytes.Buffer)
@@ -449,8 +470,8 @@ func processMultipart(reqContentType string, request *http.Request, formDataRemo
 				}
 			}
 		}
-		log.Println(" ++++++++++++++++++ formData ++++++++++++++++")
-		log.Println(formData)
+		//log.Println(" ++++++++++++++++++ formData ++++++++++++++++")
+		//log.Println(formData)
 		for fk, fd := range formData {
 			toIgnore := false
 			for _, k := range varsFormDataKeyArray {

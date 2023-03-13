@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	utils "github.com/eru-tech/eru/eru-utils"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -330,7 +329,7 @@ func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string
 	}
 	routevars := &TemplateVars{}
 	_ = routevars
-	utils.PrintRequestBody(request, "before funcStep.Route.Execute")
+	//utils.PrintRequestBody(request, "before funcStep.Route.Execute")
 	log.Print(reqVars[funcStep.GetRouteName()].LoopVars)
 	log.Print(reqVars[funcStep.GetRouteName()].LoopVar)
 	log.Print(reqVars[funcStep.GetRouteName()].Body)
@@ -345,6 +344,20 @@ func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string
 	if funcStep.Route.OnError == "STOP" && response.StatusCode >= 400 {
 		log.Print("inside funcStep.Route.OnError == \"STOP\" && response.StatusCode >= 400")
 		return
+	} else {
+		log.Print("Ignoring route execution error : ", err.Error())
+		err = nil
+		cfmBody := "{}"
+		response = &http.Response{
+			StatusCode:    http.StatusOK,
+			Proto:         "HTTP/1.1",
+			ProtoMajor:    1,
+			ProtoMinor:    1,
+			Body:          ioutil.NopCloser(bytes.NewBufferString(cfmBody)),
+			ContentLength: int64(len(cfmBody)),
+			Request:       request,
+			Header:        http.Header{},
+		}
 	}
 
 	// in case of error - no need to call  transformResponse
@@ -526,9 +539,6 @@ func (funcStep *FuncStep) transformRequest(request *http.Request, reqVars map[st
 			}
 		}
 	}
-	log.Print(vars.FormData)
-	log.Print("printing vars.FormData")
-
 	//next we process and transform query params and set it in request
 	err = processParams(req, funcStep.RemoveParams.QueryParams, funcStep.QueryParams, vars, reqVars, resVars)
 	if err != nil {

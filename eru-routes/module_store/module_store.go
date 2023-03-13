@@ -267,6 +267,7 @@ func (ms *ModuleStore) loadRoutesForFunction(funcStep *routes.FuncStep, routeNam
 		r.RewriteUrl = funcStep.ApiPath
 		r.LoopVariable = ""
 		r.Condition = ""
+		r.OnError = "IGNORE"
 		r.TargetHosts = append(r.TargetHosts, funcStep.Api)
 	} else {
 		r, err = ms.GetAndValidateRoute(routeName, projectId, host, url, method, headers)

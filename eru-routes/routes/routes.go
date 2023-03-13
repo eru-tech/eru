@@ -496,7 +496,7 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 			}
 
 		} else {
-			utils.PrintRequestBody(request, "printing request just before utils.ExecuteHttp")
+			//utils.PrintRequestBody(request, "printing request just before utils.ExecuteHttp")
 			log.Print(request.URL)
 			response, err = utils.ExecuteHttp(request)
 			if err != nil {
