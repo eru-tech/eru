@@ -436,7 +436,7 @@ func processMultipart(reqContentType string, request *http.Request, formDataRemo
 						//log.Println(buf.String())
 						fk := fmt.Sprint("file_", i)
 						varsFormData[fk] = b64.StdEncoding.EncodeToString(buf.Bytes())
-						varsFormDataKeyArray = append(varsFormDataKeyArray, fk)
+						//varsFormDataKeyArray = append(varsFormDataKeyArray, fk)
 
 						_, err = io.Copy(fileWriter, part)
 						if err != nil {
