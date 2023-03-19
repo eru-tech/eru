@@ -173,7 +173,12 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				sqlObj.FinalVariables = gqd.QLData.FinalVariables
 				field := v.(*ast.Field)
 				sqlObj.MainTableName = strings.Replace(field.Name.Value, "___", ".", -1) //replacing schema___tablename with schema.tablename
-				sqlObj.MainAliasName = field.Alias.Value
+				if field.Alias == nil {
+					sqlObj.MainAliasName = field.Name.Value
+				} else {
+					sqlObj.MainAliasName = field.Alias.Value
+				}
+
 				if sqlObj.OverwriteDoc == nil {
 					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
 				}
