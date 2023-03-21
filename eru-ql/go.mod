@@ -3,6 +3,7 @@ module github.com/eru-tech/eru/eru-ql
 go 1.17
 
 require (
+	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-security-rule v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-server v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-store v0.0.0-00010101000000-000000000000
@@ -38,6 +39,9 @@ require (
 	github.com/xuri/efp v0.0.0-20220603152613-6918739fd470 // indirect
 	github.com/xuri/excelize/v2 v2.7.0 // indirect
 	github.com/xuri/nfp v0.0.0-20220409054826-5e722a1d9e22 // indirect
+	go.uber.org/atomic v1.10.0 // indirect
+	go.uber.org/multierr v1.10.0 // indirect
+	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.5.0 // indirect
 	golang.org/x/net v0.5.0 // indirect
 	golang.org/x/text v0.6.0 // indirect
@@ -45,6 +49,7 @@ require (
 
 replace (
 	github.com/eru-tech/eru/eru-crypto => ../eru-crypto
+	github.com/eru-tech/eru/eru-logs => ../eru-logs
 	github.com/eru-tech/eru/eru-security-rule => ../eru-security-rule
 	github.com/eru-tech/eru/eru-server => ../eru-server
 	github.com/eru-tech/eru/eru-store => ../eru-store

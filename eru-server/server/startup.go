@@ -2,10 +2,10 @@ package server
 
 import (
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/eru-tech/eru/eru-store/store"
 	"github.com/gorilla/mux"
-	"log"
 	"net/http"
 )
 
@@ -16,13 +16,13 @@ type Server struct {
 func Launch(serverRouter *mux.Router, port string) {
 	// Allow cors
 	corsObj := handlers.MakeCorsObject()
-	r := corsObj.Handler(serverRouter)
+	r := corsObj.Handler(requestIdMiddleWare(serverRouter))
 	//log.Print(s)
 	//r := s.GetRouter()
 	http.Handle("/", r)
-	log.Println(fmt.Sprint("Starting server ", handlers.ServerName, " on ", port))
+	logs.Logger.Info(fmt.Sprint("Starting server ", handlers.ServerName, " on ", port))
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatal(err)
+		logs.Logger.DPanic(err.Error())
 	}
 }
 func Init() (*mux.Router, *Server, error) {

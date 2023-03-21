@@ -3,11 +3,16 @@ package module_server
 import (
 	module_handlers "github.com/eru-tech/eru/eru-routes/module_server/handlers"
 	"github.com/eru-tech/eru/eru-routes/module_store"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"net/http"
 )
 
+func SetServiceName() {
+	server_handlers.ServerName = "eru-routes"
+}
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
+
 	//store routes specific to files
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 

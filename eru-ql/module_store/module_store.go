@@ -1,8 +1,10 @@
 package module_store
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
@@ -24,32 +26,32 @@ type StoreHolder struct {
 }
 type ModuleStoreI interface {
 	store.StoreI
-	SaveProject(projectId string, realStore ModuleStoreI, persist bool) error
-	RemoveProject(projectId string, realStore ModuleStoreI) error
-	GetProjectConfig(projectId string) (*module_model.Project, error)
-	GetProjectConfigObject(projectId string) (pc module_model.ProjectConfig, err error)
-	GetProjectList() []map[string]interface{}
-	SetDataSourceConnections() (err error)
-	SaveProjectConfig(projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error
-	SaveDataSource(projectId string, datasource *module_model.DataSource, realStore ModuleStoreI) error
-	RemoveDataSource(projectId string, dbAlias string, realStore ModuleStoreI) error
-	GetDataSource(projectId string, dbAlias string) (datasource *module_model.DataSource, err error)
-	GetDataSources(projectId string) (datasources map[string]*module_model.DataSource, err error)
-	UpdateSchemaTables(projectId string, dbAlias string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error)
-	AddSchemaTable(projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
-	SaveSchemaTable(projectId string, dbAlias string, tableName string, tableObj map[string]module_model.TableColsMetaData, realStore ModuleStoreI) (err error)
-	SaveTableSecurity(projectId string, dbAlias string, tableName string, securityRules module_model.SecurityRules, realStore ModuleStoreI) (err error)
-	SaveTableTransformation(projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error)
-	GetTableTransformation(projectId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error)
-	GetTableSecurityRule(projectId string, dbAlias string, tableName string) (transformRules module_model.SecurityRules, err error)
-	DropSchemaTable(projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error)
-	RemoveSchemaTable(projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
-	SaveMyQuery(projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule) error
-	RemoveMyQuery(projectId string, queryName string, realStore ModuleStoreI) error
-	GetMyQuery(projectId string, queryName string) (myquery module_model.MyQuery, err error)
-	GetMyQueries(projectId string, queryType string) (myqueries map[string]module_model.MyQuery, err error)
-	AddSchemaJoin(projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error)
-	RemoveSchemaJoin(projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error)
+	SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error
+	RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error
+	GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error)
+	GetProjectConfigObject(ctx context.Context, projectId string) (pc module_model.ProjectConfig, err error)
+	GetProjectList(ctx context.Context) []map[string]interface{}
+	SetDataSourceConnections(ctx context.Context) (err error)
+	SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error
+	SaveDataSource(ctx context.Context, projectId string, datasource *module_model.DataSource, realStore ModuleStoreI) error
+	RemoveDataSource(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) error
+	GetDataSource(ctx context.Context, projectId string, dbAlias string) (datasource *module_model.DataSource, err error)
+	GetDataSources(ctx context.Context, projectId string) (datasources map[string]*module_model.DataSource, err error)
+	UpdateSchemaTables(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error)
+	AddSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
+	SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]module_model.TableColsMetaData, realStore ModuleStoreI) (err error)
+	SaveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, securityRules module_model.SecurityRules, realStore ModuleStoreI) (err error)
+	SaveTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error)
+	GetTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error)
+	GetTableSecurityRule(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.SecurityRules, err error)
+	DropSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error)
+	RemoveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
+	SaveMyQuery(ctx context.Context, projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule) error
+	RemoveMyQuery(ctx context.Context, projectId string, queryName string, realStore ModuleStoreI) error
+	GetMyQuery(ctx context.Context, projectId string, queryName string) (myquery module_model.MyQuery, err error)
+	GetMyQueries(ctx context.Context, projectId string, queryType string) (myqueries map[string]module_model.MyQuery, err error)
+	AddSchemaJoin(ctx context.Context, projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error)
+	RemoveSchemaJoin(ctx context.Context, projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error)
 }
 
 type ModuleStore struct {
@@ -65,7 +67,8 @@ type ModuleDbStore struct {
 	ModuleStore
 }
 
-func (ms *ModuleStore) SaveProject(projectId string, realStore ModuleStoreI, persist bool) error {
+func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error {
+	logs.WithContext(ctx).Debug("SaveProject - Start")
 	//TODO to handle edit project once new project attributes are finalized
 	if _, ok := ms.Projects[projectId]; !ok {
 		project := new(module_model.Project)
@@ -88,7 +91,8 @@ func (ms *ModuleStore) SaveProject(projectId string, realStore ModuleStoreI, per
 	}
 }
 
-func (ms *ModuleStore) RemoveProject(projectId string, realStore ModuleStoreI) error {
+func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("RemoveProject - Start")
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
 		log.Print("SaveStore called from RemoveProject")
@@ -98,25 +102,30 @@ func (ms *ModuleStore) RemoveProject(projectId string, realStore ModuleStoreI) e
 	}
 }
 
-func (ms *ModuleStore) GetProjectConfig(projectId string) (*module_model.Project, error) {
+func (ms *ModuleStore) GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error) {
+	logs.WithContext(ctx).Debug("GetProjectConfig - Start")
 	if _, ok := ms.Projects[projectId]; ok {
-		//log.Println(store.Projects[projectId])
 		return ms.Projects[projectId], nil
 	} else {
-		return nil, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
 }
 
-func (ms *ModuleStore) GetProjectConfigObject(projectId string) (pc module_model.ProjectConfig, err error) {
+func (ms *ModuleStore) GetProjectConfigObject(ctx context.Context, projectId string) (pc module_model.ProjectConfig, err error) {
+	logs.WithContext(ctx).Debug("GetProjectConfigObject - Start")
 	if _, ok := ms.Projects[projectId]; ok {
-		//log.Println(store.Projects[projectId])
 		return ms.Projects[projectId].ProjectConfig, nil
 	} else {
-		return pc, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		err = errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		logs.WithContext(ctx).Error(err.Error())
+		return pc, err
 	}
 }
 
-func (ms *ModuleStore) GetProjectList() []map[string]interface{} {
+func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interface{} {
+	logs.WithContext(ctx).Debug("GetProjectList - Start")
 	projects := make([]map[string]interface{}, len(ms.Projects))
 	i := 0
 	for k := range ms.Projects {
@@ -129,32 +138,30 @@ func (ms *ModuleStore) GetProjectList() []map[string]interface{} {
 	return projects
 }
 
-func (ms *ModuleStore) SetDataSourceConnections() (err error) {
+func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context) (err error) {
+	logs.WithContext(ctx).Debug("SetDataSourceConnections - Start")
 	for _, prj := range ms.Projects {
-		log.Print(prj.ProjectId)
 		for _, datasource := range prj.DataSources {
-			log.Print(datasource.DbName)
-			log.Print(datasource.DbConfig)
 			i := ds.GetSqlMaker(datasource.DbName)
-			log.Print(i)
 			if i != nil {
-				err = i.CreateConn(datasource)
+				err = i.CreateConn(ctx, datasource)
 				if err != nil {
-					log.Print(err)
+					logs.WithContext(ctx).Error(err.Error())
 				}
 			} else {
 				err = errors.New(fmt.Sprint(datasource.DbName, " not found"))
-				log.Print(err.Error())
+				logs.WithContext(ctx).Error(err.Error())
 			}
 		}
 	}
-	log.Print("exiting SetDataSourceConnections")
 	return nil
 }
 
-func (ms *ModuleStore) SaveProjectConfig(projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error {
-	err := ms.checkProjectExists(projectId)
+func (ms *ModuleStore) SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 
@@ -163,9 +170,11 @@ func (ms *ModuleStore) SaveProjectConfig(projectId string, projectConfig module_
 	return realStore.SaveStore("", realStore)
 }
 
-func (ms *ModuleStore) SaveDataSource(projectId string, datasource *module_model.DataSource, realStore ModuleStoreI) error {
-	err := ms.checkProjectExists(projectId)
+func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, datasource *module_model.DataSource, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("SaveDataSource - Start")
+	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 
@@ -188,17 +197,17 @@ func (ms *ModuleStore) SaveDataSource(projectId string, datasource *module_model
 	sqlMaker := ds.GetSqlMaker(datasource.DbName)
 	datasource.DbType = ds.GetDbType(datasource.DbName)
 
-	err = sqlMaker.CreateConn(datasource)
+	err = sqlMaker.CreateConn(ctx, datasource)
 	if err != nil {
-		//return err
-		log.Print(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 	}
 
 	return realStore.SaveStore("", realStore)
 }
 
-func (ms *ModuleStore) RemoveDataSource(projectId string, dbAlias string, realStore ModuleStoreI) error {
-	err := ms.checkProjectDataSourceExists(projectId, dbAlias)
+func (ms *ModuleStore) RemoveDataSource(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("RemoveDataSource - Start")
+	err := ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
 		return err
 	}
@@ -206,34 +215,39 @@ func (ms *ModuleStore) RemoveDataSource(projectId string, dbAlias string, realSt
 	return realStore.SaveStore("", realStore)
 }
 
-func (ms *ModuleStore) GetDataSource(projectId string, dbAlias string) (datasource *module_model.DataSource, err error) {
-	err = ms.checkProjectDataSourceExists(projectId, dbAlias)
+func (ms *ModuleStore) GetDataSource(ctx context.Context, projectId string, dbAlias string) (datasource *module_model.DataSource, err error) {
+	logs.WithContext(ctx).Debug("GetDataSource - Start")
+	err = ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
 		return nil, err
 	}
 	return ms.Projects[projectId].DataSources[dbAlias], nil
 }
 
-func (ms *ModuleStore) GetDataSources(projectId string) (datasources map[string]*module_model.DataSource, err error) {
-	err = ms.checkProjectExists(projectId)
+func (ms *ModuleStore) GetDataSources(ctx context.Context, projectId string) (datasources map[string]*module_model.DataSource, err error) {
+	logs.WithContext(ctx).Debug("GetDataSources - Start")
+	err = ms.checkProjectExists(ctx, projectId)
 	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 	return ms.Projects[projectId].DataSources, nil
 }
 
-func (ms *ModuleStore) UpdateSchemaTables(projectId string, dbAlias string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error) {
+func (ms *ModuleStore) UpdateSchemaTables(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error) {
+	logs.WithContext(ctx).Debug("UpdateSchemaTables - Start")
 	var tmpList []string
-	log.Println("inside UpdateSchemaTables")
-	err = ms.checkProjectDataSourceExists(projectId, dbAlias)
+	err = ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 
 	datasource = ms.Projects[projectId].DataSources[dbAlias]
 	sr := ds.GetSqlMaker(datasource.DbName)
-	err = sr.GetTableList(sr.GetTableMetaDataSQL(), datasource, sr)
+	err = sr.GetTableList(ctx, sr.GetTableMetaDataSQL(ctx), datasource, sr)
 	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 
@@ -249,16 +263,14 @@ func (ms *ModuleStore) UpdateSchemaTables(projectId string, dbAlias string, real
 
 	return datasource, realStore.SaveStore("", realStore)
 }
-func (ms *ModuleStore) AddSchemaTable(projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
-	err = ms.checkProjectDataSourceExists(projectId, dbAlias)
+func (ms *ModuleStore) AddSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("AddSchemaTable - Start")
+	err = ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 	datasource := ms.Projects[projectId].DataSources[dbAlias]
-	log.Print(tableName)
-	for k, _ := range datasource.OtherTables {
-		log.Print(k)
-	}
 	if val, ok := datasource.OtherTables[tableName]; ok {
 		if datasource.SchemaTables == nil {
 			datasource.SchemaTables = make(map[string]map[string]module_model.TableColsMetaData)
@@ -291,7 +303,6 @@ func (ms *ModuleStore) AddSchemaTable(projectId string, dbAlias string, tableNam
 				if datasource.TableJoins == nil {
 					datasource.TableJoins = make(map[string]*module_model.TableJoins)
 				}
-				log.Print(&tj)
 				datasource.TableJoins[tjJoinKey] = &tj
 			}
 		}
@@ -305,16 +316,20 @@ func (ms *ModuleStore) AddSchemaTable(projectId string, dbAlias string, tableNam
 
 		err = realStore.SaveStore("", realStore)
 		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		} else {
 			return map[string]interface{}{"SchemaTables": datasource.SchemaTables, "OtherTables": datasource.OtherTables}, nil
 		}
 	} else {
-		return nil, errors.New(fmt.Sprintf(tableName, " not found to add in the schema"))
+		err = errors.New(fmt.Sprintf(tableName, " not found to add in the schema"))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
 }
-func (ms *ModuleStore) RemoveSchemaTable(projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
-	err = ms.checkProjectDataSourceExists(projectId, dbAlias)
+func (ms *ModuleStore) RemoveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("RemoveSchemaTable - Start")
+	err = ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
 		return nil, err
 	}
@@ -335,45 +350,53 @@ func (ms *ModuleStore) RemoveSchemaTable(projectId string, dbAlias string, table
 		}
 		err = realStore.SaveStore("", realStore)
 		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		} else {
 			return map[string]interface{}{"SchemaTables": datasource.SchemaTables, "OtherTables": datasource.OtherTables}, nil
 		}
 	} else {
-		return nil, errors.New(fmt.Sprintf(tableName, " not found to add in the schema"))
+		err = errors.New(fmt.Sprintf(tableName, " not found to add in the schema"))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
 }
 
-func (ms *ModuleStore) AddSchemaJoin(projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
-	err = ms.checkProjectDataSourceExists(projectId, dbAlias)
+func (ms *ModuleStore) AddSchemaJoin(ctx context.Context, projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("AddSchemaJoin - Start")
+	err = ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
 		return nil, err
 	}
 	datasource := ms.Projects[projectId].DataSources[dbAlias]
-	datasource.AddTableJoins(tj)
+	datasource.AddTableJoins(ctx, tj)
 	err = realStore.SaveStore("", realStore)
 	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	} else {
 		return map[string]interface{}{"TableJoins": datasource.TableJoins}, nil
 	}
 }
-func (ms *ModuleStore) RemoveSchemaJoin(projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
-	err = ms.checkProjectDataSourceExists(projectId, dbAlias)
+func (ms *ModuleStore) RemoveSchemaJoin(ctx context.Context, projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("RemoveSchemaJoin - Start")
+	err = ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
 		return nil, err
 	}
 	datasource := ms.Projects[projectId].DataSources[dbAlias]
-	datasource.RemoveTableJoins(tj)
+	datasource.RemoveTableJoins(ctx, tj)
 	err = realStore.SaveStore("", realStore)
 	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	} else {
 		return map[string]interface{}{"TableJoins": datasource.TableJoins}, nil
 	}
 }
 
-func (ms *ModuleStore) SaveMyQuery(projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule) error {
+func (ms *ModuleStore) SaveMyQuery(ctx context.Context, projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule) error {
+	logs.WithContext(ctx).Debug("SaveMyQuery - Start")
 	if _, ok := ms.Projects[projectId]; ok {
 		readWrite := ""
 		queryFirstWord := strings.ToUpper(strings.Split(query, " ")[0])
@@ -387,18 +410,20 @@ func (ms *ModuleStore) SaveMyQuery(projectId string, queryName string, queryType
 			readWrite = Q_DELETE
 		}
 		myquery := module_model.MyQuery{queryName, query, vars, queryType, dbAlias, readWrite, cols, securityRule}
-		log.Print(myquery)
 		if ms.Projects[projectId].MyQueries == nil {
 			ms.Projects[projectId].MyQueries = make(map[string]*module_model.MyQuery)
 		}
 		ms.Projects[projectId].MyQueries[queryName] = &myquery
 		return realStore.SaveStore("", realStore)
 	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 }
 
-func (ms *ModuleStore) RemoveMyQuery(projectId string, queryName string, realStore ModuleStoreI) error {
+func (ms *ModuleStore) RemoveMyQuery(ctx context.Context, projectId string, queryName string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("RemoveMyQuery - Start")
 	if _, ok := ms.Projects[projectId]; ok {
 		if ms.Projects[projectId].MyQueries == nil {
 			return errors.New(fmt.Sprint("Query ", queryName, " not found"))
@@ -407,14 +432,19 @@ func (ms *ModuleStore) RemoveMyQuery(projectId string, queryName string, realSto
 			delete(ms.Projects[projectId].MyQueries, queryName)
 			return realStore.SaveStore("", realStore)
 		} else {
-			return errors.New(fmt.Sprint("Query ", queryName, " not found"))
+			err := errors.New(fmt.Sprint("Query ", queryName, " not found"))
+			logs.WithContext(ctx).Error(err.Error())
+			return err
 		}
 	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 }
 
-func (ms *ModuleStore) GetMyQuery(projectId string, queryName string) (myquery module_model.MyQuery, err error) {
+func (ms *ModuleStore) GetMyQuery(ctx context.Context, projectId string, queryName string) (myquery module_model.MyQuery, err error) {
+	logs.WithContext(ctx).Debug("GetMyQuery - Start")
 	if _, ok := ms.Projects[projectId]; ok {
 		if ms.Projects[projectId].MyQueries == nil {
 			return module_model.MyQuery{}, errors.New(fmt.Sprint("Query ", queryName, " not found"))
@@ -423,14 +453,19 @@ func (ms *ModuleStore) GetMyQuery(projectId string, queryName string) (myquery m
 			myquery = *myqueryPointer
 			return myquery, nil
 		} else {
-			return module_model.MyQuery{}, errors.New(fmt.Sprint("Query ", queryName, " not found"))
+			err = errors.New(fmt.Sprint("Query ", queryName, " not found"))
+			logs.WithContext(ctx).Error(err.Error())
+			return module_model.MyQuery{}, err
 		}
 	} else {
-		return module_model.MyQuery{}, errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return module_model.MyQuery{}, err
 	}
 }
 
-func (ms *ModuleStore) GetMyQueries(projectId string, queryType string) (myqueries map[string]module_model.MyQuery, err error) {
+func (ms *ModuleStore) GetMyQueries(ctx context.Context, projectId string, queryType string) (myqueries map[string]module_model.MyQuery, err error) {
+	logs.WithContext(ctx).Debug("GetMyQueries - Start")
 	if _, ok := ms.Projects[projectId]; ok {
 		if ms.Projects[projectId].MyQueries == nil {
 			return make(map[string]module_model.MyQuery), nil
@@ -444,49 +479,58 @@ func (ms *ModuleStore) GetMyQueries(projectId string, queryType string) (myqueri
 			return queriesToReturn, nil
 		}
 	} else {
-		return nil, errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
 }
 
-func (ms *ModuleStore) SaveSchemaTable(projectId string, dbAlias string, tableName string, tableObj map[string]module_model.TableColsMetaData, realStore ModuleStoreI) (err error) {
-
+func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]module_model.TableColsMetaData, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveSchemaTable - Start")
 	tableExists := false
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if _, ok := db.SchemaTables[tableName]; ok {
 				tableExists = true
-				log.Println("table exists in Schema table - to alter")
+				logs.WithContext(ctx).Info("table exists in Schema table - to alter")
 			} else if _, ok := db.OtherTables[tableName]; ok {
 				tableExists = true
-				log.Println("table exists in Other table - to alter")
+				logs.WithContext(ctx).Info("table exists in Other table - to alter")
 			}
 			if tableExists {
 				//alter table
 				err = errors.New("Alter table not implemented as yet")
+				logs.WithContext(ctx).Error(err.Error())
 			} else {
 				//create table
 				sr := ds.GetSqlMaker(db.DbName)
-				query, err := sr.MakeCreateTableSQL(tableName, tableObj)
+				query, err := sr.MakeCreateTableSQL(ctx, tableName, tableObj)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return err
+				}
+				res, err := sr.ExecutePreparedQuery(ctx, query, db)
+				_ = res
 				if err != nil {
 					return err
 				}
-				res, err := sr.ExecutePreparedQuery(query, db)
-				if err != nil {
-					return err
-				}
-				log.Println(res)
 				//TODO to change store
 			}
 		} else {
-			return errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			logs.WithContext(ctx).Error(err.Error())
+			return err
 		}
 	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 	return err
 }
 
-func (ms *ModuleStore) SaveTableSecurity(projectId string, dbAlias string, tableName string, securityRules module_model.SecurityRules, realStore ModuleStoreI) (err error) {
+func (ms *ModuleStore) SaveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, securityRules module_model.SecurityRules, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveTableSecurity - Start")
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if _, ok := db.SchemaTables[tableName]; ok {
@@ -495,21 +539,29 @@ func (ms *ModuleStore) SaveTableSecurity(projectId string, dbAlias string, table
 				}
 				db.SchemaTablesSecurity[tableName] = securityRules
 			} else {
-				return errors.New(fmt.Sprint("Table ", tableName, " not found"))
+				err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
+				logs.WithContext(ctx).Error(err.Error())
+				return err
 			}
 		} else {
-			return errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			logs.WithContext(ctx).Error(err.Error())
+			return err
 		}
 	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 	return realStore.SaveStore("", realStore)
 }
 
-func (ms *ModuleStore) SaveTableTransformation(projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error) {
+func (ms *ModuleStore) SaveTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveTableTransformation - Start")
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if _, ok := db.SchemaTables[tableName]; ok {
@@ -518,18 +570,25 @@ func (ms *ModuleStore) SaveTableTransformation(projectId string, dbAlias string,
 				}
 				db.SchemaTablesTransformation[tableName] = transformRules
 			} else {
-				return errors.New(fmt.Sprint("Table ", tableName, " not found"))
+				err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
+				logs.WithContext(ctx).Error(err.Error())
+				return err
 			}
 		} else {
-			return errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			logs.WithContext(ctx).Error(err.Error())
+			return err
 		}
 	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 	return realStore.SaveStore("", realStore)
 }
 
-func (ms *ModuleStore) GetTableTransformation(projectId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error) {
+func (ms *ModuleStore) GetTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error) {
+	logs.WithContext(ctx).Debug("GetTableTransformation - Start")
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if _, ok := db.SchemaTables[tableName]; ok {
@@ -537,18 +596,25 @@ func (ms *ModuleStore) GetTableTransformation(projectId string, dbAlias string, 
 			} else if _, ok := prj.MyQueries[tableName]; ok {
 				//do nothing as there are no transform rule feature for my query TODO check feasibility
 			} else {
-				return transformRules, errors.New(fmt.Sprint("Table ", tableName, " not found"))
+				err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
+				logs.WithContext(ctx).Error(err.Error())
+				return transformRules, err
 			}
 		} else {
-			return transformRules, errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			logs.WithContext(ctx).Error(err.Error())
+			return transformRules, err
 		}
 	} else {
-		return transformRules, errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return transformRules, err
 	}
 	return
 }
 
-func (ms *ModuleStore) GetTableSecurityRule(projectId string, dbAlias string, tableName string) (securityRules module_model.SecurityRules, err error) {
+func (ms *ModuleStore) GetTableSecurityRule(ctx context.Context, projectId string, dbAlias string, tableName string) (securityRules module_model.SecurityRules, err error) {
+	logs.WithContext(ctx).Debug("GetTableSecurityRule - Start")
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if _, ok := db.SchemaTables[tableName]; ok {
@@ -556,51 +622,65 @@ func (ms *ModuleStore) GetTableSecurityRule(projectId string, dbAlias string, ta
 			} else if _, ok := prj.MyQueries[tableName]; ok {
 				securityRules.Query = prj.MyQueries[tableName].SecurityRule
 			} else {
-				return securityRules, errors.New(fmt.Sprint("Table ", tableName, " not found"))
+				err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
+				logs.WithContext(ctx).Error(err.Error())
+				return securityRules, err
 			}
 		} else {
-			return securityRules, errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			logs.WithContext(ctx).Error(err.Error())
+			return securityRules, err
 		}
 	} else {
-		return securityRules, errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return securityRules, err
 	}
 	return
 }
 
-func (ms *ModuleStore) DropSchemaTable(projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error) {
+func (ms *ModuleStore) DropSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("DropSchemaTable - Start")
 	tableExists := false
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if _, ok := db.SchemaTables[tableName]; ok {
 				tableExists = true
 				delete(db.SchemaTables, tableName)
-				log.Println("table exists in Schema table - to alter")
+				logs.WithContext(ctx).Info("table exists in Schema table - to alter")
 			} else if _, ok := db.OtherTables[tableName]; ok {
 				tableExists = true
 				delete(db.OtherTables, tableName)
-				log.Println("table exists in Other table - to alter")
+				logs.WithContext(ctx).Info("table exists in Other table - to alter")
 			}
 			if tableExists {
 				//drop table
 				sr := ds.GetSqlMaker(db.DbName)
-				query, err := sr.MakeDropTableSQL(tableName)
+				query, err := sr.MakeDropTableSQL(ctx, tableName)
 				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
-				res, err := sr.ExecutePreparedQuery(query, db)
+				res, err := sr.ExecutePreparedQuery(ctx, query, db)
 				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
-				log.Println(res)
+				_ = res
 				//TODO to change store
 			} else {
 				err = errors.New(fmt.Sprint("Table ", tableName, " does not exists"))
+				logs.WithContext(ctx).Error(err.Error())
 			}
 		} else {
-			return errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			logs.WithContext(ctx).Error(err.Error())
+			return err
 		}
 	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 	return err
 }

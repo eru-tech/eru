@@ -11,6 +11,7 @@ import (
 var port = "8086"
 
 func main() {
+	module_server.SetServiceName()
 	log.Println("inside main of eru-gateway")
 	envPort := os.Getenv("ERUGATEWAYPORT")
 	if envPort != "" {

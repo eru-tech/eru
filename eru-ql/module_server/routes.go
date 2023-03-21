@@ -3,11 +3,17 @@ package module_server
 import (
 	module_handlers "github.com/eru-tech/eru/eru-ql/module_server/handlers"
 	"github.com/eru-tech/eru/eru-ql/module_store"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"net/http"
 )
 
+func SetServiceName() {
+	server_handlers.ServerName = "eru-ql"
+}
+
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
+
 	//store routes specific to files
 	serverRouter.Methods(http.MethodPost).Path("/graphql/{project}/execute").HandlerFunc(module_handlers.GraphqlExecuteHandler(sh.Store))
 	serverRouter.Methods(http.MethodPost).Path("/sql/{project}/execute").HandlerFunc(module_handlers.SqlExecuteHandler(sh.Store))

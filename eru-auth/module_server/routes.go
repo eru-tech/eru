@@ -8,8 +8,11 @@ import (
 	"net/http"
 )
 
+func SetServiceName() {
+	server_handlers.ServerName = "eru-auth"
+}
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
-	server_handlers.ServerName = "eruauth"
+
 	//store routes specific to files
 	//serverRouter.Path("/auth/google/login").HandlerFunc(module_handlers.OauthGoogleLogin())
 	//serverRouter.Path("/auth/google/callback").HandlerFunc(module_handlers.OauthGoogleCallback())

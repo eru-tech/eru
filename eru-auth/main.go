@@ -11,6 +11,7 @@ import (
 var port = "8085"
 
 func main() {
+	module_server.SetServiceName()
 	log.Println("inside main of eru-auth")
 	envPort := os.Getenv("ERUAUTHPORT")
 	if envPort != "" {

@@ -8,8 +8,11 @@ import (
 	"net/http"
 )
 
+func SetServiceName() {
+	server_handlers.ServerName = "eru-files"
+}
 func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
-	server_handlers.ServerName = "erufiles"
+
 	//store routes specific to files
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 

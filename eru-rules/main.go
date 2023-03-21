@@ -11,6 +11,7 @@ import (
 var port = "8084"
 
 func main() {
+	module_server.SetServiceName()
 	log.Println("inside main of eru-rules")
 	envPort := os.Getenv("ERURULESPORT")
 	if envPort != "" {

@@ -11,6 +11,7 @@ import (
 var port = "8088"
 
 func main() {
+	module_server.SetServiceName()
 	log.Println("inside main of eru-alerts")
 	envPort := os.Getenv("ERUALERTSPORT")
 	if envPort != "" {

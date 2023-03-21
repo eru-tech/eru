@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-ql/ql"
@@ -13,42 +14,39 @@ import (
 	eru_writes "github.com/eru-tech/eru/eru-writes/eru_writes"
 	"github.com/gorilla/mux"
 	"io"
-	"log"
 	"net/http"
-	"reflect"
 	"strconv"
 	//"../server"
 )
 
 func ProjectMyQuerySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectMyQuerySaveHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		queryName := vars["queryname"]
 		queryType := vars["querytype"]
 
-		log.Print(projectID)
 		var err error
 		if queryType == "graphql" {
 			var gqd ql.GraphQLData
 			if err := json.NewDecoder(r.Body).Decode(&gqd); err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-				log.Print(err)
+				logs.WithContext(r.Context()).Error(err.Error())
 				return
 			}
-			err = s.SaveMyQuery(projectID, queryName, queryType, "", gqd.Query, gqd.Variables, s, "", gqd.SecurityRule)
+			err = s.SaveMyQuery(r.Context(), projectID, queryName, queryType, "", gqd.Query, gqd.Variables, s, "", gqd.SecurityRule)
 		} else if queryType == "sql" {
 			var sqd ql.SQLData
 			if err := json.NewDecoder(r.Body).Decode(&sqd); err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-				log.Print(err)
+				logs.WithContext(r.Context()).Error(err.Error())
 				return
 			}
-			log.Print("r.Body == ")
-			log.Print(r.Body)
-			err = s.SaveMyQuery(projectID, queryName, queryType, sqd.DBAlias, sqd.Query, sqd.Variables, s, sqd.Cols, sqd.SecurityRule)
+
+			err = s.SaveMyQuery(r.Context(), projectID, queryName, queryType, sqd.DBAlias, sqd.Query, sqd.Variables, s, sqd.Cols, sqd.SecurityRule)
 		} else {
 			err = errors.New("Incorrect query type")
 		}
@@ -66,12 +64,12 @@ func ProjectMyQuerySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ProjectMyQueryRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectMyQueryRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		queryName := vars["queryname"]
-		log.Print(projectID)
 
-		err := s.RemoveMyQuery(projectID, queryName, s)
+		err := s.RemoveMyQuery(r.Context(), projectID, queryName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -85,12 +83,12 @@ func ProjectMyQueryRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ProjectMyQueryListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectMyQueryListHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		queryType := vars["querytype"]
-		log.Print(projectID)
 
-		myqueries, err := s.GetMyQueries(projectID, queryType)
+		myqueries, err := s.GetMyQueries(r.Context(), projectID, queryType)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -104,12 +102,12 @@ func ProjectMyQueryListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ProjectMyQueryConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectMyQueryConfigHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		queryName := vars["queryname"]
-		log.Print(projectID)
 
-		myquery, err := s.GetMyQuery(projectID, queryName)
+		myquery, err := s.GetMyQuery(r.Context(), projectID, queryName)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -123,18 +121,18 @@ func ProjectMyQueryConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		//log.Print(time.Now(), " Start --------------------------------------------------- ")
+		logs.WithContext(r.Context()).Debug("ProjectMyQueryExecuteHandler - Start")
+		//logs.WithContext(r.Context()).Info(time.Now(), " Start --------------------------------------------------- ")
 		//time.Sleep(time.Duration(3000) * time.Millisecond)
-		//log.Print(time.Now(), " End --------------------------------------------------- ")
-		claims := r.Header.Get("claims")
-		log.Println(claims)
+		//logs.WithContext(r.Context()).Info(time.Now(), " End --------------------------------------------------- ")
+		//claims := r.Header.Get("claims")
+
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		queryName := vars["queryname"]
 		outputType := vars["outputtype"]
-		log.Print("projectID = ", projectID)
 
-		projectConfig, err := s.GetProjectConfigObject(projectID)
+		projectConfig, err := s.GetProjectConfigObject(r.Context(), projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -142,12 +140,10 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 		}
 		tokenObj := make(map[string]interface{})
 		tokenStr := r.Header.Get(projectConfig.TokenSecret.HeaderKey)
-		log.Print("tokenStr = ", tokenStr)
 		if tokenStr != "" {
 			err = json.Unmarshal([]byte(tokenStr), &tokenObj)
 			if err != nil {
-				log.Print("error while unmarshalling token claim")
-				log.Print(err)
+				logs.WithContext(r.Context()).Error(fmt.Sprint("error while unmarshalling token claim : ", err.Error()))
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
@@ -159,24 +155,24 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 		if err := json.NewDecoder(r.Body).Decode(&postBody); err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-			log.Print(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			return
 		}
-		//log.Println(postBody)
-		datasources, err := s.GetDataSources(projectID)
+
+		datasources, err := s.GetDataSources(r.Context(), projectID)
 		if err != nil {
-			log.Print(err.Error())
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		var res []map[string]interface{}
 		//var queries []string
-		myQuery, err := s.GetMyQuery(projectID, queryName)
+		myQuery, err := s.GetMyQuery(r.Context(), projectID, queryName)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-			log.Print(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			return
 		}
 		// overwriting variables with same names
@@ -186,7 +182,7 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				server_handlers.FormatResponse(w, 400)
 				err = errors.New("Invalid Query Type")
 				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-				log.Print(err)
+				logs.WithContext(r.Context()).Error(err.Error())
 				return
 			}
 			isPublic := false
@@ -195,13 +191,13 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				// do nothing - silently execute with is_public as false
 			}
 
-			qlInterface.SetQLData(myQuery, postBody, true, tokenObj, isPublic, outputType)
-			res, _, err = qlInterface.Execute(projectID, datasources, s, outputType)
+			qlInterface.SetQLData(r.Context(), myQuery, postBody, true, tokenObj, isPublic, outputType)
+			res, _, err = qlInterface.Execute(r.Context(), projectID, datasources, s, outputType)
 			/*
 				if err != nil {
 					server_handlers.FormatResponse(w, 400)
 					json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-					log.Print(err)
+					logs.WithContext(r.Context()).Error(err.Error())
 					return
 				}
 			*/
@@ -226,7 +222,6 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			var b []byte // creates IO Writer
 			for _, v := range res {
 				for k, excelData := range v {
-					log.Print(reflect.TypeOf(excelData))
 					if records, ok := excelData.([][]interface{}); ok {
 						if ewd.ColumnarDataMap == nil {
 							ewd.ColumnarDataMap = make(map[string][][]interface{})
@@ -278,13 +273,7 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 					}
 				}
 			}
-			//	defer func() {
-			//		csvFile.Close()
-			//		e := os.Remove(tmpFileName)
-			//		if e != nil {
-			//			log.Print(e)
-			//		}
-			//	}()
+
 			w.WriteHeader(http.StatusOK)
 			w.Header().Set("Content-Type", "text/csv")
 			w.Header().Set("Content-Disposition", "attachment; filename=query.csv")
@@ -300,11 +289,11 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 
 func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("GraphqlExecuteHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		log.Print(projectID)
 		outputType := vars["outputtype"]
-		projectConfig, err := s.GetProjectConfigObject(projectID)
+		projectConfig, err := s.GetProjectConfigObject(r.Context(), projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -313,29 +302,21 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		tokenObj := make(map[string]interface{})
 		tokenStr := r.Header.Get(projectConfig.TokenSecret.HeaderKey)
 
-		log.Print("tokenStr = ", tokenStr)
 		if tokenStr != "" {
 			err = json.Unmarshal([]byte(tokenStr), &tokenObj)
 			if err != nil {
-				log.Print("error while unmarshalling token claim")
-				log.Print(err)
+				logs.WithContext(r.Context()).Error(fmt.Sprint("error while unmarshalling token claim : ", err.Error()))
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
 		}
-		datasources, err := s.GetDataSources(projectID)
+		datasources, err := s.GetDataSources(r.Context(), projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		//var t interface{}
-		//terr := json.NewDecoder(r.Body).Decode(&t)
-		//if terr != nil {
-		//	log.Print(terr.Error())
-		//}
-		//log.Print(t)
 
 		var gqd ql.GraphQLData
 		gqd.IsPublic = false
@@ -343,15 +324,14 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		if err != nil {
 			// do nothing - silently execute with is_public as false
 		}
-		log.Print("gqd.IsPublic = ", gqd.IsPublic)
 
 		if err := json.NewDecoder(r.Body).Decode(&gqd); err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-			log.Print(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			return
 		}
-		//log.Print(gqd)
+
 		if gqd.Variables == nil {
 			gqd.Variables = make(map[string]interface{})
 		}
@@ -366,7 +346,7 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				if err != nil {
 					server_handlers.FormatResponse(w, 400)
 					json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-					log.Print(err)
+					logs.WithContext(r.Context()).Error(err.Error())
 					return
 				}
 				// overwriting variables with same names
@@ -376,7 +356,7 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						server_handlers.FormatResponse(w, 400)
 						err = errors.New("Invalid Query Type")
 						json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-						log.Print(err)
+						logs.WithContext(r.Context()).Error(err.Error())
 						return
 					}
 					qlInterface.SetQLData(*myQuery, gqd.FinalVariables, false) //passing false as we only need the query in execute function and not actual result
@@ -384,7 +364,7 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 					if err != nil {
 						server_handlers.FormatResponse(w, 400)
 						json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-						log.Print(err)
+						logs.WithContext(r.Context()).Error(err.Error())
 						return
 					}
 					log.Print(queryMap)
@@ -396,10 +376,8 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				}
 			}
 		*/
-		res, queryObjs, err := gqd.Execute(projectID, datasources, s, outputType)
+		res, queryObjs, err := gqd.Execute(r.Context(), projectID, datasources, s, outputType)
 		_ = queryObjs
-		//log.Print("queryObjs printed below")
-		//log.Print(queryObjs)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			if res == nil {
@@ -418,11 +396,11 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func SqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SqlExecuteHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		log.Print(projectID)
 		outputType := vars["outputtype"]
-		projectConfig, err := s.GetProjectConfigObject(projectID)
+		projectConfig, err := s.GetProjectConfigObject(r.Context(), projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -430,19 +408,17 @@ func SqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		tokenObj := make(map[string]interface{})
 		tokenStr := r.Header.Get(projectConfig.TokenSecret.HeaderKey)
-		log.Print("tokenStr = ", tokenStr)
 		if tokenStr != "" {
 			err = json.Unmarshal([]byte(tokenStr), &tokenObj)
 			if err != nil {
-				log.Print("error while unmarshalling token claim")
-				log.Print(err)
+				logs.WithContext(r.Context()).Error(fmt.Sprint("error while unmarshalling token claim : ", err.Error()))
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
 		}
 
-		datasources, err := s.GetDataSources(projectID)
+		datasources, err := s.GetDataSources(r.Context(), projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -455,25 +431,22 @@ func SqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		if err != nil {
 			// do nothing - silently execute with is_public as false
 		}
-		log.Print("gqd.IsPublic = ", sqd.IsPublic)
 
 		if err := json.NewDecoder(r.Body).Decode(&sqd); err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-			log.Print(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			return
 		}
-		//log.Print(sqd)
+
 		if sqd.Variables == nil {
 			sqd.Variables = make(map[string]interface{})
 		}
 		sqd.Variables[module_model.RULEPREFIX_TOKEN] = tokenObj
 		sqd.FinalVariables = sqd.Variables
 		sqd.ExecuteFlag = true
-		res, queryObjs, err := sqd.Execute(projectID, datasources, s, outputType)
+		res, queryObjs, err := sqd.Execute(r.Context(), projectID, datasources, s, outputType)
 		_ = queryObjs
-		//log.Print("queryObjs printed below")
-		//log.Print(queryObjs)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			if res == nil {
@@ -500,18 +473,11 @@ func HelloHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	res := make(map[string]string)
 	res["Hellow"] = "World"
-	log.Print("log testing")
 	server_handlers.FormatResponse(w, 200)
 	_ = json.NewEncoder(w).Encode(res)
 }
 
 func EchoHandler(w http.ResponseWriter, r *http.Request) {
-
-	for k, v := range r.Header {
-		log.Println(k, " = ", v)
-		//w.Header()[k] = v
-	}
-	//w.WriteHeader(200)
 	res := make(map[string]interface{})
 	res["Host"] = r.Host
 	res["Header"] = r.Header
@@ -522,17 +488,5 @@ func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	res["RequestURI"] = r.RequestURI
 	server_handlers.FormatResponse(w, 200)
 	_ = json.NewEncoder(w).Encode(res)
-
-	/*t, err := io.Copy(w, r.Body)
-	if err != nil {
-		log.Println("================")
-		log.Println(err)
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-	log.Println(t)
-
-	*/
 
 }

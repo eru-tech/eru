@@ -1,13 +1,14 @@
 package ql
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
-	"log"
 	"strings"
 )
 
@@ -28,12 +29,13 @@ type QueryObject struct {
 }
 
 type QL interface {
-	Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error)
-	SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string)
-	ProcessTransformRule(tr module_model.TransformRule) (outputObj map[string]interface{}, err error)
+	Execute(ctx context.Context, projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error)
+	SetQLData(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string)
+	ProcessTransformRule(ctx context.Context, tr module_model.TransformRule) (outputObj map[string]interface{}, err error)
 }
 
-func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) (err error) {
+func (qld *QLData) SetQLDataCommon(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) (err error) {
+	logs.WithContext(ctx).Debug("SetQLDataCommon - Start")
 	if mq.Vars == nil {
 		mq.Vars = make(map[string]interface{})
 	}
@@ -43,16 +45,17 @@ func (qld *QLData) SetQLDataCommon(mq module_model.MyQuery, vars map[string]inte
 	qld.ExecuteFlag = executeFlag
 	qld.IsPublic = isPublic
 	qld.OutputType = outputType
-	err = qld.SetFinalVars(vars)
+	err = qld.SetFinalVars(ctx, vars)
 	qld.FinalVariables[module_model.RULEPREFIX_TOKEN] = tokenObj
 	return err
 }
-func (qld *QLData) SetFinalVars(vars map[string]interface{}) (err error) {
+func (qld *QLData) SetFinalVars(ctx context.Context, vars map[string]interface{}) (err error) {
+	logs.WithContext(ctx).Debug("SetFinalVars - Start")
 	tmpVars, _ := json.Marshal(qld.Variables)
 	finalVars := make(map[string]interface{})
 	err = json.Unmarshal(tmpVars, &finalVars) // Marshall UnMarshall used to copy without referencing of map
 	if err != nil {
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 	//commented below copying and replaced with above Marshall/UnMarshall to copy without referencing of map
@@ -68,8 +71,8 @@ func (qld *QLData) SetFinalVars(vars map[string]interface{}) (err error) {
 	qld.FinalVariables = finalVars
 	return nil
 }
-func (qld *QLData) ProcessTransformRule(tr module_model.TransformRule) (outputObj map[string]interface{}, err error) {
-	log.Print("inside ProcessTransformRule")
+func (qld *QLData) ProcessTransformRule(ctx context.Context, tr module_model.TransformRule) (outputObj map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("ProcessTransformRule - Start")
 	if tr.RuleType == module_model.RULETYPE_NONE {
 		outputObj = make(map[string]interface{})
 		return
@@ -78,7 +81,7 @@ func (qld *QLData) ProcessTransformRule(tr module_model.TransformRule) (outputOb
 		outputObj = make(map[string]interface{})
 		if len(tr.Rules) > 0 {
 			for k, v := range tr.Rules[0].ForceColumnValues { //todo to remove array and make it single object
-				outputBytes, err := processTemplate("xxx", v, qld.FinalVariables, "string", k)
+				outputBytes, err := processTemplate(ctx, "xxx", v, qld.FinalVariables, "string", k)
 				if err != nil {
 					return nil, err
 				}
@@ -89,11 +92,11 @@ func (qld *QLData) ProcessTransformRule(tr module_model.TransformRule) (outputOb
 			}
 		}
 	}
-	log.Print("ProcessTransformRule output = ", outputObj)
 	return
 }
 
-func processSecurityRule(sr security_rule.SecurityRule, vars map[string]interface{}) (outputStr string, err error) {
+func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, vars map[string]interface{}) (outputStr string, err error) {
+	logs.WithContext(ctx).Debug("processSecurityRule - Start")
 	if sr.RuleType == module_model.RULETYPE_NONE {
 		err = errors.New("Security Rule Set to NONE")
 		return
@@ -108,7 +111,8 @@ func processSecurityRule(sr security_rule.SecurityRule, vars map[string]interfac
 	return
 }
 
-func processTemplate(templateName string, templateString string, vars map[string]interface{}, outputType string, key string) (output []byte, err error) {
+func processTemplate(ctx context.Context, templateName string, templateString string, vars map[string]interface{}, outputType string, key string) (output []byte, err error) {
+	logs.WithContext(ctx).Debug("processTemplate - Start")
 	//log.Println("inside processTemplate with template = ", templateString)
 	//log.Print(vars)
 	ruleValue := strings.SplitN(templateString, ".", 2)
@@ -121,7 +125,7 @@ func processTemplate(templateName string, templateString string, vars map[string
 		templateStr = ruleValue[0]
 	}
 	if ruleValue[0] == module_model.RULEPREFIX_TOKEN {
-		return executeTemplate(templateName, templateStr, vars[module_model.RULEPREFIX_TOKEN], outputType)
+		return executeTemplate(ctx, templateName, templateStr, vars[module_model.RULEPREFIX_TOKEN], outputType)
 	} else if ruleValue[0] == module_model.RULEPREFIX_DOCS {
 		var docs []interface{}
 		isArray := false
@@ -142,10 +146,10 @@ func processTemplate(templateName string, templateString string, vars map[string
 			if !er {
 				return nil, errors.New("error while parsing value of 'docs'")
 			}
-			outputBytes, ptErr := executeTemplate(templateName, templateStr, dd, outputType)
+			outputBytes, ptErr := executeTemplate(ctx, templateName, templateStr, dd, outputType)
 			if err != nil {
 				err = ptErr
-				log.Print(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return
 			}
 			dd[key] = string(outputBytes)
@@ -153,24 +157,24 @@ func processTemplate(templateName string, templateString string, vars map[string
 			outputBytes = nil
 		}
 	} else if ruleValue[0] == module_model.RULEPREFIX_NONE {
-		log.Print(vars)
-		return executeTemplate(templateName, templateStr, vars, outputType)
+		return executeTemplate(ctx, templateName, templateStr, vars, outputType)
 	}
 	return
 }
 
-func executeTemplate(templateName string, templateString string, vars interface{}, outputType string) (output []byte, err error) {
+func executeTemplate(ctx context.Context, templateName string, templateString string, vars interface{}, outputType string) (output []byte, err error) {
+	logs.WithContext(ctx).Debug("executeTemplate - Start")
 	goTmpl := gotemplate.GoTemplate{templateName, templateString}
 	outputObj, err := goTmpl.Execute(vars, outputType)
 	if err != nil {
-		log.Println(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	} else if outputType == "string" {
 		return []byte(outputObj.(string)), nil
 	} else {
 		output, err = json.Marshal(outputObj)
 		if err != nil {
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 	}

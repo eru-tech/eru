@@ -3,11 +3,12 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"net/http"
 )
 
 var ServerName = "unkown"
+var RequestIdKey = "request_id"
 
 func HelloHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/hello" {
@@ -24,7 +25,7 @@ func HelloHandler(w http.ResponseWriter, r *http.Request) {
 
 func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseMultipartForm((1 << 20) * 10)
-	log.Println(fmt.Sprint("r.ParseMultipartForm error = ", err))
+	logs.Logger.Info(fmt.Sprint("r.ParseMultipartForm error = ", err))
 	formData := r.MultipartForm
 	/*
 		for k, v := range r.Header {
@@ -41,7 +42,7 @@ func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	tmplBodyFromReq.DisallowUnknownFields()
 	var tmplBody interface{}
 	if err := tmplBodyFromReq.Decode(&tmplBody); err != nil {
-		log.Println(err)
+		logs.Logger.Error(err.Error())
 	}
 	res["Body"] = tmplBody
 	res["Method"] = r.Method

@@ -11,6 +11,7 @@ import (
 var port = "8082"
 
 func main() {
+	file_server.SetServiceName()
 	log.Println("inside main of eru-files")
 	envPort := os.Getenv("ERUFILESPORT")
 	if envPort != "" {

@@ -1,8 +1,10 @@
 package ql
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
@@ -11,7 +13,6 @@ import (
 	"github.com/graphql-go/graphql/language/kinds"
 	"github.com/graphql-go/graphql/language/parser"
 	"github.com/graphql-go/graphql/language/source"
-	"log"
 	"reflect"
 	"strconv"
 	"strings"
@@ -25,11 +26,9 @@ type GraphQLData struct {
 
 var KeyWords = []string{"null"}
 
-func (gqd *GraphQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) {
-	gqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj, isPublic, outputType)
-	//gqd.Query=mq.Query
-	//gqd.Variables=mq.Vars
-	//gqd.SetFinalVars(vars)
+func (gqd *GraphQLData) SetQLData(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) {
+	logs.WithContext(ctx).Debug("SetQLData - Start")
+	gqd.SetQLDataCommon(ctx, mq, vars, executeFlag, tokenObj, isPublic, outputType)
 }
 
 /*
@@ -37,7 +36,7 @@ func (gqd *GraphQLData) SetQLData(mq module_model.MyQuery, vars map[string]inter
 		log.Print("inside CheckIfMutationByQuery __________________________________________________________")
 		doc, err := gqd.parseGraphQL()
 		if err != nil {
-			log.Print(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 		for _, docDef := range doc.Definitions {
@@ -60,41 +59,41 @@ func (gqd *GraphQLData) SetQLData(mq module_model.MyQuery, vars map[string]inter
 		return selectQuery, err
 	}
 */
-func (gqd *GraphQLData) parseGraphQL() (d *ast.Document, err error) {
+func (gqd *GraphQLData) parseGraphQL(ctx context.Context) (d *ast.Document, err error) {
+	logs.WithContext(ctx).Debug("parseGraphQL - Start")
 	s := source.NewSource(&source.Source{
 		Body: []byte(gqd.Query),
 		Name: gqd.Operation,
 	})
 	d, err = parser.Parse(parser.ParseParams{Source: s})
 	if err != nil {
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 	return d, err
 }
 
-func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]*module_model.DataSource, query string, s module_store.ModuleStoreI, tokenObj map[string]interface{}, isPublic bool) (err error) {
-	log.Print("query = ", query)
-	mq, err := s.GetMyQuery(projectId, query)
+func (gqd *GraphQLData) getSqlForQuery(ctx context.Context, projectId string, datasources map[string]*module_model.DataSource, query string, s module_store.ModuleStoreI, tokenObj map[string]interface{}, isPublic bool) (err error) {
+	logs.WithContext(ctx).Debug("getSqlForQuery - Start")
+	mq, err := s.GetMyQuery(ctx, projectId, query)
 	if err != nil {
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 	//mq == nil changed to below
 	if mq.QueryName == "" {
-		log.Print("------------")
 		err = errors.New(fmt.Sprint("Query ", query, " not found"))
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 	qlInterface := GetQL(mq.QueryType)
 	if qlInterface == nil {
 		err = errors.New("Invalid Query Type")
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
-	qlInterface.SetQLData(mq, gqd.FinalVariables, false, tokenObj, isPublic, gqd.OutputType) //passing false as we only need the query in execute function and not actual result
-	_, queryObjs, err := qlInterface.Execute(projectId, datasources, s, gqd.OutputType)
+	qlInterface.SetQLData(ctx, mq, gqd.FinalVariables, false, tokenObj, isPublic, gqd.OutputType) //passing false as we only need the query in execute function and not actual result
+	_, queryObjs, err := qlInterface.Execute(ctx, projectId, datasources, s, gqd.OutputType)
 	//log.Print("queryObjs[0].Type ==", queryObjs[0].Type)
 	for i, q := range queryObjs {
 		queryObjs[i].Type = strings.ToUpper(strings.Split(q.Query, " ")[0])
@@ -112,13 +111,13 @@ func (gqd *GraphQLData) getSqlForQuery(projectId string, datasources map[string]
 	return nil
 }
 
-func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error) {
-	log.Print("inside Execute of GraphQL")
+func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error) {
+	logs.WithContext(ctx).Debug("Execute of GraphQl - Start")
 	singleTxn := false
 	errFound := false
-	doc, err := gqd.parseGraphQL()
+	doc, err := gqd.parseGraphQL(ctx)
 	if err != nil {
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, err
 	}
 	//doc := ast.Node(d).(*ast.Document)
@@ -132,7 +131,6 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 			if v.Name.Value == "singleTxn" {
 				singleTxn = true
 			}
-			log.Print(v.Name.Value)
 		}
 		var returnAliasStrings []string
 		var mainAliasNames []string
@@ -183,29 +181,29 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
 				}
 
-				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, module_model.QUERY_TYPE_SELECT)
+				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, module_model.QUERY_TYPE_SELECT)
 				if err != nil {
 					errMsg = err.Error()
 					errFound = true
 				}
 
-				err = gqd.getSqlForQuery(projectId, datasources, sqlObj.MainTableName, s, nil, gqd.IsPublic)
+				err = gqd.getSqlForQuery(ctx, projectId, datasources, sqlObj.MainTableName, s, nil, gqd.IsPublic)
 				sqlObj.WithQuery = gqd.QueryObject[sqlObj.MainTableName].Query
 
 				if err != nil {
-					log.Print(err)
+					logs.WithContext(ctx).Error(err.Error())
 				}
 
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)
 				}
-				sqlObj.SecurityClause[sqlObj.MainTableName], err = getTableSecurityRule(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.FinalVariables)
+				sqlObj.SecurityClause[sqlObj.MainTableName], err = getTableSecurityRule(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.FinalVariables)
 				if err != nil {
 					errMsg = err.Error()
 					errFound = true
 				}
 
-				err = sqlObj.ProcessGraphQL(v, datasource, graphQLs[i], gqd.FinalVariables, s, gqd.ExecuteFlag) //TODO to handle if err recd.
+				err = sqlObj.ProcessGraphQL(ctx, v, datasource, graphQLs[i], gqd.FinalVariables, s, gqd.ExecuteFlag) //TODO to handle if err recd.
 
 				queryObj.Query = sqlObj.DBQuery
 				queryObj.Cols = strings.Join(sqlObj.Columns.ColNames, " , ")
@@ -220,19 +218,16 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					qrm.SQLQuery = sqlObj.DBQuery
 
 					if gqd.OutputType == eru_writes.OutputTypeCsv || gqd.OutputType == eru_writes.OutputTypeExcel {
-						result, err = graphQLs[i].ExecuteQueryForCsv(qrm.SQLQuery, datasource, mainAliasNames[i])
-						log.Print(err)
+						result, err = graphQLs[i].ExecuteQueryForCsv(ctx, qrm.SQLQuery, datasource, mainAliasNames[i])
+						logs.WithContext(ctx).Error(err.Error())
 					} else {
-						result, err = graphQLs[i].ExecuteQuery(datasource, qrm)
+						result, err = graphQLs[i].ExecuteQuery(ctx, datasource, qrm)
 					}
 					if err != nil {
-						log.Print("error printed below fromc all of ExecuteQuery")
-						log.Print(err)
+						logs.WithContext(ctx).Error(err.Error())
 						errMsg = err.Error()
 						errFound = true
 					}
-					//log.Print("result is printed below")
-					//log.Print(result)
 				}
 
 				if result != nil {
@@ -243,17 +238,15 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				sqlObj := SQLObjectM{}
 				field := v.(*ast.Field)
 				tempStr := strings.SplitN(field.Name.Value, "_", 2)
-				log.Print("tempStr = ", tempStr)
 				sqlObj.QueryType = tempStr[0]
 				sqlObj.MainTableName = strings.Replace(tempStr[1], "___", ".", -1)
-				//log.Print("sqlObj.MainTableName = ", sqlObj.MainTableName)
 				if sqlObj.OverwriteDoc == nil {
 					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
 				}
-				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, sqlObj.QueryType)
+				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, sqlObj.QueryType)
 				if err != nil {
 					errMsg = err.Error()
-					log.Print(err)
+					logs.WithContext(ctx).Error(err.Error())
 					errFound = true
 				}
 				/*
@@ -269,14 +262,14 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					}
 					sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.ProcessTransformRule(tr.TransformInput)
 					if err != nil {
-						log.Print(err)
+						logs.WithContext(ctx).Error(err.Error())
 						errMsg = fmt.Sprint("TransformRule failed : ", err.Error())
 						errFound = true
 					}
 					log.Print("sqlObj.OverwriteDoc")
 					log.Print(sqlObj.OverwriteDoc)
 				*/
-				err = gqd.getSqlForQuery(projectId, datasources, sqlObj.MainTableName, s, nil, gqd.IsPublic)
+				err = gqd.getSqlForQuery(ctx, projectId, datasources, sqlObj.MainTableName, s, nil, gqd.IsPublic)
 				if err == nil {
 					sqlObj.PreparedQuery = true
 				}
@@ -296,11 +289,11 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				}
 				//log.Print(selectQuery)
 				if selectQuery != "" {
-					err = gqd.getSqlForQuery(projectId, datasources, selectQuery, s, nil, gqd.IsPublic)
+					err = gqd.getSqlForQuery(ctx, projectId, datasources, selectQuery, s, nil, gqd.IsPublic)
 					//todo consider passing token from finalvariables
 					if err != nil {
 						errFound = true
-						log.Print(err)
+						logs.WithContext(ctx).Error(err.Error())
 						errMsg = err.Error()
 					}
 				}
@@ -309,18 +302,17 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				sqlObj.openTxn = openTxn
 				sqlObj.closeTxn = closeTxn
 				sqlObj.QueryObject = gqd.QueryObject
-				err = sqlObj.ProcessMutationGraphQL(v, gqd.FinalVariables, datasource)
-				log.Print("error in ProcessMutationGraphQL printed below")
-				log.Print(err)
+				err = sqlObj.ProcessMutationGraphQL(ctx, v, gqd.FinalVariables, datasource)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
 				//TODO connection close on this error - to handle the same
 				mainAliasNames = append(mainAliasNames, sqlObj.MainAliasName)
 				//log.Print("sqlObj.QueryType == ", sqlObj.QueryType)
 				//TODO to loop on MutationRecords and pass query
 				//queryObj.Query = sqlObj.DBQuery
-				log.Print("gqd.ExecuteFlag && !errFound = ", gqd.ExecuteFlag, " ", !errFound)
 				if gqd.ExecuteFlag && !errFound {
 					//TODO can remove this mrm object and directly set values to graphQLs[i]
-					log.Print("inside gqd.ExecuteFlag && !errFound")
 					mrm := module_model.MutationResultMaker{}
 					mrm.MainTableName = sqlObj.MainTableName
 					mrm.MainAliasName = sqlObj.MainAliasName
@@ -334,19 +326,17 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 					mrm.QueryType = sqlObj.QueryType
 					mrm.DBQuery = sqlObj.DBQuery
 					mrm.PreparedQuery = sqlObj.PreparedQuery
-					//log.Println("mrm printed below after conversion from sqlobj")
-					//log.Println(mrm)
-					results, err = graphQLs[i].ExecuteMutationQuery(datasource, graphQLs[i], mrm)
+					results, err = graphQLs[i].ExecuteMutationQuery(ctx, datasource, graphQLs[i], mrm)
 					if err != nil {
 						errFound = true
-						log.Print(err.Error())
+						logs.WithContext(ctx).Error(err.Error())
 						errMsg = err.Error()
 						// no need to return here - error is returned as part of result - if asked in the query.
 					}
 				} else if errFound {
-					rollBackErr := graphQLs[i].RollbackQuery()
+					rollBackErr := graphQLs[i].RollbackQuery(ctx)
 					if rollBackErr != nil {
-						log.Print("rollBackErr = ", rollBackErr)
+						logs.WithContext(ctx).Error(rollBackErr.Error())
 						errMsg = rollBackErr.Error()
 					}
 					breakForLoop = true
@@ -362,19 +352,15 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 				returnAliasStrings = append(returnAliasStrings, sqlObj.MutationReturn.ReturnDocAlias)
 				resObj[mainAliasNames[i]] = returnResult
 				res = append(res, resObj)
-
-				log.Print("err err err err")
-				log.Print(err)
-
+				logs.WithContext(ctx).Error(err.Error())
 			default:
-				log.Print(op.Operation)
+				logs.WithContext(ctx).Info(fmt.Sprint("Unrecognized Operation : ", op.Operation))
 				//do nothing
 			}
 			queryObjs = append(queryObjs, queryObj)
 		}
 		if errFound && singleTxn {
 			for i, _ := range res {
-				log.Print("returnAliasStrings[i] == ", i, " ", returnAliasStrings[i])
 				obj, check := res[i][mainAliasNames[i]].(map[string]interface{})
 				if check {
 					if obj[returnAliasStrings[i]] != nil {
@@ -389,16 +375,15 @@ func (gqd *GraphQLData) Execute(projectId string, datasources map[string]*module
 }
 
 // parseAstValue returns an interface that can be casted to string
-func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, error) {
-	//log.Println("inside ParseAstValue for ")
-	//log.Print(value.GetKind())
+func ParseAstValue(ctx context.Context, value ast.Value, vars map[string]interface{}) (interface{}, error) {
+	logs.WithContext(ctx).Debug("ParseAstValue - Start")
 	switch value.GetKind() {
 	case kinds.ObjectValue:
 
 		o := map[string]interface{}{}
 		obj := value.(*ast.ObjectValue)
 		for _, v := range obj.Fields {
-			temp, err := ParseAstValue(v.Value, vars)
+			temp, err := ParseAstValue(ctx, v.Value, vars)
 			if err != nil {
 				return nil, err
 			}
@@ -410,7 +395,7 @@ func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, e
 		listValue := value.(*ast.ListValue)
 		array := make([]interface{}, len(listValue.Values))
 		for i, v := range listValue.Values {
-			val, err := ParseAstValue(v, vars)
+			val, err := ParseAstValue(ctx, v, vars)
 			if err != nil {
 				return nil, err
 			}
@@ -443,15 +428,14 @@ func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, e
 				v = strings.ReplaceAll(v, fmt.Sprint("$", varsK), str)
 			}
 		}
-		vBytes, err := processTemplate("variable", v, vars, "string", "")
+		vBytes, err := processTemplate(ctx, "variable", v, vars, "string", "")
 		if err != nil {
-			log.Print(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 		if string(vBytes) != "" {
 			v = string(vBytes)
 		}
-		log.Print(v)
 		/*
 			val, err := LoadValue(v, store)
 			if err == nil {
@@ -491,17 +475,19 @@ func ParseAstValue(value ast.Value, vars map[string]interface{}) (interface{}, e
 		t := value.(*ast.Variable)
 		//log.Println("t = ", t.Name.Value)
 		if strings.HasPrefix(t.Name.Value, "$") {
-			log.Println("key has $ prefix")
+			logs.WithContext(ctx).Info(fmt.Sprint("key has $ prefix : ", t.Name.Value))
 		}
-		return replaceVariableValue(t.Name.Value, vars)
+		return replaceVariableValue(ctx, t.Name.Value, vars)
 
 	default:
-		return nil, errors.New("Invalid data type `" + value.GetKind() + "` for value " + string(value.GetLoc().Source.Body)[value.GetLoc().Start:value.GetLoc().End])
+		err := errors.New("Invalid data type `" + value.GetKind() + "` for value " + string(value.GetLoc().Source.Body)[value.GetLoc().Start:value.GetLoc().End])
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
 }
 
-func replaceVariableValue(varName string, vars map[string]interface{}) (res interface{}, err error) {
-
+func replaceVariableValue(ctx context.Context, varName string, vars map[string]interface{}) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("replaceVariableValue - Start")
 	for _, kw := range KeyWords {
 		if kw == varName {
 			return fmt.Sprint("$", varName), nil
@@ -517,7 +503,7 @@ func replaceVariableValue(varName string, vars map[string]interface{}) (res inte
 		for i, v := range m {
 			switch reflect.TypeOf(v).Kind() {
 			case reflect.Map:
-				m[i], err = processMapVariable(v.(map[string]interface{}), vars)
+				m[i], err = processMapVariable(ctx, v.(map[string]interface{}), vars)
 			default:
 				// do nothing
 			}
@@ -525,23 +511,23 @@ func replaceVariableValue(varName string, vars map[string]interface{}) (res inte
 		res = vars[varName]
 	case reflect.Map:
 		m := vars[varName].(map[string]interface{})
-		res, err = processMapVariable(m, vars)
+		res, err = processMapVariable(ctx, m, vars)
 	default:
 		res = vars[varName]
 	}
 	return res, err
 }
 
-func processMapVariable(m map[string]interface{}, vars map[string]interface{}) (interface{}, error) {
+func processMapVariable(ctx context.Context, m map[string]interface{}, vars map[string]interface{}) (interface{}, error) {
+	logs.WithContext(ctx).Debug("processMapVariable - Start")
 	var err error
 	for k, v := range m {
 		mapKey := k
 		//log.Println("k = ", mapKey)
 		if strings.HasPrefix(k, "$") {
-			tempI, err := replaceVariableValue(strings.Replace(mapKey, "$", "", 1), vars)
-			log.Print(err)
+			tempI, err := replaceVariableValue(ctx, strings.Replace(mapKey, "$", "", 1), vars)
+			logs.WithContext(ctx).Error(err.Error())
 			if err == nil {
-				log.Print(reflect.TypeOf(tempI).Kind())
 				switch reflect.TypeOf(tempI).Kind() {
 				case reflect.String, reflect.Float64, reflect.Int64:
 					mapKey = fmt.Sprint(tempI)
@@ -556,13 +542,13 @@ func processMapVariable(m map[string]interface{}, vars map[string]interface{}) (
 		if v != nil {
 			switch reflect.TypeOf(v).Kind() {
 			case reflect.Map:
-				m[mapKey], err = processMapVariable(v.(map[string]interface{}), vars)
+				m[mapKey], err = processMapVariable(ctx, v.(map[string]interface{}), vars)
 			case reflect.Slice:
 				s := v.([]interface{})
 				for ii, sv := range s {
 					switch reflect.TypeOf(sv).Kind() {
 					case reflect.Map:
-						s[ii], err = processMapVariable(sv.(map[string]interface{}), vars)
+						s[ii], err = processMapVariable(ctx, sv.(map[string]interface{}), vars)
 					default:
 						// do nothing
 					}
@@ -570,10 +556,8 @@ func processMapVariable(m map[string]interface{}, vars map[string]interface{}) (
 			case reflect.String:
 				if strings.HasPrefix(v.(string), "$") {
 					tArray := strings.Split(v.(string), " ")
-					tempI, err := replaceVariableValue(strings.Replace(tArray[0], "$", "", 1), vars)
-					log.Print(err)
+					tempI, err := replaceVariableValue(ctx, strings.Replace(tArray[0], "$", "", 1), vars)
 					if err == nil {
-						log.Print(reflect.TypeOf(tempI).Kind())
 						switch reflect.TypeOf(tempI).Kind() {
 						case reflect.String, reflect.Float64, reflect.Int64:
 							tArray[0] = fmt.Sprint(tempI)
@@ -582,14 +566,15 @@ func processMapVariable(m map[string]interface{}, vars map[string]interface{}) (
 							m[mapKey] = tempI
 						}
 					} else {
-						log.Print("removing key ", mapKey, " from list of variables")
+						logs.WithContext(ctx).Error(err.Error())
+						logs.WithContext(ctx).Info(fmt.Sprint("removing key ", mapKey, " from list of variables"))
 						delete(m, mapKey)
 					}
-					log.Print("variable ", v.(string), " replace with ", m[mapKey])
+					logs.WithContext(ctx).Info(fmt.Sprint("variable ", v.(string), " replace with ", m[mapKey]))
 				} else {
-					vBytes, err := processTemplate("variable", v.(string), vars, "string", "")
+					vBytes, err := processTemplate(ctx, "variable", v.(string), vars, "string", "")
 					if err != nil {
-						log.Print(err)
+						logs.WithContext(ctx).Error(err.Error())
 						return nil, err
 					}
 					if string(vBytes) == "" {
@@ -617,17 +602,17 @@ func adjustObjectKey(key string) string {
 	return key
 }
 
-func (gqd *GraphQLData) setOverwriteDoc(projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, queryType string) (overwriteDoc map[string]interface{}, err error) {
-	log.Print("calling for GetTableTransformation = ", tableName)
-	tr, err := s.GetTableTransformation(projectId, dbAlias, tableName)
+func (gqd *GraphQLData) setOverwriteDoc(ctx context.Context, projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, queryType string) (overwriteDoc map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("setOverwriteDoc - Start")
+	tr, err := s.GetTableTransformation(ctx, projectId, dbAlias, tableName)
 	if err != nil {
-		log.Print("error from GetTableTransformation = ", err.Error())
 		err = errors.New(fmt.Sprint("error from GetTableTransformation = ", err.Error()))
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 	overwriteDoc = make(map[string]interface{})
 	if op == "query" {
-		overwriteDoc, err = gqd.ProcessTransformRule(tr.TransformOutput)
+		overwriteDoc, err = gqd.ProcessTransformRule(ctx, tr.TransformOutput)
 	} else if op == "mutation" {
 		processTransformRule := false
 		for _, v := range tr.TransformInput.ApplyOn {
@@ -637,41 +622,42 @@ func (gqd *GraphQLData) setOverwriteDoc(projectId string, dbAlias string, tableN
 			}
 		}
 		if processTransformRule {
-			overwriteDoc, err = gqd.ProcessTransformRule(tr.TransformInput)
+			overwriteDoc, err = gqd.ProcessTransformRule(ctx, tr.TransformInput)
 		}
 	} else {
 		err = errors.New(fmt.Sprint("Invalid Operation : ", op))
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 	}
 
 	if err != nil {
-		log.Print(err)
 		err = errors.New(fmt.Sprint("TransformRule failed : ", err.Error()))
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 	return
 }
 
-func getTableSecurityRule(projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, vars map[string]interface{}) (ruleOutput string, err error) {
-	sr, err := s.GetTableSecurityRule(projectId, dbAlias, tableName)
+func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, vars map[string]interface{}) (ruleOutput string, err error) {
+	logs.WithContext(ctx).Debug("getTableSecurityRule - Start")
+	sr, err := s.GetTableSecurityRule(ctx, projectId, dbAlias, tableName)
 	if err != nil {
 		err = errors.New(fmt.Sprint("error from getTableSecurityRule = ", err.Error()))
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return "", err
 	}
 
 	if op == "query" {
-		ruleOutput, err = processSecurityRule(sr.Select, vars)
+		ruleOutput, err = processSecurityRule(ctx, sr.Select, vars)
 	} else if op == "mutation" {
-		ruleOutput, err = processSecurityRule(sr.Insert, vars) //todo to change it as per query type
+		ruleOutput, err = processSecurityRule(ctx, sr.Insert, vars) //todo to change it as per query type
 	} else {
 		err = errors.New(fmt.Sprint("Invalid Query Type : ", op))
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 	}
 
 	if err != nil {
-		log.Print(err)
 		err = errors.New(fmt.Sprint("SecurityRule failed : ", err.Error()))
+		logs.WithContext(ctx).Error(err.Error())
 		return "", err
 	}
 	return

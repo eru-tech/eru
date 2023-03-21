@@ -11,6 +11,7 @@ import (
 var port = "8083"
 
 func main() {
+	module_server.SetServiceName()
 	log.Println("inside main of eru-routes")
 	envPort := os.Getenv("ERUROUTESPORT")
 	if envPort != "" {
