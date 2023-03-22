@@ -219,7 +219,9 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 
 					if gqd.OutputType == eru_writes.OutputTypeCsv || gqd.OutputType == eru_writes.OutputTypeExcel {
 						result, err = graphQLs[i].ExecuteQueryForCsv(ctx, qrm.SQLQuery, datasource, mainAliasNames[i])
-						logs.WithContext(ctx).Error(err.Error())
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+						}
 					} else {
 						result, err = graphQLs[i].ExecuteQuery(ctx, datasource, qrm)
 					}
@@ -528,7 +530,9 @@ func processMapVariable(ctx context.Context, m map[string]interface{}, vars map[
 		//log.Println("k = ", mapKey)
 		if strings.HasPrefix(k, "$") {
 			tempI, err := replaceVariableValue(ctx, strings.Replace(mapKey, "$", "", 1), vars)
-			logs.WithContext(ctx).Error(err.Error())
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
 			if err == nil {
 				switch reflect.TypeOf(tempI).Kind() {
 				case reflect.String, reflect.Float64, reflect.Int64:
@@ -568,7 +572,9 @@ func processMapVariable(ctx context.Context, m map[string]interface{}, vars map[
 							m[mapKey] = tempI
 						}
 					} else {
-						logs.WithContext(ctx).Error(err.Error())
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+						}
 						logs.WithContext(ctx).Info(fmt.Sprint("removing key ", mapKey, " from list of variables"))
 						delete(m, mapKey)
 					}

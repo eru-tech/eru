@@ -52,7 +52,7 @@ func (mr *MysqlSqlMaker) executeQuery(ctx context.Context, query string, datasou
 	//rows, e := datasource.Con.Query(query)
 	rows, e := datasource.Con.Queryx(query)
 	if e != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(e.Error())
 	}
 	//log.Print(rows.Columns())
 	//cols,ee := rows.Columns()

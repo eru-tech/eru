@@ -108,7 +108,9 @@ func (ms *ModuleStore) GetProjectConfig(ctx context.Context, projectId string) (
 		return ms.Projects[projectId], nil
 	} else {
 		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
-		logs.WithContext(ctx).Error(err.Error())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		return nil, err
 	}
 }
@@ -119,7 +121,9 @@ func (ms *ModuleStore) GetProjectConfigObject(ctx context.Context, projectId str
 		return ms.Projects[projectId].ProjectConfig, nil
 	} else {
 		err = errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
-		logs.WithContext(ctx).Error(err.Error())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		return pc, err
 	}
 }
@@ -323,7 +327,9 @@ func (ms *ModuleStore) AddSchemaTable(ctx context.Context, projectId string, dbA
 		}
 	} else {
 		err = errors.New(fmt.Sprintf(tableName, " not found to add in the schema"))
-		logs.WithContext(ctx).Error(err.Error())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		return nil, err
 	}
 }
@@ -357,7 +363,9 @@ func (ms *ModuleStore) RemoveSchemaTable(ctx context.Context, projectId string, 
 		}
 	} else {
 		err = errors.New(fmt.Sprintf(tableName, " not found to add in the schema"))
-		logs.WithContext(ctx).Error(err.Error())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		return nil, err
 	}
 }
@@ -417,7 +425,9 @@ func (ms *ModuleStore) SaveMyQuery(ctx context.Context, projectId string, queryN
 		return realStore.SaveStore("", realStore)
 	} else {
 		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		return err
 	}
 }
@@ -433,12 +443,16 @@ func (ms *ModuleStore) RemoveMyQuery(ctx context.Context, projectId string, quer
 			return realStore.SaveStore("", realStore)
 		} else {
 			err := errors.New(fmt.Sprint("Query ", queryName, " not found"))
-			logs.WithContext(ctx).Error(err.Error())
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
 			return err
 		}
 	} else {
 		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		return err
 	}
 }
@@ -454,12 +468,16 @@ func (ms *ModuleStore) GetMyQuery(ctx context.Context, projectId string, queryNa
 			return myquery, nil
 		} else {
 			err = errors.New(fmt.Sprint("Query ", queryName, " not found"))
-			logs.WithContext(ctx).Error(err.Error())
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
 			return module_model.MyQuery{}, err
 		}
 	} else {
 		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		return module_model.MyQuery{}, err
 	}
 }
@@ -480,7 +498,9 @@ func (ms *ModuleStore) GetMyQueries(ctx context.Context, projectId string, query
 		}
 	} else {
 		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		return nil, err
 	}
 }
@@ -500,7 +520,9 @@ func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, db
 			if tableExists {
 				//alter table
 				err = errors.New("Alter table not implemented as yet")
-				logs.WithContext(ctx).Error(err.Error())
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
 			} else {
 				//create table
 				sr := ds.GetSqlMaker(db.DbName)
@@ -518,12 +540,16 @@ func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, db
 			}
 		} else {
 			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
-			logs.WithContext(ctx).Error(err.Error())
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
 			return err
 		}
 	} else {
 		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		return err
 	}
 	return err
@@ -540,17 +566,23 @@ func (ms *ModuleStore) SaveTableSecurity(ctx context.Context, projectId string, 
 				db.SchemaTablesSecurity[tableName] = securityRules
 			} else {
 				err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
-				logs.WithContext(ctx).Error(err.Error())
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
 				return err
 			}
 		} else {
 			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
-			logs.WithContext(ctx).Error(err.Error())
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
 			return err
 		}
 	} else {
 		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		return err
 	}
 	if err != nil {
@@ -576,12 +608,16 @@ func (ms *ModuleStore) SaveTableTransformation(ctx context.Context, projectId st
 			}
 		} else {
 			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
-			logs.WithContext(ctx).Error(err.Error())
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
 			return err
 		}
 	} else {
 		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		return err
 	}
 	return realStore.SaveStore("", realStore)
@@ -597,17 +633,23 @@ func (ms *ModuleStore) GetTableTransformation(ctx context.Context, projectId str
 				//do nothing as there are no transform rule feature for my query TODO check feasibility
 			} else {
 				err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
-				logs.WithContext(ctx).Error(err.Error())
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
 				return transformRules, err
 			}
 		} else {
 			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
-			logs.WithContext(ctx).Error(err.Error())
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
 			return transformRules, err
 		}
 	} else {
 		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		return transformRules, err
 	}
 	return
@@ -623,12 +665,16 @@ func (ms *ModuleStore) GetTableSecurityRule(ctx context.Context, projectId strin
 				securityRules.Query = prj.MyQueries[tableName].SecurityRule
 			} else {
 				err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
-				logs.WithContext(ctx).Error(err.Error())
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
 				return securityRules, err
 			}
 		} else {
 			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
-			logs.WithContext(ctx).Error(err.Error())
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
 			return securityRules, err
 		}
 	} else {

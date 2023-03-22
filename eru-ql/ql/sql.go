@@ -76,11 +76,16 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 	if sqd.ExecuteFlag {
 		if sqd.OutputType == eru_writes.OutputTypeCsv || sqd.OutputType == eru_writes.OutputTypeExcel {
 			result, err = sr.ExecuteQueryForCsv(ctx, sqd.Query, datasource, "Results")
-			logs.WithContext(ctx).Error(err.Error())
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
 			res = append(res, result)
 		} else {
 			result, err = sr.ExecutePreparedQuery(ctx, sqd.Query, datasource)
-			logs.WithContext(ctx).Error(err.Error())
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+
 			res = append(res, result)
 		}
 	}
