@@ -352,7 +352,9 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				returnAliasStrings = append(returnAliasStrings, sqlObj.MutationReturn.ReturnDocAlias)
 				resObj[mainAliasNames[i]] = returnResult
 				res = append(res, resObj)
-				logs.WithContext(ctx).Error(err.Error())
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
 			default:
 				logs.WithContext(ctx).Info(fmt.Sprint("Unrecognized Operation : ", op.Operation))
 				//do nothing
