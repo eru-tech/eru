@@ -149,8 +149,9 @@ func PrintRequestBody(request *http.Request, msg string) {
 		log.Println(err)
 	}
 	log.Println(msg)
+	log.Println(len(string(body)))
 	cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
-	if cl > 1000 {
+	if cl > 1000 && len(string(body)) > 1000 {
 		log.Println(string(body)[1:1000])
 	} else {
 		log.Println(string(body))
@@ -251,8 +252,8 @@ func callHttp(method string, url string, headers http.Header, formData map[strin
 		req.Header.Set("Content-Length", strconv.Itoa(len(data.Encode())))
 		req.ContentLength = int64(len(data.Encode()))
 	}
-	PrintRequestBody(req, "printing request body from utils before http call")
-	log.Println(req)
+	//PrintRequestBody(req, "printing request body from utils before http call")
+	//log.Println(req)
 	return ExecuteHttp(req)
 }
 

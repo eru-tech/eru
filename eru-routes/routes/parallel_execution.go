@@ -30,6 +30,7 @@ type FuncJob struct {
 	mainRouteName string
 	funcThread    int
 	loopThread    int
+	strCond       string
 }
 
 type FuncResult struct {
@@ -103,7 +104,7 @@ func allocateFunc(req *http.Request, funcSteps map[string]*FuncStep, reqVars map
 	}()
 	loopCounter := 0
 	for _, fs := range funcSteps {
-		funcJob := FuncJob{loopCounter, req, fs, reqVars, resVars, "", mainRouteName, funcThread, loopThread}
+		funcJob := FuncJob{loopCounter, req, fs, reqVars, resVars, "", mainRouteName, funcThread, loopThread, "true"}
 		funcJobs <- funcJob
 		loopCounter++
 	}
@@ -150,14 +151,14 @@ func workerFunc(wg *sync.WaitGroup, funcJobs chan FuncJob, funcResults chan Func
 	wg.Done()
 }
 
-func allocateFuncInner(req *http.Request, funcStep *FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, loopArray []interface{}, asyncMessage string, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int) {
+func allocateFuncInner(req *http.Request, funcStep *FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, loopArray []interface{}, asyncMessage string, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int, strCond string) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Print("goroutine paniqued allocateFuncInner: ", r)
 		}
 	}()
 	loopCounter := 0
-	log.Print("len(loopArray) from allocateFuncInner", len(loopArray))
+	log.Print("len(loopArray) from allocateFuncInner = ", len(loopArray))
 	for loopCounter < len(loopArray) {
 		reqVarsI, err := cloneInterface(reqVars)
 		if err != nil {
@@ -169,7 +170,7 @@ func allocateFuncInner(req *http.Request, funcStep *FuncStep, reqVars map[string
 		}
 		reqVarsClone[funcStep.GetRouteName()].LoopVar = loopArray[loopCounter]
 		log.Print("reqVarsClone[funcStep.GetRouteName()].LoopVar = ", reqVarsClone[funcStep.GetRouteName()].LoopVar)
-		funcJob := FuncJob{loopCounter, req, funcStep, reqVarsClone, resVars, asyncMessage, mainRouteName, funcThread, loopThread}
+		funcJob := FuncJob{loopCounter, req, funcStep, reqVarsClone, resVars, asyncMessage, mainRouteName, funcThread, loopThread, strCond}
 		funcJobs <- funcJob
 		loopCounter++
 	}
@@ -207,7 +208,7 @@ func workerFuncInner(wg *sync.WaitGroup, funcJobs chan FuncJob, funcResults chan
 		if funcJob.mainRouteName == "" {
 			funcJob.mainRouteName = funcJob.funcStep.GetRouteName()
 		}
-		resp, e := funcJob.funcStep.RunFuncStepInner(funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.asyncMessage, funcJob.funcThread, funcJob.loopThread)
+		resp, e := funcJob.funcStep.RunFuncStepInner(funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.asyncMessage, funcJob.funcThread, funcJob.loopThread, funcJob.strCond)
 		if e != nil {
 			log.Print("print RunFuncStepInner error = ", e.Error())
 		}
