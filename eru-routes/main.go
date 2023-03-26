@@ -1,9 +1,12 @@
 package main
 
 import (
+	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-routes/module_server"
 	"github.com/eru-tech/eru/eru-routes/module_store"
 	"github.com/eru-tech/eru/eru-server/server"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"log"
 	"os"
 )
@@ -12,7 +15,8 @@ var port = "8083"
 
 func main() {
 	module_server.SetServiceName()
-	log.Println("inside main of eru-routes")
+	logs.LogInit(server_handlers.ServerName)
+	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
 	envPort := os.Getenv("ERUROUTESPORT")
 	if envPort != "" {
 		port = envPort
