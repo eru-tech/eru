@@ -160,6 +160,7 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Se
 			sqlObj.MutationSelectCols = sqlObj.QueryObject[varValue.(string)].Cols
 			sqlObj.QueryType = "insertselect"
 			sqlObj.MakeMutationQuery(ctx, nil, sqlObj.MainTableName)
+			logs.WithContext(ctx).Info(sqlObj.DBQuery)
 			logs.WithContext(ctx).Info(fmt.Sprint("sqlObj.PreparedQuery = ", sqlObj.PreparedQuery))
 
 			//docsFound = true
