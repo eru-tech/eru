@@ -496,7 +496,7 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 			}
 
 		} else {
-			//utils.PrintRequestBody(request, "printing request just before utils.ExecuteHttp")
+			utils.PrintRequestBody(request, "printing request just before utils.ExecuteHttp")
 			log.Print(request.URL)
 			response, err = utils.ExecuteHttp(request)
 			if err != nil {
@@ -514,8 +514,8 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 		//log.Print(response.ContentLength)
 		//printResponseBody(response, "printing response After httpClient.Do of route Execute before transformResponse")
 	} else {
-		utils.PrintRequestBody(request, "printing request in empty host execution")
-		log.Println(request.Header)
+		//utils.PrintRequestBody(request, "printing request in empty host execution")
+		//log.Println(request.Header)
 		response = &http.Response{Header: http.Header{}, StatusCode: http.StatusOK}
 		rb, err := json.Marshal(make(map[string]interface{}))
 		if err != nil {

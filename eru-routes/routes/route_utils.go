@@ -666,7 +666,7 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 			trResVar.Body = resBody
 		}
 	}
-
+	log.Println("errorFound = ", errorFound)
 	if errorFound {
 		log.Println(" httpClient.Do error ")
 		log.Println(errMsg)
@@ -678,7 +678,6 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 			resp.Body.Close()
 		}
 	}(responses)
-
 	respHeader := http.Header{}
 	newR := &http.Request{}
 	if len(responses) > 0 {
@@ -712,7 +711,6 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 		return nil, trResVar, eee
 	}
 	respHeader.Set("Content-Length", fmt.Sprint(len(rJsonArrayBytes)))
-
 	response = &http.Response{
 		StatusCode:    statusCode,
 		Proto:         "HTTP/1.1",

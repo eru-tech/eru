@@ -240,42 +240,52 @@ func (ms *ModuleStore) loadRoutesForFunction(funcStep *routes.FuncStep, routeNam
 	log.Println("inside loadRoutesForFunction for route = ", funcStep.GetRouteName())
 	var errArray []string
 	r := routes.Route{}
-	if funcStep.QueryName != "" {
-		log.Print("making dummy route for query name ", funcStep.QueryName)
-		r.RouteName = funcStep.QueryName
-		r.Url = "/"
-		r.MatchType = "PREFIX"
-		r.RewriteUrl = fmt.Sprint("/store/", projectId, "/myquery/execute/", funcStep.QueryName)
-		tg := routes.TargetHost{}
-		tg.Method = "POST"
-		tmpSplit := strings.Split(Eruqlbaseurl, "://")
-		tg.Host = Eruqlbaseurl
-		tg.Scheme = "https"
-		if len(tmpSplit) > 0 {
-			tg.Scheme = tmpSplit[0]
-			tg.Host = tmpSplit[1]
-		}
-		tg.Allocation = 100
-		r.LoopVariable = ""
-		r.Condition = ""
-		r.TargetHosts = append(r.TargetHosts, tg)
-	} else if funcStep.Api.Host != "" {
-		log.Print("making dummy route for query name ", funcStep.Api.Host)
-		r.RouteName = strings.Replace(funcStep.Api.Host, ".", "", -1)
-		r.Url = "/"
-		r.MatchType = "PREFIX"
-		r.RewriteUrl = funcStep.ApiPath
-		r.LoopVariable = ""
-		r.Condition = ""
-		r.OnError = "IGNORE"
-		r.TargetHosts = append(r.TargetHosts, funcStep.Api)
-	} else {
-		r, err = ms.GetAndValidateRoute(routeName, projectId, host, url, method, headers)
-		if err != nil {
+	if funcStep.FunctionName != "" {
+		funcGroup, fgErr := ms.GetAndValidateFunc(funcStep.FunctionName, projectId, host, url, method, headers)
+		if fgErr != nil {
+			err = fgErr
 			return
 		}
+		funcStep.FuncGroup = funcGroup
+	} else {
+		if funcStep.QueryName != "" {
+			log.Print("making dummy route for query name ", funcStep.QueryName)
+			r.RouteName = funcStep.QueryName
+			r.Url = "/"
+			r.MatchType = "PREFIX"
+			r.RewriteUrl = fmt.Sprint("/store/", projectId, "/myquery/execute/", funcStep.QueryName)
+			tg := routes.TargetHost{}
+			tg.Method = "POST"
+			tmpSplit := strings.Split(Eruqlbaseurl, "://")
+			tg.Host = Eruqlbaseurl
+			tg.Scheme = "https"
+			if len(tmpSplit) > 0 {
+				tg.Scheme = tmpSplit[0]
+				tg.Host = tmpSplit[1]
+			}
+			tg.Allocation = 100
+			r.LoopVariable = ""
+			r.Condition = ""
+			r.TargetHosts = append(r.TargetHosts, tg)
+		} else if funcStep.Api.Host != "" {
+			log.Print("making dummy route for query name ", funcStep.Api.Host)
+			r.RouteName = strings.Replace(funcStep.Api.Host, ".", "", -1)
+			r.Url = "/"
+			r.MatchType = "PREFIX"
+			r.RewriteUrl = funcStep.ApiPath
+			r.LoopVariable = ""
+			r.Condition = ""
+			r.OnError = "IGNORE"
+			r.TargetHosts = append(r.TargetHosts, funcStep.Api)
+		} else {
+			r, err = ms.GetAndValidateRoute(routeName, projectId, host, url, method, headers)
+			if err != nil {
+				return
+			}
+		}
+		funcStep.Route = r
+
 	}
-	funcStep.Route = r
 	for ck, cv := range funcStep.FuncSteps {
 		log.Println("inside funcStep.FuncSteps - child iteration")
 		fs := funcStep.FuncSteps[ck]

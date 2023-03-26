@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-routes/routes"
-	utils "github.com/eru-tech/eru/eru-utils"
 	"html"
 	"io/ioutil"
 	"log"
@@ -125,7 +124,7 @@ func (channel *Channel) ProcessMessageTemplate(r *http.Request, mt MessageTempla
 
 	mtRoute.TransformRequest = ""
 	mtRoute.TransformResponse = fmt.Sprint("{\"msg\":\"", msg.Msg, "\"}")
-	utils.PrintRequestBody(r1, "r beofre second execute")
+	//utils.PrintRequestBody(r1, "r beofre second execute")
 	mtRespMsg, _, mtRespMsgErr := mtRoute.Execute(r1, r1.URL.Path, false, "", nil, 1)
 	//utils.PrintResponseBody(mtRespMsg, "mtRespMsg")
 	//log.Println("mtRespMsgErr = ", mtRespMsgErr)
