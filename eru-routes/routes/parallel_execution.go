@@ -169,7 +169,7 @@ func allocateFuncInner(req *http.Request, funcStep *FuncStep, reqVars map[string
 			log.Print(errC)
 		}
 		reqVarsClone[funcStep.GetRouteName()].LoopVar = loopArray[loopCounter]
-		log.Print("reqVarsClone[funcStep.GetRouteName()].LoopVar = ", reqVarsClone[funcStep.GetRouteName()].LoopVar)
+		log.Print("reqVarsClone[", funcStep.GetRouteName(), "].LoopVar = ", reqVarsClone[funcStep.GetRouteName()].LoopVar)
 		funcJob := FuncJob{loopCounter, req, funcStep, reqVarsClone, resVars, asyncMessage, mainRouteName, funcThread, loopThread, strCond}
 		funcJobs <- funcJob
 		loopCounter++
@@ -204,7 +204,7 @@ func workerFuncInner(wg *sync.WaitGroup, funcJobs chan FuncJob, funcResults chan
 	}()
 	for funcJob := range funcJobs {
 		//currentJob = funcJob
-		log.Print("funcJob.reqVars[funcJob.funcStep.GetRouteName()].LoopVar = ", funcJob.reqVars[funcJob.funcStep.GetRouteName()].LoopVar)
+		log.Print("funcJob.reqVars[", funcJob.funcStep.GetRouteName(), "].LoopVar = ", funcJob.reqVars[funcJob.funcStep.GetRouteName()].LoopVar)
 		if funcJob.mainRouteName == "" {
 			funcJob.mainRouteName = funcJob.funcStep.GetRouteName()
 		}

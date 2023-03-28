@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -333,7 +334,7 @@ func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string
 	log.Print("inside RunFuncStepInner for ", funcStep.GetRouteName())
 	request := req
 	if strCond == "true" {
-
+		utils.PrintRequestBody(request, "inside RunFuncStepInner before transformRequest")
 		if funcStep.LoopVariable != "" {
 			request, _, err = funcStep.transformRequest(req, reqVars, resVars, mainRouteName)
 			if err != nil {
@@ -341,6 +342,7 @@ func (funcStep *FuncStep) RunFuncStepInner(req *http.Request, reqVars map[string
 				return
 			}
 		}
+		utils.PrintRequestBody(request, "inside RunFuncStepInner after transformRequest")
 		routevars := &TemplateVars{}
 		_ = routevars
 		//utils.PrintRequestBody(request, "before funcStep.Route.Execute")
