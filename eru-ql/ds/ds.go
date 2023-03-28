@@ -732,6 +732,7 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 
 func (sqr *SqlMaker) executeMutationQueriesinDB(ctx context.Context, query string, tableName string, datasource *module_model.DataSource, myself SqlMakerI, isNested bool, docNo int, idx int, vals []interface{}) (res []map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("executeMutationQueriesinDB - Start")
+	logs.WithContext(ctx).Info(query)
 	var errMsgs []string
 	if !isNested {
 		docNo = idx + 1 //to ensure error message always refer to parent document number
