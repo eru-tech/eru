@@ -37,6 +37,8 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 	var result map[string]interface{}
 	sr := ds.GetSqlMaker(datasource.DbName)
 	for k, v := range sqd.FinalVariables {
+		logs.WithContext(ctx).Info(fmt.Sprint("v : ", v))
+		logs.WithContext(ctx).Info(fmt.Sprint("k : ", k))
 		var str string
 		switch tp := v.(type) {
 		case float64:
