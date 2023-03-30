@@ -307,7 +307,7 @@ func (route *Route) Execute(request *http.Request, url string, async bool, async
 			}
 
 			condRespHeader := http.Header{}
-			condRespHeader.Set("Content-Type", "application/json")
+			condRespHeader.Set("Content-Type", applicationjson)
 			response = &http.Response{
 				StatusCode:    statusCode,
 				Proto:         "HTTP/1.1",
@@ -458,7 +458,7 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 			_, err = utils.ExecuteHttp(request)
 
 			respHeader := http.Header{}
-			respHeader.Set("Content-Type", "application/json")
+			respHeader.Set("Content-Type", applicationjson)
 
 			if errors.Is(err, context.DeadlineExceeded) {
 				//ignoring DeadlineExceeded error as we know it will timeout
@@ -502,6 +502,7 @@ func (route *Route) RunRoute(req *http.Request, url string, trReqVars *TemplateV
 			if err != nil {
 				log.Println(" httpClient.Do error from route execute function")
 				log.Println(err)
+
 				return
 			}
 			utils.PrintResponseBody(response, "printing response immediately after utils.ExecuteHttp")
@@ -842,8 +843,8 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 	trReqVars.Vars["OrgBody"] = trReqVars.OrgBody
 
 	trResVars.Vars = trReqVars.Vars
-
-	if response.Header.Get("Content-Type") == "application/json" {
+	reqContentType := strings.Split(response.Header.Get("Content-type"), ";")[0]
+	if reqContentType == applicationjson {
 		var res interface{}
 		//log.Print(response.Body)
 		tmplBodyFromRes := json.NewDecoder(response.Body)
@@ -860,13 +861,9 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 				log.Println(err)
 				return
 			}
-			//if response.Header.Get("Content-Type") == "application/json" {
 			tempBody := make(map[string]string)
 			tempBody["data"] = string(body)
 			res = tempBody
-			//} else {
-			//	res = body
-			//	}
 
 		}
 		//log.Print(res)

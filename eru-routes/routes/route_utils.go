@@ -633,17 +633,19 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 	if len(errs) > 0 {
 		log.Print(err)
 	}
-	reqContentType := strings.Split(responses[0].Header.Get("Content-type"), ";")[0]
-	if len(responses) == 1 && reqContentType != "application/json" {
-		utils.PrintResponseBody(responses[0], "printing responses[0]")
-		response = responses[0]
-		if len(trResVars) == 1 {
-			trResVar = trResVars[0]
+	if responses[0] != nil {
+		reqContentType := strings.Split(responses[0].Header.Get("Content-type"), ";")[0]
+		if reqContentType != applicationjson {
+			utils.PrintResponseBody(responses[0], "printing responses[0]")
+			response = responses[0]
+			if len(trResVars) == 1 {
+				trResVar = trResVars[0]
+			}
+			if len(errs) == 1 {
+				err = errs[0]
+			}
+			return
 		}
-		if len(errs) == 1 {
-			err = errs[0]
-		}
-		return
 	}
 	//for _, r := range responses{
 	//	utils.PrintResponseBody(r, "printing response from clubResponses")
