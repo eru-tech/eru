@@ -633,7 +633,8 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 	if len(errs) > 0 {
 		log.Print(err)
 	}
-	if len(responses) == 1 && responses[0].Header.Get("Content-Type") != "application/json" {
+	reqContentType := strings.Split(responses[0].Header.Get("Content-type"), ";")[0]
+	if len(responses) == 1 && reqContentType != "application/json" {
 		utils.PrintResponseBody(responses[0], "printing responses[0]")
 		response = responses[0]
 		if len(trResVars) == 1 {
@@ -706,7 +707,8 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 	statusCode := http.StatusOK
 	for _, rp := range responses {
 		var rJson interface{}
-		if rp.Header.Get("Content-Type") == "application/json" {
+		reqContentTypeCheck := strings.Split(rp.Header.Get("Content-type"), ";")[0]
+		if reqContentTypeCheck == "application/json" {
 			err = json.NewDecoder(rp.Body).Decode(&rJson)
 			if err != nil {
 				log.Println("================")

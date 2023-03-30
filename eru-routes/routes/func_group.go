@@ -641,7 +641,9 @@ func (funcStep *FuncStep) transformResponse(response *http.Response, trResVars *
 	if vars.Vars == nil {
 		vars.Vars = make(map[string]interface{})
 	}
-	if response.Header.Get("Content-Type") == "application/json" {
+	log.Println("response.Header.Get(\"Content-Type\") = ", response.Header.Get("Content-Type"))
+	reqContentType := strings.Split(response.Header.Get("Content-type"), ";")[0]
+	if reqContentType == "application/json" {
 		tmplBodyFromRes := json.NewDecoder(response.Body)
 		tmplBodyFromRes.DisallowUnknownFields()
 		if err = tmplBodyFromRes.Decode(&vars.Body); err != nil {
