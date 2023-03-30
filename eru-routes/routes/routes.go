@@ -773,6 +773,7 @@ func (route *Route) transformRequest(request *http.Request, url string, vars *Te
 func (route *Route) transformResponse(response *http.Response, trReqVars *TemplateVars) (trResVars *TemplateVars, err error) {
 	trResVars = &TemplateVars{}
 	log.Println("inside transformResponse")
+
 	//a, e := json.Marshal(trReqVars)
 	//log.Print(string(a))
 	//log.Print(e)
@@ -841,61 +842,70 @@ func (route *Route) transformResponse(response *http.Response, trReqVars *Templa
 	trReqVars.Vars["OrgBody"] = trReqVars.OrgBody
 
 	trResVars.Vars = trReqVars.Vars
-	var res interface{}
-	//log.Print(response.Body)
-	tmplBodyFromRes := json.NewDecoder(response.Body)
-	tmplBodyFromRes.DisallowUnknownFields()
-	//log.Print("tmplBodyFromRes = ", tmplBodyFromRes)
-	if err = tmplBodyFromRes.Decode(&res); err != nil {
-		log.Println("tmplBodyFromRes.Decode error from routes")
-		log.Println(err)
-		body, readErr := ioutil.ReadAll(response.Body)
-		if readErr != nil {
-			err = readErr
-			log.Println("ioutil.ReadAll(response.Body) error")
-			log.Println(err)
-			return
-		}
-		tempBody := make(map[string]string)
-		tempBody["data"] = string(body)
-		res = tempBody
-	}
-	//log.Print(res)
-	rb, err := json.Marshal(res)
-	if err != nil {
-		log.Println(err)
-		return &TemplateVars{}, err
-	}
-	err = json.Unmarshal(rb, &trResVars.Body)
-	if err != nil {
-		log.Println(err)
-		return &TemplateVars{}, err
-	}
-	trResVars.OrgBody = trResVars.Body
-	//log.Print(trResVars)
-	if route.TransformResponse != "" {
 
-		fvars := &FuncTemplateVars{}
-		fvars.Vars = trResVars
-		//log.Print(fvars.Vars.Body)
-		output, err := processTemplate(route.RouteName, route.TransformResponse, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+	if response.Header.Get("Content-Type") == "application/json" {
+		var res interface{}
+		//log.Print(response.Body)
+		tmplBodyFromRes := json.NewDecoder(response.Body)
+		tmplBodyFromRes.DisallowUnknownFields()
+		//log.Print("tmplBodyFromRes = ", tmplBodyFromRes)
+		if err = tmplBodyFromRes.Decode(&res); err != nil {
+
+			log.Println("tmplBodyFromRes.Decode error from routes")
+			log.Println(err)
+			body, readErr := ioutil.ReadAll(response.Body)
+			if readErr != nil {
+				err = readErr
+				log.Println("ioutil.ReadAll(response.Body) error")
+				log.Println(err)
+				return
+			}
+			//if response.Header.Get("Content-Type") == "application/json" {
+			tempBody := make(map[string]string)
+			tempBody["data"] = string(body)
+			res = tempBody
+			//} else {
+			//	res = body
+			//	}
+
+		}
+		//log.Print(res)
+		rb, err := json.Marshal(res)
 		if err != nil {
 			log.Println(err)
 			return &TemplateVars{}, err
 		}
-		response.Body = ioutil.NopCloser(bytes.NewBuffer(output))
-		response.Header.Set("Content-Length", strconv.Itoa(len(output)))
-		response.ContentLength = int64(len(output))
-
-		err = json.Unmarshal(output, &trResVars.Body)
+		err = json.Unmarshal(rb, &trResVars.Body)
 		if err != nil {
 			log.Println(err)
 			return &TemplateVars{}, err
 		}
-	} else {
-		response.Body = ioutil.NopCloser(bytes.NewBuffer(rb))
-		response.Header.Set("Content-Length", strconv.Itoa(len(rb)))
-		response.ContentLength = int64(len(rb))
+		trResVars.OrgBody = trResVars.Body
+		//log.Print(trResVars)
+		if route.TransformResponse != "" {
+
+			fvars := &FuncTemplateVars{}
+			fvars.Vars = trResVars
+			//log.Print(fvars.Vars.Body)
+			output, err := processTemplate(route.RouteName, route.TransformResponse, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+			if err != nil {
+				log.Println(err)
+				return &TemplateVars{}, err
+			}
+			response.Body = ioutil.NopCloser(bytes.NewBuffer(output))
+			response.Header.Set("Content-Length", strconv.Itoa(len(output)))
+			response.ContentLength = int64(len(output))
+
+			err = json.Unmarshal(output, &trResVars.Body)
+			if err != nil {
+				log.Println(err)
+				return &TemplateVars{}, err
+			}
+		} else {
+			response.Body = ioutil.NopCloser(bytes.NewBuffer(rb))
+			response.Header.Set("Content-Length", strconv.Itoa(len(rb)))
+			response.ContentLength = int64(len(rb))
+		}
 	}
 	if route.RemoveParams.ResponseHeaders != nil {
 		for _, v := range route.RemoveParams.ResponseHeaders {

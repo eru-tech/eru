@@ -132,8 +132,11 @@ func PrintResponseBody(response *http.Response, msg string) {
 		log.Println(err)
 	}
 	log.Println(msg)
+	log.Println(len(string(body)))
 	cl, _ := strconv.Atoi(response.Header.Get("Content-Length"))
 	if cl > 1000 {
+		log.Println(string(body)[1:1000])
+	} else if len(string(body)) > 1000 {
 		log.Println(string(body)[1:1000])
 	} else {
 		log.Println(string(body))

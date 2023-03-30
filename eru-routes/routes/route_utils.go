@@ -8,6 +8,7 @@ import (
 	"fmt"
 	erujwt "github.com/eru-tech/eru/eru-crypto/jwt"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"io"
 	"io/ioutil"
 	"log"
@@ -632,7 +633,17 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 	if len(errs) > 0 {
 		log.Print(err)
 	}
-
+	if len(responses) == 1 && responses[0].Header.Get("Content-Type") != "application/json" {
+		utils.PrintResponseBody(responses[0], "printing responses[0]")
+		response = responses[0]
+		if len(trResVars) == 1 {
+			trResVar = trResVars[0]
+		}
+		if len(errs) == 1 {
+			err = errs[0]
+		}
+		return
+	}
 	//for _, r := range responses{
 	//	utils.PrintResponseBody(r, "printing response from clubResponses")
 	//}
@@ -695,13 +706,22 @@ func clubResponses(responses []*http.Response, trResVars []*TemplateVars, errs [
 	statusCode := http.StatusOK
 	for _, rp := range responses {
 		var rJson interface{}
-		err = json.NewDecoder(rp.Body).Decode(&rJson)
-		if err != nil {
-			log.Println("================")
-			log.Println(err)
-			return nil, trResVar, err
+		if rp.Header.Get("Content-Type") == "application/json" {
+			err = json.NewDecoder(rp.Body).Decode(&rJson)
+			if err != nil {
+				log.Println("================")
+				log.Println(err)
+				return nil, trResVar, err
+			}
+			rJson = stripSingleElement(rJson)
+		} else {
+			rJson, err = ioutil.ReadAll(rp.Body)
+			if err != nil {
+				log.Println("================")
+				log.Println(err)
+				return nil, trResVar, err
+			}
 		}
-		rJson = stripSingleElement(rJson)
 		rJsonArray = append(rJsonArray, rJson)
 		//this will set status code of last response which will be passed
 		statusCode = rp.StatusCode

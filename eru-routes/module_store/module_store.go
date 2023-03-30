@@ -253,7 +253,14 @@ func (ms *ModuleStore) loadRoutesForFunction(funcStep *routes.FuncStep, routeNam
 			r.RouteName = funcStep.QueryName
 			r.Url = "/"
 			r.MatchType = "PREFIX"
-			r.RewriteUrl = fmt.Sprint("/store/", projectId, "/myquery/execute/", funcStep.QueryName)
+			output := ""
+			if funcStep.QueryOutput == "csv" {
+				output = "/csv"
+			} else if funcStep.QueryOutput == "excel" {
+				output = "/excel"
+			}
+
+			r.RewriteUrl = fmt.Sprint("/store/", projectId, "/myquery/execute/", funcStep.QueryName, output)
 			tg := routes.TargetHost{}
 			tg.Method = "POST"
 			tmpSplit := strings.Split(Eruqlbaseurl, "://")

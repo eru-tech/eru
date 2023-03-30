@@ -38,6 +38,7 @@ type FuncStep struct {
 	RouteName            string
 	FunctionName         string
 	QueryName            string
+	QueryOutput          string
 	Api                  TargetHost
 	ApiPath              string
 	Path                 string
@@ -640,52 +641,54 @@ func (funcStep *FuncStep) transformResponse(response *http.Response, trResVars *
 	if vars.Vars == nil {
 		vars.Vars = make(map[string]interface{})
 	}
+	if response.Header.Get("Content-Type") == "application/json" {
+		tmplBodyFromRes := json.NewDecoder(response.Body)
+		tmplBodyFromRes.DisallowUnknownFields()
+		if err = tmplBodyFromRes.Decode(&vars.Body); err != nil {
+			body, readErr := ioutil.ReadAll(tmplBodyFromRes.Buffered())
+			if readErr != nil {
+				err = readErr
+				log.Println("ioutil.ReadAll(response.Body) error")
+				log.Println(err)
+				return
+			}
+			err = nil
+			tempBody := make(map[string]string)
+			tempBody["data"] = string(body)
+			vars.Body = tempBody
+		}
+		vars.OrgBody = vars.Body
+		if funcStep.TransformResponse != "" {
+			fvars := &FuncTemplateVars{}
+			fvars.Vars = vars
+			fvars.ResVars = resVars
+			fvars.ReqVars = reqVars
 
-	tmplBodyFromRes := json.NewDecoder(response.Body)
-	tmplBodyFromRes.DisallowUnknownFields()
-	if err = tmplBodyFromRes.Decode(&vars.Body); err != nil {
-		body, readErr := ioutil.ReadAll(tmplBodyFromRes.Buffered())
-		if readErr != nil {
-			err = readErr
-			log.Println("ioutil.ReadAll(response.Body) error")
-			log.Println(err)
-			return
+			output, err := processTemplate(funcStep.GetRouteName(), funcStep.TransformResponse, fvars, "json", funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl)
+			if err != nil {
+				log.Println(err)
+				return &TemplateVars{}, err
+			}
+			response.Body = ioutil.NopCloser(bytes.NewBuffer(output))
+			response.Header.Set("Content-Length", strconv.Itoa(len(output)))
+			response.ContentLength = int64(len(output))
+			err = json.Unmarshal(output, &vars.Body)
+			if err != nil {
+				log.Println(err)
+				return &TemplateVars{}, err
+			}
+		} else {
+			rb, err := json.Marshal(vars.Body)
+			if err != nil {
+				log.Println(err)
+				return &TemplateVars{}, err
+			}
+			response.Body = ioutil.NopCloser(bytes.NewReader(rb))
+			response.Header.Set("Content-Length", strconv.Itoa(len(rb)))
+			response.ContentLength = int64(len(rb))
 		}
-		err = nil
-		tempBody := make(map[string]string)
-		tempBody["data"] = string(body)
-		vars.Body = tempBody
 	}
-	vars.OrgBody = vars.Body
-	if funcStep.TransformResponse != "" {
-		fvars := &FuncTemplateVars{}
-		fvars.Vars = vars
-		fvars.ResVars = resVars
-		fvars.ReqVars = reqVars
 
-		output, err := processTemplate(funcStep.GetRouteName(), funcStep.TransformResponse, fvars, "json", funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl)
-		if err != nil {
-			log.Println(err)
-			return &TemplateVars{}, err
-		}
-		response.Body = ioutil.NopCloser(bytes.NewBuffer(output))
-		response.Header.Set("Content-Length", strconv.Itoa(len(output)))
-		response.ContentLength = int64(len(output))
-		err = json.Unmarshal(output, &vars.Body)
-		if err != nil {
-			log.Println(err)
-			return &TemplateVars{}, err
-		}
-	} else {
-		rb, err := json.Marshal(vars.Body)
-		if err != nil {
-			log.Println(err)
-			return &TemplateVars{}, err
-		}
-		response.Body = ioutil.NopCloser(bytes.NewReader(rb))
-		response.Header.Set("Content-Length", strconv.Itoa(len(rb)))
-		response.ContentLength = int64(len(rb))
-	}
 	if funcStep.RemoveParams.ResponseHeaders != nil {
 		for _, v := range funcStep.RemoveParams.ResponseHeaders {
 			response.Header.Del(v)
