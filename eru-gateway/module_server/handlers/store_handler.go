@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/eru-tech/eru/eru-gateway/module_model"
 	"github.com/eru-tech/eru/eru-gateway/module_store"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
@@ -13,23 +14,25 @@ import (
 
 func SaveListenerRuleHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveListenerRuleHandler - Start")
 		lrFromReq := json.NewDecoder(r.Body)
 		lrFromReq.DisallowUnknownFields()
 
 		lrObj := module_model.ListenerRule{}
 		if err := lrFromReq.Decode(&lrObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(lrObj, "")
+			err := utils.ValidateStruct(r.Context(), lrObj, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
 				return
 			}
 		}
-		err := s.SaveListenerRule(&lrObj, s, true)
+		err := s.SaveListenerRule(r.Context(), &lrObj, s, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -43,9 +46,10 @@ func SaveListenerRuleHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func RemoveListenerRuleHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("RemoveListenerRuleHandler - Start")
 		vars := mux.Vars(r)
 		listenerRuleName := vars["listenerrulename"]
-		err := s.RemoveListenerRule(listenerRuleName, s)
+		err := s.RemoveListenerRule(r.Context(), listenerRuleName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -59,7 +63,8 @@ func RemoveListenerRuleHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func GetListenerRulesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		listenerRules := s.GetListenerRules()
+		logs.WithContext(r.Context()).Debug("GetListenerRulesHandler - Start")
+		listenerRules := s.GetListenerRules(r.Context())
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ListenerRules": listenerRules})
 	}
@@ -67,23 +72,25 @@ func GetListenerRulesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func SaveAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveAuthorizerHandler - Start")
 		authFromReq := json.NewDecoder(r.Body)
 		authFromReq.DisallowUnknownFields()
 
 		authObj := module_model.Authorizer{}
 		if err := authFromReq.Decode(&authObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(authObj, "")
+			err := utils.ValidateStruct(r.Context(), authObj, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
 				return
 			}
 		}
-		err := s.SaveAuthorizer(authObj, s, true)
+		err := s.SaveAuthorizer(r.Context(), authObj, s, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -97,9 +104,10 @@ func SaveAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func RemoveAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("RemoveAuthorizerHandler - Start")
 		vars := mux.Vars(r)
 		authorizerName := vars["authorizername"]
-		err := s.RemoveAuthorizer(authorizerName, s)
+		err := s.RemoveAuthorizer(r.Context(), authorizerName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -113,7 +121,8 @@ func RemoveAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func GetAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		authorizers := s.GetAuthorizers()
+		logs.WithContext(r.Context()).Debug("GetAuthorizerHandler - Start")
+		authorizers := s.GetAuthorizers(r.Context())
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"Authorizers": authorizers})
 	}

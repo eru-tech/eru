@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
@@ -10,9 +11,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/segmentio/ksuid"
+	"io"
 	"io/ioutil"
-	"log"
 	"mime/multipart"
 	"os"
 )
@@ -27,14 +29,11 @@ type AwsStorage struct {
 	session        *session.Session
 }
 
-func (awsStorage *AwsStorage) DownloadFile(folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error) {
-	log.Print(fileName)
-	log.Print(keyName)
+func (awsStorage *AwsStorage) DownloadFile(ctx context.Context, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error) {
+	logs.WithContext(ctx).Debug("DownloadFile - Start")
 	if awsStorage.session == nil {
-		log.Print("creating AWS session")
-		err = awsStorage.Init()
+		err = awsStorage.Init(ctx)
 		if err != nil {
-			log.Println(err)
 			return
 		}
 	}
@@ -50,14 +49,14 @@ func (awsStorage *AwsStorage) DownloadFile(folderPath string, fileName string, k
 		Key:    aws.String(fmt.Sprint(folderPath, "/", fileName)),
 	})
 	if err != nil {
-		log.Print("err from download = ", err)
+		logs.WithContext(ctx).Error(err.Error())
 		_ = tmpfile.Close()
 		_ = os.Remove(tmpfile.Name())
 		return nil, err
 	}
-	byteContainer, err := ioutil.ReadAll(tmpfile)
+	byteContainer, err := io.ReadAll(tmpfile)
 	if err != nil {
-		log.Println(err)
+		logs.WithContext(ctx).Error(err.Error())
 		_ = tmpfile.Close()
 		_ = os.Remove(tmpfile.Name())
 		return
@@ -67,72 +66,49 @@ func (awsStorage *AwsStorage) DownloadFile(folderPath string, fileName string, k
 		_ = os.Remove(tmpfile.Name())
 	}()
 
-	log.Print(awsStorage.EncryptFiles)
 	if awsStorage.EncryptFiles {
-		log.Print(len(byteContainer))
-		byteContainer, err = eruaes.DecryptCBC(byteContainer, keyName.Key, keyName.Vector)
+		byteContainer, err = eruaes.DecryptCBC(ctx, byteContainer, keyName.Key, keyName.Vector)
 		if err != nil {
-			log.Println(err)
 			return
 		}
 		byteContainer, err = eruaes.Unpad(byteContainer)
 		if err != nil {
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
-		log.Print(len(byteContainer))
 	}
-	log.Print("---------")
-	log.Print(len(byteContainer))
-	//log.Print(byteContainer)
-
-	//return &model.File{File: bufio.NewReader(tmpfile), Close: func() error {
-	//defer func() { _ = os.Remove(tmpfile.Name()) }()
-	//return tmpfile.Close()
-	//}}, nil
 	return byteContainer, nil
 }
 
-func (awsStorage *AwsStorage) UploadFile(file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
-	log.Println("inside AwsStorage UploadFile")
+func (awsStorage *AwsStorage) UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+	logs.WithContext(ctx).Debug("UploadFile - Start")
 	if awsStorage.session == nil {
-		log.Print("creating AWS session")
-		err = awsStorage.Init()
+		logs.WithContext(ctx).Info("creating AWS session")
+		err = awsStorage.Init(ctx)
 		if err != nil {
-			log.Println(err)
 			return
 		}
 	}
 	var byteContainer []byte
 	enc := ""
-	byteContainer, err = ioutil.ReadAll(file)
+	byteContainer, err = io.ReadAll(file)
 	if err != nil {
-		log.Println(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	log.Println("size = ", len(byteContainer))
-	//log.Println("file.Read(byteContainer)")
-	//log.Println(file.Read(byteContainer))
-
-	//log.Println(awsStorage.EncryptFiles)
 
 	if awsStorage.EncryptFiles {
-		//log.Print(len(byteContainer))
 		byteContainer = eruaes.Pad(byteContainer, 16)
-		//log.Print(len(byteContainer))
-		byteContainer, err = eruaes.EncryptCBC(byteContainer, keyName.Key, keyName.Vector)
+		byteContainer, err = eruaes.EncryptCBC(ctx, byteContainer, keyName.Key, keyName.Vector)
 		if err != nil {
-			log.Println(err)
 			return
 		}
 		enc = ".enc"
 	}
 	docId = ksuid.New().String()
-	//log.Println(docType)
 	if docType != "" {
 		docType = fmt.Sprint(docType, "_")
 	}
-	//log.Println(docType)
 	finalFileName := fmt.Sprint(docType, docId, "_", header.Filename, enc)
 	uploader := s3manager.NewUploader(awsStorage.session)
 	_, err = uploader.Upload(&s3manager.UploadInput{
@@ -143,40 +119,29 @@ func (awsStorage *AwsStorage) UploadFile(file multipart.File, header *multipart.
 	return
 }
 
-func (awsStorage *AwsStorage) UploadFileB64(file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
-	log.Println("inside AwsStorage UploadFileB64")
+func (awsStorage *AwsStorage) UploadFileB64(ctx context.Context, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+	logs.WithContext(ctx).Debug("UploadFileB64 - Start")
 	if awsStorage.session == nil {
-		log.Print("creating AWS session")
-		err = awsStorage.Init()
+		logs.WithContext(ctx).Info("creating AWS session")
+		err = awsStorage.Init(ctx)
 		if err != nil {
-			log.Println(err)
 			return
 		}
 	}
 	enc := ""
-	log.Println("size = ", len(file))
-	//log.Println("file.Read(byteContainer)")
-	//log.Println(file.Read(byteContainer))
-
-	//log.Println(awsStorage.EncryptFiles)
 
 	if awsStorage.EncryptFiles {
-		//log.Print(len(byteContainer))
 		file = eruaes.Pad(file, 16)
-		//log.Print(len(byteContainer))
-		file, err = eruaes.EncryptCBC(file, keyName.Key, keyName.Vector)
+		file, err = eruaes.EncryptCBC(ctx, file, keyName.Key, keyName.Vector)
 		if err != nil {
-			log.Println(err)
 			return
 		}
 		enc = ".enc"
 	}
 	docId = ksuid.New().String()
-	//log.Println(docType)
 	if docType != "" {
 		docType = fmt.Sprint(docType, "_")
 	}
-	//log.Println(docType)
 	finalFileName := fmt.Sprint(docType, docId, "_", fileName, enc)
 	uploader := s3manager.NewUploader(awsStorage.session)
 	_, err = uploader.Upload(&s3manager.UploadInput{
@@ -187,8 +152,8 @@ func (awsStorage *AwsStorage) UploadFileB64(file []byte, fileName string, docTyp
 	return
 }
 
-func (awsStorage *AwsStorage) Init() (err error) {
-	log.Println("inside AwsStorage Init")
+func (awsStorage *AwsStorage) Init(ctx context.Context) (err error) {
+	logs.WithContext(ctx).Debug("Init - Start")
 	awsConf := &aws.Config{
 		Region: aws.String(awsStorage.Region),
 		Credentials: credentials.NewStaticCredentials(
@@ -204,14 +169,12 @@ func (awsStorage *AwsStorage) Init() (err error) {
 	return err
 }
 
-func (awsStorage *AwsStorage) MakeFromJson(rj *json.RawMessage) error {
-	log.Println("inside AwsStorage MakeFromJson")
+func (awsStorage *AwsStorage) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+	logs.WithContext(ctx).Debug("MakeFromJson - Start")
 	err := json.Unmarshal(*rj, &awsStorage)
 	if err != nil {
-		log.Print("error json.Unmarshal(*rj, &awsStorage)")
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
-	log.Println(awsStorage)
 	return nil
 }

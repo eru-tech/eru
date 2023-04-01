@@ -5,18 +5,19 @@ import (
 	"fmt"
 	"github.com/eru-tech/eru/eru-alerts/channel"
 	"github.com/eru-tech/eru/eru-alerts/module_store"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
-	"log"
 	"net/http"
 )
 
 func ProjectSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		err := s.SaveProject(projectID, s, true)
+		err := s.SaveProject(r.Context(), projectID, s, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -30,9 +31,10 @@ func ProjectSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ProjectRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		err := s.RemoveProject(projectID, s)
+		err := s.RemoveProject(r.Context(), projectID, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -46,10 +48,8 @@ func ProjectRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ProjectListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		//token, err := VerifyToken(r.Header.Values("Authorization")[0])
-		//log.Print(token.Method)
-		//log.Print(err)
-		projectIds := s.GetProjectList()
+		logs.WithContext(r.Context()).Debug("ProjectListHandler - Start")
+		projectIds := s.GetProjectList(r.Context())
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"projects": projectIds})
 	}
@@ -57,10 +57,10 @@ func ProjectListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectConfigHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		log.Print(projectID)
-		project, err := s.GetProjectConfig(projectID)
+		project, err := s.GetProjectConfig(r.Context(), projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -73,6 +73,7 @@ func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func MessageTemplateSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("MessageTemplateSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		mtFromReq := json.NewDecoder(r.Body)
@@ -85,7 +86,7 @@ func MessageTemplateSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(messageTemplate, "")
+			err := utils.ValidateStruct(r.Context(), messageTemplate, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -93,7 +94,7 @@ func MessageTemplateSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		err := s.SaveMessageTemplate(projectId, messageTemplate, s)
+		err := s.SaveMessageTemplate(r.Context(), projectId, messageTemplate, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -107,11 +108,12 @@ func MessageTemplateSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func MessageTemplateRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("MessageTemplateRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		templateName := vars["templatename"]
 
-		err := s.RemoveMessageTemplate(projectId, templateName, s)
+		err := s.RemoveMessageTemplate(r.Context(), projectId, templateName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -124,7 +126,7 @@ func MessageTemplateRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 }
 func ChannelSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Print("inside ChannelSaveHandler")
+		logs.WithContext(r.Context()).Debug("ChannelSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		channelType := vars["channeltype"]
@@ -134,7 +136,7 @@ func ChannelSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		channelObj := channel.GetChannel(channelType)
 		if err := channelFromReq.Decode(&channelObj); err != nil {
-			log.Println(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
@@ -146,11 +148,9 @@ func ChannelSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			//	return
 			//}
 		}
-		//err := storageObj.Save(s,projectId,storageName)
 		channelName, _ := channelObj.GetAttribute("ChannelName")
-		err := s.SaveChannel(channelObj, projectId, s, true)
+		err := s.SaveChannel(r.Context(), channelObj, projectId, s, true)
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
@@ -163,17 +163,16 @@ func ChannelSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ChannelRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Print("inside ChannelRemoveHandler")
+		logs.WithContext(r.Context()).Debug("ChannelRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		channelName := vars["channelname"]
-		err := s.RemoveChannel(channelName, projectId, s)
+		err := s.RemoveChannel(r.Context(), channelName, projectId, s)
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore("", s)
+			s.SaveStore(r.Context(), "", s)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("channel config for ", channelName, " removed successfully")})
 		}

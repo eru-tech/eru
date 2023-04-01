@@ -46,10 +46,8 @@ type SQLObjectM struct {
 func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Selection, vars map[string]interface{}, datasource *module_model.DataSource) (err error) {
 	//myself.CheckMe()
 	logs.WithContext(ctx).Debug("ProcessMutationGraphQL - Start")
-	//log.Print(sqlObj.PreparedQuery)
 	field := sel.(*ast.Field)
 	docsFound := false
-	//errMsg := "-"
 	if field.Alias != nil {
 		sqlObj.MainAliasName = field.Alias.Value
 	} else {
@@ -106,9 +104,6 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Se
 	var docs interface{}
 
 	for _, ff := range field.Arguments {
-		//log.Print("inside field.Arguments")
-		//log.Print(ff.Name.Value)
-		//log.Print(len(field.Arguments))
 		switch ff.Name.Value {
 
 		case "docs":
@@ -119,38 +114,6 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Se
 			}
 			docs = varValue
 
-			/*sqlObj.MutationRecords, err = sqlObj.processMutationDoc(varValue, datasource, sqlObj.MainTableName, sqlObj.NestedDoc,nil)
-			if err != nil {
-				log.Print(err.Error()) //TODO to pass this error as query result
-				// return nil, err
-				// no need to return here
-			}*/
-			/*
-				log.Print("sqlObj.MutationRecords printed below")
-				for i, mr := range sqlObj.MutationRecords {
-					log.Print("doc no = ",i)
-					log.Print("Cols = ",mr.Cols)
-					log.Print("NonNestedCols = ",mr.NonNestedCols)
-					log.Print("Values = ",mr.Values)
-					log.Print("NonNestedValues = ",mr.NonNestedValues)
-					log.Print("UpdatedCols = ",mr.UpdatedCols)
-					log.Print("TableJoins = ",mr.TableJoins)
-					log.Print("DBQuery = ",mr.DBQuery)
-					log.Print("--------------printing childrecords")
-					for kk,vv := range mr.ChildRecords {
-						log.Print(kk)
-						for ci, cmr := range vv {
-							log.Print("child doc no = ", ci)
-							log.Print("Cols = ", cmr.Cols)
-							log.Print("NonNestedCols = ", cmr.NonNestedCols)
-							log.Print("Values = ", cmr.Values)
-							log.Print("NonNestedValues = ", cmr.NonNestedValues)
-							log.Print("UpdatedCols = ", cmr.UpdatedCols)
-							log.Print("TableJoins = ", cmr.TableJoins)
-							log.Print("DBQuery = ",cmr.DBQuery)
-						}
-					}
-				}*/
 		case "query":
 			varValue, err := ParseAstValue(ctx, ff.Value, vars)
 			if err != nil {
@@ -192,8 +155,6 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Se
 	}
 	if docsFound {
 		sqlObj.MutationRecords, err = sqlObj.processMutationDoc(ctx, docs, datasource, sqlObj.MainTableName, sqlObj.NestedDoc, nil)
-		//log.Println("sqlObj.MutationRecords after sqlObj.processMutationDoc call")
-		//log.Println(sqlObj.MutationRecords)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			//TODO to pass this error as query result
@@ -208,25 +169,6 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Se
 		logs.WithContext(ctx).Warn("docs not found")
 		return errors.New("missing 'docs' keyword - document to mutate not found") //TODO this error is not returned in graphql error
 	}
-
-	/*
-		res, er := sqlObj.ExecuteMutationQuery(datasource, myself)
-		if er != nil {
-			log.Print(er.Error())
-			errMsg = er.Error()
-			//return nil, er
-			// no need to return here - error is returned as part of result - if asked in the query.
-		}
-		returnResult = make(map[string]interface{})
-		if sqlObj.MutationReturn.ReturnError {
-			returnResult[sqlObj.MutationReturn.ReturnErrorAlias] = errMsg
-		}
-		if sqlObj.MutationReturn.ReturnDoc {
-			returnResult[sqlObj.MutationReturn.ReturnDocAlias] = res
-		}
-		//TODO : query alias to be returned for mutation
-		return returnResult, er
-	*/
 	return nil
 }
 
@@ -244,7 +186,6 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 	} else if sqlObj.QueryType == "update" {
 		return nil, errors.New("value of 'docs' cannot be an array")
 	}
-	//log.Print(" len(docs) == ", len(docs))
 	mr = make([]module_model.MutationRecord, len(docs))
 	for i, doc := range docs {
 
@@ -269,7 +210,6 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 		//ii := 1
 		mr[i] = module_model.MutationRecord{}
 		colNo := 0
-		//log.Println(insertDoc)
 		for k, kv := range insertDoc {
 			colNo++
 			if i == 0 && !sqlObj.NestedDoc { // picking up columns only from first record in array as structure of all records should be same for non nested docs
@@ -286,7 +226,6 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 			childTableName := strings.Replace(k, "___", ".", -1)
 			tj, e := datasource.GetTableJoins(ctx, parentTableName, childTableName, nil)
 			if e != nil {
-				//log.Println(e)
 				if isArray {
 					kv1, ee := json.Marshal(kv)
 					if ee != nil {
@@ -299,8 +238,6 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 				}
 			}
 			if isArray {
-				//log.Println("inside isArray")
-				//tj, e := datasource.GetTableJoins(parentTableName, childTableName)
 				var joinCols []string
 				if tj.Table1Name == parentTableName {
 					joinCols = tj.Table1Cols
@@ -325,21 +262,13 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 				}
 				mr[i].TableJoins[childTableName] = tj
 			} else {
-				//log.Println("inside else of isArray")
 				cols = append(cols, k)
 				// TODO to open up below comments
 				updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
-				//colsPlaceholder = append(colsPlaceholder, myself.GetPreparedQueryPlaceholder(ii))
-				//_=colsPlaceholder
 				values = append(values, kv)
-				//log.Println("values printed from inside else of isArray")
-				//log.Println(values)
-				//ii++
+
 			}
 		}
-		//log.Print("cols before sort = ", colsIfNotNested)
-		//sort.Strings(colsIfNotNested)
-		//log.Print("cols after sort = ", colsIfNotNested)
 		colFound := false
 		for _, jcol := range jc {
 			for _, qcol := range cols {
@@ -358,7 +287,6 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 		//mr[i].ColsPlaceholder = strings.Join(colsPlaceholder, ",")
 		mr[i].ColsPlaceholder = "$ColsPlaceholder"
 		mr[i].Values = values
-		//log.Println("mr[i].Values == ", mr[i].Values)
 		mr[i].NonNestedCols = strings.Join(colsIfNotNested, ",")
 		for _, c := range strings.Split(mr[0].NonNestedCols, ",") {
 			nonNestedValue := insertDoc[c]
@@ -377,7 +305,6 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 		mr[i].NonNestedValues = valuesIfNotNested
 		sqlObj.MakeMutationQuery(ctx, &mr[i], parentTableName)
 	}
-	//log.Print("sqlObj.NestedDoc == ", sqlObj.NestedDoc)
 	if !sqlObj.NestedDoc && len(docs) > 0 {
 		mr[0].Cols = mr[0].NonNestedCols
 		sqlObj.MakeMutationQuery(ctx, &mr[0], parentTableName)
@@ -388,7 +315,6 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_model.MutationRecord, tableName string) {
 	logs.WithContext(ctx).Debug("MakeMutationQuery - Start")
 	returningStr := ""
-	//log.Print("sqlObj.WhereClause == ", sqlObj.WhereClause)
 	strWhereClause, e := processWhereClause(ctx, sqlObj.WhereClause, "", sqlObj.MainTableName, false)
 	if e != "" {
 		logs.WithContext(ctx).Error(e)
@@ -398,30 +324,23 @@ func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_mod
 	if strWhereClause != "" {
 		strWhereClause = fmt.Sprint(" where ", strWhereClause)
 	}
-	//log.Print("strWhereClause ==", strWhereClause)
 	//if sqlObj.MutationReturn.ReturnDoc { ### commented the conditional check to add returning clause - not we will always add
 	//TODO to bring back conditional check
 	if sqlObj.MutationReturn.ReturnDoc {
 		returningStr = fmt.Sprint(" RETURNING ", sqlObj.MutationReturn.ReturnFields)
 	}
 	//}
-	//log.Print(fmt.Sprint("MakeMutationQuery from base SqlMaker called for ", sqlObj.QueryType))
 	query := ""
 	if sqlObj.PreparedQuery {
 		query = fmt.Sprint(sqlObj.QueryObject[sqlObj.MainTableName].Query, " ", returningStr)
 		sqlObj.DBQuery = query
-		//log.Print(query)
 		return
 	}
 	switch sqlObj.QueryType {
 	case "insertselect":
 		query = fmt.Sprint("insert into ", tableName, " ( ", sqlObj.MutationSelectCols, ") ", sqlObj.MutationSelectQuery, returningStr)
 		sqlObj.DBQuery = query
-	//	log.Print(query)
 	case "insert":
-		//log.Print(doc.TableJoins[tableName])
-		//log.Print(doc.TableJoins)
-		//log.Print(tableName)
 
 		/*for _, tjColVal := range tj.Table1Cols { //TODO test parent-child insertion extensively.
 			colFound := false
@@ -434,7 +353,6 @@ func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_mod
 				}
 			}
 			if !colFound {
-				log.Print("inside !colFound")
 				cvColsArray = append(cvColsArray, tjColVal)
 				//childRec.Values = append(childRec.Values, resDoc[tjColVal])
 				cv[icv].Values = append(cv[icv].Values , resDoc[tjColVal])
@@ -445,16 +363,13 @@ func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_mod
 
 		query = fmt.Sprint("insert into ", tableName, " (", doc.Cols,
 			") values ", doc.ColsPlaceholder, returningStr)
-		//log.Print(query)
 		doc.DBQuery = query
 	case "update":
 		query = fmt.Sprint("update ", tableName, " set ", doc.UpdatedCols,
 			" ", strWhereClause, " ", returningStr)
-		//log.Print(query)
 		doc.DBQuery = query
 	case "delete":
 		query = fmt.Sprint("delete from ", tableName, " ", strWhereClause, " ", returningStr)
-		//log.Print(query)
 		sqlObj.DBQuery = query
 	default:
 		//do nothing

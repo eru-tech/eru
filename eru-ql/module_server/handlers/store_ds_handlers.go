@@ -82,7 +82,7 @@ func ProjectDataSourceSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := eru_utils.ValidateStruct(datasource, "")
+			err := eru_utils.ValidateStruct(r.Context(), datasource, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -268,7 +268,7 @@ func ProjectDataSourceSchemaSaveTableHandler(s module_store.ModuleStoreI) http.H
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := eru_utils.ValidateStruct(tableObj, "")
+			err := eru_utils.ValidateStruct(r.Context(), tableObj, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -307,7 +307,7 @@ func ProjectDataSourceSchemaTransformTableHandler(s module_store.ModuleStoreI) h
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := eru_utils.ValidateStruct(transformRules, "")
+			err := eru_utils.ValidateStruct(r.Context(), transformRules, "")
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
 				server_handlers.FormatResponse(w, 400)
@@ -349,7 +349,7 @@ func ProjectDataSourceSchemaSecureTableHandler(s module_store.ModuleStoreI) http
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := eru_utils.ValidateStruct(securityRules, "")
+			err := eru_utils.ValidateStruct(r.Context(), securityRules, "")
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
 				server_handlers.FormatResponse(w, 400)

@@ -1,8 +1,9 @@
 package module_model
 
 import (
+	"context"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-routes/routes"
-	"log"
 )
 
 type ModuleProjectI interface {
@@ -22,20 +23,20 @@ type Project struct {
 	Authorizers   map[string]routes.Authorizer
 }
 
-func (prg *Project) AddRoute(routeObj routes.Route) error {
+func (prg *Project) AddRoute(ctx context.Context, routeObj routes.Route) error {
+	logs.WithContext(ctx).Debug("AddRoute - Start")
 	if prg.Routes == nil {
 		prg.Routes = make(map[string]routes.Route)
 	}
 	prg.Routes[routeObj.RouteName] = routeObj
-	log.Println(prg)
 	return nil
 }
 
-func (prg *Project) AddFunc(funcObj routes.FuncGroup) error {
+func (prg *Project) AddFunc(ctx context.Context, funcObj routes.FuncGroup) error {
+	logs.WithContext(ctx).Debug("AddFunc - Start")
 	if prg.FuncGroups == nil {
 		prg.FuncGroups = make(map[string]routes.FuncGroup)
 	}
 	prg.FuncGroups[funcObj.FuncGroupName] = funcObj
-	//log.Println(prg)
 	return nil
 }

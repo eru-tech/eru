@@ -1,16 +1,18 @@
 package module_model
 
 import (
+	"context"
 	"fmt"
 	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
-	"log"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"strings"
 )
 
 type ModuleProjectI interface {
-	AddGateway(gatewayObj gateway.GatewayI)
-	AddAuth(authObj auth.AuthI)
+	AddGateway(ctx context.Context, gatewayObj gateway.GatewayI)
+	AddAuth(ctx context.Context, authObj auth.AuthI)
+	RemoveAuth(ctx context.Context, authType string) error
 }
 
 type Project struct {
@@ -43,8 +45,8 @@ type MessageTemplate struct {
 	TemplateText string `eru:"required"`
 }
 
-func (prg *Project) AddGateway(gatewayObjI gateway.GatewayI) error {
-	log.Println("inside AddGateway")
+func (prg *Project) AddGateway(ctx context.Context, gatewayObjI gateway.GatewayI) error {
+	logs.WithContext(ctx).Debug("AddGateway - Start")
 	gatewayName, err := gatewayObjI.GetAttribute("GatewayName")
 	if err != nil {
 		return err
@@ -58,19 +60,17 @@ func (prg *Project) AddGateway(gatewayObjI gateway.GatewayI) error {
 		return err
 	}
 	gKey := fmt.Sprint(gatewayName.(string), "_", gatewayType.(string), "_", channel.(string))
-	log.Print(gKey)
 	prg.Gateways[gKey] = gatewayObjI
-	log.Println(prg)
 	return nil
 }
 
-func (prg *Project) AddAuth(authType string, authObjI auth.AuthI) error {
-	log.Println("inside AddAuth")
+func (prg *Project) AddAuth(ctx context.Context, authType string, authObjI auth.AuthI) error {
+	logs.WithContext(ctx).Debug("AddAuth - Start")
 	prg.Auth[authType] = authObjI
 	return nil
 }
-func (prg *Project) RemoveAuth(authType string) error {
-	log.Println("inside RemoveAuth")
+func (prg *Project) RemoveAuth(ctx context.Context, authType string) error {
+	logs.WithContext(ctx).Debug("RemoveAuth - Start")
 	delete(prg.Auth, authType)
 	return nil
 }

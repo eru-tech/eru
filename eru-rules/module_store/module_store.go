@@ -1,11 +1,12 @@
 package module_store
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-rules/module_model"
 	"github.com/eru-tech/eru/eru-store/store"
-	"log"
 	"time"
 )
 
@@ -14,13 +15,13 @@ type StoreHolder struct {
 }
 type ModuleStoreI interface {
 	store.StoreI
-	SaveProject(projectId string, realStore ModuleStoreI, persist bool) error
-	RemoveProject(projectId string, realStore ModuleStoreI) error
-	GetProjectConfig(projectId string) (*module_model.Project, error)
-	GetProjectList() []map[string]interface{}
-	SaveDataType(projectId string, dataType module_model.DataType, realStore ModuleStoreI, persist bool) error
-	RemoveDataType(projectId string, dataTypeName string, realStore ModuleStoreI) error
-	GetDataTypeList(projectId string) (map[string]module_model.DataType, error)
+	SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error
+	RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error
+	GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error)
+	GetProjectList(ctx context.Context) []map[string]interface{}
+	SaveDataType(ctx context.Context, projectId string, dataType module_model.DataType, realStore ModuleStoreI, persist bool) error
+	RemoveDataType(ctx context.Context, projectId string, dataTypeName string, realStore ModuleStoreI) error
+	GetDataTypeList(ctx context.Context, projectId string) (map[string]module_model.DataType, error)
 }
 
 type ModuleStore struct {
@@ -36,7 +37,8 @@ type ModuleDbStore struct {
 	ModuleStore
 }
 
-func (ms *ModuleStore) SaveProject(projectId string, realStore ModuleStoreI, persist bool) error {
+func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error {
+	logs.WithContext(ctx).Debug("SaveProject - Start")
 	//TODO to handle edit project once new project attributes are finalized
 	if _, ok := ms.Projects[projectId]; !ok {
 		project := new(module_model.Project)
@@ -52,36 +54,44 @@ func (ms *ModuleStore) SaveProject(projectId string, realStore ModuleStoreI, per
 		}
 		ms.Projects[projectId] = project
 		if persist == true {
-			log.Print("SaveStore called from SaveProject")
+			logs.WithContext(ctx).Info("SaveStore called from SaveProject")
 			return realStore.SaveStore("", realStore)
 		} else {
 			return nil
 		}
 	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " already exists"))
+		err := errors.New(fmt.Sprint("Project ", projectId, " already exists"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 }
 
-func (ms *ModuleStore) RemoveProject(projectId string, realStore ModuleStoreI) error {
+func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("RemoveProject - Start")
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
-		log.Print("SaveStore called from RemoveProject")
+		logs.WithContext(ctx).Info("SaveStore called from RemoveProject")
 		return realStore.SaveStore("", realStore)
 	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		err := errors.New(fmt.Sprint("Project ", projectId, " already exists"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 }
 
-func (ms *ModuleStore) GetProjectConfig(projectId string) (*module_model.Project, error) {
+func (ms *ModuleStore) GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error) {
+	logs.WithContext(ctx).Debug("GetProjectConfig - Start")
 	if _, ok := ms.Projects[projectId]; ok {
-		//log.Println(store.Projects[projectId])
 		return ms.Projects[projectId], nil
 	} else {
-		return nil, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		err := errors.New(fmt.Sprint("Project ", projectId, " already exists"))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
 }
 
-func (ms *ModuleStore) GetProjectList() []map[string]interface{} {
+func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interface{} {
+	logs.WithContext(ctx).Debug("GetProjectList - Start")
 	projects := make([]map[string]interface{}, len(ms.Projects))
 	i := 0
 	for k := range ms.Projects {
@@ -95,46 +105,54 @@ func (ms *ModuleStore) GetProjectList() []map[string]interface{} {
 	return projects
 }
 
-func (ms *ModuleStore) SaveDataType(projectId string, dataType module_model.DataType, realStore ModuleStoreI, persist bool) error {
-	err := ms.checkProjectExists(projectId)
+func (ms *ModuleStore) SaveDataType(ctx context.Context, projectId string, dataType module_model.DataType, realStore ModuleStoreI, persist bool) error {
+	logs.WithContext(ctx).Debug("SaveDataType - Start")
+	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		return err
 	}
 	ms.Projects[projectId].DataTypes[dataType.Name] = dataType
 	if persist == true {
-		log.Print("SaveStore called from SaveDataType")
+		logs.WithContext(ctx).Info("SaveStore called from SaveDataType")
 		return realStore.SaveStore("", realStore)
 	} else {
 		return nil
 	}
 }
 
-func (ms *ModuleStore) RemoveDataType(projectId string, dataTypeName string, realStore ModuleStoreI) error {
-	err := ms.checkProjectExists(projectId)
+func (ms *ModuleStore) RemoveDataType(ctx context.Context, projectId string, dataTypeName string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("RemoveDataType - Start")
+	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		return err
 	}
 	if _, ok := ms.Projects[projectId].DataTypes[dataTypeName]; ok {
 		delete(ms.Projects[projectId].DataTypes, dataTypeName)
-		log.Print("SaveStore called from RemoveDataType")
+		logs.WithContext(ctx).Info("SaveStore called from RemoveDataType")
 		return realStore.SaveStore("", realStore)
 	} else {
-		return errors.New(fmt.Sprint("Datatype ", dataTypeName, " does not exists"))
+		err = errors.New(fmt.Sprint("Datatype ", dataTypeName, " does not exists"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 }
 
-func (ms *ModuleStore) GetDataTypeList(projectId string) (map[string]module_model.DataType, error) {
-	err := ms.checkProjectExists(projectId)
+func (ms *ModuleStore) GetDataTypeList(ctx context.Context, projectId string) (map[string]module_model.DataType, error) {
+	logs.WithContext(ctx).Debug("GetDataTypeList - Start")
+	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		return nil, err
 	}
 	return ms.Projects[projectId].DataTypes, nil
 }
 
-func (ms *ModuleStore) checkProjectExists(projectId string) error {
+func (ms *ModuleStore) checkProjectExists(ctx context.Context, projectId string) error {
+	logs.WithContext(ctx).Debug("checkProjectExists - Start")
 	_, ok := ms.Projects[projectId]
 	if !ok {
-		return errors.New(fmt.Sprint("project ", projectId, " not found"))
+		err := errors.New(fmt.Sprint("project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 	return nil
 }

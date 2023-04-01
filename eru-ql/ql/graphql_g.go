@@ -60,16 +60,10 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(ctx context.Context, sel ast.Selection,
 	sqlObj.MainTableDB = field.Directives[0].Name.Value
 
 	/* we will need below block for tenant ds alias
-	   log.Print("field.Directives[0].Name.Value = " + field.Directives[0].Name.Value)
-	   	log.Print("loop on field.Directives[0].Arguments starts")
-	   	for _, vv := range field.Directives[0].Arguments {
-	   		log.Print("vv.Name.Value = "+vv.Name.Value)
-	   		log.Print("vv.Value.GetValue().(string)" + vv.Value.GetValue().(string))
-	   	}
-	   	log.Print("loop on field.Directives[0].Arguments ends")
+	for _, vv := range field.Directives[0].Arguments {
+	}
 	*/
 
-	//log.Print("len(field.Arguments) = " + string(len(field.Arguments)))
 	for _, ff := range field.Arguments { //TODO to add join to main table without having to add
 
 		v, e := ParseAstValue(ctx, ff.Value, vars)
@@ -355,10 +349,6 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 			//tempArray := make([]string, len(reflect.ValueOf(val).MapKeys()))
 			for _, v := range reflect.ValueOf(val).MapKeys() {
 				newVal := reflect.ValueOf(val).MapIndex(v).Interface()
-				//if newVal == nil {
-				//	log.Print("Exiting as nil vlaue found for ",v ," of ", val)
-				//	return "", "" //exiting as we will ignore this condition as user has not passed any value for filter
-				//}
 				if newVal != nil {
 					var valPrefix, valSuffix = "", ""
 					if reflect.TypeOf(newVal).Kind().String() == "string" {
@@ -505,7 +495,6 @@ func (sqlObj *SQLObjectQ) processSortClause(ctx context.Context, val interface{}
 		isDesc := ""
 		_ = isDesc
 		//v, e := ParseAstValue(val, vars)
-		//log.Print(e)
 		switch reflect.TypeOf(val).Kind() {
 		case reflect.Slice:
 			s := reflect.ValueOf(val)
@@ -560,29 +549,6 @@ func (sqlObj *SQLObjectQ) processSortClause(ctx context.Context, val interface{}
 			return fmt.Sprint(" order by ", s, isDesc)
 		default:
 		}
-		/*
-			switch val.GetKind() {
-			case kinds.StringValue:
-				v := val.(*ast.StringValue).Value
-				gqr.sortClause = make([]interface{}, 1)
-				gqr.sortClause[0] = v
-				log.Print("val.GetKind() = StringValue")
-				log.Print("val.(*ast.StringValue).Value = "+v)
-			case kinds.ListValue:
-				v,e := parseAstListValue(val)
-			case kinds.Variable:
-				log.Print("val.GetKind() = Variable")
-				v := val.(*ast.Variable)
-				log.Print("val.(*ast.Variable).Name.Value = "+ v.Name.Value )
-				gqr.sortClause = make([]interface{}, 1)
-				gqr.sortClause[0] = v.Name.Value
-				//log.Print(v.Name.Value)
-				//log.Print("pd.Variables[v.Name.Value]")
-				//log.Print((pd.Variables[v.Name.Value]))
-			default:
-				log.Print("inside default val kind")
-			}
-		*/
 	}
 	return ""
 }
@@ -636,17 +602,11 @@ func (sqlObj *SQLObjectQ) MakeQuery(ctx context.Context, sqlMaker ds.SqlMakerI, 
 	} else {
 		strColums = strings.Join(sqlObj.Columns.ColNames, " , ")
 	}
-	//log.Print("sqlObj.Columns.ColWithAlias = ", sqlObj.Columns.ColWithAlias)
-
-	//strColumns := strings.Join(sqlObj.Columns.ColNames, " , ")
-	//log.Print("sqlObj.JoinClause === ", sqlObj.JoinClause)
 	strJoinClause := sqlObj.processJoins(ctx, sqlObj.JoinClause)
-	//log.Print("strJoinClause == ", strJoinClause)
 	strWhereClause, e := processWhereClause(ctx, sqlObj.WhereClause, "", sqlObj.MainTableName, false)
 	if e != "" {
 		err = errors.New(e)
 	}
-	//log.Print("sqlObj.SecurityClause[sqlObj.MainTableName] = ", sqlObj.SecurityClause[sqlObj.MainTableName])
 
 	strAnd := ""
 	strSecurityClause := ""

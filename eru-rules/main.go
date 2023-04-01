@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-rules/module_server"
 	"github.com/eru-tech/eru/eru-rules/module_store"
 	"github.com/eru-tech/eru/eru-server/server"
-	"log"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"os"
 )
 
@@ -12,15 +14,17 @@ var port = "8084"
 
 func main() {
 	module_server.SetServiceName()
-	log.Println("inside main of eru-rules")
+	logs.LogInit(server_handlers.ServerName)
+	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
+
 	envPort := os.Getenv("ERURULESPORT")
 	if envPort != "" {
 		port = envPort
 	}
 	store, e := module_server.StartUp()
 	if e != nil {
-		log.Println(e)
-		log.Println("Failed to Start Server - error while setting up config store")
+		logs.Logger.Error(e.Error())
+		logs.Logger.Error("Failed to Start Server - error while setting up config store")
 		return
 	}
 	sh := new(module_store.StoreHolder)
@@ -28,7 +32,7 @@ func main() {
 	sr, _, e := server.Init()
 	module_server.AddModuleRoutes(sr, sh)
 	if e != nil {
-		log.Print(e)
+		logs.Logger.Error(e.Error())
 	}
 	server.Launch(sr, port)
 }

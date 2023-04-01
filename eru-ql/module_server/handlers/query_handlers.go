@@ -235,7 +235,7 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				}
 			}
 
-			b, err = ewd.WriteColumnar()
+			b, err = ewd.WriteColumnar(r.Context())
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -338,44 +338,7 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		gqd.Variables[module_model.RULEPREFIX_TOKEN] = tokenObj
 		gqd.FinalVariables = gqd.Variables
 		gqd.ExecuteFlag = true
-		/*
-			queryNames, err := gqd.CheckIfMutationByQuery()
-			log.Print(queryNames)
-			for _, queryName := range queryNames {
-				myQuery, err := s.GetMyQuery(projectID, queryName)
-				if err != nil {
-					server_handlers.FormatResponse(w, 400)
-					json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-					logs.WithContext(r.Context()).Error(err.Error())
-					return
-				}
-				// overwriting variables with same names
-				if myQuery != nil {
-					qlInterface := ql.GetQL(myQuery.QueryType)
-					if qlInterface == nil {
-						server_handlers.FormatResponse(w, 400)
-						err = errors.New("Invalid Query Type")
-						json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-						logs.WithContext(r.Context()).Error(err.Error())
-						return
-					}
-					qlInterface.SetQLData(*myQuery, gqd.FinalVariables, false) //passing false as we only need the query in execute function and not actual result
-					_, queryMap, err := qlInterface.Execute(datasources)
-					if err != nil {
-						server_handlers.FormatResponse(w, 400)
-						json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-						logs.WithContext(r.Context()).Error(err.Error())
-						return
-					}
-					log.Print(queryMap)
-					gqd.MutationSelect=queryMap[0] // picking up first element as it is assumed that query used for insert will only have 1 doc definition (thus one query only)
-				} else {
-					server_handlers.FormatResponse(w, 400)
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": errors.New(fmt.Sprint("query ", queryName, " not found")).Error()})
-					return
-				}
-			}
-		*/
+
 		res, queryObjs, err := gqd.Execute(r.Context(), projectID, datasources, s, outputType)
 		_ = queryObjs
 		if err != nil {
@@ -384,8 +347,6 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
-			//_ = json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{err.Error()}})
-			//fmt.Fprintf(w, err.Error())
 		} else {
 			server_handlers.FormatResponse(w, 200)
 		}

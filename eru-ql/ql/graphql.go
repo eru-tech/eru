@@ -31,34 +31,6 @@ func (gqd *GraphQLData) SetQLData(ctx context.Context, mq module_model.MyQuery, 
 	gqd.SetQLDataCommon(ctx, mq, vars, executeFlag, tokenObj, isPublic, outputType)
 }
 
-/*
-	func (gqd *GraphQLData) CheckIfMutationByQuery() (selectQuery []string, err error) {
-		log.Print("inside CheckIfMutationByQuery __________________________________________________________")
-		doc, err := gqd.parseGraphQL()
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
-		}
-		for _, docDef := range doc.Definitions {
-			op := ast.Node(docDef).(*ast.OperationDefinition)
-			switch op.Operation {
-			case "mutation":
-				for _, v := range op.SelectionSet.Selections {
-					field := v.(*ast.Field)
-					for _, ff := range field.Arguments {
-						if ff.Name.Value == "query" {
-							selectQuery = append(selectQuery, ff.Value.GetValue().(string))
-						}
-					}
-				}
-			default:
-				//do nothing
-			}
-		}
-		log.Print(selectQuery)
-		return selectQuery, err
-	}
-*/
 func (gqd *GraphQLData) parseGraphQL(ctx context.Context) (d *ast.Document, err error) {
 	logs.WithContext(ctx).Debug("parseGraphQL - Start")
 	s := source.NewSource(&source.Source{
@@ -94,20 +66,13 @@ func (gqd *GraphQLData) getSqlForQuery(ctx context.Context, projectId string, da
 	}
 	qlInterface.SetQLData(ctx, mq, gqd.FinalVariables, false, tokenObj, isPublic, gqd.OutputType) //passing false as we only need the query in execute function and not actual result
 	_, queryObjs, err := qlInterface.Execute(ctx, projectId, datasources, s, gqd.OutputType)
-	//log.Print("queryObjs[0].Type ==", queryObjs[0].Type)
 	for i, q := range queryObjs {
 		queryObjs[i].Type = strings.ToUpper(strings.Split(q.Query, " ")[0])
 	}
-	//log.Print(queryObjs[0].Type)
 	if gqd.QueryObject == nil {
 		gqd.QueryObject = make(map[string]QueryObject)
 	}
 	gqd.QueryObject[query] = queryObjs[0] // setting first result as query used in mutation select will usually be single query
-	//log.Print("queryObjs[0] = ", queryObjs[0])
-	//log.Print("gqd.QueryObject[query]")
-	//log.Print(gqd.QueryObject[query])
-	//log.Print("gqd.MutationSelect")
-	//log.Print(gqd.QueryObject)
 	return nil
 }
 
@@ -251,45 +216,16 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					logs.WithContext(ctx).Error(err.Error())
 					errFound = true
 				}
-				/*
-					tr, err := s.GetTableTransformation(projectId, dbAlias, sqlObj.MainTableName)
-					if err != nil {
-						log.Print("error from GetTableTransformation = ", err.Error())
-						errMsg = fmt.Sprint("error from GetTableTransformation = ", err.Error())
-						errFound = true
-					}
-					log.Print(tr)
-					if sqlObj.OverwriteDoc == nil {
-						sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
-					}
-					sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.ProcessTransformRule(tr.TransformInput)
-					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
-						errMsg = fmt.Sprint("TransformRule failed : ", err.Error())
-						errFound = true
-					}
-					log.Print("sqlObj.OverwriteDoc")
-					log.Print(sqlObj.OverwriteDoc)
-				*/
 				err = gqd.getSqlForQuery(ctx, projectId, datasources, sqlObj.MainTableName, s, nil, gqd.IsPublic)
 				if err == nil {
 					sqlObj.PreparedQuery = true
 				}
-				//log.Print("sqlObj.QueryType == ", sqlObj.QueryType)
-				//log.Print("gqd.QueryObject[sqlObj.MainTableName].Type == ", gqd.QueryObject[sqlObj.MainTableName].Type)
-				// TODO - commented below to handle WITH queries - to reconsider if below check is needed
-				//if sqlObj.PreparedQuery && strings.ToUpper(sqlObj.QueryType) != gqd.QueryObject[sqlObj.MainTableName].Type {
-				//	errFound = true
-				//	err = errors.New(fmt.Sprint(sqlObj.MainTableName, " query is not of type ", gqd.QueryObject[sqlObj.MainTableName].Type))
-				//	errMsg = err.Error()
-				//}
 				selectQuery := ""
 				for _, ff := range field.Arguments {
 					if ff.Name.Value == "query" {
 						selectQuery = ff.Value.GetValue().(string)
 					}
 				}
-				//log.Print(selectQuery)
 				if selectQuery != "" {
 					err = gqd.getSqlForQuery(ctx, projectId, datasources, selectQuery, s, nil, gqd.IsPublic)
 					//todo consider passing token from finalvariables
@@ -299,7 +235,6 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 						errMsg = err.Error()
 					}
 				}
-				//log.Print("singleTxn === ", singleTxn)
 				sqlObj.SingleTxn = singleTxn
 				sqlObj.openTxn = openTxn
 				sqlObj.closeTxn = closeTxn
@@ -310,9 +245,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				}
 				//TODO connection close on this error - to handle the same
 				mainAliasNames = append(mainAliasNames, sqlObj.MainAliasName)
-				//log.Print("sqlObj.QueryType == ", sqlObj.QueryType)
 				//TODO to loop on MutationRecords and pass query
-				//queryObj.Query = sqlObj.DBQuery
 				if gqd.ExecuteFlag && !errFound {
 					//TODO can remove this mrm object and directly set values to graphQLs[i]
 					mrm := module_model.MutationResultMaker{}
@@ -463,7 +396,6 @@ func ParseAstValue(ctx context.Context, value ast.Value, vars map[string]interfa
 		floatValue := value.(*ast.FloatValue)
 
 		// Convert string to int
-		//log.Print("floatValue.Value ==", floatValue.Value)
 		val, err := strconv.ParseFloat(floatValue.Value, 64)
 		if err != nil {
 			return nil, err
@@ -477,7 +409,6 @@ func ParseAstValue(ctx context.Context, value ast.Value, vars map[string]interfa
 
 	case kinds.Variable:
 		t := value.(*ast.Variable)
-		//log.Println("t = ", t.Name.Value)
 		if strings.HasPrefix(t.Name.Value, "$") {
 			logs.WithContext(ctx).Info(fmt.Sprint("key has $ prefix : ", t.Name.Value))
 		}
@@ -527,7 +458,6 @@ func processMapVariable(ctx context.Context, m map[string]interface{}, vars map[
 	var err error
 	for k, v := range m {
 		mapKey := k
-		//log.Println("k = ", mapKey)
 		if strings.HasPrefix(k, "$") {
 			tempI, err := replaceVariableValue(ctx, strings.Replace(mapKey, "$", "", 1), vars)
 			if err != nil {

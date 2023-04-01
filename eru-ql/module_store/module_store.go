@@ -9,7 +9,6 @@ import (
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/eru-tech/eru/eru-store/store"
-	"log"
 	"strings"
 )
 
@@ -81,8 +80,8 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 		}*/
 		ms.Projects[projectId] = project
 		if persist == true {
-			log.Print("SaveStore called from SaveProject")
-			return realStore.SaveStore("", realStore)
+			logs.WithContext(ctx).Info("SaveStore called from SaveProject")
+			return realStore.SaveStore(ctx, "", realStore)
 		} else {
 			return nil
 		}
@@ -95,8 +94,8 @@ func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, real
 	logs.WithContext(ctx).Debug("RemoveProject - Start")
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
-		log.Print("SaveStore called from RemoveProject")
-		return realStore.SaveStore("", realStore)
+		logs.WithContext(ctx).Info("SaveStore called from RemoveProject")
+		return realStore.SaveStore(ctx, "", realStore)
 	} else {
 		return errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 	}
@@ -171,7 +170,7 @@ func (ms *ModuleStore) SaveProjectConfig(ctx context.Context, projectId string, 
 
 	ms.Projects[projectId].ProjectConfig = projectConfig
 
-	return realStore.SaveStore("", realStore)
+	return realStore.SaveStore(ctx, "", realStore)
 }
 
 func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, datasource *module_model.DataSource, realStore ModuleStoreI) error {
@@ -194,9 +193,6 @@ func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, dat
 		datasource.SchemaTablesTransformation = ms.Projects[projectId].DataSources[datasource.DbAlias].SchemaTablesTransformation
 	}
 	ms.Projects[projectId].DataSources[datasource.DbAlias] = datasource
-	//v, e := json.Marshal(store)
-	//log.Print(e)
-	//log.Print(string(v))
 
 	sqlMaker := ds.GetSqlMaker(datasource.DbName)
 	datasource.DbType = ds.GetDbType(datasource.DbName)
@@ -206,7 +202,7 @@ func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, dat
 		logs.WithContext(ctx).Error(err.Error())
 	}
 
-	return realStore.SaveStore("", realStore)
+	return realStore.SaveStore(ctx, "", realStore)
 }
 
 func (ms *ModuleStore) RemoveDataSource(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) error {
@@ -216,7 +212,7 @@ func (ms *ModuleStore) RemoveDataSource(ctx context.Context, projectId string, d
 		return err
 	}
 	delete(ms.Projects[projectId].DataSources, dbAlias)
-	return realStore.SaveStore("", realStore)
+	return realStore.SaveStore(ctx, "", realStore)
 }
 
 func (ms *ModuleStore) GetDataSource(ctx context.Context, projectId string, dbAlias string) (datasource *module_model.DataSource, err error) {
@@ -265,7 +261,7 @@ func (ms *ModuleStore) UpdateSchemaTables(ctx context.Context, projectId string,
 		delete(datasource.OtherTables, tmpList[i])
 	}
 
-	return datasource, realStore.SaveStore("", realStore)
+	return datasource, realStore.SaveStore(ctx, "", realStore)
 }
 func (ms *ModuleStore) AddSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("AddSchemaTable - Start")
@@ -318,7 +314,7 @@ func (ms *ModuleStore) AddSchemaTable(ctx context.Context, projectId string, dbA
 			}
 		}
 
-		err = realStore.SaveStore("", realStore)
+		err = realStore.SaveStore(ctx, "", realStore)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
@@ -354,7 +350,7 @@ func (ms *ModuleStore) RemoveSchemaTable(ctx context.Context, projectId string, 
 				v.IsActive = false
 			}
 		}
-		err = realStore.SaveStore("", realStore)
+		err = realStore.SaveStore(ctx, "", realStore)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
@@ -378,7 +374,7 @@ func (ms *ModuleStore) AddSchemaJoin(ctx context.Context, projectId string, dbAl
 	}
 	datasource := ms.Projects[projectId].DataSources[dbAlias]
 	datasource.AddTableJoins(ctx, tj)
-	err = realStore.SaveStore("", realStore)
+	err = realStore.SaveStore(ctx, "", realStore)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
@@ -394,7 +390,7 @@ func (ms *ModuleStore) RemoveSchemaJoin(ctx context.Context, projectId string, d
 	}
 	datasource := ms.Projects[projectId].DataSources[dbAlias]
 	datasource.RemoveTableJoins(ctx, tj)
-	err = realStore.SaveStore("", realStore)
+	err = realStore.SaveStore(ctx, "", realStore)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
@@ -422,7 +418,7 @@ func (ms *ModuleStore) SaveMyQuery(ctx context.Context, projectId string, queryN
 			ms.Projects[projectId].MyQueries = make(map[string]*module_model.MyQuery)
 		}
 		ms.Projects[projectId].MyQueries[queryName] = &myquery
-		return realStore.SaveStore("", realStore)
+		return realStore.SaveStore(ctx, "", realStore)
 	} else {
 		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
 		if err != nil {
@@ -440,7 +436,7 @@ func (ms *ModuleStore) RemoveMyQuery(ctx context.Context, projectId string, quer
 		}
 		if _, ok = ms.Projects[projectId].MyQueries[queryName]; ok {
 			delete(ms.Projects[projectId].MyQueries, queryName)
-			return realStore.SaveStore("", realStore)
+			return realStore.SaveStore(ctx, "", realStore)
 		} else {
 			err := errors.New(fmt.Sprint("Query ", queryName, " not found"))
 			if err != nil {
@@ -589,7 +585,7 @@ func (ms *ModuleStore) SaveTableSecurity(ctx context.Context, projectId string, 
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
-	return realStore.SaveStore("", realStore)
+	return realStore.SaveStore(ctx, "", realStore)
 }
 
 func (ms *ModuleStore) SaveTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error) {
@@ -620,7 +616,7 @@ func (ms *ModuleStore) SaveTableTransformation(ctx context.Context, projectId st
 		}
 		return err
 	}
-	return realStore.SaveStore("", realStore)
+	return realStore.SaveStore(ctx, "", realStore)
 }
 
 func (ms *ModuleStore) GetTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error) {

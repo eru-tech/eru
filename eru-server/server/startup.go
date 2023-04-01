@@ -17,8 +17,6 @@ func Launch(serverRouter *mux.Router, port string) {
 	// Allow cors
 	corsObj := handlers.MakeCorsObject()
 	r := corsObj.Handler(requestIdMiddleWare(serverRouter))
-	//log.Print(s)
-	//r := s.GetRouter()
 	http.Handle("/", r)
 	logs.Logger.Info(fmt.Sprint("Starting server ", handlers.ServerName, " on ", port))
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
@@ -27,11 +25,6 @@ func Launch(serverRouter *mux.Router, port string) {
 }
 func Init() (*mux.Router, *Server, error) {
 	s := new(Server)
-	//err := s.startUp()
-	//if err != nil {
-	//	log.Print(err)
-	//	return nil , nil,  err
-	//}
 	serverRouter := s.GetRouter()
 	return serverRouter, s, nil
 }

@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/golang-jwt/jwt/v4 v4.4.1
 	github.com/lestrrat-go/jwx v1.2.23
+	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -17,4 +18,8 @@ require (
 	github.com/lestrrat-go/option v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	golang.org/x/crypto v0.0.0-20220214200702-86341886e292 // indirect
+)
+
+replace (
+	github.com/eru-tech/eru/eru-logs => ../eru-logs
 )

@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/eru-tech/eru/eru-gateway/module_store"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,67 +22,60 @@ var httpClient = http.Client{
 func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		// Extract the host and url from incoming request
+		logs.WithContext(r.Context()).Debug("RouteHandler - Start")
 		host, url := extractHostUrl(r)
-		log.Println(host)
-		log.Println(url)
-		tg, authorizer, addHeaders, err := s.GetTargetGroupAuthorizer(r)
-		log.Println(fmt.Sprint("Error from s.GetTargetGroupAuthorizer = ", err))
+		logs.WithContext(r.Context()).Debug(host)
+		logs.WithContext(r.Context()).Debug(url)
+		tg, authorizer, addHeaders, err := s.GetTargetGroupAuthorizer(r.Context(), r)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		log.Print("authorizer.AuthorizerName = ", authorizer.AuthorizerName)
+		logs.WithContext(r.Context()).Debug(fmt.Sprint("authorizer.AuthorizerName = ", authorizer.AuthorizerName))
 		if authorizer.AuthorizerName != "" {
 			token := r.Header.Get(authorizer.TokenHeaderKey)
-			log.Print(token)
 			if token == "" {
-				log.Print("token = \"\"")
+				logs.WithContext(r.Context()).Info("token = \"\"")
 				server_handlers.FormatResponse(w, http.StatusUnauthorized)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
-				log.Print(http.StatusUnauthorized)
+				logs.WithContext(r.Context()).Info(fmt.Sprint(http.StatusUnauthorized))
 				return
 			}
-			log.Println("token  == ", token)
-			claims, err := authorizer.VerifyToken(r.Header.Get(authorizer.TokenHeaderKey))
+			claims, err := authorizer.VerifyToken(r.Context(), r.Header.Get(authorizer.TokenHeaderKey))
 			if err != nil {
-				log.Println(err)
 				server_handlers.FormatResponse(w, http.StatusUnauthorized)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
 			}
 			claimsBytes, err := json.Marshal(claims)
 			if err != nil {
-				log.Println(err)
+				logs.WithContext(r.Context()).Error(err.Error())
 				server_handlers.FormatResponse(w, http.StatusUnauthorized)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
 			}
 			r.Header.Add("claims", string(claimsBytes))
 		}
-		log.Println(tg)
 
 		for _, v := range addHeaders {
-			log.Println("inside addHeaders loop")
 			headerValue := ""
 			if v.IsTemplate {
 				goTmpl := gotemplate.GoTemplate{v.Key, v.Value}
-				outputObj, err := goTmpl.Execute(*r, "string")
+				outputObj, err := goTmpl.Execute(r.Context(), *r, "string")
 				if err != nil {
-					log.Println(err)
+					logs.WithContext(r.Context()).Error(err.Error())
 					server_handlers.FormatResponse(w, http.StatusBadRequest)
 					_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 					return
 				} else {
 					output, err := json.Marshal(outputObj)
 					if err != nil {
-						log.Println(err)
+						logs.WithContext(r.Context()).Error(err.Error())
 						server_handlers.FormatResponse(w, http.StatusBadRequest)
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 						return
 					}
-					log.Println(string(output))
 					if str, err := strconv.Unquote(string(output)); err == nil {
 						headerValue = str
 					} else {
@@ -92,7 +85,6 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			} else {
 				headerValue = v.Value
 			}
-			log.Println(v.Key, " ", headerValue)
 			r.Header.Set(v.Key, headerValue)
 		}
 
@@ -107,9 +99,9 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		if tg.Method != "" {
 			r.Method = tg.Method
 		}
-		log.Println(r)
 		response, err := httpClient.Do(r)
 		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
@@ -121,8 +113,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		w.WriteHeader(response.StatusCode)
 		_, err = io.Copy(w, response.Body)
 		if err != nil {
-			log.Println("================")
-			log.Println(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return

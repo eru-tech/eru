@@ -2,17 +2,17 @@ package handlers
 
 import (
 	"encoding/json"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-routes/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"io"
-	"log"
 	"net/http"
 )
 
 func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
+		logs.WithContext(r.Context()).Debug("FuncHandler - Start")
 		// Close the body of the request
 		//TODO to add request body close in all handlers across projects
 		defer r.Body.Close()
@@ -25,24 +25,19 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		// Lookup a routes in a function based on host and url
 
-		funcGroup, err := s.GetAndValidateFunc(funcName, projectId, host, url, r.Method, r.Header)
+		funcGroup, err := s.GetAndValidateFunc(r.Context(), funcName, projectId, host, url, r.Method, r.Header)
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-		log.Print(funcGroup)
-		response, err := funcGroup.Execute(r, module_store.FuncThreads, module_store.LoopThreads)
+		response, err := funcGroup.Execute(r.Context(), r, module_store.FuncThreads, module_store.LoopThreads)
 		if err != nil {
-			log.Println(" httpClient.Do error ")
-			log.Println(err)
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 		defer response.Body.Close()
-		log.Println(response.Body)
 		if response.StatusCode >= 300 && response.StatusCode <= 399 {
 			http.Redirect(w, r, response.Header.Get("Location"), response.StatusCode)
 		} else {
@@ -53,8 +48,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			w.WriteHeader(response.StatusCode)
 			_, err = io.Copy(w, response.Body)
 			if err != nil {
-				log.Println("================")
-				log.Println(err)
+				logs.WithContext(r.Context()).Error(err.Error())
 				w.WriteHeader(http.StatusBadRequest)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return

@@ -54,9 +54,6 @@ func (mr *MysqlSqlMaker) executeQuery(ctx context.Context, query string, datasou
 	if e != nil {
 		logs.WithContext(ctx).Error(e.Error())
 	}
-	//log.Print(rows.Columns())
-	//cols,ee := rows.Columns()
-	//log.Print(ee)
 	defer rows.Close()
 	mapping := make(map[string]interface{})
 	for rows.Next() {

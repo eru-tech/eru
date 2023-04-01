@@ -1,13 +1,14 @@
 package channel
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-routes/routes"
 	"html"
-	"io/ioutil"
-	"log"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -36,10 +37,10 @@ type Message struct {
 }
 
 type ChannelI interface {
-	Execute(r *http.Request, mt MessageTemplate) (response *http.Response, err error)
+	Execute(ctx context.Context, r *http.Request, mt MessageTemplate) (response *http.Response, err error)
 	GetAttribute(attributeName string) (attributeValue interface{}, err error)
-	MakeFromJson(rj *json.RawMessage) error
-	ProcessMessageTemplate(r *http.Request, mt MessageTemplate) (msg Message, err error)
+	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
+	ProcessMessageTemplate(ctx context.Context, r *http.Request, mt MessageTemplate) (msg Message, err error)
 }
 
 type Channel struct {
@@ -47,7 +48,7 @@ type Channel struct {
 	ChannelName string `eru:"required"`
 }
 
-func (channel *Channel) Execute(r *http.Request, mt MessageTemplate) (response *http.Response, err error) {
+func (channel *Channel) Execute(ctx context.Context, r *http.Request, mt MessageTemplate) (response *http.Response, err error) {
 	return nil, errors.New("Execute Method not implemented")
 }
 
@@ -74,10 +75,10 @@ func GetChannel(channelType string) ChannelI {
 	return nil
 }
 
-func (channel *Channel) ProcessMessageTemplate(r *http.Request, mt MessageTemplate) (msg Message, err error) {
-	r1, r1err := routes.CloneRequest(r)
+func (channel *Channel) ProcessMessageTemplate(ctx context.Context, r *http.Request, mt MessageTemplate) (msg Message, err error) {
+	logs.WithContext(ctx).Debug("ProcessMessageTemplate - Start")
+	r1, r1err := routes.CloneRequest(ctx, r)
 	if r1err != nil {
-		log.Println(r1err)
 		return Message{}, r1err
 	}
 	mtRoute := routes.Route{}
@@ -86,25 +87,19 @@ func (channel *Channel) ProcessMessageTemplate(r *http.Request, mt MessageTempla
 
 	mtRoute.TransformRequest = fmt.Sprint("{\"msg\":\"", mt.TemplateText, "\"}")
 	mtRoute.TransformResponse = fmt.Sprint("{\"res\":{{bytesToString (marshalJSON .Vars.Vars.Body)}},\"to\":\"", mt.ToUsers, "\",\"cc\":\"", mt.CcUsers, "\",\"bcc\":\"", mt.BccUsers, "\",\"subject\":\"", mt.TemplateSubject, "\"}")
-	mtResp, _, mtRespErr := mtRoute.Execute(r, r.URL.Path, false, "", nil, 1)
-	//utils.PrintResponseBody(mtResp, "mtResp")
-	//log.Println("mtRespErr = ", mtRespErr)
+	mtResp, _, mtRespErr := mtRoute.Execute(ctx, r, r.URL.Path, false, "", nil, 1)
 	if mtRespErr != nil {
-		log.Println(mtRespErr)
 		return Message{}, mtRespErr
 	}
 	var res map[string]interface{}
 	tmplBodyFromRes := json.NewDecoder(mtResp.Body)
 	tmplBodyFromRes.DisallowUnknownFields()
-	//log.Print("tmplBodyFromRes = ", tmplBodyFromRes)
 	if err = tmplBodyFromRes.Decode(&res); err != nil {
-		log.Println("tmplBodyFromRes.Decode error from routes")
-		log.Println(err)
-		body, readErr := ioutil.ReadAll(mtResp.Body)
+		logs.WithContext(ctx).Error(err.Error())
+		body, readErr := io.ReadAll(mtResp.Body)
 		if readErr != nil {
 			err = readErr
-			log.Println("ioutil.ReadAll(response.Body) error")
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
 		tempBody := make(map[string]interface{})
@@ -112,7 +107,6 @@ func (channel *Channel) ProcessMessageTemplate(r *http.Request, mt MessageTempla
 		res = tempBody
 	}
 	msg = Message{}
-	//msgMap := make(map[string]interface{})
 	if msgMap, msgMapOk := res["res"].(map[string]interface{}); msgMapOk {
 
 		msg.Msg = msgMap["msg"].(string)
@@ -124,24 +118,18 @@ func (channel *Channel) ProcessMessageTemplate(r *http.Request, mt MessageTempla
 
 	mtRoute.TransformRequest = ""
 	mtRoute.TransformResponse = fmt.Sprint("{\"msg\":\"", msg.Msg, "\"}")
-	//utils.PrintRequestBody(r1, "r beofre second execute")
-	mtRespMsg, _, mtRespMsgErr := mtRoute.Execute(r1, r1.URL.Path, false, "", nil, 1)
-	//utils.PrintResponseBody(mtRespMsg, "mtRespMsg")
-	//log.Println("mtRespMsgErr = ", mtRespMsgErr)
+	mtRespMsg, _, mtRespMsgErr := mtRoute.Execute(ctx, r1, r1.URL.Path, false, "", nil, 1)
 	if mtRespMsgErr != nil {
-		log.Println(mtRespMsgErr)
 		return Message{}, mtRespMsgErr
 	}
 	tmplBodyFromResMsg := json.NewDecoder(mtRespMsg.Body)
 	tmplBodyFromResMsg.DisallowUnknownFields()
 	if err = tmplBodyFromResMsg.Decode(&res); err != nil {
-		log.Println("tmplBodyFromResMsg.Decode error from routes")
-		log.Println(err)
-		body, readErr := ioutil.ReadAll(mtRespMsg.Body)
+		logs.WithContext(ctx).Error(err.Error())
+		body, readErr := io.ReadAll(mtRespMsg.Body)
 		if readErr != nil {
 			err = readErr
-			log.Println("ioutil.ReadAll(mtRespMsg.Body) error")
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
 		tempBody := make(map[string]interface{})
@@ -153,7 +141,5 @@ func (channel *Channel) ProcessMessageTemplate(r *http.Request, mt MessageTempla
 	} else {
 		msg.Msg = res["msg"].(string)
 	}
-	//	log.Println("-----------------")
-	//log.Println(msg)
 	return msg, mtRespErr
 }

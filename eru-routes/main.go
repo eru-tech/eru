@@ -7,7 +7,6 @@ import (
 	"github.com/eru-tech/eru/eru-routes/module_store"
 	"github.com/eru-tech/eru/eru-server/server"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
-	"log"
 	"os"
 )
 
@@ -23,8 +22,8 @@ func main() {
 	}
 	store, e := module_server.StartUp()
 	if e != nil {
-		log.Println(e)
-		log.Println("Failed to Start Server - error while setting up config store")
+		logs.Logger.Error(e.Error())
+		logs.Logger.Error("Failed to Start Server - error while setting up config store")
 		return
 	}
 	sh := new(module_store.StoreHolder)
@@ -32,7 +31,7 @@ func main() {
 	sr, _, e := server.Init()
 	module_server.AddModuleRoutes(sr, sh)
 	if e != nil {
-		log.Print(e)
+		logs.Logger.Error(e.Error())
 	}
 	server.Launch(sr, port)
 }

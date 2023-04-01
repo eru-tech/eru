@@ -1,9 +1,11 @@
 package store
 
+import "context"
+
 type StoreI interface {
 	LoadStore(fp string, ms StoreI) (err error)
 	GetStoreByteArray(fp string) (b []byte, err error)
-	SaveStore(fp string, ms StoreI) (err error)
+	SaveStore(ctx context.Context, fp string, ms StoreI) (err error)
 	SetDbType(dbtype string)
 	SetStoreTableName(tablename string)
 
@@ -35,7 +37,6 @@ func (store *Store) SaveProject(projectId string, realStore StoreI) error {
 			store.Projects = make(map[string]*model.Project)
 		}
 		store.Projects[projectId] = project
-		log.Print("SaveStore called from SaveProject")
 		return realStore.SaveStore("")
 	} else {
 		return errors.New(fmt.Sprint("Project ", projectId, " already exists"))
@@ -45,7 +46,6 @@ func (store *Store) SaveProject(projectId string, realStore StoreI) error {
 func (store *Store) RemoveProject(projectId string, realStore StoreI) error {
 	if _, ok := store.Projects[projectId]; ok {
 		delete(store.Projects, projectId)
-		log.Print("SaveStore called from RemoveProject")
 		return realStore.SaveStore("")
 	} else {
 		return errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
@@ -53,9 +53,7 @@ func (store *Store) RemoveProject(projectId string, realStore StoreI) error {
 }
 
 func (store *Store) GetProjectConfig(projectId string) (*model.ProjectI, error) {
-	log.Println("inside GetProjectConfig")
 	if _, ok := store.Projects[projectId]; ok {
-		//log.Println(store.Projects[projectId])
 		var p model.ProjectI
 		p = store.Projects[projectId]
 		return &p, nil

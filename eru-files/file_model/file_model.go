@@ -1,15 +1,16 @@
 package file_model
 
 import (
+	"context"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	"github.com/eru-tech/eru/eru-files/storage"
-	"log"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 type FileProjectI interface {
-	AddStorage(storageObj storage.StorageI)
-	GenerateRsaKeyPair(bits int)
+	AddStorage(ctx context.Context, storageObj storage.StorageI)
+	GenerateRsaKeyPair(ctx context.Context, bits int)
 }
 
 type Project struct {
@@ -19,32 +20,32 @@ type Project struct {
 	AesKeys     map[string]eruaes.AesKey     `json:"aes_keys"`
 }
 
-func (prg *Project) AddStorage(storageObjI storage.StorageI) error {
+func (prg *Project) AddStorage(ctx context.Context, storageObjI storage.StorageI) error {
+	logs.WithContext(ctx).Debug("AddStorage - Start")
 	storageName, err := storageObjI.GetAttribute("StorageName")
-	log.Print(storageName.(string))
 	if err == nil {
 		prg.Storages[storageName.(string)] = storageObjI
 		return nil
 	}
-	log.Println(prg)
 	return err
 }
 
-func (prg *Project) GenerateRsaKeyPair(bits int, keyPairName string) (erursa.RsaKeyPair, error) {
+func (prg *Project) GenerateRsaKeyPair(ctx context.Context, bits int, keyPairName string) (erursa.RsaKeyPair, error) {
+	logs.WithContext(ctx).Debug("GenerateRsaKeyPair - Start")
 	if prg.RsaKeyPairs == nil {
 		prg.RsaKeyPairs = make(map[string]erursa.RsaKeyPair)
 	}
 	var err error
-	prg.RsaKeyPairs[keyPairName], err = erursa.GenerateKeyPair(bits)
+	prg.RsaKeyPairs[keyPairName], err = erursa.GenerateKeyPair(ctx, bits)
 	return prg.RsaKeyPairs[keyPairName], err
 }
 
-func (prg *Project) GenerateAesKey(bits int, keyName string) (eruaes.AesKey, error) {
+func (prg *Project) GenerateAesKey(ctx context.Context, bits int, keyName string) (eruaes.AesKey, error) {
+	logs.WithContext(ctx).Debug("GenerateAesKey - Start")
 	if prg.AesKeys == nil {
 		prg.AesKeys = make(map[string]eruaes.AesKey)
 	}
 	var err error
-	prg.AesKeys[keyName], err = eruaes.GenerateKey(bits)
-	log.Println(prg.AesKeys[keyName])
+	prg.AesKeys[keyName], err = eruaes.GenerateKey(ctx, bits)
 	return prg.AesKeys[keyName], err
 }

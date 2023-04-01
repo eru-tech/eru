@@ -27,12 +27,6 @@ func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseMultipartForm((1 << 20) * 10)
 	logs.Logger.Info(fmt.Sprint("r.ParseMultipartForm error = ", err))
 	formData := r.MultipartForm
-	/*
-		for k, v := range r.Header {
-			log.Println(k, " = ", v)
-			//w.Header()[k] = v
-		}*/
-	//w.WriteHeader(200)
 	res := make(map[string]interface{})
 	res["FormData"] = formData
 	res["Host"] = r.Host
@@ -51,20 +45,7 @@ func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	res["RemoteAddr"] = r.RemoteAddr
 	res["Response"] = r.Response
 	res["Cookies"] = r.Cookies()
-	//res["request"] = r
-	//log.Println(res)
 	FormatResponse(w, 200)
 	_ = json.NewEncoder(w).Encode(res)
-	/*t, err := io.Copy(w, r.Body)
-	if err != nil {
-		log.Println("================")
-		log.Println(err)
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-	log.Println(t)
-
-	*/
 
 }

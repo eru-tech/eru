@@ -2,19 +2,17 @@ package server
 
 import (
 	"bytes"
-	"context"
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/eru-tech/eru/eru-files/module_store"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
 	"io"
-	"log"
 	"net/http"
 	"strings"
-	"time"
 	//"github.com/aws/aws-sdk-go/aws/session"
 	//"github.com/aws/aws-sdk-go/service/s3"
 )
@@ -24,53 +22,33 @@ const (
 	multiPartForm = "multipart/form-data"
 )
 
-/*
-func TestEncrypt(s module_store.ModuleStoreI) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		projectId := vars["project"]
-		text := vars["text"]
-		s.TestEncrypt(projectId, text)
-	}
-}
-func TestAesEncrypt(s module_store.ModuleStoreI) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		projectId := vars["project"]
-		text := vars["text"]
-		keyName := vars["keyname"]
-		s.TestAesEncrypt(projectId, text, keyName)
-	}
-}
-
-*/
 func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		log.Println("FileUploadHandler called")
+		logs.WithContext(r.Context()).Debug("FileDownloadHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		storageName := vars["storagename"]
 
 		var err error
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
-		defer cancel()
-		_ = ctx
+
+		//ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		//defer cancel()
+		//_ = ctx
 
 		dfFromReq := json.NewDecoder(r.Body)
 		dfFromReq.DisallowUnknownFields()
 		dfFromObj := make(map[string]string)
 
 		if err := dfFromReq.Decode(&dfFromObj); err != nil {
-			log.Println(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 
-		file, mimeType, err := s.DownloadFile(projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"])
+		file, mimeType, err := s.DownloadFile(r.Context(), projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"])
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
@@ -86,30 +64,30 @@ func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 func FileDownloadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		log.Println("FileDownloadHandlerB64 called")
+		logs.WithContext(r.Context()).Debug("FileDownloadHandlerB64 - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		storageName := vars["storagename"]
 
 		var err error
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
-		defer cancel()
-		_ = ctx
+
+		//ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		//defer cancel()
+		//_ = ctx
 
 		dfFromReq := json.NewDecoder(r.Body)
 		dfFromReq.DisallowUnknownFields()
 		dfFromObj := make(map[string]string)
 
 		if err := dfFromReq.Decode(&dfFromObj); err != nil {
-			log.Println(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 
-		fileB64, mimeType, err := s.DownloadFileB64(projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"])
+		fileB64, mimeType, err := s.DownloadFileB64(r.Context(), projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"])
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
@@ -121,36 +99,34 @@ func FileDownloadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 func FileDownloadHandlerUnzip(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		log.Println("FileDownloadHandlerUnzip called")
+		logs.WithContext(r.Context()).Debug("FileDownloadHandlerUnzip - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		storageName := vars["storagename"]
 
 		var err error
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
-		defer cancel()
-		_ = ctx
+		//ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		//defer cancel()
+		//_ = ctx
 
 		dfFromReq := json.NewDecoder(r.Body)
 		dfFromReq.DisallowUnknownFields()
 		dfFromObj := module_store.FileDownloadRequest{}
 		if err := dfFromReq.Decode(&dfFromObj); err != nil {
-			log.Println(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		vErr := utils.ValidateStruct(dfFromObj, "")
+		vErr := utils.ValidateStruct(r.Context(), dfFromObj, "")
 		if vErr != nil {
-			log.Println(vErr)
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": vErr.Error()})
 			return
 		}
 
-		files, err := s.DownloadFileUnzip(projectId, storageName, dfFromObj)
+		files, err := s.DownloadFileUnzip(r.Context(), projectId, storageName, dfFromObj)
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
@@ -163,22 +139,22 @@ func FileDownloadHandlerUnzip(s module_store.ModuleStoreI) http.HandlerFunc {
 func FileUploadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		log.Println("FileUploadHandler called")
+		logs.WithContext(r.Context()).Debug("FileUploadHandlerB64 - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		storageName := vars["storagename"]
 
 		var err error
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
-		defer cancel()
-		_ = ctx
+		//ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		//defer cancel()
+		//_ = ctx
 
 		ufFromReq := json.NewDecoder(r.Body)
 		ufFromReq.DisallowUnknownFields()
 		ufFromObj := make(map[string]string)
 
 		if err := ufFromReq.Decode(&ufFromObj); err != nil {
-			log.Println(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
@@ -213,9 +189,8 @@ func FileUploadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": "base64 decode failed"})
 			return
 		}
-		docId, err := s.UploadFileB64(projectId, storageName, fileBytes, fileName, docType, folderPath)
+		docId, err := s.UploadFileB64(r.Context(), projectId, storageName, fileBytes, fileName, docType, folderPath)
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
@@ -230,22 +205,22 @@ func FileUploadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 func FileUploadHandlerFromUrl(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		log.Println("FileUploadHandlerFromUrl called")
+		logs.WithContext(r.Context()).Debug("FileUploadHandlerFromUrl - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		storageName := vars["storagename"]
 
 		var err error
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
-		defer cancel()
-		_ = ctx
+		//ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		//defer cancel()
+		//_ = ctx
 
 		ufFromReq := json.NewDecoder(r.Body)
 		ufFromReq.DisallowUnknownFields()
 		ufFromObj := make(map[string]string)
 
 		if err := ufFromReq.Decode(&ufFromObj); err != nil {
-			log.Println(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
@@ -262,8 +237,6 @@ func FileUploadHandlerFromUrl(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": "doc_type attribute missing"})
 			return
 		}
-		log.Print(url)
-		log.Print(strings.Contains(url, "/"))
 
 		fileName, ok := ufFromObj["file_name"]
 		if !ok {
@@ -285,9 +258,8 @@ func FileUploadHandlerFromUrl(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": "folder_path attribute missing"})
 			return
 		}
-		docId, err := s.UploadFileFromUrl(projectId, storageName, url, fileName, docType, folderPath, fileType)
+		docId, err := s.UploadFileFromUrl(r.Context(), projectId, storageName, url, fileName, docType, folderPath, fileType)
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
@@ -302,77 +274,44 @@ func FileUploadHandlerFromUrl(s module_store.ModuleStoreI) http.HandlerFunc {
 func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		log.Println("FileUploadHandler called")
+		logs.WithContext(r.Context()).Debug("FileUploadHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		storageName := vars["storagename"]
 
 		var err error
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
-		defer cancel()
-		_ = ctx
+		//ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		//defer cancel()
+		//_ = ctx
 
 		reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
-		log.Print("reqContentType = ", reqContentType)
 		if reqContentType == encodedForm || reqContentType == multiPartForm {
-			log.Println("inside encodedForm || multiPartForm")
 			err = r.ParseMultipartForm((1 << 20) * 10)
-
-			/*
-				f, _, _ := r.FormFile("metadata")
-				//metadata, _ := ioutil.ReadAll(f)
-				if f != nil {
-					buf2 := bytes.NewBuffer(nil)
-					if _, err := io.Copy(buf2, f); err != nil {
-						log.Println(err)
-					}
-					log.Println(buf2.String())
-				}
-				for _, h := range r.MultipartForm.File["media"] {
-					file1, _ := h.Open()
-					buf1 := bytes.NewBuffer(nil)
-					if _, err := io.Copy(buf1, file1); err != nil {
-						log.Println(err)
-					}
-					log.Println(buf1.String())
-					//tmpfile, _ := os.Create("./" + h.Filename)
-					//io.Copy(tmpfile, file)
-					//tmpfile.Close()
-					file1.Close()
-				}*/
 
 			formData := r.MultipartForm
 			folderPath := formData.Value["folderpath"][0]
 			docTypes := formData.Value["doctype"]
 			//keyPairName := formData.Value["keyPairName"][0]
-			log.Println(folderPath)
-			log.Println(docTypes)
 			fileNames := make(map[string]string)
 			files := formData.File["files"]
 			for _, f := range files {
 				docType := ""
 				for _, dt := range docTypes {
 					tmpDt := strings.Split(dt, ":")
-					log.Println(tmpDt)
 					if tmpDt[1] == f.Filename {
 						docType = tmpDt[0]
 						break
 					}
 				}
-				log.Println(docType)
 				file, err := f.Open()
 				defer file.Close()
 				if err != nil {
 					fmt.Fprintln(w, err)
 					return
 				}
-				log.Println(f.Filename)
-				log.Println(f.Size)
-				log.Println(f.Header)
 				//TODO - check for file size and check for file meme
-				docId, err := s.UploadFile(projectId, storageName, file, f, docType, folderPath)
+				docId, err := s.UploadFile(r.Context(), projectId, storageName, file, f, docType, folderPath)
 				if err != nil {
-					log.Println(err)
 					server_handlers.FormatResponse(w, 400)
 					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 					return
@@ -382,29 +321,12 @@ func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"files": fileNames})
 
-			//file,header,err := r.FormFile("files")
-			//defer file.Close()
-			//if err != nil {
-			//	log.Println(err)
-			//}
-
-			//buf := bytes.NewBuffer(nil)
-			//if _, err := io.Copy(buf, file); err != nil {
-			//	log.Println(err)
-			//}
-			//log.Println(buf.String())
-
-			//mimeType := http.DetectContentType(buf.Bytes())
-
-			//log.Println(mimeType)
-
 			return
 		} else {
 			err = r.ParseForm()
 		}
 		if err != nil {
-			log.Println(err.Error())
-			fmt.Errorf("Could not parse form: %s", err)
+			logs.WithContext(r.Context()).Error(fmt.Sprint("Could not parse form: %s", err))
 			return
 		}
 	}

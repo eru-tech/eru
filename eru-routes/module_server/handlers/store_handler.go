@@ -3,21 +3,22 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-routes/module_model"
 	"github.com/eru-tech/eru/eru-routes/module_store"
 	"github.com/eru-tech/eru/eru-routes/routes"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
-	"log"
 	"net/http"
 )
 
 func ProjectSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		err := s.SaveProject(projectID, s, true)
+		err := s.SaveProject(r.Context(), projectID, s, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -31,9 +32,9 @@ func ProjectSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ProjectConfigSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectConfigSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
-		log.Print(projectId)
 
 		prjConfigFromReq := json.NewDecoder(r.Body)
 		prjConfigFromReq.DisallowUnknownFields()
@@ -41,11 +42,12 @@ func ProjectConfigSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		var projectCOnfig module_model.ProjectConfig
 
 		if err := prjConfigFromReq.Decode(&projectCOnfig); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(projectCOnfig, "")
+			err := utils.ValidateStruct(r.Context(), projectCOnfig, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -53,7 +55,7 @@ func ProjectConfigSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		err := s.SaveProjectConfig(projectId, projectCOnfig, s)
+		err := s.SaveProjectConfig(r.Context(), projectId, projectCOnfig, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -66,9 +68,9 @@ func ProjectConfigSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ProjectAuthorizerSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectAuthorizerSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
-		log.Print(projectId)
 
 		prjAuthorizerFromReq := json.NewDecoder(r.Body)
 		prjAuthorizerFromReq.DisallowUnknownFields()
@@ -76,11 +78,12 @@ func ProjectAuthorizerSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 		var prjAuthorizer routes.Authorizer
 
 		if err := prjAuthorizerFromReq.Decode(&prjAuthorizer); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(prjAuthorizer, "")
+			err := utils.ValidateStruct(r.Context(), prjAuthorizer, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -88,7 +91,7 @@ func ProjectAuthorizerSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			}
 		}
 
-		err := s.SaveProjectAuthorizer(projectId, prjAuthorizer, s)
+		err := s.SaveProjectAuthorizer(r.Context(), projectId, prjAuthorizer, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -101,18 +104,18 @@ func ProjectAuthorizerSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 
 func ProjectAuthorizerRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Print("inside ProjectAuthorizerRemoveHandler")
+		logs.WithContext(r.Context()).Debug("ProjectAuthorizerRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authorizerName := vars["authorizername"]
 
-		err := s.RemoveProjectAuthorizer(projectId, authorizerName)
+		err := s.RemoveProjectAuthorizer(r.Context(), projectId, authorizerName)
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore("", s)
+			//TODO to check if save store is required here
+			s.SaveStore(r.Context(), "", s)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Project Authorizer ", authorizerName, " removed successfully")})
 		}
@@ -122,9 +125,10 @@ func ProjectAuthorizerRemoveHandler(s module_store.ModuleStoreI) http.HandlerFun
 
 func ProjectRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		err := s.RemoveProject(projectID, s)
+		err := s.RemoveProject(r.Context(), projectID, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -138,10 +142,8 @@ func ProjectRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ProjectListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		//token, err := VerifyToken(r.Header.Values("Authorization")[0])
-		//log.Print(token.Method)
-		//log.Print(err)
-		projectIds := s.GetProjectList()
+		logs.WithContext(r.Context()).Debug("ProjectListHandler - Start")
+		projectIds := s.GetProjectList(r.Context())
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"projects": projectIds})
 	}
@@ -149,10 +151,10 @@ func ProjectListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectConfigHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		log.Print(projectID)
-		project, err := s.GetProjectConfig(projectID)
+		project, err := s.GetProjectConfig(r.Context(), projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -165,24 +167,21 @@ func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func RouteSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Print("inside RouteSaveHandler")
+		logs.WithContext(r.Context()).Debug("RouteSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
-		//routeName := vars["routename"]
-
-		//log.Println(projectId, " ", routeName)
 
 		routeFromReq := json.NewDecoder(r.Body)
 		routeFromReq.DisallowUnknownFields()
 
 		var routeObj routes.Route
 		if err := routeFromReq.Decode(&routeObj); err != nil {
-			log.Println(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(routeObj, "")
+			err := utils.ValidateStruct(r.Context(), routeObj, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -190,13 +189,12 @@ func RouteSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 		//err := storageObj.Save(s,projectId,storageName)
-		err := s.SaveRoute(routeObj, projectId, s, true)
+		err := s.SaveRoute(r.Context(), routeObj, projectId, s, true)
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore("", s)
+			s.SaveStore(r.Context(), "", s)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("route config for ", routeObj.RouteName, " saved successfully")})
 		}
@@ -206,18 +204,17 @@ func RouteSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func RouteRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Print("inside RouteRemoveHandler")
+		logs.WithContext(r.Context()).Debug("RouteRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		routeName := vars["routename"]
 
-		err := s.RemoveRoute(routeName, projectId, s)
+		err := s.RemoveRoute(r.Context(), routeName, projectId, s)
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore("", s)
+			s.SaveStore(r.Context(), "", s)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("route config for ", routeName, " removed successfully")})
 		}
@@ -227,7 +224,7 @@ func RouteRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func FuncSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Print("inside FuncSaveHandler")
+		logs.WithContext(r.Context()).Debug("FuncSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 
@@ -236,12 +233,12 @@ func FuncSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		var funcObj routes.FuncGroup
 		if err := funcFromReq.Decode(&funcObj); err != nil {
-			log.Println(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(funcObj, "")
+			err := utils.ValidateStruct(r.Context(), funcObj, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -249,13 +246,12 @@ func FuncSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 		//err := storageObj.Save(s,projectId,storageName)
-		err := s.SaveFunc(funcObj, projectId, s, true)
+		err := s.SaveFunc(r.Context(), funcObj, projectId, s, true)
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore("", s)
+			s.SaveStore(r.Context(), "", s)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("function config for ", funcObj.FuncGroupName, " saved successfully")})
 		}
@@ -265,18 +261,17 @@ func FuncSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func FuncRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Print("inside FuncRemoveHandler")
+		logs.WithContext(r.Context()).Debug("FuncRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		funcName := vars["funcname"]
 
-		err := s.RemoveFunc(funcName, projectId, s)
+		err := s.RemoveFunc(r.Context(), funcName, projectId, s)
 		if err != nil {
-			log.Println(err)
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore("", s)
+			s.SaveStore(r.Context(), "", s)
 			server_handlers.FormatResponse(w, 200)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("function ", funcName, " removed successfully")})

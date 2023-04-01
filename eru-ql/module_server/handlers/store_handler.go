@@ -93,7 +93,7 @@ func ProjectConfigSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(projectCOnfig, "")
+			err := utils.ValidateStruct(r.Context(), projectCOnfig, "")
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
 				server_handlers.FormatResponse(w, 400)

@@ -1,11 +1,12 @@
 package module_store
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-gateway/module_model"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
-	"log"
 	"net/http"
 	"strings"
 )
@@ -15,16 +16,16 @@ type StoreHolder struct {
 }
 type ModuleStoreI interface {
 	store.StoreI
-	SaveListenerRule(listenerRule *module_model.ListenerRule, realStore ModuleStoreI, persist bool) error
-	ReplaceListenerRule(listenerRule *module_model.ListenerRule) error
-	RemoveListenerRule(listenerRuleName string, realStore ModuleStoreI) error
-	GetListenerRules() []*module_model.ListenerRule
-	GetListenerRule(listenerRuleName string) (*module_model.ListenerRule, error)
-	GetTargetGroupAuthorizer(r *http.Request) (module_model.TargetHost, module_model.Authorizer, []module_model.MapStructCustom, error)
-	SaveAuthorizer(authorizer module_model.Authorizer, realStore ModuleStoreI, persist bool) error
-	RemoveAuthorizer(authorizerName string, realStore ModuleStoreI) error
-	GetAuthorizer(authorizerName string) (module_model.Authorizer, error)
-	GetAuthorizers() map[string]module_model.Authorizer
+	SaveListenerRule(ctx context.Context, istenerRule *module_model.ListenerRule, realStore ModuleStoreI, persist bool) error
+	ReplaceListenerRule(ctx context.Context, listenerRule *module_model.ListenerRule) error
+	RemoveListenerRule(ctx context.Context, listenerRuleName string, realStore ModuleStoreI) error
+	GetListenerRules(ctx context.Context) []*module_model.ListenerRule
+	GetListenerRule(ctx context.Context, listenerRuleName string) (*module_model.ListenerRule, error)
+	GetTargetGroupAuthorizer(ctx context.Context, r *http.Request) (module_model.TargetHost, module_model.Authorizer, []module_model.MapStructCustom, error)
+	SaveAuthorizer(ctx context.Context, authorizer module_model.Authorizer, realStore ModuleStoreI, persist bool) error
+	RemoveAuthorizer(ctx context.Context, authorizerName string, realStore ModuleStoreI) error
+	GetAuthorizer(ctx context.Context, authorizerName string) (module_model.Authorizer, error)
+	GetAuthorizers(ctx context.Context) map[string]module_model.Authorizer
 }
 
 const MatchTypePrefix = "PREFIX"
@@ -44,18 +45,16 @@ type ModuleDbStore struct {
 	ModuleStore
 }
 
-func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.TargetHost, module_model.Authorizer, []module_model.MapStructCustom, error) {
+func (ms *ModuleStore) GetTargetGroupAuthorizer(ctx context.Context, r *http.Request) (module_model.TargetHost, module_model.Authorizer, []module_model.MapStructCustom, error) {
+	logs.WithContext(ctx).Debug("GetTargetGroupAuthorizer - Start")
 	listenerRuleFound := false
 	if ms.ListenerRules != nil {
-		for i, v := range ms.ListenerRules {
+		for _, v := range ms.ListenerRules {
 			//TODO to sort the array on RuleRank before looping
-			log.Print("loop : ", i)
-			log.Print(v)
 			//check for hosts
 			for _, host := range v.Hosts {
-				log.Println(r.Host)
 				if strings.Split(r.Host, ":")[0] == host {
-					log.Println(fmt.Sprint("host match = ", host))
+					logs.WithContext(ctx).Info(fmt.Sprint("host match = ", host))
 					listenerRuleFound = true
 					break
 				}
@@ -66,7 +65,7 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.T
 				//resetting listenerRuleFound to false as Method array length > 1 - so it has to pass this match too
 				listenerRuleFound = false
 				if r.Method == method {
-					log.Println(fmt.Sprint("method match = ", method))
+					logs.WithContext(ctx).Info(fmt.Sprint("method match = ", method))
 					listenerRuleFound = true
 					break
 				}
@@ -76,18 +75,16 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.T
 			for _, path := range v.Paths {
 				//resetting listenerRuleFound to false as Path array length > 1 - so it has to pass this match too
 				listenerRuleFound = false
-				log.Println(path.Path)
-				log.Println(r.URL.Path)
 				switch path.MatchType {
 				case MatchTypePrefix:
 					if strings.HasPrefix(r.URL.Path, path.Path) {
-						log.Println(fmt.Sprint("path match = ", path.Path))
+						logs.WithContext(ctx).Info(fmt.Sprint("path match = ", path.Path))
 						listenerRuleFound = true
 						break
 					}
 				case MatchTypeExact:
 					if r.URL.Path == path.Path {
-						log.Println(fmt.Sprint("path match = ", path.Path))
+						logs.WithContext(ctx).Info(fmt.Sprint("path match = ", path.Path))
 						listenerRuleFound = true
 						break
 					}
@@ -100,7 +97,7 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.T
 				//resetting listenerRuleFound to false as Headers array length > 1 - so it has to pass this match too
 				listenerRuleFound = false
 				if r.Header.Get(header.Key) == header.Value {
-					log.Println(fmt.Sprint("header match = ", header.Key, " = ", header.Value))
+					logs.WithContext(ctx).Info(fmt.Sprint("header match = ", header.Key, " = ", header.Value))
 					listenerRuleFound = true
 					break
 				}
@@ -112,7 +109,7 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.T
 				listenerRuleFound = false
 				if reqParams.Get(param.Key) == param.Value {
 					listenerRuleFound = true
-					log.Println(fmt.Sprint("param match = ", param.Key, " = ", param.Value))
+					logs.WithContext(ctx).Info(fmt.Sprint("param match = ", param.Key, " = ", param.Value))
 					r.URL.RawQuery = reqParams.Encode()
 					break
 				}
@@ -124,27 +121,26 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.T
 				//resetting listenerRuleFound to false as SourceIP array length > 1 - so it has to pass this match too
 				listenerRuleFound = false
 				if strings.Split(r.RemoteAddr, ":")[0] == sourceIP {
-					log.Println(fmt.Sprint("sourceIP match = ", sourceIP))
+					logs.WithContext(ctx).Info(fmt.Sprint("sourceIP match = ", sourceIP))
 					listenerRuleFound = true
 					break
 				}
 			}
-			log.Println("listenerRuleFound = ", listenerRuleFound)
+			logs.WithContext(ctx).Info(fmt.Sprint("listenerRuleFound = ", listenerRuleFound))
 			if listenerRuleFound {
 				pathExceptionFound := false
 				for _, pathException := range v.AuthorizerException {
-					log.Print("inside for loop for v.AuthorizerException for :", r.URL.Path)
 					switch pathException.MatchType {
 					case MatchTypePrefix:
 						if strings.HasPrefix(r.URL.Path, pathException.Path) {
-							log.Println(fmt.Sprint("pathException MatchTypePrefix = ", pathException.Path))
+							logs.WithContext(ctx).Info(fmt.Sprint("pathException MatchTypePrefix = ", pathException.Path))
 							pathExceptionFound = true
 							r.Header.Set("is_public", "true")
 							break
 						}
 					case MatchTypeExact:
 						if r.URL.Path == pathException.Path {
-							log.Println(fmt.Sprint("pathException MatchTypeExact = ", pathException.Path))
+							logs.WithContext(ctx).Info(fmt.Sprint("pathException MatchTypeExact = ", pathException.Path))
 							pathExceptionFound = true
 							r.Header.Set("is_public", "true")
 							break
@@ -153,28 +149,25 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(r *http.Request) (module_model.T
 						//do nothing
 					}
 				}
-				log.Print("pathExceptionFound = ", pathExceptionFound)
-				log.Print("v.AuthorizerName == ", v.AuthorizerName)
 				if pathExceptionFound || v.AuthorizerName == "" {
-					log.Print("inside pathExceptionFound || v.AuthorizerName == \"\"")
 					return v.TargetHosts[0], module_model.Authorizer{}, v.AddHeaders, nil
 				} else {
-					authorizer, err := ms.GetAuthorizer(v.AuthorizerName)
+					authorizer, err := ms.GetAuthorizer(ctx, v.AuthorizerName)
 					if err != nil {
-						log.Print("error from ms.GetAuthorizer(v.AuthorizerName) = ", err)
 						return module_model.TargetHost{}, module_model.Authorizer{}, nil, err
 					}
-					log.Print("returning")
 					return v.TargetHosts[0], authorizer, v.AddHeaders, nil
 				}
 			}
 		}
 	}
-	log.Print("returning error")
-	return module_model.TargetHost{}, module_model.Authorizer{}, nil, errors.New(fmt.Sprint("Listener Rule not found for this request"))
+	err := errors.New(fmt.Sprint("Listener Rule not found for this request"))
+	logs.WithContext(ctx).Info(err.Error())
+	return module_model.TargetHost{}, module_model.Authorizer{}, nil, err
 }
 
-func (ms *ModuleStore) GetListenerRule(listenerRuleName string) (*module_model.ListenerRule, error) {
+func (ms *ModuleStore) GetListenerRule(ctx context.Context, listenerRuleName string) (*module_model.ListenerRule, error) {
+	logs.WithContext(ctx).Debug("GetListenerRule - Start")
 	if ms.ListenerRules != nil {
 		for _, v := range ms.ListenerRules {
 			if v.RuleName == listenerRuleName {
@@ -182,10 +175,13 @@ func (ms *ModuleStore) GetListenerRule(listenerRuleName string) (*module_model.L
 			}
 		}
 	}
-	return nil, errors.New(fmt.Sprint("Listener Rule ", listenerRuleName, " not found"))
+	err := errors.New(fmt.Sprint("Listener Rule ", listenerRuleName, " not found"))
+	logs.WithContext(ctx).Info(err.Error())
+	return nil, err
 }
 
-func (ms *ModuleStore) ReplaceListenerRule(listenerRule *module_model.ListenerRule) error {
+func (ms *ModuleStore) ReplaceListenerRule(ctx context.Context, listenerRule *module_model.ListenerRule) error {
+	logs.WithContext(ctx).Debug("ReplaceListenerRule - Start")
 	if ms.ListenerRules != nil {
 		for i, v := range ms.ListenerRules {
 			if v.RuleName == listenerRule.RuleName {
@@ -194,62 +190,72 @@ func (ms *ModuleStore) ReplaceListenerRule(listenerRule *module_model.ListenerRu
 			}
 		}
 	}
-	return errors.New(fmt.Sprint("Listener Rule ", listenerRule.RuleName, " not found"))
+	err := errors.New(fmt.Sprint("Listener Rule ", listenerRule.RuleName, " not found"))
+	logs.WithContext(ctx).Info(err.Error())
+	return err
 }
 
-func (ms *ModuleStore) SaveListenerRule(listenerRule *module_model.ListenerRule, realStore ModuleStoreI, persist bool) error {
+func (ms *ModuleStore) SaveListenerRule(ctx context.Context, listenerRule *module_model.ListenerRule, realStore ModuleStoreI, persist bool) error {
+	logs.WithContext(ctx).Debug("SaveListenerRule - Start")
 	//TODO to check for duplicate rank
-	err := ms.ReplaceListenerRule(listenerRule)
+	err := ms.ReplaceListenerRule(ctx, listenerRule)
 	if err != nil {
 		ms.ListenerRules = append(ms.ListenerRules, listenerRule)
 	}
 	if persist == true {
-		log.Print("SaveStore called from SaveListenerRule")
-		return realStore.SaveStore("", realStore)
+		logs.WithContext(ctx).Info("SaveStore called from SaveListenerRule")
+		return realStore.SaveStore(ctx, "", realStore)
 	} else {
 		return nil
 	}
 }
-func (ms *ModuleStore) RemoveListenerRule(listenerRuleName string, realStore ModuleStoreI) error {
+func (ms *ModuleStore) RemoveListenerRule(ctx context.Context, listenerRuleName string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("RemoveListenerRule - Start")
 	if ms.ListenerRules != nil {
 		for i, v := range ms.ListenerRules {
 			if v.RuleName == listenerRuleName {
 				ms.ListenerRules = append(ms.ListenerRules[:i], ms.ListenerRules[i+1:]...)
-				return realStore.SaveStore("", realStore)
+				return realStore.SaveStore(ctx, "", realStore)
 			}
 		}
 	}
-	return errors.New(fmt.Sprint("Listener Rule ", listenerRuleName, " not found"))
+	err := errors.New(fmt.Sprint("Listener Rule ", listenerRuleName, " not found"))
+	logs.WithContext(ctx).Info(err.Error())
+	return err
 }
 
-func (ms *ModuleStore) GetListenerRules() []*module_model.ListenerRule {
+func (ms *ModuleStore) GetListenerRules(ctx context.Context) []*module_model.ListenerRule {
+	logs.WithContext(ctx).Debug("GetListenerRules - Start")
 	return ms.ListenerRules
 }
 
-func (ms *ModuleStore) SaveAuthorizer(authorizer module_model.Authorizer, realStore ModuleStoreI, persist bool) error {
+func (ms *ModuleStore) SaveAuthorizer(ctx context.Context, authorizer module_model.Authorizer, realStore ModuleStoreI, persist bool) error {
+	logs.WithContext(ctx).Debug("SaveAuthorizer - Start")
 	if ms.Authorizers == nil {
 		ms.Authorizers = make(map[string]module_model.Authorizer)
 	}
 	ms.Authorizers[authorizer.AuthorizerName] = authorizer
 	if persist == true {
-		log.Print("SaveStore called from SaveAuthorizer")
-		return realStore.SaveStore("", realStore)
+		logs.WithContext(ctx).Info("SaveStore called from SaveAuthorizer")
+		return realStore.SaveStore(ctx, "", realStore)
 	} else {
 		return nil
 	}
 
 }
 
-func (ms *ModuleStore) RemoveAuthorizer(authorizerName string, realStore ModuleStoreI) error {
+func (ms *ModuleStore) RemoveAuthorizer(ctx context.Context, authorizerName string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("RemoveAuthorizer - Start")
 	if _, authOk := ms.Authorizers[authorizerName]; authOk {
 		delete(ms.Authorizers, authorizerName)
-		return realStore.SaveStore("", realStore)
+		return realStore.SaveStore(ctx, "", realStore)
 	} else {
 		return errors.New(fmt.Sprint("Authorizer ", authorizerName, " not found"))
 	}
 
 }
-func (ms *ModuleStore) GetAuthorizer(authorizerName string) (module_model.Authorizer, error) {
+func (ms *ModuleStore) GetAuthorizer(ctx context.Context, authorizerName string) (module_model.Authorizer, error) {
+	logs.WithContext(ctx).Debug("GetAuthorizer - Start")
 	if _, authOk := ms.Authorizers[authorizerName]; authOk {
 		return ms.Authorizers[authorizerName], nil
 	} else {
@@ -258,6 +264,7 @@ func (ms *ModuleStore) GetAuthorizer(authorizerName string) (module_model.Author
 
 }
 
-func (ms *ModuleStore) GetAuthorizers() map[string]module_model.Authorizer {
+func (ms *ModuleStore) GetAuthorizers(ctx context.Context) map[string]module_model.Authorizer {
+	logs.WithContext(ctx).Debug("GetAuthorizers - Start")
 	return ms.Authorizers
 }

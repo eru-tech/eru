@@ -105,7 +105,7 @@ func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, var
 		//do nothing
 		return
 	} else if sr.RuleType == module_model.RULETYPE_CUSTOM {
-		outputStr, err = sr.Stringify(vars, false)
+		outputStr, err = sr.Stringify(ctx, vars, false)
 
 	}
 	return
@@ -113,11 +113,7 @@ func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, var
 
 func processTemplate(ctx context.Context, templateName string, templateString string, vars map[string]interface{}, outputType string, key string) (output []byte, err error) {
 	logs.WithContext(ctx).Debug("processTemplate - Start")
-	//log.Println("inside processTemplate with template = ", templateString)
-	//log.Print(vars)
 	ruleValue := strings.SplitN(templateString, ".", 2)
-	//log.Print(ruleValue)
-	//log.Print("len(ruleValue) = ", len(ruleValue))
 	templateStr := ""
 	if len(ruleValue) > 1 {
 		templateStr = ruleValue[1]
@@ -165,7 +161,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 func executeTemplate(ctx context.Context, templateName string, templateString string, vars interface{}, outputType string) (output []byte, err error) {
 	logs.WithContext(ctx).Debug("executeTemplate - Start")
 	goTmpl := gotemplate.GoTemplate{templateName, templateString}
-	outputObj, err := goTmpl.Execute(vars, outputType)
+	outputObj, err := goTmpl.Execute(ctx, vars, outputType)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err

@@ -1,9 +1,10 @@
 package channel
 
 import (
+	"context"
 	"encoding/json"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	gomail "gopkg.in/gomail.v2"
-	"log"
 	"net/http"
 )
 
@@ -21,22 +22,20 @@ const (
 	TEXT_EMAIL = "text/plain"
 )
 
-func (smtpChannel *SmtpChannel) MakeFromJson(rj *json.RawMessage) error {
-	log.Println("inside SmtpChannel MakeFromJson")
+func (smtpChannel *SmtpChannel) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+	logs.WithContext(ctx).Debug("MakeFromJson - Start")
 	err := json.Unmarshal(*rj, &smtpChannel)
 	if err != nil {
-		log.Print("error json.Unmarshal(*rj, &smtpChannel)")
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 	return nil
 }
 
-func (smtpChannel *SmtpChannel) Execute(r *http.Request, mt MessageTemplate) (response *http.Response, err error) {
-
-	smtpMsg, msgErr := smtpChannel.ProcessMessageTemplate(r, mt)
+func (smtpChannel *SmtpChannel) Execute(ctx context.Context, r *http.Request, mt MessageTemplate) (response *http.Response, err error) {
+	logs.WithContext(ctx).Debug("Execute - Start")
+	smtpMsg, msgErr := smtpChannel.ProcessMessageTemplate(ctx, r, mt)
 	if msgErr != nil {
-		log.Println("msgErr = ", msgErr)
 		return nil, msgErr
 	}
 	msg := gomail.NewMessage()
@@ -52,14 +51,10 @@ func (smtpChannel *SmtpChannel) Execute(r *http.Request, mt MessageTemplate) (re
 		contentType = TEXT_EMAIL
 	}
 	msg.SetBody(contentType, smtpMsg.Msg)
-	//msg.Attach("/home/User/cat.jpg")
-
-	log.Println(msg)
 
 	n := gomail.NewDialer(smtpChannel.SmtpHost, smtpChannel.SmtpPort, smtpChannel.SmtpUser, smtpChannel.SmtpPassword)
-	// Send the email
 	if smtpErr := n.DialAndSend(msg); smtpErr != nil {
-		log.Println(smtpErr)
+		logs.WithContext(ctx).Error(smtpErr.Error())
 		return nil, smtpErr
 	}
 	return response, nil

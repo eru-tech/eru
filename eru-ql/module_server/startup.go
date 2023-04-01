@@ -14,7 +14,7 @@ import (
 const StoreTableName = "eruql_config"
 
 func StartUp() (module_store.ModuleStoreI, error) {
-	logs.WithContext(context.Background()).Debug("ProjectSaveHandler - Start")
+	logs.WithContext(context.Background()).Debug("StartUp - Start")
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
 	if storeType == "" {
 		storeType = "STANDALONE"

@@ -5,11 +5,19 @@ go 1.17
 require (
 	github.com/aws/aws-sdk-go v1.43.19
 	github.com/eru-tech/eru/eru-crypto v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-server v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-store v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
 	github.com/gorilla/mux v1.8.0
 	github.com/segmentio/ksuid v1.0.3
+)
+
+require (
+	github.com/google/uuid v1.3.0 // indirect
+	go.uber.org/atomic v1.10.0 // indirect
+	go.uber.org/multierr v1.10.0 // indirect
+	go.uber.org/zap v1.24.0 // indirect
 )
 
 require (
@@ -24,6 +32,7 @@ require (
 
 replace (
 	github.com/eru-tech/eru/eru-crypto => ../eru-crypto
+	github.com/eru-tech/eru/eru-logs => ../eru-logs
 	github.com/eru-tech/eru/eru-server => ../eru-server
 	github.com/eru-tech/eru/eru-store => ../eru-store
 	github.com/eru-tech/eru/eru-utils => ../eru-utils

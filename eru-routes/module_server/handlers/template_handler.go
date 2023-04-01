@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	erujwt "github.com/eru-tech/eru/eru-crypto/jwt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-routes/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
 	utils "github.com/eru-tech/eru/eru-utils"
-	"log"
 	"net/http"
 )
 
@@ -27,22 +27,22 @@ type TemplateVars struct {
 
 func ExecuteTemplateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Print("inside ExecuteTemplateHandler")
+		logs.WithContext(r.Context()).Debug("ExecuteTemplateHandler - Start")
 
 		tmplBodyFromReq := json.NewDecoder(r.Body)
 		tmplBodyFromReq.DisallowUnknownFields()
 
 		var tmplBody TemplateBody
 		jwkurl := "https://cognito-idp.ap-south-1.amazonaws.com/ap-south-1_44nu2KbZ0/.well-known/jwks.json"
-		erujwt.DecryptTokenJWK(r.Header.Get("Authorization"), jwkurl)
+		erujwt.DecryptTokenJWK(r.Context(), r.Header.Get("Authorization"), jwkurl)
 
 		if err := tmplBodyFromReq.Decode(&tmplBody); err != nil {
-			log.Println(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(tmplBody, "")
+			err := utils.ValidateStruct(r.Context(), tmplBody, "")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
@@ -51,9 +51,9 @@ func ExecuteTemplateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		goTmpl := gotemplate.GoTemplate{tmplBody.Name, tmplBody.Template}
-		str, err := goTmpl.Execute(tmplBody.Object, "json")
+		str, err := goTmpl.Execute(r.Context(), tmplBody.Object, "json")
 		if err != nil {
-			log.Println(err)
+			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {

@@ -1,15 +1,17 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"net/url"
 )
 
 type GatewayI interface {
-	Send(msg string, templateId string, params url.Values) (map[string]interface{}, error)
+	Send(ctx context.Context, msg string, templateId string, params url.Values) (map[string]interface{}, error)
 	GetAttribute(attributeName string) (attributeValue interface{}, err error)
-	MakeFromJson(rj *json.RawMessage) error
+	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 }
 
 type Gateway struct {
@@ -19,8 +21,10 @@ type Gateway struct {
 	Allocation  int    `eru:"required"`
 }
 
-func (gateway *Gateway) Send(msg string, templateId string, params url.Values) (map[string]interface{}, error) {
-	return nil, errors.New("Send Method not implemented")
+func (gateway *Gateway) Send(ctx context.Context, msg string, templateId string, params url.Values) (map[string]interface{}, error) {
+	err := errors.New("Send Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return nil, err
 }
 
 func (gateway *Gateway) GetAttribute(attributeName string) (attributeValue interface{}, err error) {

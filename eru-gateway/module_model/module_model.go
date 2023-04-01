@@ -1,6 +1,9 @@
 package module_model
 
-import "github.com/eru-tech/eru/eru-crypto/jwt"
+import (
+	"context"
+	"github.com/eru-tech/eru/eru-crypto/jwt"
+)
 
 type ModuleProjectI interface {
 }
@@ -54,8 +57,8 @@ type TargetHost struct {
 	Allocation int64
 }
 
-func (authorizer Authorizer) VerifyToken(token string) (claims interface{}, err error) {
-	claims, err = jwt.DecryptTokenJWK(token, authorizer.JwkUrl)
+func (authorizer Authorizer) VerifyToken(ctx context.Context, token string) (claims interface{}, err error) {
+	claims, err = jwt.DecryptTokenJWK(ctx, token, authorizer.JwkUrl)
 	if err != nil {
 		return
 	}

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
@@ -8,12 +9,12 @@ import (
 )
 
 type StorageI interface {
-	UploadFile(file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error)
-	UploadFileB64(file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error)
-	DownloadFile(folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error)
+	UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error)
+	UploadFileB64(ctx context.Context, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error)
+	DownloadFile(ctx context.Context, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error)
 	GetAttribute(attributeName string) (attributeValue interface{}, err error)
-	MakeFromJson(rj *json.RawMessage) error
-	Init() error
+	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
+	Init(ctx context.Context) error
 }
 
 type Storage struct {
