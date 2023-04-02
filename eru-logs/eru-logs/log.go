@@ -46,8 +46,6 @@ func LogInit(serviceName string) {
 		panic(err)
 	}
 	defer Logger.Sync()
-	Logger.With(zap.String("foo", "bar")).Info("logger initialized")
-	Logger.Error("error example")
 }
 
 func NewContext(ctx context.Context, fields ...zap.Field) context.Context {

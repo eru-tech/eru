@@ -2,7 +2,12 @@ module github.com/eru-tech/eru/eru-logs
 
 go 1.20
 
-require go.uber.org/zap v1.24.0
+require (
+	go.uber.org/zap v1.24.0
+	go.opentelemetry.io/otel v1.14.0
+	go.opentelemetry.io/otel/sdk v1.14.0
+	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.14.0
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

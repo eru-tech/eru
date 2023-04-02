@@ -16,7 +16,7 @@ type Server struct {
 func Launch(serverRouter *mux.Router, port string) {
 	// Allow cors
 	corsObj := handlers.MakeCorsObject()
-	r := corsObj.Handler(requestIdMiddleWare(serverRouter))
+	r := corsObj.Handler(requestIdMiddleWare(otelMiddleWare(serverRouter)))
 	http.Handle("/", r)
 	logs.Logger.Info(fmt.Sprint("Starting server ", handlers.ServerName, " on ", port))
 	if err := http.ListenAndServe(":"+port, nil); err != nil {

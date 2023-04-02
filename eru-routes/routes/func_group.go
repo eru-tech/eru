@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
+	"go.opentelemetry.io/otel"
 	"io"
 	"net/http"
 	"strconv"
@@ -123,10 +125,12 @@ func (funcStep *FuncStep) GetRouteName() (routeName string) {
 	}
 	return
 }
-func (funcStep *FuncStep) RunFuncStep(ctx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, FuncThread int, LoopThread int) (response *http.Response, err error) {
+func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, FuncThread int, LoopThread int) (response *http.Response, err error) {
+	ctx, span := otel.Tracer(server_handlers.ServerName).Start(octx, funcStep.GetRouteName())
+	defer span.End()
 	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStep - Start : ", funcStep.GetRouteName()))
 	logs.WithContext(ctx).Info(fmt.Sprint("mainRouteName for ", funcStep.GetRouteName(), " is ", mainRouteName))
-
+	req = req.WithContext(ctx)
 	//first step is to transform the request which in turn will clone the request before transforming keeping original request as is for further use.
 	request, vars, trErr := funcStep.transformRequest(ctx, req, reqVars, resVars, mainRouteName)
 	if trErr != nil {
