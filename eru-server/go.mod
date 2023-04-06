@@ -1,6 +1,6 @@
 module github.com/eru-tech/eru/eru-server
 
-go 1.17
+go 1.20
 
 require (
 	github.com/eru-tech/eru/eru-store v0.0.0-00010101000000-000000000000
