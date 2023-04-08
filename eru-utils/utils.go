@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -183,8 +184,14 @@ func ExecuteParallelHttp(ctx context.Context, req *http.Request, rc chan *http.R
 
 func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("ExecuteHttp - Start")
-	resp, err = httpClient.Do(req)
+	//req = req.WithContext(ctx)
+	//resp, err = httpClient.Do(req)
+	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
 	return
+}
+
+func HTTPClientTransporter(rt http.RoundTripper) http.RoundTripper {
+	return otelhttp.NewTransport(rt)
 }
 
 func callHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (resp *http.Response, err error) {

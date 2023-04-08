@@ -19,7 +19,9 @@ func requestIdMiddleWare(next http.Handler) http.Handler {
 			requestID = uuid.New().String()
 			r.Header.Set(server_handlers.RequestIdKey, requestID)
 		}
-		r = r.WithContext(logs.NewContext(r.Context(), zap.String(server_handlers.RequestIdKey, requestID)))
+		spanId := oteltrace.SpanFromContext(r.Context()).SpanContext().SpanID().String()
+		traceId := oteltrace.SpanFromContext(r.Context()).SpanContext().TraceID().String()
+		r = r.WithContext(logs.NewContext(r.Context(), zap.String(server_handlers.RequestIdKey, requestID), zap.String("spanID", spanId), zap.String("traceID", traceId)))
 		next.ServeHTTP(w, r)
 	})
 }
@@ -27,9 +29,20 @@ func requestIdMiddleWare(next http.Handler) http.Handler {
 func otelMiddleWare(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := r.Header.Get(server_handlers.RequestIdKey)
+		span := oteltrace.SpanFromContext(r.Context())
+		//if !span.IsRecording() {
+		//	logs.WithContext(r.Context()).Info("Span not found - making new tracer")
 		newCtx, span := otel.Tracer(server_handlers.ServerName).Start(r.Context(), "Initial", oteltrace.WithAttributes(attribute.String("requestId", requestID)))
 		defer span.End()
 		r = r.WithContext(newCtx)
+		//} else {
+		//	logs.WithContext(r.Context()).Info("making child span")
+		//	logs.WithContext(r.Context()).Info(fmt.Sprint(span.TracerProvider()))
+		//	newCtx, span := span.TracerProvider().Tracer(server_handlers.ServerName).Start(r.Context(), "Initial", oteltrace.WithAttributes(attribute.String("requestId", requestID)))
+		//	defer span.End()
+		//	r = r.WithContext(newCtx)
+
+		//}
 		next.ServeHTTP(w, r)
 	})
 }

@@ -509,7 +509,7 @@ func clubResponses(ctx context.Context, responses []*http.Response, trResVars []
 	logs.WithContext(ctx).Info(fmt.Sprint("len(responses) = ", len(responses)))
 	logs.WithContext(ctx).Info(fmt.Sprint("len(errs) = ", len(errs)))
 	if len(errs) > 0 {
-		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(fmt.Sprint(errs))
 	}
 	if len(responses) > 0 {
 		if responses[0] != nil {

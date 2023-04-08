@@ -410,7 +410,7 @@ func (route *Route) RunRoute(ctx context.Context, req *http.Request, url string,
 			//creating a new context with 1ms to give sufficient time to execute the http request and
 			// timeout without waiting for the response
 
-			ctxAsync, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+			ctxAsync, cancel := context.WithTimeout(ctx, 1*time.Millisecond)
 			defer cancel()
 			request = request.WithContext(ctxAsync)
 			_, err = utils.ExecuteHttp(ctx, request)

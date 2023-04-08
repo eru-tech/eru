@@ -1,80 +1,40 @@
 package eru_otel
 
-/*
-	func TracerInit() (*sdktrace.TracerProvider, error) {
-		exporter, err := stdout.New(stdout.WithPrettyPrint())
-		if err != nil {
-			return nil, err
-		}
-		tp := sdktrace.NewTracerProvider(
-			sdktrace.WithSampler(sdktrace.AlwaysSample()),
-			sdktrace.WithBatcher(exporter),
-		)
-		otel.SetTracerProvider(tp)
-		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
-		return tp, nil
+import (
+	"context"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	stdout "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	"google.golang.org/grpc"
+	"log"
+	"time"
+)
+
+func TracerInit() (*sdktrace.TracerProvider, error) {
+	exporter, err := stdout.New(stdout.WithPrettyPrint())
+	if err != nil {
+		return nil, err
 	}
-
-func TracerInit() error {
-	shutdown := initProvider()
-	defer shutdown()
-
-	//meter := global.Meter("demo-server-meter")
-	serverAttribute := attribute.String("server-attribute", "foo")
-	fmt.Println("start to gen chars for trace data")
-	initTraceDemoData()
-	fmt.Println("gen trace data done")
-	tracer := otel.Tracer(common.TraceInstrumentationName)
-
-	// Create a handler in OpenTelemetry.
-	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		// Simulate a delay.
-		var sleep int64
-		switch modulus := time.Now().Unix() % 5; modulus {
-		case 0:
-			sleep = rng.Int63n(2000)
-		case 1:
-			sleep = rng.Int63n(15)
-		case 2:
-			sleep = rng.Int63n(917)
-		case 3:
-			sleep = rng.Int63n(87)
-		case 4:
-			sleep = rng.Int63n(1173)
-		}
-		ctx := req.Context()
-		span := trace.SpanFromContext(ctx)
-		span.SetAttributes(serverAttribute)
-
-		actionChild(tracer, ctx, sleep)
-
-		w.Write([]byte("Hello World"))
-	})
-	wrappedHandler := otelhttp.NewHandler(handler, "/hello")
-
-	http.Handle("/hello", wrappedHandler)
-	http.ListenAndServe(":7080", nil)
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithBatcher(exporter),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	return tp, nil
 }
 
-func initProvider() func() {
+func TracerTempoInit() (*sdktrace.TracerProvider, error) {
+	//initProvider()
+	//flush := initProvider()
+	//defer flush()
+
 	ctx := context.Background()
-
-	otelAgentAddr, xtraceToken, ok := common.ObtainXTraceInfo()
-
-	if !ok {
-		log.Fatalf("Cannot init OpenTelemetry, exit")
-		os.Exit(-1)
-	}
-
-	headers := map[string]string{"Authentication": xtraceToken} // Replace xtraceToken with the authentication token obtained in the Prerequisites section.
-	traceClient := otlptracegrpc.NewClient(
-		otlptracegrpc.WithInsecure(),
-		otlptracegrpc.WithEndpoint(otelAgentAddr), // Replace otelAgentAddr with the endpoint obtained in the Prerequisites section.
-		otlptracegrpc.WithHeaders(headers),
-		otlptracegrpc.WithDialOption(grpc.WithBlock()))
-	log.Println("start to connect to server")
-	traceExp, err := otlptrace.New(ctx, traceClient)
-	handleErr(err, "Failed to create the collector trace exporter")
 
 	res, err := resource.New(ctx,
 		resource.WithFromEnv(),
@@ -83,10 +43,82 @@ func initProvider() func() {
 		resource.WithHost(),
 		resource.WithAttributes(
 			// Specify the service name displayed on the backend of Tracing Analysis.
-			semconv.ServiceNameKey.String(common.ServerServiceName),
+			semconv.ServiceNameKey.String("eru"),
 		),
 	)
-	handleErr(err, "failed to create resource")
+	if err != nil {
+		log.Print(err, "failed to create resource")
+	}
+	res, err = resource.Merge(resource.Default(), res)
+	if err != nil {
+		log.Print(err, "failed to merge resource")
+	}
+	traceClient := otlptracegrpc.NewClient(
+		otlptracegrpc.WithInsecure(),
+		otlptracegrpc.WithEndpoint("localhost:4317"), // Replace otelAgentAddr with the endpoint obtained in the Prerequisites section.
+		//otlptracegrpc.WithHeaders(headers),
+		otlptracegrpc.WithDialOption(grpc.WithBlock()))
+	log.Print("connecting tempo")
+	exporter, err := otlptrace.New(ctx, traceClient)
+	if err != nil {
+		return nil, err
+	}
+	log.Print("connecting tempo success")
+
+	bsp := sdktrace.NewBatchSpanProcessor(exporter)
+	//tracerProvider := sdktrace.NewTracerProvider(
+	//	sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.AlwaysSample()}),
+	//	sdktrace.WithResource(res),
+	//	sdktrace.WithSpanProcessor(bsp),
+	//)
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithSpanProcessor(bsp),
+		sdktrace.WithResource(res),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	return tp, nil
+
+}
+
+func initProvider() func() {
+	ctx := context.Background()
+
+	//otelAgentAddr, xtraceToken, ok := common.ObtainXTraceInfo()
+
+	//if !ok {
+	//	log.Print("Cannot init OpenTelemetry, exit")
+	//	os.Exit(-1)
+	//}
+
+	//headers := map[string]string{"Authentication": xtraceToken} // Replace xtraceToken with the authentication token obtained in the Prerequisites section.
+
+	traceClient := otlptracegrpc.NewClient(
+		otlptracegrpc.WithInsecure(),
+		otlptracegrpc.WithEndpoint("localhost:55680"), // Replace otelAgentAddr with the endpoint obtained in the Prerequisites section.
+		//otlptracegrpc.WithHeaders(headers),
+		otlptracegrpc.WithDialOption(grpc.WithBlock()))
+	log.Println("start to connect to server")
+	traceExp, err := otlptrace.New(ctx, traceClient)
+	if err != nil {
+		log.Print(err, "Failed to create the collector trace exporter")
+	}
+	res, err := resource.New(ctx,
+		resource.WithFromEnv(),
+		resource.WithProcess(),
+		resource.WithTelemetrySDK(),
+		resource.WithHost(),
+		resource.WithAttributes(
+			// Specify the service name displayed on the backend of Tracing Analysis.
+			semconv.ServiceNameKey.String("test server"),
+		),
+	)
+	if err != nil {
+		log.Print(err, "failed to create resource")
+	}
 
 	bsp := sdktrace.NewBatchSpanProcessor(traceExp)
 	tracerProvider := sdktrace.NewTracerProvider(
@@ -107,4 +139,3 @@ func initProvider() func() {
 		}
 	}
 }
-*/

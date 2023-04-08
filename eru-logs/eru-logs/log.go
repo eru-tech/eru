@@ -41,10 +41,12 @@ func LogInit(serviceName string) {
 
 	var err error
 	Logger, err = zapConfig.Build()
-
 	if err != nil {
 		panic(err)
 	}
+	undo := zap.ReplaceGlobals(Logger)
+	defer undo()
+
 	defer Logger.Sync()
 }
 
