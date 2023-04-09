@@ -7,6 +7,7 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"io"
 	"net/http"
 	"strconv"
@@ -99,7 +100,8 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		if tg.Method != "" {
 			r.Method = tg.Method
 		}
-		response, err := httpClient.Do(r)
+		//response, err := httpClient.Do(r)
+		response, err := utils.ExecuteHttp(r.Context(), r)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)

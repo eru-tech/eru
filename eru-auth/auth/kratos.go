@@ -211,8 +211,8 @@ func (kratosHydraAuth *KratosHydraAuth) ensureCookieFlowId(ctx context.Context, 
 		//newR.RequestURI = ""
 		//newR.Host = kratosHydraAuth.Kratos.PublicHost
 
-		//TODO change it to utils
-		flowRes, flowErr := httpClient.Do(&newR)
+		flowRes, flowErr := utils.ExecuteHttp((&newR).Context(), &newR)
+		//flowRes, flowErr := httpClient.Do(&newR)
 		if flowErr != nil {
 			logs.WithContext(ctx).Error(flowErr.Error())
 			err = flowErr

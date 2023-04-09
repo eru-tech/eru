@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"net/http"
 	"net/url"
 	"os"
@@ -48,7 +49,8 @@ func (apiGateway *ApiGateway) Send(ctx context.Context, msg string, templateId s
 			}
 		}
 		req.URL.RawQuery = params.Encode()
-		response, err := httpClient.Do(req)
+		response, err := utils.ExecuteHttp(req.Context(), req)
+		// response, err := httpClient.Do(req)
 		defer response.Body.Close()
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
