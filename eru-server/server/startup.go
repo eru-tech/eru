@@ -21,7 +21,8 @@ func Launch(serverRouter *mux.Router, port string) {
 	http.Handle("/", r)
 	logs.Logger.Info(fmt.Sprint("Starting server ", handlers.ServerName, " on ", port))
 	err := http.ListenAndServe(":"+port, nil)
-	logs.Logger.Info(err.Error())
+	logs.Logger.Info("printing error of ListenAndServe")
+	logs.Logger.Fatal(err.Error())
 
 }
 func Init() (*mux.Router, *Server, error) {
