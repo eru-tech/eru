@@ -49,19 +49,18 @@ func (gqd *GraphQLData) getSqlForQuery(ctx context.Context, projectId string, da
 	logs.WithContext(ctx).Debug("getSqlForQuery - Start")
 	mq, err := s.GetMyQuery(ctx, projectId, query)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 	//mq == nil changed to below
 	if mq.QueryName == "" {
 		err = errors.New(fmt.Sprint("Query ", query, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Info(err.Error())
 		return err
 	}
 	qlInterface := GetQL(mq.QueryType)
 	if qlInterface == nil {
 		err = errors.New("Invalid Query Type")
-		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Info(err.Error())
 		return err
 	}
 	qlInterface.SetQLData(ctx, mq, gqd.FinalVariables, false, tokenObj, isPublic, gqd.OutputType) //passing false as we only need the query in execute function and not actual result
@@ -503,7 +502,7 @@ func processMapVariable(ctx context.Context, m map[string]interface{}, vars map[
 						}
 					} else {
 						if err != nil {
-							logs.WithContext(ctx).Error(err.Error())
+							logs.WithContext(ctx).Info(err.Error())
 						}
 						logs.WithContext(ctx).Info(fmt.Sprint("removing key ", mapKey, " from list of variables"))
 						delete(m, mapKey)

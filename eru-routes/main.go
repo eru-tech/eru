@@ -20,7 +20,7 @@ func main() {
 	logs.LogInit(server_handlers.ServerName)
 	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
 
-	tp, err := eruotel.TracerTempoInit()
+	tp, err := eruotel.TracerInit()
 	if err != nil {
 		log.Fatal(err)
 	}

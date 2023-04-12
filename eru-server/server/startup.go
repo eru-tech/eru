@@ -20,9 +20,9 @@ func Launch(serverRouter *mux.Router, port string) {
 	r := otelhttp.NewHandler(corsObj.Handler(requestIdMiddleWare(otelMiddleWare(serverRouter))), "eru-handler")
 	http.Handle("/", r)
 	logs.Logger.Info(fmt.Sprint("Starting server ", handlers.ServerName, " on ", port))
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		logs.Logger.DPanic(err.Error())
-	}
+	err := http.ListenAndServe(":"+port, nil)
+	logs.Logger.Info(err.Error())
+
 }
 func Init() (*mux.Router, *Server, error) {
 	s := new(Server)

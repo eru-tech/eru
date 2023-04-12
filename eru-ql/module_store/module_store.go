@@ -465,7 +465,7 @@ func (ms *ModuleStore) GetMyQuery(ctx context.Context, projectId string, queryNa
 		} else {
 			err = errors.New(fmt.Sprint("Query ", queryName, " not found"))
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				logs.WithContext(ctx).Info(err.Error())
 			}
 			return module_model.MyQuery{}, err
 		}
