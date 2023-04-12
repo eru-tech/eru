@@ -7,6 +7,7 @@ import (
 	"github.com/eru-tech/eru/eru-store/store"
 	"github.com/gorilla/mux"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"log"
 	"net/http"
 )
 
@@ -21,7 +22,8 @@ func Launch(serverRouter *mux.Router, port string) {
 	http.Handle("/", r)
 	logs.Logger.Info(fmt.Sprint("Starting server ", handlers.ServerName, " on ", port))
 	err := http.ListenAndServe(":"+port, nil)
-	logs.Logger.Info("printing error of ListenAndServe")
+	log.Println("printing error of ListenAndServe")
+	log.Println(err.Error())
 	logs.Logger.Fatal(err.Error())
 
 }
