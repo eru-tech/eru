@@ -8,7 +8,6 @@ import (
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"io"
-	"log"
 	"net/http"
 )
 
@@ -103,7 +102,6 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 			w.WriteHeader(response.StatusCode)
 			_, err = io.Copy(w, response.Body)
-			log.Println(err)
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
 			}
