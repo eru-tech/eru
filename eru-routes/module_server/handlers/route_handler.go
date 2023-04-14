@@ -102,7 +102,9 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 			w.WriteHeader(response.StatusCode)
 			_, err = io.Copy(w, response.Body)
-			logs.WithContext(r.Context()).Error(err.Error())
+			if err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+			}
 		}
 	}
 }

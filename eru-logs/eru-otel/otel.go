@@ -16,7 +16,7 @@ import (
 )
 
 func TracerInit() (*sdktrace.TracerProvider, error) {
-	exporter, err := stdout.New(stdout.WithPrettyPrint())
+	exporter, err := stdout.New()
 	if err != nil {
 		return nil, err
 	}
