@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eruotel "github.com/eru-tech/eru/eru-logs/eru-otel"
 	"github.com/eru-tech/eru/eru-routes/module_server"
 	"github.com/eru-tech/eru/eru-routes/module_store"
 	"github.com/eru-tech/eru/eru-server/server"
@@ -16,17 +18,17 @@ func main() {
 	module_server.SetServiceName()
 	logs.LogInit(server_handlers.ServerName)
 	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
-	/*
-		tp, err := eruotel.TracerInit()
-		if err != nil {
-			log.Fatal(err)
+
+	tp, err := eruotel.TracerTempoInit()
+	if err != nil {
+		logs.Logger.Fatal(err.Error())
+	}
+	defer func() {
+		if err = tp.Shutdown(context.Background()); err != nil {
+			logs.Logger.Error(fmt.Sprint("Error shutting down tracer provider: %v", err.Error()))
 		}
-		defer func() {
-			if err = tp.Shutdown(context.Background()); err != nil {
-				logs.Logger.Error(fmt.Sprint("Error shutting down tracer provider: %v", err.Error()))
-			}
-		}()
-	*/
+	}()
+
 	envPort := os.Getenv("ERUROUTESPORT")
 	if envPort != "" {
 		port = envPort
