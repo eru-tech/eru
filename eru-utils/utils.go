@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/google/go-cmp/cmp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"io"
 	"mime/multipart"
@@ -341,4 +342,49 @@ func CsvToMap(ctx context.Context, csvData [][]string, lowerCaseHeader bool) (js
 		}
 	}
 	return
+}
+
+type DiffOutput struct {
+	Path   string
+	AddStr string
+	DelStr string
+}
+
+type DiffReporter struct {
+	path    cmp.Path
+	diffs   map[string]DiffOutput
+	diffStr []string
+}
+
+func (r *DiffReporter) PushStep(ps cmp.PathStep) {
+	r.path = append(r.path, ps)
+}
+
+func (r *DiffReporter) Report(rs cmp.Result) {
+	if !rs.Equal() {
+		vx, vy := r.path.Last().Values()
+		do := DiffOutput{}
+		path := fmt.Sprintf("%#v ", r.path)
+		do.Path = fmt.Sprintf("%v", strings.Replace(r.path.Last().String(), "\"", "", -1))
+		do.AddStr = fmt.Sprintf("%+v", vy)
+		do.DelStr = fmt.Sprintf("%+v", vx)
+		if r.diffs == nil {
+			r.diffs = make(map[string]DiffOutput)
+		}
+		r.diffs[path] = do
+		r.diffStr = append(r.diffStr, fmt.Sprintf("%#v:\n\t-: %+v\n\t+: %+v\n", r.path, vx, vy))
+
+	}
+}
+
+func (r *DiffReporter) PopStep() {
+	r.path = r.path[:len(r.path)-1]
+}
+
+func (r *DiffReporter) String() string {
+	return strings.Join(r.diffStr, "\n")
+}
+
+func (r *DiffReporter) Output() map[string]DiffOutput {
+	return r.diffs
 }

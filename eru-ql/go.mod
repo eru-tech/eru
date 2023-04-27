@@ -11,6 +11,7 @@ require (
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-writes v0.0.0-00010101000000-000000000000
 	github.com/go-sql-driver/mysql v1.6.0
+	github.com/google/go-cmp v0.5.9
 	github.com/gorilla/mux v1.8.0
 	github.com/graphql-go/graphql v0.8.0
 	github.com/jmoiron/sqlx v1.3.4

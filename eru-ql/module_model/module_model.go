@@ -26,6 +26,15 @@ const (
 type ModuleProjectI interface {
 }
 
+type StoreCompare struct {
+	DeleteQueries       []string
+	NewQueries          []string
+	MismatchQuries      map[string]interface{}
+	DeleteDataSources   []string
+	NewDataSources      []string
+	MismatchDataSources map[string]interface{}
+}
+
 type Project struct {
 	ProjectId     string                 `eru:"required"`
 	DataSources   map[string]*DataSource //DB alias is the key

@@ -6,6 +6,15 @@ import (
 	"github.com/eru-tech/eru/eru-routes/routes"
 )
 
+type StoreCompare struct {
+	DeleteRoutes   []string
+	NewRoutes      []string
+	MismatchRoutes map[string]interface{}
+	DeleteFuncs    []string
+	NewFuncs       []string
+	MismatchFuncs  map[string]interface{}
+}
+
 type ModuleProjectI interface {
 }
 

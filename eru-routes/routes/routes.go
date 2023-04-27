@@ -461,7 +461,9 @@ func (route *Route) RunRoute(ctx context.Context, req *http.Request, url string,
 			utils.PrintResponseBody(ctx, response, "printing response immediately after utils.ExecuteHttp")
 		}
 	} else {
-		response = &http.Response{Header: http.Header{}, StatusCode: http.StatusOK}
+		header := http.Header{}
+		header.Set("Content-type", applicationjson)
+		response = &http.Response{Header: header, StatusCode: http.StatusOK}
 		rb, err := json.Marshal(make(map[string]interface{}))
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
@@ -682,7 +684,7 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 	logs.WithContext(ctx).Debug("transformResponse - Start : ")
 	trResVars = &TemplateVars{}
 
-	logs.WithContext(ctx).Info(fmt.Sprint("route.Redirect for route ", route.RouteName, "is ", route.Redirect))
+	logs.WithContext(ctx).Info(fmt.Sprint("route.Redirect for route ", route.RouteName, " is ", route.Redirect))
 	if route.Redirect {
 		finalRedirectUrl := route.RedirectUrl
 		fvars := &FuncTemplateVars{}
@@ -773,9 +775,11 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 		}
 		trResVars.OrgBody = trResVars.Body
 		if route.TransformResponse != "" {
+			logs.WithContext(ctx).Info(fmt.Sprint("inside route.TransformResponse"))
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = trResVars
 			output, err := processTemplate(ctx, route.RouteName, route.TransformResponse, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+			logs.WithContext(ctx).Info(fmt.Sprint(output))
 			if err != nil {
 				return &TemplateVars{}, err
 			}

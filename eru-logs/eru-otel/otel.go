@@ -29,7 +29,7 @@ func TracerInit() (*sdktrace.TracerProvider, error) {
 	return tp, nil
 }
 
-func TracerTempoInit() (*sdktrace.TracerProvider, error) {
+func TracerTempoInit(traceUrl string) (*sdktrace.TracerProvider, error) {
 	//initProvider()
 	//flush := initProvider()
 	//defer flush()
@@ -55,7 +55,8 @@ func TracerTempoInit() (*sdktrace.TracerProvider, error) {
 	}
 	traceClient := otlptracegrpc.NewClient(
 		otlptracegrpc.WithInsecure(),
-		otlptracegrpc.WithEndpoint("localhost:4317"), // Replace otelAgentAddr with the endpoint obtained in the Prerequisites section.
+		//"localhost:4317"
+		otlptracegrpc.WithEndpoint(traceUrl), // Replace otelAgentAddr with the endpoint obtained in the Prerequisites section.
 		//otlptracegrpc.WithHeaders(headers),
 		otlptracegrpc.WithDialOption(grpc.WithBlock()))
 	log.Print("connecting tempo")

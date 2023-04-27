@@ -19,17 +19,18 @@ func main() {
 	module_server.SetServiceName()
 	logs.LogInit(server_handlers.ServerName)
 	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
-
-	tp, err := eruotel.TracerTempoInit()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer func() {
-		if err = tp.Shutdown(context.Background()); err != nil {
-			logs.Logger.Error(fmt.Sprint("Error shutting down tracer provider: %v", err.Error()))
+	traceUrl := os.Getenv("TRACE_URL")
+	if traceUrl != "" {
+		tp, err := eruotel.TracerTempoInit(traceUrl)
+		if err != nil {
+			log.Fatal(err)
 		}
-	}()
-
+		defer func() {
+			if err = tp.Shutdown(context.Background()); err != nil {
+				logs.Logger.Error(fmt.Sprint("Error shutting down tracer provider: %v", err.Error()))
+			}
+		}()
+	}
 	envPort := os.Getenv("ERUAUTHPORT")
 	if envPort != "" {
 		port = envPort
