@@ -43,7 +43,7 @@ func main() {
 	}
 	sh := new(module_store.StoreHolder)
 	sh.Store = store
-	sr, _, e := server.Init()
+	sr, _, e := server.Init(sh.Store)
 	module_server.AddModuleRoutes(sr, sh)
 	if e != nil {
 		logs.Logger.Error(e.Error())
