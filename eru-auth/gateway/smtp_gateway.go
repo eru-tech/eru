@@ -1,8 +1,11 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
-	"log"
+	"errors"
+	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 type SmtpGateway struct {
@@ -11,12 +14,12 @@ type SmtpGateway struct {
 	SmtpPort string
 }
 
-func (smtpGateway *SmtpGateway) MakeFromJson(rj *json.RawMessage) error {
-	log.Println("inside SmtpGateway MakeFromJson")
+func (smtpGateway *SmtpGateway) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+	logs.WithContext(ctx).Debug("MakeFromJson - Start")
 	err := json.Unmarshal(*rj, &smtpGateway)
 	if err != nil {
-		log.Print("error json.Unmarshal(*rj, &emailGateway)")
-		log.Print(err)
+		err = errors.New(fmt.Sprint("error json.Unmarshal(*rj, &emailGateway) ", err.Error()))
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 	return nil

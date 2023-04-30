@@ -2,9 +2,12 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,17 +27,17 @@ var httpClient = http.Client{
 	},
 }
 
-func (apiGateway *ApiGateway) Send(msg string, templateId string, params url.Values) (map[string]interface{}, error) {
-	log.Println("inside ApiGateway Send")
+func (apiGateway *ApiGateway) Send(ctx context.Context, msg string, templateId string, params url.Values) (map[string]interface{}, error) {
+	logs.WithContext(ctx).Debug("Send - Start")
 	resBody := make(map[string]interface{})
-	log.Println(params.Get("silent"))
+	logs.WithContext(ctx).Info(params.Get("silent"))
 	if params.Get("silent") == "true" {
-		log.Println("inside params.Get(\"silent\")")
 		msg = "777777 "
 	} else {
+		//TODO change it to utils
 		req, err := http.NewRequest(apiGateway.GatewayMethod, apiGateway.GatewayUrl, nil)
 		if err != nil {
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 		}
 
 		for k, v := range apiGateway.QueryParams {
@@ -46,21 +49,18 @@ func (apiGateway *ApiGateway) Send(msg string, templateId string, params url.Val
 			}
 		}
 		req.URL.RawQuery = params.Encode()
-		log.Println(req)
-		response, err := httpClient.Do(req)
+		response, err := utils.ExecuteHttp(req.Context(), req)
+		// response, err := httpClient.Do(req)
 		defer response.Body.Close()
 		if err != nil {
-			log.Println("---")
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 
 		if err = json.NewDecoder(response.Body).Decode(&resBody); err != nil {
-			log.Print(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
-		log.Println("==================")
-		log.Println(resBody)
 	}
 	//todo to remove this hard coded call and make it configurable
 	saveOtp := make(map[string][]map[string]string)
@@ -68,10 +68,9 @@ func (apiGateway *ApiGateway) Send(msg string, templateId string, params url.Val
 	saveDoc["mobile_no"] = params.Get("to")
 	saveDoc["otp"] = strings.SplitAfter(msg, " ")[0]
 	saveOtp["docs"] = append(saveOtp["docs"], saveDoc)
-	log.Println(saveOtp)
 	saveOtpReqBody, err := json.Marshal(saveOtp)
 	if err != nil {
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 
@@ -79,10 +78,9 @@ func (apiGateway *ApiGateway) Send(msg string, templateId string, params url.Val
 	if eruQueriesURL == "" {
 		eruQueriesURL = "http://localhost:8087"
 	}
-	log.Print(saveOtpReqBody)
 	saveOtpResp, err := http.Post(fmt.Sprint(eruQueriesURL, "/store/smartvalues/myquery/execute/save_otp"), "application/json", bytes.NewBuffer(saveOtpReqBody))
 	if err != nil {
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 	defer saveOtpResp.Body.Close()
@@ -90,12 +88,12 @@ func (apiGateway *ApiGateway) Send(msg string, templateId string, params url.Val
 	return resBody, nil
 }
 
-func (apiGateway *ApiGateway) MakeFromJson(rj *json.RawMessage) error {
-	log.Println("inside ApiGateway MakeFromJson")
+func (apiGateway *ApiGateway) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+	logs.WithContext(ctx).Debug("MakeFromJson - Start")
 	err := json.Unmarshal(*rj, &apiGateway)
 	if err != nil {
-		log.Print("error json.Unmarshal(*rj, &smsGateway)")
-		log.Print(err)
+		err = errors.New(fmt.Sprint("error json.Unmarshal(*rj, &smsGateway) ", err.Error()))
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 	return nil

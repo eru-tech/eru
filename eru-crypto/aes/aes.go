@@ -1,12 +1,13 @@
 package aes
 
 import (
+	"context"
 	caes "crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"log"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 type AesKey struct {
@@ -60,8 +61,6 @@ func NewECBDecrypter(block cipher.Block) cipher.BlockMode {
 func (d *ecbDecrypter) BlockSize() int { return d.blockSize }
 
 func (d *ecbDecrypter) CryptBlocks(dst, src []byte) {
-	log.Println("len(src) = ", len(src))
-	log.Println("d.blockSize = ", d.blockSize)
 	if len(src)%d.blockSize != 0 {
 		panic("crypto/cipher: input blocks are not full")
 	}
@@ -75,82 +74,65 @@ func (d *ecbDecrypter) CryptBlocks(dst, src []byte) {
 	}
 }
 
-func GenerateKey(bits int) (aesKey AesKey, err error) {
-	log.Println("inside GenerateKey")
+func GenerateKey(ctx context.Context, bits int) (aesKey AesKey, err error) {
+	logs.WithContext(ctx).Debug("GenerateKey - Start")
 
 	aesKey.Bits = bits
 	bytes := make([]byte, bits) //generate a random xx byte key for AES-256
 	if _, err := rand.Read(bytes); err != nil {
-		log.Println(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 	}
 	iv := make([]byte, 16) //generate a random 16 byte vector
 	if _, err := rand.Read(iv); err != nil {
-		log.Println(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 	}
 	aesKey.KeyHex = hex.EncodeToString(bytes)
 	aesKey.Key = bytes
 	aesKey.VectorHex = hex.EncodeToString(iv)
 	aesKey.Vector = iv
-	log.Println(bytes)
-	log.Println(string(bytes))
 	return
 }
 
-func EncryptECB(plainBytes []byte, aesKey []byte) (encryptedBytes []byte, err error) {
+func EncryptECB(ctx context.Context, plainBytes []byte, aesKey []byte) (encryptedBytes []byte, err error) {
+	logs.WithContext(ctx).Debug("EncryptECB - Start")
 	block, err := caes.NewCipher(aesKey)
 	if err != nil {
-		log.Println(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	//log.Println("len(plainBytes) = ", len(plainBytes))
-	//log.Println(fmt.Sprint(plainBytes))
 	plaintext := Pad(plainBytes, block.BlockSize())
-	//log.Println("len(plaintext) = ", len(plaintext))
-	//log.Println(string(plaintext))
 
 	ecbObj := NewECBEncrypter(block)
 	encryptedBytes = make([]byte, len(plaintext))
 	ecbObj.CryptBlocks(encryptedBytes, plaintext)
-	//log.Println("len(encryptedBytes) = ", len(encryptedBytes))
-	//log.Println("len(plaintext) = ", len(plaintext))
-	/*ecbdObj := NewECBDecrypter(block)
-	plainBytesBeforeUnpad := make([]byte,len(encryptedBytes))
-	log.Println("len(plainBytesBeforeUnpad) = ",len(plainBytesBeforeUnpad))
-	ecbdObj.CryptBlocks(plainBytesBeforeUnpad,encryptedBytes)
-	plainBytes, err = Unpad(plainBytesBeforeUnpad)
-	if err != nil {
-		log.Println(err.Error())
-		return
-	}
-	log.Println(string(plainBytes))
-	*/
+
 	return encryptedBytes, err
 }
 
-func DecryptECB(encryptedBytes []byte, aesKey []byte) (plainBytes []byte, err error) {
-	log.Println("len(encryptedBytes) = ", len(encryptedBytes))
+func DecryptECB(ctx context.Context, encryptedBytes []byte, aesKey []byte) (plainBytes []byte, err error) {
+	logs.WithContext(ctx).Debug("DecryptECB - Start")
 	block, err := caes.NewCipher(aesKey)
 	if err != nil {
-		log.Println(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 
 	ecbdObj := NewECBDecrypter(block)
 	plainBytesBeforeUnpad := make([]byte, len(encryptedBytes))
-	log.Println("len(plainBytesBeforeUnpad) = ", len(plainBytesBeforeUnpad))
 	ecbdObj.CryptBlocks(plainBytesBeforeUnpad, encryptedBytes)
 	plainBytes, err = Unpad(plainBytesBeforeUnpad)
 	if err != nil {
-		log.Println(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 	return plainBytes, err
 }
 
-func EncryptCBC(plainText []byte, bKey []byte, bIV []byte) (encryptedString []byte, err error) {
+func EncryptCBC(ctx context.Context, plainText []byte, bKey []byte, bIV []byte) (encryptedString []byte, err error) {
+	logs.WithContext(ctx).Debug("EncryptCBC - Start")
 	block, err := caes.NewCipher(bKey)
 	if err != nil {
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 
@@ -159,10 +141,11 @@ func EncryptCBC(plainText []byte, bKey []byte, bIV []byte) (encryptedString []by
 	mode.CryptBlocks(bCipherText, (plainText))
 	return bCipherText, nil
 }
-func DecryptCBC(cipherText []byte, bKey []byte, bIV []byte) (decryptedString []byte, err error) {
+func DecryptCBC(ctx context.Context, cipherText []byte, bKey []byte, bIV []byte) (decryptedString []byte, err error) {
+	logs.WithContext(ctx).Debug("DecryptCBC - Start")
 	block, err := caes.NewCipher(bKey)
 	if err != nil {
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 	bPlaintext := make([]byte, len(cipherText))
@@ -171,63 +154,17 @@ func DecryptCBC(cipherText []byte, bKey []byte, bIV []byte) (decryptedString []b
 	return bPlaintext, nil
 }
 
-/*func EncryptCBC(plainText string, encKey string, iv string) (encryptedString string) {
-	bKey := []byte(encKey)
-	bIV := []byte(iv)
-	//cipherTextDecoded, err := hex.DecodeString(cipherText)
-	//if err != nil {
-	//	panic(err)
-	//}
-	block, err := caes.NewCipher(bKey)
-	if err != nil {
-		panic(err)
-	}
-
-	log.Print("block..BlockSize() = ",block.BlockSize())
-
-	bCipherText := make([]byte, len(plainText))
-	mode := cipher.NewCBCEncrypter(block, bIV)
-	mode.CryptBlocks([]byte(bCipherText), []byte(plainText))
-	log.Print(bCipherText)
-	log.Print(string(bCipherText))
-	return string(bCipherText)
-}
-
-func DecryptCBC(cipherText string, encKey string, iv string) (decryptedString string) {
-	bKey := []byte(encKey)
-	bIV := []byte(iv)
-	//cipherTextDecoded, err := hex.DecodeString(cipherText)
-	//if err != nil {
-	//	panic(err)
-	//}
-
-	block, err := caes.NewCipher(bKey)
-	if err != nil {
-		panic(err)
-	}
-	bPlaintext := make([]byte, len(cipherText))
-	mode := cipher.NewCBCDecrypter(block, bIV)
-	mode.CryptBlocks([]byte(bPlaintext), []byte(cipherText))
-	return strings.Trim(string(bPlaintext), " ")
-}
-
-*/
-
-func Encrypt(plainBytes []byte, aesKeyStr string) (encryptedBytes []byte, err error) {
-	log.Print("aesKeyStr = ", aesKeyStr)
-	//key, err := hex.DecodeString(aesKeyStr)
-	//log.Print("error from hex.DecodeString(aesKeyStr) ", err.Error())
-	//log.Print(key)
+func Encrypt(ctx context.Context, plainBytes []byte, aesKeyStr string) (encryptedBytes []byte, err error) {
+	logs.WithContext(ctx).Debug("Encrypt - Start")
 	key := []byte(aesKeyStr)
 	block, err := caes.NewCipher(key)
 	if err != nil {
-		log.Println("error from caes.NewCipher(key)")
-		log.Println(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
-		log.Println(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 	nonce := make([]byte, aesGCM.NonceSize())
@@ -235,45 +172,42 @@ func Encrypt(plainBytes []byte, aesKeyStr string) (encryptedBytes []byte, err er
 	return
 }
 
-func Decrypt(encryptedBytes []byte, aesKeyStr string) (decryptedBytes []byte, err error) {
+func Decrypt(ctx context.Context, encryptedBytes []byte, aesKeyStr string) (decryptedBytes []byte, err error) {
+	logs.WithContext(ctx).Debug("Encrypt - Start")
 	key, _ := hex.DecodeString(aesKeyStr)
-	log.Print(key)
-	//enc, err := hex.DecodeString(string(encryptedBytes))
 	if err != nil {
-		log.Println(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 
 	//Create a new Cipher Block from the key
 	block, err := caes.NewCipher(key)
 	if err != nil {
-		log.Println(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 
 	//Create a new GCM
 	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
-		log.Println(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 
 	//Get the nonce size
 	nonceSize := aesGCM.NonceSize()
-	log.Println("len(encryptedBytes) = ", len(encryptedBytes))
 	if len(encryptedBytes) < nonceSize {
 		err = errors.New("length of encryptedBytes is less then nonce size")
-		log.Println(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	log.Println("nonceSize = ", nonceSize)
 	//Extract the nonce from the encrypted data
 	nonce, ciphertext := encryptedBytes[:nonceSize], encryptedBytes[nonceSize:]
 
 	//Decrypt the data
 	decryptedBytes, err = aesGCM.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		log.Println(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 	return

@@ -1,11 +1,15 @@
 package module_model
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jmoiron/sqlx"
-	"log"
 	"time"
 )
 
@@ -23,6 +27,16 @@ const (
 )
 
 type ModuleProjectI interface {
+	CompareProject(ctx context.Context, compareProject Project) (StoreCompare, error)
+}
+
+type StoreCompare struct {
+	DeleteQueries       []string
+	NewQueries          []string
+	MismatchQuries      map[string]interface{}
+	DeleteDataSources   []string
+	NewDataSources      []string
+	MismatchDataSources map[string]interface{}
 }
 
 type Project struct {
@@ -128,25 +142,25 @@ type ColumnMasking struct {
 }
 
 /*
-type CustomRule struct {
-	AND []CustomRuleDetails `json:",omitempty"`
-	OR  []CustomRuleDetails `json:",omitempty"`
-}
+	type CustomRule struct {
+		AND []CustomRuleDetails `json:",omitempty"`
+		OR  []CustomRuleDetails `json:",omitempty"`
+	}
 
-type CustomRuleDetails struct {
-	DataType  string              `json:",omitempty"`
-	Variable1 string              `json:",omitempty"`
-	Variable2 string              `json:",omitempty"`
-	Operator  string              `json:",omitempty"`
-	ErrorMsg  string              `json:",omitempty"`
-	AND       []CustomRuleDetails `json:",omitempty"`
-	OR        []CustomRuleDetails `json:",omitempty"`
-}
+	type CustomRuleDetails struct {
+		DataType  string              `json:",omitempty"`
+		Variable1 string              `json:",omitempty"`
+		Variable2 string              `json:",omitempty"`
+		Operator  string              `json:",omitempty"`
+		ErrorMsg  string              `json:",omitempty"`
+		AND       []CustomRuleDetails `json:",omitempty"`
+		OR        []CustomRuleDetails `json:",omitempty"`
+	}
 
-type SecurityRule struct {
-	RuleType   string
-	CustomRule CustomRule
-}
+	type SecurityRule struct {
+		RuleType   string
+		CustomRule CustomRule
+	}
 */
 type SecurityRules struct {
 	Create security_rule.SecurityRule
@@ -250,33 +264,27 @@ type Tables struct {
 	SqlQuery string
 }
 
-func (ds *DataSource) GetTableJoins(parentTableName string, childTableName string, otherTables map[string]string) (TableJoins, error) {
-	//log.Print("inside VerifyChildTable")
+func (ds *DataSource) GetTableJoins(ctx context.Context, parentTableName string, childTableName string, otherTables map[string]string) (TableJoins, error) {
+	logs.WithContext(ctx).Debug("GetTableJoins - Start")
 	// TODO if schema is not passed with table name then compare with default schema set at datasource level
-	//log.Print(parentTableName, " - ", childTableName)
-	//log.Print(otherTables)
 	tj := TableJoins{}
 	if _, ok := ds.SchemaTables[parentTableName]; !ok {
-		//log.Print(parentTableName, " table not found")
 		return tj, errors.New(fmt.Sprint(parentTableName, " table not found"))
 	}
 	if _, ok := ds.SchemaTables[childTableName]; !ok {
-		//log.Print(childTableName, " table not found")
 		return tj, errors.New(fmt.Sprint(childTableName, " table not found"))
 	}
 	tempKey := fmt.Sprint(parentTableName, "___", childTableName)
 	tempKey1 := fmt.Sprint(childTableName, "___", parentTableName)
 	if val, ok := ds.TableJoins[tempKey]; !ok {
 		if val, ok := ds.TableJoins[tempKey1]; !ok {
-			log.Print("table joins not found for ", parentTableName, " and ", childTableName)
-			log.Print("checking other joins = ", otherTables)
+			logs.WithContext(ctx).Info(fmt.Sprint("table joins not found for ", parentTableName, " and ", childTableName))
 			newOtherTables := make(map[string]string)
 			for k, _ := range otherTables {
 				if k != parentTableName && k != childTableName {
 					newOtherTables[k] = ""
 				}
 			}
-			log.Print("newOtherTables = ", newOtherTables)
 			newParentTableName := ""
 			finalOtherTables := make(map[string]string)
 			for k, _ := range newOtherTables {
@@ -285,9 +293,8 @@ func (ds *DataSource) GetTableJoins(parentTableName string, childTableName strin
 				} else {
 					finalOtherTables[k] = ""
 				}
-				log.Print("finalOtherTables = ", finalOtherTables)
 			}
-			return ds.GetTableJoins(newParentTableName, childTableName, finalOtherTables)
+			return ds.GetTableJoins(ctx, newParentTableName, childTableName, finalOtherTables)
 			//return tj, errors.New(fmt.Sprint("table joins not found for ", parentTableName, " and ", childTableName))
 
 		} else {
@@ -303,27 +310,26 @@ func (ds *DataSource) GetTableJoins(parentTableName string, childTableName strin
 	} else {
 		tj = *val
 	}
-	log.Print(tj)
 	return tj, nil
 }
 
-func (ds *DataSource) AddTableJoins(tj *TableJoins) {
+func (ds *DataSource) AddTableJoins(ctx context.Context, tj *TableJoins) {
+	logs.WithContext(ctx).Debug("AddTableJoins - Start")
 	tempKey := fmt.Sprint(tj.Table1Name, "___", tj.Table2Name)
 	ds.TableJoins[tempKey] = tj
 }
-func (ds *DataSource) RemoveTableJoins(tj *TableJoins) {
+func (ds *DataSource) RemoveTableJoins(ctx context.Context, tj *TableJoins) {
+	logs.WithContext(ctx).Debug("RemoveTableJoins - Start")
 	tempKey := fmt.Sprint(tj.Table1Name, "___", tj.Table2Name)
 	delete(ds.TableJoins, tempKey)
 }
 
-func (tj *TableJoins) GetOnClause() (res map[string]interface{}) {
+func (tj *TableJoins) GetOnClause(ctx context.Context) (res map[string]interface{}) {
+	logs.WithContext(ctx).Debug("GetOnClause - Start")
 	onClause := make(map[string]interface{})
-	log.Print("len(tj.Table1Cols)  ==== ", len(tj.Table1Cols))
 	for i := 0; i < len(tj.Table1Cols); i++ {
 		k := fmt.Sprint(tj.Table1Name, ".", tj.Table1Cols[i])
-		log.Print(k)
 		kk := fmt.Sprint(tj.Table2Name, ".", tj.Table2Cols[i])
-		log.Print(kk)
 		onClause[k] = kk
 	}
 	if tj.ComplexCondition != nil {
@@ -333,12 +339,83 @@ func (tj *TableJoins) GetOnClause() (res map[string]interface{}) {
 	}
 	res = make(map[string]interface{})
 	res["on"] = onClause
-	log.Print(res)
 
 	return res
 }
 
-func (ds *DataSource) CreateTable(tableName string, tableObj map[string]TableColsMetaData) (err error) {
-
+func (ds *DataSource) CreateTable(ctx context.Context, tableName string, tableObj map[string]TableColsMetaData) (err error) {
+	logs.WithContext(ctx).Debug("CreateTable - Start")
 	return
+}
+
+func (prj *Project) CompareProject(ctx context.Context, compareProject Project) (StoreCompare, error) {
+	storeCompare := StoreCompare{}
+	for _, mq := range prj.MyQueries {
+		var diffR utils.DiffReporter
+		qFound := false
+		for _, cq := range compareProject.MyQueries {
+			if mq.QueryName == cq.QueryName {
+				qFound = true
+				if !cmp.Equal(mq, cq, cmp.Reporter(&diffR)) {
+					if storeCompare.MismatchQuries == nil {
+						storeCompare.MismatchQuries = make(map[string]interface{})
+					}
+					storeCompare.MismatchQuries[mq.QueryName] = diffR.Output()
+				}
+				break
+			}
+		}
+		if !qFound {
+			storeCompare.DeleteQueries = append(storeCompare.DeleteQueries, mq.QueryName)
+		}
+	}
+
+	for _, cq := range compareProject.MyQueries {
+		qFound := false
+		for _, mq := range prj.MyQueries {
+			if mq.QueryName == cq.QueryName {
+				qFound = true
+				break
+			}
+		}
+		if !qFound {
+			storeCompare.NewQueries = append(storeCompare.NewQueries, cq.QueryName)
+		}
+	}
+
+	//compare datasources
+	for _, md := range prj.DataSources {
+		var diffR utils.DiffReporter
+		dsFound := false
+		for _, cd := range compareProject.DataSources {
+			if md.DbAlias == cd.DbAlias {
+				dsFound = true
+				if !cmp.Equal(md, cd, cmpopts.IgnoreFields(DataSource{}, "Con"), cmpopts.IgnoreFields(TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
+					if storeCompare.MismatchDataSources == nil {
+						storeCompare.MismatchDataSources = make(map[string]interface{})
+					}
+					storeCompare.MismatchDataSources[md.DbAlias] = diffR.Output()
+				}
+				break
+			}
+		}
+		if !dsFound {
+			storeCompare.DeleteQueries = append(storeCompare.DeleteDataSources, md.DbAlias)
+		}
+
+		for _, cd := range compareProject.DataSources {
+			dFound := false
+			for _, md := range prj.DataSources {
+				if md.DbAlias == cd.DbAlias {
+					dFound = true
+					break
+				}
+			}
+			if !dFound {
+				storeCompare.NewDataSources = append(storeCompare.NewDataSources, cd.DbAlias)
+			}
+		}
+
+	}
+	return storeCompare, nil
 }

@@ -3,12 +3,17 @@ package module_server
 import (
 	module_handlers "github.com/eru-tech/eru/eru-alerts/module_server/handlers"
 	"github.com/eru-tech/eru/eru-alerts/module_store"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"net/http"
 )
 
+func SetServiceName() {
+	server_handlers.ServerName = "eru-alerts"
+}
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	//store routes specific to files
+
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save").HandlerFunc(module_handlers.ProjectSaveHandler(sh.Store))

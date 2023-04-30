@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"golang.org/x/oauth2"
-	"log"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -64,12 +64,12 @@ type HydraClient struct {
 	Scope                   string   `json:"scope"`
 }
 
-func (kratosHydraAuth *KratosHydraAuth) getLoginChallenge() (loginChallenge string, cookies []*http.Cookie, err error) {
-	log.Println("inside getLoginChallenge")
+func (kratosHydraAuth *KratosHydraAuth) getLoginChallenge(ctx context.Context) (loginChallenge string, cookies []*http.Cookie, err error) {
+	logs.WithContext(ctx).Debug("getLoginChallenge - Start")
 	b := make([]byte, 32)
 	_, err = rand.Read(b)
 	if err != nil {
-		log.Println("generate state failed: %v", err)
+		logs.WithContext(ctx).Error(fmt.Sprint("generate state failed: %v", err.Error()))
 		return
 	}
 	state := base64.StdEncoding.EncodeToString(b)
@@ -79,51 +79,40 @@ func (kratosHydraAuth *KratosHydraAuth) getLoginChallenge() (loginChallenge stri
 		hydraClientId = v.ClientId
 		break
 	}
-	outhConfig, ocErr := kratosHydraAuth.Hydra.getOauthConfig(hydraClientId)
+	outhConfig, ocErr := kratosHydraAuth.Hydra.getOauthConfig(ctx, hydraClientId)
 	if ocErr != nil {
-		log.Println("generate state failed: %v", err)
+		logs.WithContext(ctx).Error(fmt.Sprint("generate state failed: %v", err.Error()))
 		err = ocErr
 		return
 	}
-	log.Println(outhConfig)
 	redirectTo := outhConfig.AuthCodeURL(state)
 
-	log.Println("redirect to hydra, url: %s", redirectTo)
-	res, headers, respCookies, statusCode, err := utils.CallHttp(http.MethodGet, redirectTo, nil, nil, nil, nil, nil)
-	log.Println(res)
-	log.Println(headers)
+	_, headers, respCookies, statusCode, err := utils.CallHttp(ctx, http.MethodGet, redirectTo, nil, nil, nil, nil, nil)
 	cookies = respCookies
-	log.Println(cookies)
-	log.Println(statusCode)
-	log.Println(err)
 	if statusCode >= 300 && statusCode < 400 {
 		redirectLocation := headers["Location"][0]
-		log.Println(redirectLocation)
+		logs.WithContext(ctx).Info(redirectLocation)
 		params := strings.Split(redirectLocation, "?")[1]
-		log.Println(params)
+		logs.WithContext(ctx).Info(fmt.Sprint(params))
 		loginChallenge = strings.Split(params, "=")[1]
 	}
 	return
 }
 
-func (kratosHydraAuth *KratosHydraAuth) GetUserInfo(access_token string) (identity Identity, err error) {
+func (kratosHydraAuth *KratosHydraAuth) GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error) {
+	logs.WithContext(ctx).Debug("GetUserInfo - Start")
 	dummyMap := make(map[string]string)
 	headers := http.Header{}
 	headers.Add("Authorization", fmt.Sprint("Bearer ", access_token))
-	res, _, _, _, err := utils.CallHttp("POST", fmt.Sprint(kratosHydraAuth.Hydra.getPublicUrl(), "/userinfo"), headers, dummyMap, nil, dummyMap, dummyMap)
+	res, _, _, _, err := utils.CallHttp(ctx, "POST", fmt.Sprint(kratosHydraAuth.Hydra.getPublicUrl(), "/userinfo"), headers, dummyMap, nil, dummyMap, dummyMap)
 	if err != nil {
-		log.Print("error in http.Get GetUserInfo")
-		log.Print(err)
+		logs.WithContext(ctx).Error(fmt.Sprint("error in http.Get GetUserInfo : ", err.Error()))
 		return Identity{}, err
 	}
-	log.Println(res)
 	/*
 		if sc >= 400{
-			log.Print("error in http.Get GetUserInfo")
 			resBytes, bytesErr := json.Marshal(res)
 			if bytesErr != nil {
-				log.Print("error in http.Get GetUserInfo")
-				log.Print(bytesErr)
 				return Identity{}, bytesErr
 			}
 			err = errors.New(strings.Replace(string(resBytes),"\"","",-1))
@@ -132,23 +121,24 @@ func (kratosHydraAuth *KratosHydraAuth) GetUserInfo(access_token string) (identi
 	*/
 	if userInfo, ok := res.(map[string]interface{}); !ok {
 		err = errors.New("User Info response not in expected format")
+		logs.WithContext(ctx).Error(err.Error())
 		return Identity{}, err
 	} else {
 		if identityObj, isIdOk := userInfo["identity"]; !isIdOk {
 			err = errors.New("Identity attribute missing in User Info")
+			logs.WithContext(ctx).Error(err.Error())
 			return Identity{}, err
 		} else {
-			log.Println(identityObj)
 			identityObjJson, iErr := json.Marshal(identityObj)
 			if iErr != nil {
-				log.Println(iErr)
-				err = errors.New("Json marshal error for identityObj")
+				err = errors.New(fmt.Sprint("Json marshal error for identityObj : ", iErr.Error()))
+				logs.WithContext(ctx).Error(err.Error())
 				return Identity{}, err
 			}
 			iiErr := json.Unmarshal(identityObjJson, &identity)
 			if iiErr != nil {
-				log.Println(iiErr)
-				err = errors.New("Json unmarshal error for identityObj")
+				err = errors.New(fmt.Sprint("Json unmarshal error for identityObj : ", iiErr.Error()))
+				logs.WithContext(ctx).Error(err.Error())
 				return Identity{}, err
 			}
 			return
@@ -156,7 +146,8 @@ func (kratosHydraAuth *KratosHydraAuth) GetUserInfo(access_token string) (identi
 	}
 }
 
-func (kratosHydraAuth *KratosHydraAuth) FetchTokens(refresh_token string) (res interface{}, err error) {
+func (kratosHydraAuth *KratosHydraAuth) FetchTokens(ctx context.Context, refresh_token string) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("FetchTokens - Start")
 	dummyMap := make(map[string]string)
 	headers := http.Header{}
 	headers.Add("content-type", "application/x-www-form-urlencoded")
@@ -167,109 +158,110 @@ func (kratosHydraAuth *KratosHydraAuth) FetchTokens(refresh_token string) (res i
 		formData["client_id"] = v.ClientId
 		break
 	}
-	res, _, _, _, err = utils.CallHttp("POST", fmt.Sprint(kratosHydraAuth.Hydra.getPublicUrl(), "/oauth2/token"), headers, formData, nil, dummyMap, dummyMap)
+	res, _, _, _, err = utils.CallHttp(ctx, "POST", fmt.Sprint(kratosHydraAuth.Hydra.getPublicUrl(), "/oauth2/token"), headers, formData, nil, dummyMap, dummyMap)
 	if err != nil {
-		log.Print("error in http.Get FetchTokens")
-		log.Print(err)
 		return nil, err
 	}
-	log.Println(res)
 	loginSuccess := LoginSuccess{}
 	ok := false
 	if resMap, resOk := res.(map[string]interface{}); !resOk {
 		err = errors.New("Response is not map[string]string")
-		log.Println(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	} else {
 		if loginSuccess.AccessToken, ok = resMap["access_token"].(string); !ok {
 			err = errors.New("access_token attribute missing from response")
-			log.Print(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 		if loginSuccess.IdToken, ok = resMap["id_token"].(string); !ok {
 			err = errors.New("id_token attribute missing from response")
-			log.Print(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 		if loginSuccess.RefreshToken, ok = resMap["refresh_token"].(string); !ok {
 			err = errors.New("refresh_token attribute missing from response")
-			log.Print(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 		if loginSuccess.ExpiresIn, ok = resMap["expires_in"].(float64); !ok {
 			err = errors.New("expires_in attribute missing from response")
-			log.Print(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 	}
-	log.Println("before returning loginSuccess")
-	log.Println(loginSuccess)
+	logs.WithContext(ctx).Error(fmt.Sprint("before returning loginSuccess : ", loginSuccess))
 	return loginSuccess, nil
 }
 
-func (kratosHydraAuth *KratosHydraAuth) VerifyToken(tokenType string, token string) (res interface{}, err error) {
+func (kratosHydraAuth *KratosHydraAuth) VerifyToken(ctx context.Context, tokenType string, token string) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("VerifyToken - Start")
 	switch tokenType {
 	case "id":
-		log.Println("calling VerifyIdToken")
-		return kratosHydraAuth.Hydra.verifyIdToken(token)
+		return kratosHydraAuth.Hydra.verifyIdToken(ctx, token)
 	case "access":
-		log.Println("calling VerifyAccessToken")
-		return kratosHydraAuth.Hydra.verifyAccessToken(token)
+		return kratosHydraAuth.Hydra.verifyAccessToken(ctx, token)
 	case "refresh":
-		log.Println("calling VerifyRefreshToken")
-		return kratosHydraAuth.Hydra.verifyRefreshToken(token)
+		return kratosHydraAuth.Hydra.verifyRefreshToken(ctx, token)
 	default:
 		//do nothing
 	}
-	return nil, errors.New(fmt.Sprint("tokenType Mismatch : ", tokenType))
+	err = errors.New(fmt.Sprint("tokenType Mismatch : ", tokenType))
+	logs.WithContext(ctx).Error(err.Error())
+	return nil, err
 }
 
-func (hydraConfig HydraConfig) verifyIdToken(token string) (res interface{}, err error) {
+func (hydraConfig HydraConfig) verifyIdToken(ctx context.Context, token string) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("verifyIdToken - Start")
 	jwkUrl := fmt.Sprint(hydraConfig.getPublicUrl(), "/.well-known/jwks.json")
-	claims, err := jwt.DecryptTokenJWK(token, jwkUrl)
+	claims, err := jwt.DecryptTokenJWK(ctx, token, jwkUrl)
 	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 	return claims, nil
 }
 
-func (hydraConfig HydraConfig) verifyAccessToken(token string) (res interface{}, err error) {
+func (hydraConfig HydraConfig) verifyAccessToken(ctx context.Context, token string) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("verifyAccessToken - Start")
 	dummyMap := make(map[string]string)
 	formData := make(map[string]string)
 	formData["token"] = token
 	headers := http.Header{}
 	headers.Add("content-type", "application/x-www-form-urlencoded")
-	res, _, _, _, err = utils.CallHttp("POST", fmt.Sprint(hydraConfig.getAminUrl(), "/oauth2/introspect"), headers, formData, nil, dummyMap, dummyMap)
+	res, _, _, _, err = utils.CallHttp(ctx, "POST", fmt.Sprint(hydraConfig.getAminUrl(), "/oauth2/introspect"), headers, formData, nil, dummyMap, dummyMap)
 	if err != nil {
-		log.Print("error in http.Get verifyAccessToken")
-		log.Print(err)
 		return nil, err
 	}
-	log.Println(res)
 
 	if verifiedToken, ok := res.(map[string]interface{}); !ok {
 		err = errors.New("Verified token response not in expected format")
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	} else {
 		if isActive, isActiveOk := verifiedToken["active"]; !isActiveOk {
 			err = errors.New("Verified token response not in expected format")
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		} else {
 			if isActive.(bool) {
 				return verifiedToken, nil
 			} else {
 				err = errors.New("Invalid Token")
+				logs.WithContext(ctx).Error(err.Error())
 				return nil, err
 			}
 		}
 	}
 }
 
-func (hydraConfig HydraConfig) verifyRefreshToken(token string) (res interface{}, err error) {
-	return hydraConfig.verifyAccessToken(token)
+func (hydraConfig HydraConfig) verifyRefreshToken(ctx context.Context, token string) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("verifyRefreshToken - Start")
+	return hydraConfig.verifyAccessToken(ctx, token)
 }
 
-func (hydraConfig HydraConfig) getOauthConfig(clientId string) (oauth2Config *oauth2.Config, err error) {
+func (hydraConfig HydraConfig) getOauthConfig(ctx context.Context, clientId string) (oauth2Config *oauth2.Config, err error) {
+	logs.WithContext(ctx).Debug("getOauthConfig - Start")
 	if hc, ok := hydraConfig.HydraClients[clientId]; ok {
 		return &oauth2.Config{
 			RedirectURL:  hc.RedirectURIs[0],
@@ -282,94 +274,93 @@ func (hydraConfig HydraConfig) getOauthConfig(clientId string) (oauth2Config *oa
 			},
 		}, nil
 	} else {
-		return nil, errors.New(fmt.Sprint(clientId, "not found"))
+		err = errors.New(fmt.Sprint(clientId, "not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
 }
-func (hydraConfig HydraConfig) RemoveHydraClient(clientId string) (err error) {
-	log.Println("inside RemoveHydraClient")
+func (hydraConfig HydraConfig) RemoveHydraClient(ctx context.Context, clientId string) (err error) {
+	logs.WithContext(ctx).Debug("RemoveHydraClient - Start")
 	if _, ok := hydraConfig.HydraClients[clientId]; ok {
-		_, _, _, err = hydraConfig.deleteHydraClient(clientId)
+		_, _, _, err = hydraConfig.deleteHydraClient(ctx, clientId)
 		if err != nil {
-			log.Println(err)
 			return
 		}
 	} else {
 		err = errors.New(fmt.Sprint("hydra client not found : ", clientId))
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 	return nil
 }
-func (hydraConfig HydraConfig) SaveHydraClient(hydraClient HydraClient) (err error) {
-	_, _, _, err = hydraConfig.getHydraClient(hydraClient.ClientId)
+func (hydraConfig HydraConfig) SaveHydraClient(ctx context.Context, hydraClient HydraClient) (err error) {
+	logs.WithContext(ctx).Debug("SaveHydraClient - Start")
+	_, _, _, err = hydraConfig.getHydraClient(ctx, hydraClient.ClientId)
 	if err != nil {
-		log.Println("calling create api for hydraclient : ", hydraClient.ClientId)
-		_, _, _, err = hydraConfig.createHydraClient(hydraClient)
+		logs.WithContext(ctx).Info(fmt.Sprint("calling create api for hydraclient : ", hydraClient.ClientId))
+		_, _, _, err = hydraConfig.createHydraClient(ctx, hydraClient)
 	} else {
-		log.Println("calling update api for hydraclient : ", hydraClient.ClientId)
-		_, _, _, err = hydraConfig.updateHydraClient(hydraClient.ClientId, hydraClient)
+		logs.WithContext(ctx).Info(fmt.Sprint("calling update api for hydraclient : ", hydraClient.ClientId))
+		_, _, _, err = hydraConfig.updateHydraClient(ctx, hydraClient.ClientId, hydraClient)
 	}
 	return
 }
 
-func (hydraConfig HydraConfig) getHydraClient(clientId string) (resp interface{}, headers map[string][]string, statusCode int, err error) {
+func (hydraConfig HydraConfig) getHydraClient(ctx context.Context, clientId string) (resp interface{}, headers map[string][]string, statusCode int, err error) {
+	logs.WithContext(ctx).Debug("getHydraClient - Start")
 	dummyMap := make(map[string]string)
-	resp, headers, _, statusCode, err = utils.CallHttp("GET", fmt.Sprint(hydraConfig.getAminUrl(), "/clients/", clientId), nil, nil, nil, dummyMap, dummyMap)
+	resp, headers, _, statusCode, err = utils.CallHttp(ctx, "GET", fmt.Sprint(hydraConfig.getAminUrl(), "/clients/", clientId), nil, nil, nil, dummyMap, dummyMap)
 	if err != nil {
-		log.Print("error in http.Get getHydraClient")
-		log.Print(err)
 		return nil, nil, 0, err
 	}
-	return resp, headers, statusCode, checkResponseError(resp)
+	return resp, headers, statusCode, checkResponseError(ctx, resp)
 }
-func (hydraConfig HydraConfig) createHydraClient(hydraClient HydraClient) (resp interface{}, headers http.Header, statusCode int, err error) {
+func (hydraConfig HydraConfig) createHydraClient(ctx context.Context, hydraClient HydraClient) (resp interface{}, headers http.Header, statusCode int, err error) {
+	logs.WithContext(ctx).Debug("createHydraClient - Start")
 	dummyMap := make(map[string]string)
 	headers = http.Header{}
 	headers.Add("Content-Type", "application/json")
-	resp, headers, _, statusCode, err = utils.CallHttp("POST", fmt.Sprint(hydraConfig.getAminUrl(), "/clients"), headers, dummyMap, nil, dummyMap, hydraClient)
+	resp, headers, _, statusCode, err = utils.CallHttp(ctx, "POST", fmt.Sprint(hydraConfig.getAminUrl(), "/clients"), headers, dummyMap, nil, dummyMap, hydraClient)
 	if err != nil {
-		log.Print("error in http.Post createHydraClient")
-		log.Print(err)
 		return nil, nil, 0, err
 	}
-	return resp, headers, statusCode, checkResponseError(resp)
+	return resp, headers, statusCode, checkResponseError(ctx, resp)
 }
-func (hydraConfig HydraConfig) updateHydraClient(clientId string, hydraClient HydraClient) (resp interface{}, headers http.Header, statusCode int, err error) {
+func (hydraConfig HydraConfig) updateHydraClient(ctx context.Context, clientId string, hydraClient HydraClient) (resp interface{}, headers http.Header, statusCode int, err error) {
+	logs.WithContext(ctx).Debug("updateHydraClient - Start")
 	dummyMap := make(map[string]string)
 	headers = http.Header{}
 	headers.Add("Content-Type", "application/json")
-	resp, headers, _, statusCode, err = utils.CallHttp("PUT", fmt.Sprint(hydraConfig.getAminUrl(), "/clients/", clientId), headers, dummyMap, nil, dummyMap, hydraClient)
+	resp, headers, _, statusCode, err = utils.CallHttp(ctx, "PUT", fmt.Sprint(hydraConfig.getAminUrl(), "/clients/", clientId), headers, dummyMap, nil, dummyMap, hydraClient)
 	if err != nil {
-		log.Print("error in http.Post updateHydraClient")
-		log.Print(err)
 		return nil, nil, 0, err
 	}
-	return resp, headers, statusCode, checkResponseError(resp)
+	return resp, headers, statusCode, checkResponseError(ctx, resp)
 }
-func (hydraConfig HydraConfig) deleteHydraClient(clientId string) (resp interface{}, headers http.Header, statusCode int, err error) {
-	log.Println("inside deleteHydraClient")
+func (hydraConfig HydraConfig) deleteHydraClient(ctx context.Context, clientId string) (resp interface{}, headers http.Header, statusCode int, err error) {
+	logs.WithContext(ctx).Debug("deleteHydraClient - Start")
 	dummyMap := make(map[string]string)
 	headers = http.Header{}
 	headers.Add("Content-Type", "application/json")
-	resp, headers, _, statusCode, err = utils.CallHttp("DELETE", fmt.Sprint(hydraConfig.getAminUrl(), "/clients/", clientId), headers, dummyMap, nil, dummyMap, dummyMap)
+	resp, headers, _, statusCode, err = utils.CallHttp(ctx, "DELETE", fmt.Sprint(hydraConfig.getAminUrl(), "/clients/", clientId), headers, dummyMap, nil, dummyMap, dummyMap)
 	if err != nil {
-		log.Print("error in http.Post deleteHydraClient")
-		log.Print(err)
 		return nil, nil, 0, err
 	}
 	if resp != nil {
-		return resp, headers, statusCode, checkResponseError(resp)
+		return resp, headers, statusCode, checkResponseError(ctx, resp)
 	}
 	return resp, headers, statusCode, nil
 }
-func checkResponseError(resp interface{}) (err error) {
+func checkResponseError(ctx context.Context, resp interface{}) (err error) {
+	logs.WithContext(ctx).Debug("checkResponseError - Start")
 	if respMap, ok := resp.(map[string]interface{}); !ok {
 		err = errors.New("resp.(map[string]interface{}) conversion failed")
-		log.Println(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	} else {
 		if errResp, ok := respMap["error"]; ok {
-			log.Println(errResp)
 			err = errors.New(errResp.(string))
+			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
 	}
@@ -390,7 +381,8 @@ func (hydraConfig HydraConfig) getAminUrl() (url string) {
 	}
 	return fmt.Sprint(hydraConfig.AdminScheme, "://", hydraConfig.AdminHost, port)
 }
-func (hydraConfig HydraConfig) acceptLoginRequest(subject string, loginChallenge string, cookies []*http.Cookie) (consentChallenge string, respCookies []*http.Cookie, err error) {
+func (hydraConfig HydraConfig) acceptLoginRequest(ctx context.Context, subject string, loginChallenge string, cookies []*http.Cookie) (consentChallenge string, respCookies []*http.Cookie, err error) {
+	logs.WithContext(ctx).Debug("acceptLoginRequest - Start")
 	hydraALR := hydraAcceptLoginRequest{}
 	hydraALR.Remember = true
 	hydraALR.RememberFor = 0
@@ -401,59 +393,46 @@ func (hydraConfig HydraConfig) acceptLoginRequest(subject string, loginChallenge
 	paramsMap := make(map[string]string)
 	paramsMap["login_challenge"] = loginChallenge
 	postUrl := fmt.Sprint(hydraConfig.getAminUrl(), "/admin/oauth2/auth/requests/login/accept")
-	resp, respHeaders, respCookies, statusCode, err := utils.CallHttp(http.MethodPut, postUrl, headers, dummyMap, cookies, paramsMap, hydraALR)
-	log.Println(respHeaders)
-	log.Println(statusCode)
-	log.Println(respCookies)
+	resp, _, respCookies, _, err := utils.CallHttp(ctx, http.MethodPut, postUrl, headers, dummyMap, cookies, paramsMap, hydraALR)
 	respCookies = append(respCookies, cookies...)
 	if err != nil {
-		log.Println(err)
 		return "", nil, err
 	}
 	if respMap, ok := resp.(map[string]interface{}); ok {
 		if redirectUrl, ok1 := respMap["redirect_to"]; ok1 {
-			log.Print(redirectUrl)
-			resp2, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
-			log.Println(resp2)
-			log.Println(respHeaders2)
-			log.Println(statusCode2)
-			log.Println(respCookies2)
+			logs.WithContext(ctx).Info(redirectUrl.(string))
+			_, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(ctx, http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
 			respCookies = append(respCookies, respCookies2...)
-			log.Println(err2)
-			if err != nil {
+			if err2 != nil {
 				return "", nil, err
 			}
 			if statusCode2 >= 300 && statusCode2 < 400 {
 				redirectLocation := respHeaders2["Location"][0]
-				log.Println(redirectLocation)
+				logs.WithContext(ctx).Info(redirectLocation)
 				params := strings.Split(redirectLocation, "?")[1]
-				log.Println(params)
+				logs.WithContext(ctx).Info(fmt.Sprint(params))
 				consentChallenge = strings.Split(params, "=")[1]
 			}
-			log.Println("consentChallenge = ", consentChallenge)
-			log.Println("cookies = ", cookies)
 		} else {
 			err = errors.New("redirect_to attribute not found in response")
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
 	} else {
 		err = errors.New("response is not a map")
-		log.Println(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 	return
 }
 
-func (hydraConfig HydraConfig) acceptConsentRequest(identityHolder map[string]interface{}, consentChallenge string, loginCookies []*http.Cookie) (tokens LoginSuccess, err error) {
-
+func (hydraConfig HydraConfig) acceptConsentRequest(ctx context.Context, identityHolder map[string]interface{}, consentChallenge string, loginCookies []*http.Cookie) (tokens LoginSuccess, err error) {
+	logs.WithContext(ctx).Debug("acceptConsentRequest - Start")
 	hydraCLR := hydraAcceptConsentRequest{}
 	hydraCLR.Remember = true
 	hydraCLR.RememberFor = 0
 	hydraCLR.Session.IdToken = identityHolder
 	for _, v := range hydraConfig.HydraClients {
-		log.Println("v.GrantTypes")
-		log.Println(v.Scope)
 		hydraCLR.GrantScope = strings.Split(v.Scope, " ")
 		break
 	}
@@ -466,62 +445,46 @@ func (hydraConfig HydraConfig) acceptConsentRequest(identityHolder map[string]in
 	paramsMap := make(map[string]string)
 	paramsMap["consent_challenge"] = consentChallenge
 	postUrl := fmt.Sprint(hydraConfig.getAminUrl(), "/admin/oauth2/auth/requests/consent/accept")
-	resp, respHeaders, respCookies, statusCode, err := utils.CallHttp(http.MethodPut, postUrl, headers, dummyMap, loginCookies, paramsMap, hydraCLR)
-	log.Println("(respHeaders from admin/oauth2/auth/requests/consent/accept")
-	log.Println(respHeaders)
-	log.Println(statusCode)
+	resp, _, respCookies, _, err := utils.CallHttp(ctx, http.MethodPut, postUrl, headers, dummyMap, loginCookies, paramsMap, hydraCLR)
 	respCookies = append(respCookies, loginCookies...)
-	log.Println(respHeaders)
-	log.Println("respCookies ===============", respCookies)
-	//headerMap["cookie"] = strings.Join(respCookies, " ; ")
 	if err != nil {
-		log.Println(err)
 		return LoginSuccess{}, err
 	}
 	code := ""
 	if respMap, ok := resp.(map[string]interface{}); ok {
 		if redirectUrl, ok1 := respMap["redirect_to"]; ok1 {
-			log.Print(redirectUrl)
-			resp2, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
-			log.Println(resp2)
-			log.Println(respHeaders2)
-			log.Println(statusCode2)
-			log.Println(err2)
+			logs.WithContext(ctx).Info(redirectUrl.(string))
+			_, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(ctx, http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
 			respCookies = append(respCookies, respCookies2...)
-			if err != nil {
+			if err2 != nil {
 				return LoginSuccess{}, err
 			}
 			if statusCode2 >= 300 && statusCode2 < 400 {
 				redirectLocation := respHeaders2["Location"][0]
-				log.Println(redirectLocation)
+				logs.WithContext(ctx).Info(redirectLocation)
 				params := strings.Split(redirectLocation, "?")[1]
-				log.Println(params)
+				logs.WithContext(ctx).Info(fmt.Sprint(params))
 				codeParam := strings.Split(params, "&")[0]
 				code = strings.Split(codeParam, "=")[1]
-				log.Println("respCookies :::::::::::::::::::::::: ", respCookies)
-				//todo context from handler
-				ctx := context.Background()
 
 				hydraClientId := ""
 				for _, v := range hydraConfig.HydraClients {
 					hydraClientId = v.ClientId
 					break
 				}
-
-				outhConfig, ocErr := hydraConfig.getOauthConfig(hydraClientId)
+				outhConfig, ocErr := hydraConfig.getOauthConfig(ctx, hydraClientId)
 				if ocErr != nil {
-					log.Println("generate state failed: %v", err)
 					err = ocErr
 					return
 				}
 
-				log.Println("code = ", code)
-				log.Println("respCookies = ", respCookies)
+				logs.WithContext(ctx).Info(fmt.Sprint("code = ", code))
+				logs.WithContext(ctx).Info(fmt.Sprint("respCookies = ", respCookies))
 
 				token, tokenErr := outhConfig.Exchange(ctx, code)
 				if tokenErr != nil {
-					log.Printf("unable to exchange code for token: %s\n", err)
 					err = tokenErr
+					logs.WithContext(ctx).Error(fmt.Sprint("unable to exchange code for token: %s\n", err.Error()))
 					return
 				}
 				idt := token.Extra("id_token")
@@ -531,29 +494,26 @@ func (hydraConfig HydraConfig) acceptConsentRequest(identityHolder map[string]in
 				loginSuccess.IdToken = idt.(string)
 				loginSuccess.Expiry = token.Expiry
 				loginSuccess.ExpiresIn = token.Extra("expires_in").(float64)
-				//log.Println(loginSuccess)
-				log.Println("respCookies before returning")
-				log.Println(respCookies)
 				return loginSuccess, nil
 			}
 		} else {
 			err = errors.New("redirect_to attribute not found in response")
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
 	} else {
 		err = errors.New("response is not a map")
-		log.Println(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 	return
 }
 
-func (hydraConfig HydraConfig) revokeToken(token string) (resStatusCode int, err error) {
+func (hydraConfig HydraConfig) revokeToken(ctx context.Context, token string) (resStatusCode int, err error) {
+	logs.WithContext(ctx).Debug("revokeToken - Start")
 	hydraRevokeToken := make(map[string]string)
 	hydraRevokeToken["token"] = token
 	for i, _ := range hydraConfig.HydraClients {
-		//picking up first client as usually there will be only 1 client defined
 		hydraRevokeToken["client_id"] = hydraConfig.HydraClients[i].ClientId
 		break
 	}
@@ -563,12 +523,8 @@ func (hydraConfig HydraConfig) revokeToken(token string) (resStatusCode int, err
 	headers.Add("content-type", "application/x-www-form-urlencoded")
 
 	postUrl := fmt.Sprint(hydraConfig.getPublicUrl(), "/oauth2/revoke")
-	resp, _, _, statusCode, err := utils.CallHttp(http.MethodPost, postUrl, headers, hydraRevokeToken, nil, dummyMap, dummyMap)
-	log.Println("(resp from oauth2/revoke")
-	log.Print(resp)
-	log.Println(statusCode)
+	_, _, _, statusCode, err := utils.CallHttp(ctx, http.MethodPost, postUrl, headers, hydraRevokeToken, nil, dummyMap, dummyMap)
 	if err != nil {
-		log.Println(err)
 		return statusCode, err
 	}
 	return statusCode, nil

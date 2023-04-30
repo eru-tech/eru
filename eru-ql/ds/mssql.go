@@ -1,10 +1,11 @@
 package ds
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
-	"log"
 	"strings"
 )
 
@@ -12,24 +13,23 @@ type MssqlSqlMaker struct {
 	SqlMaker
 }
 
-func (pr *MssqlSqlMaker) GetTableMetaDataSQL() string {
+func (pr *MssqlSqlMaker) GetTableMetaDataSQL(ctx context.Context) string {
 	return mssqlTableMetaDataSQL
 }
-func (mr *MssqlSqlMaker) CreateConn(dataSource *module_model.DataSource) error {
+func (mr *MssqlSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
 	return errors.New("CreateConn not implemented")
 }
-func (mr *MssqlSqlMaker) CheckMe() {
-	log.Print("I am MysqlRead changed  removed")
+func (mr *MssqlSqlMaker) CheckMe(ctx context.Context) {
+	logs.WithContext(ctx).Info("I am MssqlSqlMaker changed  removed")
 	mr.ChildChange = "changed by MysqlRead"
-	//log.Print(mr)
 }
 
-func (mr *MssqlSqlMaker) AddLimitSkipClause(query string, limit int, skip int, globalLimit int) (newQuery string) {
-	log.Print(limit)
+func (mr *MssqlSqlMaker) AddLimitSkipClause(ctx context.Context, query string, limit int, skip int, globalLimit int) (newQuery string) {
+	logs.WithContext(ctx).Debug("AddLimitSkipClause - Start")
 	if limit == 0 {
 		limit = globalLimit
 	}
-	log.Print(limit)
+
 	if skip == 0 {
 		if mr.DistinctResults {
 			newQuery = strings.Replace(query, "distinct ", fmt.Sprint("distinct top ", limit, " "), 1)
@@ -47,7 +47,8 @@ func (mr *MssqlSqlMaker) AddLimitSkipClause(query string, limit int, skip int, g
 	return newQuery
 }
 
-func (mr *MssqlSqlMaker) getDataTypeMapping(dataType string) string {
+func (mr *MssqlSqlMaker) getDataTypeMapping(ctx context.Context, dataType string) string {
+	logs.WithContext(ctx).Debug("getDataTypeMapping - Start")
 	if mssqlDataTypeMapping[dataType] == "" {
 		return "NotSupported"
 	} else {

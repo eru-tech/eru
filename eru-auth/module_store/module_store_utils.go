@@ -1,29 +1,33 @@
 package module_store
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	authtype "github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
 	"github.com/eru-tech/eru/eru-auth/module_model"
-	"log"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
-func (ms *ModuleStore) checkProjectExists(projectId string) error {
+func (ms *ModuleStore) checkProjectExists(ctx context.Context, projectId string) error {
+	logs.WithContext(ctx).Debug("checkProjectExists - Start")
 	_, ok := ms.Projects[projectId]
 	if !ok {
-		return errors.New(fmt.Sprint("project ", projectId, " not found"))
+		err := errors.New(fmt.Sprint("project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 	return nil
 }
 
-func UnMarshalStore(b []byte, msi ModuleStoreI) error {
+func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("UnMarshalStore - Start")
 	var storeMap map[string]*json.RawMessage
 	err := json.Unmarshal(b, &storeMap)
 	if err != nil {
-		log.Print("error json.Unmarshal(storeData, ms)")
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 
@@ -32,32 +36,28 @@ func UnMarshalStore(b []byte, msi ModuleStoreI) error {
 
 		err = json.Unmarshal(*storeMap["projects"], &prjs)
 		if err != nil {
-			log.Print("error json.Unmarshal(*storeMap[\"projects\"], &prjs)")
-			log.Print(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return err
 		}
-
 		for prj, prjJson := range prjs {
-			msi.SaveProject(prj, nil, false)
-
+			err = msi.SaveProject(ctx, prj, nil, false)
+			if err != nil {
+				return err
+			}
 			var prjObjs map[string]*json.RawMessage
 			err = json.Unmarshal(*prjJson, &prjObjs)
 			if err != nil {
-				log.Print("error json.Unmarshal(*prgJson, &prgObjs)")
-				log.Print(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return err
 			}
-			p, e := msi.GetProjectConfig(prj)
+			p, e := msi.GetProjectConfig(ctx, prj)
 			if e != nil {
-				log.Print(err)
 				return err
 			}
-
 			var messageTemplates map[string]module_model.MessageTemplate
 			err = json.Unmarshal(*prjObjs["MessageTemplates"], &messageTemplates)
 			if err != nil {
-				log.Print("error json.Unmarshal(*prjObjs[\"MessageTemplates\"], &messageTemplates)")
-				log.Print(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return err
 			}
 			p.MessageTemplates = messageTemplates
@@ -65,37 +65,31 @@ func UnMarshalStore(b []byte, msi ModuleStoreI) error {
 			var gateways map[string]*json.RawMessage
 			err = json.Unmarshal(*prjObjs["Gateways"], &gateways)
 			if err != nil {
-				log.Print("error json.Unmarshal(*prgObjs[\"gateways\"], &gateways)")
-				log.Print(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return err
 			}
-			log.Println(gateways)
 			for gatewayKey, gatewayJson := range gateways {
-				log.Println("gatewayKey === ", gatewayKey)
+				logs.WithContext(ctx).Info(fmt.Sprint("gatewayKey === ", gatewayKey))
 				var gatewayObj map[string]*json.RawMessage
 				err = json.Unmarshal(*gatewayJson, &gatewayObj)
 				if err != nil {
-					log.Print("error json.Unmarshal(*gatewayJson, &gatewayObj)")
-					log.Print(err)
+					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
 				var gatewayType string
 				err = json.Unmarshal(*gatewayObj["GatewayType"], &gatewayType)
 				if err != nil {
-					log.Print("error json.Unmarshal(*storageObj[\"GatewayType\"], &gatewayType)")
-					log.Print(err)
+					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
 				gatewayI := gateway.GetGateway(gatewayType)
-				err = gatewayI.MakeFromJson(gatewayJson)
+				err = gatewayI.MakeFromJson(ctx, gatewayJson)
 				if err == nil {
-					err = msi.SaveGateway(gatewayI, prj, nil, false)
+					err = msi.SaveGateway(ctx, gatewayI, prj, nil, false)
 					if err != nil {
-						log.Println(err)
 						return err
 					}
 				} else {
-					log.Println(err)
 					return err
 				}
 			}
@@ -104,45 +98,50 @@ func UnMarshalStore(b []byte, msi ModuleStoreI) error {
 			if _, ok = prjObjs["Auth"]; ok {
 				err = json.Unmarshal(*prjObjs["Auth"], &auths)
 				if err != nil {
-					log.Print("error json.Unmarshal(*prgObjs[\"Auth\"], &auths)")
-					log.Print(err)
+					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
-				log.Println(auths)
 				for authKey, authJson := range auths {
-					log.Println("authKey === ", authKey)
+					logs.WithContext(ctx).Info(fmt.Sprint("authKey === ", authKey))
 					var authObj map[string]*json.RawMessage
 					err = json.Unmarshal(*authJson, &authObj)
 					if err != nil {
-						log.Print("error json.Unmarshal(*authJson, &authObj)")
-						log.Print(err)
+						logs.WithContext(ctx).Error(err.Error())
 						return err
 					}
 					var authType string
 					if at, ok := authObj["AuthType"]; ok {
 						err = json.Unmarshal(*at, &authType)
 						if err != nil {
-							log.Println(err)
+							logs.WithContext(ctx).Error(err.Error())
 							return err
 						}
 					}
-					log.Println("authType = ", authType)
+					logs.WithContext(ctx).Info(fmt.Sprint("authType = ", authType))
 					authI := authtype.GetAuth(authType)
-					err = authI.MakeFromJson(authJson)
+					err = authI.MakeFromJson(ctx, authJson)
 					if err == nil {
-						err = msi.SaveAuth(authI, prj, nil, false)
+						err = msi.SaveAuth(ctx, authI, prj, nil, false)
 						if err != nil {
-							log.Println(err)
 							return err
 						}
 					} else {
-						log.Println(err)
 						return err
 					}
 				}
 			}
 		}
 	}
-	log.Println(msi)
 	return nil
+}
+
+func GetStore(storeType string) ModuleStoreI {
+	switch storeType {
+	case "POSTGRES":
+		return new(ModuleDbStore)
+	case "STANDALONE":
+		return new(ModuleFileStore)
+	default:
+		return nil
+	}
 }

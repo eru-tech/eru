@@ -2,7 +2,10 @@ module github.com/eru-tech/eru/eru-writes
 
 go 1.20
 
-require github.com/xuri/excelize/v2 v2.7.0
+require (
+github.com/xuri/excelize/v2 v2.7.0
+github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
+)
 
 require (
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
@@ -14,4 +17,7 @@ require (
 	golang.org/x/crypto v0.5.0 // indirect
 	golang.org/x/net v0.5.0 // indirect
 	golang.org/x/text v0.6.0 // indirect
+)
+replace (
+github.com/eru-tech/eru/eru-logs => ../eru-logs
 )

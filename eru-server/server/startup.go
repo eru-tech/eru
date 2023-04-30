@@ -2,9 +2,11 @@ package server
 
 import (
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/eru-tech/eru/eru-store/store"
 	"github.com/gorilla/mux"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"log"
 	"net/http"
 )
@@ -16,22 +18,18 @@ type Server struct {
 func Launch(serverRouter *mux.Router, port string) {
 	// Allow cors
 	corsObj := handlers.MakeCorsObject()
-	r := corsObj.Handler(serverRouter)
-	//log.Print(s)
-	//r := s.GetRouter()
+	r := otelhttp.NewHandler(corsObj.Handler(requestIdMiddleWare(otelMiddleWare(serverRouter))), "eru-handler")
 	http.Handle("/", r)
-	log.Println(fmt.Sprint("Starting server ", handlers.ServerName, " on ", port))
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatal(err)
-	}
+	logs.Logger.Info(fmt.Sprint("Starting server ", handlers.ServerName, " on ", port))
+	err := http.ListenAndServe(":"+port, nil)
+	log.Println("printing error of ListenAndServe")
+	log.Println(err.Error())
+	logs.Logger.Fatal(err.Error())
+
 }
-func Init() (*mux.Router, *Server, error) {
+func Init(store store.StoreI) (*mux.Router, *Server, error) {
 	s := new(Server)
-	//err := s.startUp()
-	//if err != nil {
-	//	log.Print(err)
-	//	return nil , nil,  err
-	//}
+	s.Store = store
 	serverRouter := s.GetRouter()
 	return serverRouter, s, nil
 }

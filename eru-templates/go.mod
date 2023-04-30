@@ -1,9 +1,10 @@
 module github.com/eru-tech/eru/eru-templates
 
-go 1.17
+go 1.20
 
 require (
 	github.com/eru-tech/eru/eru-crypto v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/google/uuid v1.3.0
 	github.com/xuri/excelize/v2 v2.7.0
 )
@@ -20,4 +21,7 @@ require (
 	golang.org/x/text v0.6.0 // indirect
 )
 
-replace github.com/eru-tech/eru/eru-crypto => ../eru-crypto
+replace (
+github.com/eru-tech/eru/eru-crypto => ../eru-crypto
+github.com/eru-tech/eru/eru-logs => ../eru-logs
+)

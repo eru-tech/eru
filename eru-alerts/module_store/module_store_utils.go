@@ -1,27 +1,31 @@
 package module_store
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-alerts/channel"
-	"log"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
-func (ms *ModuleStore) checkProjectExists(projectId string) error {
+func (ms *ModuleStore) checkProjectExists(ctx context.Context, projectId string) error {
+	logs.WithContext(ctx).Debug("checkProjectExists - Start")
 	_, ok := ms.Projects[projectId]
 	if !ok {
-		return errors.New(fmt.Sprint("project ", projectId, " not found"))
+		err := errors.New(fmt.Sprint("project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 	return nil
 }
 
-func UnMarshalStore(b []byte, msi ModuleStoreI) error {
+func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("UnMarshalStore - Start")
 	var storeMap map[string]*json.RawMessage
 	err := json.Unmarshal(b, &storeMap)
 	if err != nil {
-		log.Print("error json.Unmarshal(storeData, ms)")
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 
@@ -30,32 +34,28 @@ func UnMarshalStore(b []byte, msi ModuleStoreI) error {
 
 		err = json.Unmarshal(*storeMap["projects"], &prjs)
 		if err != nil {
-			log.Print("error json.Unmarshal(*storeMap[\"projects\"], &prjs)")
-			log.Print(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return err
 		}
 
 		for prj, prjJson := range prjs {
-			msi.SaveProject(prj, nil, false)
+			msi.SaveProject(ctx, prj, nil, false)
 
 			var prjObjs map[string]*json.RawMessage
 			err = json.Unmarshal(*prjJson, &prjObjs)
 			if err != nil {
-				log.Print("error json.Unmarshal(*prgJson, &prgObjs)")
-				log.Print(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return err
 			}
-			p, e := msi.GetProjectConfig(prj)
+			p, e := msi.GetProjectConfig(ctx, prj)
 			if e != nil {
-				log.Print(err)
 				return err
 			}
 
 			var messageTemplates map[string]channel.MessageTemplate
 			err = json.Unmarshal(*prjObjs["MessageTemplates"], &messageTemplates)
 			if err != nil {
-				log.Print("error json.Unmarshal(*prjObjs[\"MessageTemplates\"], &messageTemplates)")
-				log.Print(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return err
 			}
 			p.MessageTemplates = messageTemplates
@@ -63,37 +63,31 @@ func UnMarshalStore(b []byte, msi ModuleStoreI) error {
 			var channels map[string]*json.RawMessage
 			err = json.Unmarshal(*prjObjs["Channels"], &channels)
 			if err != nil {
-				log.Print("error json.Unmarshal(*prgObjs[\"channels\"], &channels)")
-				log.Print(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return err
 			}
-			log.Println(channels)
 			for channelKey, channelJson := range channels {
-				log.Println("channelKey === ", channelKey)
+				logs.WithContext(ctx).Info(fmt.Sprint("channelKey === ", channelKey))
 				var channelObj map[string]*json.RawMessage
 				err = json.Unmarshal(*channelJson, &channelObj)
 				if err != nil {
-					log.Print("error json.Unmarshal(*channelJson, &channelObj)")
-					log.Print(err)
+					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
 				var channelType string
 				err = json.Unmarshal(*channelObj["ChannelType"], &channelType)
 				if err != nil {
-					log.Print("error json.Unmarshal(*storageObj[\"ChannelType\"], &channelType)")
-					log.Print(err)
+					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
 				channelI := channel.GetChannel(channelType)
-				err = channelI.MakeFromJson(channelJson)
+				err = channelI.MakeFromJson(ctx, channelJson)
 				if err == nil {
-					err = msi.SaveChannel(channelI, prj, nil, false)
+					err = msi.SaveChannel(ctx, channelI, prj, nil, false)
 					if err != nil {
-						log.Println(err)
 						return err
 					}
 				} else {
-					log.Println(err)
 					return err
 				}
 			}
