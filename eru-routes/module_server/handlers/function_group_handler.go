@@ -25,7 +25,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		// Lookup a routes in a function based on host and url
 
-		funcGroup, err := s.GetAndValidateFunc(r.Context(), funcName, projectId, host, url, r.Method, r.Header)
+		funcGroup, err := s.GetAndValidateFunc(r.Context(), funcName, projectId, host, url, r.Method, r.Header, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})

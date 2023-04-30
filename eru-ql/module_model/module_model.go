@@ -6,6 +6,9 @@ import (
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jmoiron/sqlx"
 	"time"
 )
@@ -24,6 +27,7 @@ const (
 )
 
 type ModuleProjectI interface {
+	CompareProject(ctx context.Context, compareProject Project) (StoreCompare, error)
 }
 
 type StoreCompare struct {
@@ -342,4 +346,76 @@ func (tj *TableJoins) GetOnClause(ctx context.Context) (res map[string]interface
 func (ds *DataSource) CreateTable(ctx context.Context, tableName string, tableObj map[string]TableColsMetaData) (err error) {
 	logs.WithContext(ctx).Debug("CreateTable - Start")
 	return
+}
+
+func (prj *Project) CompareProject(ctx context.Context, compareProject Project) (StoreCompare, error) {
+	storeCompare := StoreCompare{}
+	for _, mq := range prj.MyQueries {
+		var diffR utils.DiffReporter
+		qFound := false
+		for _, cq := range compareProject.MyQueries {
+			if mq.QueryName == cq.QueryName {
+				qFound = true
+				if !cmp.Equal(mq, cq, cmp.Reporter(&diffR)) {
+					if storeCompare.MismatchQuries == nil {
+						storeCompare.MismatchQuries = make(map[string]interface{})
+					}
+					storeCompare.MismatchQuries[mq.QueryName] = diffR.Output()
+				}
+				break
+			}
+		}
+		if !qFound {
+			storeCompare.DeleteQueries = append(storeCompare.DeleteQueries, mq.QueryName)
+		}
+	}
+
+	for _, cq := range compareProject.MyQueries {
+		qFound := false
+		for _, mq := range prj.MyQueries {
+			if mq.QueryName == cq.QueryName {
+				qFound = true
+				break
+			}
+		}
+		if !qFound {
+			storeCompare.NewQueries = append(storeCompare.NewQueries, cq.QueryName)
+		}
+	}
+
+	//compare datasources
+	for _, md := range prj.DataSources {
+		var diffR utils.DiffReporter
+		dsFound := false
+		for _, cd := range compareProject.DataSources {
+			if md.DbAlias == cd.DbAlias {
+				dsFound = true
+				if !cmp.Equal(md, cd, cmpopts.IgnoreFields(DataSource{}, "Con"), cmpopts.IgnoreFields(TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
+					if storeCompare.MismatchDataSources == nil {
+						storeCompare.MismatchDataSources = make(map[string]interface{})
+					}
+					storeCompare.MismatchDataSources[md.DbAlias] = diffR.Output()
+				}
+				break
+			}
+		}
+		if !dsFound {
+			storeCompare.DeleteQueries = append(storeCompare.DeleteDataSources, md.DbAlias)
+		}
+
+		for _, cd := range compareProject.DataSources {
+			dFound := false
+			for _, md := range prj.DataSources {
+				if md.DbAlias == cd.DbAlias {
+					dFound = true
+					break
+				}
+			}
+			if !dFound {
+				storeCompare.NewDataSources = append(storeCompare.NewDataSources, cd.DbAlias)
+			}
+		}
+
+	}
+	return storeCompare, nil
 }

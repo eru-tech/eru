@@ -4,6 +4,8 @@ import (
 	"context"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-routes/routes"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/go-cmp/cmp"
 )
 
 type StoreCompare struct {
@@ -16,6 +18,9 @@ type StoreCompare struct {
 }
 
 type ModuleProjectI interface {
+	AddFunc(ctx context.Context, funcObj routes.FuncGroup) error
+	AddRoute(ctx context.Context, routeObj routes.Route) error
+	CompareProject(ctx context.Context, compareProject Project) (StoreCompare, error)
 }
 
 type ProjectConfig struct {
@@ -32,20 +37,93 @@ type Project struct {
 	Authorizers   map[string]routes.Authorizer
 }
 
-func (prg *Project) AddRoute(ctx context.Context, routeObj routes.Route) error {
+func (prj *Project) AddRoute(ctx context.Context, routeObj routes.Route) error {
 	logs.WithContext(ctx).Debug("AddRoute - Start")
-	if prg.Routes == nil {
-		prg.Routes = make(map[string]routes.Route)
+	if prj.Routes == nil {
+		prj.Routes = make(map[string]routes.Route)
 	}
-	prg.Routes[routeObj.RouteName] = routeObj
+	prj.Routes[routeObj.RouteName] = routeObj
 	return nil
 }
 
-func (prg *Project) AddFunc(ctx context.Context, funcObj routes.FuncGroup) error {
+func (prj *Project) AddFunc(ctx context.Context, funcObj routes.FuncGroup) error {
 	logs.WithContext(ctx).Debug("AddFunc - Start")
-	if prg.FuncGroups == nil {
-		prg.FuncGroups = make(map[string]routes.FuncGroup)
+	if prj.FuncGroups == nil {
+		prj.FuncGroups = make(map[string]routes.FuncGroup)
 	}
-	prg.FuncGroups[funcObj.FuncGroupName] = funcObj
+	prj.FuncGroups[funcObj.FuncGroupName] = funcObj
 	return nil
+}
+
+func (prj *Project) CompareProject(ctx context.Context, compareProject Project) (StoreCompare, error) {
+	logs.WithContext(ctx).Debug("CompareProject - Start")
+	storeCompare := StoreCompare{}
+	for _, mr := range prj.Routes {
+		var diffR utils.DiffReporter
+		rFound := false
+		for _, cr := range compareProject.Routes {
+			if mr.RouteName == cr.RouteName {
+				rFound = true
+				if !cmp.Equal(mr, cr, cmp.Reporter(&diffR)) {
+					if storeCompare.MismatchRoutes == nil {
+						storeCompare.MismatchRoutes = make(map[string]interface{})
+					}
+					storeCompare.MismatchRoutes[mr.RouteName] = diffR.Output()
+				}
+				break
+			}
+		}
+		if !rFound {
+			storeCompare.DeleteRoutes = append(storeCompare.DeleteRoutes, mr.RouteName)
+		}
+	}
+
+	for _, cr := range compareProject.Routes {
+		rFound := false
+		for _, mr := range prj.Routes {
+			if mr.RouteName == cr.RouteName {
+				rFound = true
+				break
+			}
+		}
+		if !rFound {
+			storeCompare.NewRoutes = append(storeCompare.NewRoutes, cr.RouteName)
+		}
+	}
+
+	//compare funcs
+	for _, mf := range prj.FuncGroups {
+		var diffR utils.DiffReporter
+		fFound := false
+		for _, cf := range compareProject.FuncGroups {
+			if mf.FuncGroupName == cf.FuncGroupName {
+				fFound = true
+				if !cmp.Equal(mf, cf, cmp.Reporter(&diffR)) {
+					if storeCompare.MismatchFuncs == nil {
+						storeCompare.MismatchFuncs = make(map[string]interface{})
+					}
+					storeCompare.MismatchFuncs[mf.FuncGroupName] = diffR.Output()
+
+				}
+				break
+			}
+		}
+		if !fFound {
+			storeCompare.DeleteFuncs = append(storeCompare.DeleteFuncs, mf.FuncGroupName)
+		}
+	}
+
+	for _, cf := range compareProject.FuncGroups {
+		fFound := false
+		for _, mf := range prj.FuncGroups {
+			if mf.FuncGroupName == cf.FuncGroupName {
+				fFound = true
+				break
+			}
+		}
+		if !fFound {
+			storeCompare.NewFuncs = append(storeCompare.NewFuncs, cf.FuncGroupName)
+		}
+	}
+	return storeCompare, nil
 }

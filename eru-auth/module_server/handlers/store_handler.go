@@ -13,7 +13,64 @@ import (
 	"github.com/gorilla/mux"
 	gomail "gopkg.in/gomail.v2"
 	"net/http"
+	"os"
+	"strings"
 )
+
+func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("StoreCompareHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+
+		projectJson := json.NewDecoder(r.Body)
+		projectJson.DisallowUnknownFields()
+		//var compareProject module_model.Project
+		var postBody interface{}
+		storeCompareMap := make(map[string]map[string]interface{})
+		storeCompare := module_model.StoreCompare{}
+
+		if err := projectJson.Decode(&postBody); err == nil {
+			storeCompareMap["projects"] = make(map[string]interface{})
+			storeCompareMap["projects"][projectID] = postBody
+			postBodyBytes, pbbErr := json.Marshal(storeCompareMap)
+			if pbbErr != nil {
+				logs.Logger.Error(pbbErr.Error())
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": pbbErr.Error()})
+				return
+			}
+			compareStore := module_store.GetStore(strings.ToUpper(os.Getenv("STORE_TYPE")))
+			umErr := module_store.UnMarshalStore(r.Context(), postBodyBytes, compareStore)
+			if umErr != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": umErr.Error()})
+				return
+			}
+			compareProject, cpErr := compareStore.GetProjectConfig(r.Context(), projectID)
+			if cpErr != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": cpErr.Error()})
+				return
+			}
+			myProject, mpErr := s.GetProjectConfig(r.Context(), projectID)
+			if mpErr != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": cpErr.Error()})
+				return
+			}
+			storeCompare, err = myProject.CompareProject(r.Context(), *compareProject)
+
+		} else {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(storeCompare)
+
+	}
+}
 
 func ProjectSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

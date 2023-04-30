@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-store/store"
+	"github.com/gorilla/mux"
 	"net/http"
 )
 
@@ -48,4 +50,134 @@ func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	FormatResponse(w, 200)
 	_ = json.NewEncoder(w).Encode(res)
 
+}
+
+func SaveVarHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveVarHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		varJson := json.NewDecoder(r.Body)
+		varJson.DisallowUnknownFields()
+		var sVar store.Vars
+		if err := varJson.Decode(&sVar); err == nil {
+			err = s.SaveVar(r.Context(), projectId, sVar, s)
+			if err != nil {
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Variable with key ", sVar.Key, " saved successfully.")})
+	}
+}
+
+func RemoveVarHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("RemoveVarHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		varKey := vars["key"]
+		err := s.RemoveVar(r.Context(), projectId, varKey, s)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Variable with key ", varKey, " removed successfully.")})
+	}
+}
+
+func SaveEnvVarHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveSecretHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		varJson := json.NewDecoder(r.Body)
+		varJson.DisallowUnknownFields()
+		var sVar store.EnvVars
+		if err := varJson.Decode(&sVar); err == nil {
+			err = s.SaveEnvVar(r.Context(), projectId, sVar, s)
+			if err != nil {
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Env. Variable with key ", sVar.Key, " saved successfully.")})
+	}
+}
+
+func RemoveEnvVarHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("RemoveSecretHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		varKey := vars["key"]
+		err := s.RemoveEnvVar(r.Context(), projectId, varKey, s)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Env. Variable with key ", varKey, " removed successfully.")})
+	}
+}
+
+func SaveSecretHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveSecretHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		varJson := json.NewDecoder(r.Body)
+		varJson.DisallowUnknownFields()
+		var sVar store.Secrets
+		if err := varJson.Decode(&sVar); err == nil {
+			err = s.SaveSecret(r.Context(), projectId, sVar, s)
+			if err != nil {
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Secret with key ", sVar.Key, " saved successfully.")})
+	}
+}
+
+func RemoveSecretHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("RemoveSecretHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		varKey := vars["key"]
+		err := s.RemoveSecret(r.Context(), projectId, varKey, s)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Secret with key ", varKey, " removed successfully.")})
+	}
+}
+
+func FetchVarsHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("RemoveSecretHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		variables, err := s.FetchVars(r.Context(), projectId)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(variables)
+	}
 }

@@ -15,6 +15,7 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	//store routes specific to files
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
+	storeRouter.Methods(http.MethodPost).Path("/{project}/compare").HandlerFunc(file_handlers.StoreCompareHandler(sh.Store))
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/storage/save/{storagename}/{storagetype}").HandlerFunc(file_handlers.StorageSaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/storage/remove/{storagename}").HandlerFunc(file_handlers.StorageRemoveHandler(sh.Store))

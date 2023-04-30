@@ -34,10 +34,10 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	// Adding routing handler to track all incoming requests
 	serverRouter.PathPrefix("/{project}/route/{routename}").HandlerFunc(module_handlers.RouteHandler(sh.Store))
-	serverRouter.PathPrefix("/public/{project}/route/{routename}").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	//serverRouter.PathPrefix("/public/{project}/route/{routename}").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 
 	serverRouter.PathPrefix("/{project}/func/{funcname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
-	serverRouter.PathPrefix("/public/{project}/func/{funcname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
+	//serverRouter.PathPrefix("/public/{project}/func/{funcname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
 
 	serverRouter.PathPrefix("/asynctest").HandlerFunc(module_handlers.RouteAsyncTestHandler(sh.Store))
 	serverRouter.PathPrefix("/").HandlerFunc(module_handlers.RouteForwardHandler(sh.Store))

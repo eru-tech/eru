@@ -364,8 +364,9 @@ func (r *DiffReporter) Report(rs cmp.Result) {
 	if !rs.Equal() {
 		vx, vy := r.path.Last().Values()
 		do := DiffOutput{}
-		path := fmt.Sprintf("%#v ", r.path)
-		do.Path = fmt.Sprintf("%v", strings.Replace(r.path.Last().String(), "\"", "", -1))
+		path := fmt.Sprintf("%v ", r.path)
+		//do.Path = fmt.Sprintf("%v", strings.Replace(r.path.Last().String(), "\"", "", -1))
+		do.Path = fmt.Sprintf("%v", strings.Replace(r.path.GoString(), "\"", "", -1))
 		do.AddStr = fmt.Sprintf("%+v", vy)
 		do.DelStr = fmt.Sprintf("%+v", vx)
 		if r.diffs == nil {
@@ -373,7 +374,6 @@ func (r *DiffReporter) Report(rs cmp.Result) {
 		}
 		r.diffs[path] = do
 		r.diffStr = append(r.diffStr, fmt.Sprintf("%#v:\n\t-: %+v\n\t+: %+v\n", r.path, vx, vy))
-
 	}
 }
 

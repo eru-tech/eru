@@ -381,3 +381,14 @@ func readZipFile(ctx context.Context, zipFile *zip.File) ([]byte, error) {
 	defer zf.Close()
 	return io.ReadAll(zf)
 }
+
+func GetStore(storeType string) ModuleStoreI {
+	switch storeType {
+	case "POSTGRES":
+		return new(ModuleDbStore)
+	case "STANDALONE":
+		return new(ModuleFileStore)
+	default:
+		return nil
+	}
+}

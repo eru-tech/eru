@@ -12,6 +12,28 @@ import (
 	"net/http"
 )
 
+func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("StoreCompareHandler - Start")
+
+		projectJson := json.NewDecoder(r.Body)
+		projectJson.DisallowUnknownFields()
+		var compareListenerRules []module_model.ListenerRule
+		storeCompare := module_model.StoreCompare{}
+
+		if err := projectJson.Decode(&compareListenerRules); err == nil {
+			storeCompare, err = s.CompareListenerRules(r.Context(), compareListenerRules)
+
+		} else {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(storeCompare)
+
+	}
+}
 func SaveListenerRuleHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("SaveListenerRuleHandler - Start")

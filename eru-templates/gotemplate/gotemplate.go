@@ -253,6 +253,9 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 
 			return excelToJson(ctx, fData, sheetNames, firstRowHeader, headers, keys)
 		},
+		"null": func() interface{} {
+			return nil
+		},
 	}
 
 	buf := &bytes.Buffer{}

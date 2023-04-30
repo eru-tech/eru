@@ -5,6 +5,12 @@ import (
 	"github.com/eru-tech/eru/eru-crypto/jwt"
 )
 
+type StoreCompare struct {
+	DeleteListenerRules   []string
+	NewListenerRules      []string
+	MismatchListenerRules map[string]interface{}
+}
+
 type ModuleProjectI interface {
 }
 

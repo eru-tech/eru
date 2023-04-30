@@ -32,8 +32,8 @@ type ModuleStoreI interface {
 	GetProjectList(ctx context.Context) []map[string]interface{}
 	SaveRoute(ctx context.Context, routeObj routes.Route, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveRoute(ctx context.Context, routeName string, projectId string, realStore ModuleStoreI) error
-	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header) (route routes.Route, err error)
-	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header) (funcGroup routes.FuncGroup, err error)
+	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route routes.Route, err error)
+	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (funcGroup routes.FuncGroup, err error)
 	SaveFunc(ctx context.Context, funcObj routes.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveFunc(ctx context.Context, funcName string, projectId string, realStore ModuleStoreI) error
 }
@@ -219,7 +219,7 @@ func (ms *ModuleStore) RemoveRoute(ctx context.Context, routeName string, projec
 	}
 }
 
-func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header) (route routes.Route, err error) {
+func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route routes.Route, err error) {
 	logs.WithContext(ctx).Debug("GetAndValidateRoute - Start")
 	cloneRoute := routes.Route{}
 	if prg, ok := ms.Projects[projectId]; ok {
@@ -234,6 +234,7 @@ func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string
 			logs.WithContext(ctx).Error(fmt.Sprint(err.Error(), " : ", jmErr.Error()))
 			return cloneRoute, err
 		}
+		routeI = s.ReplaceVariables(ctx, projectId, routeI)
 		jmErr = json.Unmarshal(routeI, &cloneRoute)
 		if jmErr != nil {
 			err = errors.New("route unmarshal failed")
@@ -254,20 +255,36 @@ func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string
 	return cloneRoute, nil
 }
 
-func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header) (funcGroup routes.FuncGroup, err error) {
+func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (cloneFunc routes.FuncGroup, err error) {
 	logs.WithContext(ctx).Debug("GetAndValidateFunc - Start")
+	funcGroup := routes.FuncGroup{}
 	if prg, ok := ms.Projects[projectId]; ok {
 		if funcGroup, ok = prg.FuncGroups[funcName]; !ok {
 			return funcGroup, errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
 		}
-		funcGroup.TokenSecret = prg.ProjectConfig.TokenSecret
+
+		FuncI, jmErr := json.Marshal(funcGroup)
+		if jmErr != nil {
+			err = errors.New("funcGroup marshal failed")
+			logs.WithContext(ctx).Error(fmt.Sprint(err.Error(), " : ", jmErr.Error()))
+			return cloneFunc, err
+		}
+		FuncI = s.ReplaceVariables(ctx, projectId, FuncI)
+		jmErr = json.Unmarshal(FuncI, &cloneFunc)
+		if jmErr != nil {
+			err = errors.New("funcGroup unmarshal failed")
+			logs.WithContext(ctx).Error(fmt.Sprint(err.Error(), " : ", jmErr.Error()))
+			return cloneFunc, err
+		}
+		cloneFunc.TokenSecret = prg.ProjectConfig.TokenSecret
 	} else {
-		return funcGroup, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		return cloneFunc, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 	}
+
 	var errArray []string
-	for k, v := range funcGroup.FuncSteps {
-		fs := funcGroup.FuncSteps[k]
-		err = ms.loadRoutesForFunction(ctx, fs, v.RouteName, projectId, host, v.Path, method, headers)
+	for k, v := range cloneFunc.FuncSteps {
+		fs := cloneFunc.FuncSteps[k]
+		err = ms.loadRoutesForFunction(ctx, fs, v.RouteName, projectId, host, v.Path, method, headers, s)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			errArray = append(errArray, err.Error())
@@ -276,17 +293,17 @@ func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, 
 	if len(errArray) > 0 {
 		err = errors.New(strings.Join(errArray, " , "))
 		logs.WithContext(ctx).Error(err.Error())
-		return funcGroup, err
+		return cloneFunc, err
 	}
 	return
 }
 
-func (ms *ModuleStore) loadRoutesForFunction(ctx context.Context, funcStep *routes.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header) (err error) {
+func (ms *ModuleStore) loadRoutesForFunction(ctx context.Context, funcStep *routes.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug(fmt.Sprint("loadRoutesForFunction - Start : ", funcStep.GetRouteName()))
 	var errArray []string
 	r := routes.Route{}
 	if funcStep.FunctionName != "" {
-		funcGroup, fgErr := ms.GetAndValidateFunc(ctx, funcStep.FunctionName, projectId, host, url, method, headers)
+		funcGroup, fgErr := ms.GetAndValidateFunc(ctx, funcStep.FunctionName, projectId, host, url, method, headers, s)
 		if fgErr != nil {
 			err = fgErr
 			return
@@ -330,7 +347,7 @@ func (ms *ModuleStore) loadRoutesForFunction(ctx context.Context, funcStep *rout
 			r.OnError = "IGNORE"
 			r.TargetHosts = append(r.TargetHosts, funcStep.Api)
 		} else {
-			r, err = ms.GetAndValidateRoute(ctx, routeName, projectId, host, url, method, headers)
+			r, err = ms.GetAndValidateRoute(ctx, routeName, projectId, host, url, method, headers, s)
 			if err != nil {
 				return
 			}
@@ -341,7 +358,7 @@ func (ms *ModuleStore) loadRoutesForFunction(ctx context.Context, funcStep *rout
 	for ck, cv := range funcStep.FuncSteps {
 		logs.WithContext(ctx).Info("inside funcStep.FuncSteps - child iteration")
 		fs := funcStep.FuncSteps[ck]
-		err = ms.loadRoutesForFunction(ctx, fs, cv.RouteName, projectId, host, cv.Path, method, headers)
+		err = ms.loadRoutesForFunction(ctx, fs, cv.RouteName, projectId, host, cv.Path, method, headers, s)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			errArray = append(errArray, err.Error())

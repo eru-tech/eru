@@ -46,45 +46,47 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		routeName := vars["routename"]
 
 		// Lookup a route based on host and url
-		route, err := s.GetAndValidateRoute(r.Context(), routeName, projectId, host, url, r.Method, r.Header)
+		route, err := s.GetAndValidateRoute(r.Context(), routeName, projectId, host, url, r.Method, r.Header, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 
-		if route.Authorizer != "" {
+		/*
+			if route.Authorizer != "" {
 
-			authorizer, err := s.GetProjectAuthorizer(r.Context(), projectId, route.Authorizer)
-			if err != nil {
-				server_handlers.FormatResponse(w, http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-				return
-			}
-			if !route.CheckPathException(r.URL.Path) {
-
-				token := r.Header.Get(authorizer.TokenHeaderKey)
-				if token == "" {
-					server_handlers.FormatResponse(w, http.StatusUnauthorized)
-					_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
-					return
-				}
-				claims, err := authorizer.VerifyToken(r.Context(), r.Header.Get(authorizer.TokenHeaderKey))
+				authorizer, err := s.GetProjectAuthorizer(r.Context(), projectId, route.Authorizer)
 				if err != nil {
 					server_handlers.FormatResponse(w, http.StatusUnauthorized)
 					_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 					return
 				}
-				claimsBytes, err := json.Marshal(claims)
-				if err != nil {
-					logs.WithContext(r.Context()).Error(err.Error())
-					server_handlers.FormatResponse(w, http.StatusUnauthorized)
-					_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-					return
+				if !route.CheckPathException(r.URL.Path) {
+
+					token := r.Header.Get(authorizer.TokenHeaderKey)
+					if token == "" {
+						server_handlers.FormatResponse(w, http.StatusUnauthorized)
+						_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
+						return
+					}
+					claims, err := authorizer.VerifyToken(r.Context(), r.Header.Get(authorizer.TokenHeaderKey))
+					if err != nil {
+						server_handlers.FormatResponse(w, http.StatusUnauthorized)
+						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+						return
+					}
+					claimsBytes, err := json.Marshal(claims)
+					if err != nil {
+						logs.WithContext(r.Context()).Error(err.Error())
+						server_handlers.FormatResponse(w, http.StatusUnauthorized)
+						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+						return
+					}
+					r.Header.Add("claims", string(claimsBytes))
 				}
-				r.Header.Add("claims", string(claimsBytes))
 			}
-		}
+		*/
 		response, _, err := route.Execute(r.Context(), r, url, false, "", nil, module_store.LoopThreads)
 		if route.Redirect {
 			logs.WithContext(r.Context()).Info(route.FinalRedirectUrl)

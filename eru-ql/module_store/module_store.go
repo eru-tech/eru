@@ -251,9 +251,9 @@ func (ms *ModuleStore) UpdateSchemaTables(ctx context.Context, projectId string,
 		return nil, err
 	}
 
-	for k, _ := range datasource.OtherTables {
-		if v, ok := datasource.SchemaTables[k]; ok {
-			datasource.SchemaTables[k] = v
+	for k, ot := range datasource.OtherTables {
+		if _, ok := datasource.SchemaTables[k]; ok {
+			datasource.SchemaTables[k] = ot
 			tmpList = append(tmpList, k)
 		}
 	}

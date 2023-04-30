@@ -7,6 +7,8 @@ import (
 	"github.com/eru-tech/eru/eru-gateway/module_model"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/go-cmp/cmp"
 	"net/http"
 	"strings"
 )
@@ -26,6 +28,7 @@ type ModuleStoreI interface {
 	RemoveAuthorizer(ctx context.Context, authorizerName string, realStore ModuleStoreI) error
 	GetAuthorizer(ctx context.Context, authorizerName string) (module_model.Authorizer, error)
 	GetAuthorizers(ctx context.Context) map[string]module_model.Authorizer
+	CompareListenerRules(ctx context.Context, lrs []module_model.ListenerRule) (module_model.StoreCompare, error)
 }
 
 const MatchTypePrefix = "PREFIX"
@@ -267,4 +270,43 @@ func (ms *ModuleStore) GetAuthorizer(ctx context.Context, authorizerName string)
 func (ms *ModuleStore) GetAuthorizers(ctx context.Context) map[string]module_model.Authorizer {
 	logs.WithContext(ctx).Debug("GetAuthorizers - Start")
 	return ms.Authorizers
+}
+
+func (ms *ModuleStore) CompareListenerRules(ctx context.Context, lrs []module_model.ListenerRule) (module_model.StoreCompare, error) {
+	storeCompare := module_model.StoreCompare{}
+	for _, mlr := range ms.ListenerRules {
+		var diffR utils.DiffReporter
+		lrFound := false
+		for _, clr := range lrs {
+			if mlr.RuleName == clr.RuleName {
+				lrFound = true
+				logs.Logger.Info(fmt.Sprint(mlr))
+				logs.Logger.Info(fmt.Sprint(clr))
+				if !cmp.Equal(*mlr, clr, cmp.Reporter(&diffR)) {
+					if storeCompare.MismatchListenerRules == nil {
+						storeCompare.MismatchListenerRules = make(map[string]interface{})
+					}
+					storeCompare.MismatchListenerRules[mlr.RuleName] = diffR.Output()
+				}
+				break
+			}
+		}
+		if !lrFound {
+			storeCompare.DeleteListenerRules = append(storeCompare.DeleteListenerRules, mlr.RuleName)
+		}
+	}
+
+	for _, clr := range lrs {
+		lrFound := false
+		for _, mlr := range ms.ListenerRules {
+			if mlr.RuleName == clr.RuleName {
+				lrFound = true
+				break
+			}
+		}
+		if !lrFound {
+			storeCompare.NewListenerRules = append(storeCompare.NewListenerRules, clr.RuleName)
+		}
+	}
+	return storeCompare, nil
 }

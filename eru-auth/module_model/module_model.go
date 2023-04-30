@@ -6,13 +6,22 @@ import (
 	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/go-cmp/cmp"
 	"strings"
 )
+
+type StoreCompare struct {
+	DeleteAuth   []string
+	NewAuth      []string
+	MismatchAuth map[string]interface{}
+}
 
 type ModuleProjectI interface {
 	AddGateway(ctx context.Context, gatewayObj gateway.GatewayI)
 	AddAuth(ctx context.Context, authObj auth.AuthI)
 	RemoveAuth(ctx context.Context, authType string) error
+	CompareProject(ctx context.Context, compareProject Project) (StoreCompare, error)
 }
 
 type Project struct {
@@ -45,7 +54,7 @@ type MessageTemplate struct {
 	TemplateText string `eru:"required"`
 }
 
-func (prg *Project) AddGateway(ctx context.Context, gatewayObjI gateway.GatewayI) error {
+func (prj *Project) AddGateway(ctx context.Context, gatewayObjI gateway.GatewayI) error {
 	logs.WithContext(ctx).Debug("AddGateway - Start")
 	gatewayName, err := gatewayObjI.GetAttribute("GatewayName")
 	if err != nil {
@@ -60,18 +69,18 @@ func (prg *Project) AddGateway(ctx context.Context, gatewayObjI gateway.GatewayI
 		return err
 	}
 	gKey := fmt.Sprint(gatewayName.(string), "_", gatewayType.(string), "_", channel.(string))
-	prg.Gateways[gKey] = gatewayObjI
+	prj.Gateways[gKey] = gatewayObjI
 	return nil
 }
 
-func (prg *Project) AddAuth(ctx context.Context, authType string, authObjI auth.AuthI) error {
+func (prj *Project) AddAuth(ctx context.Context, authType string, authObjI auth.AuthI) error {
 	logs.WithContext(ctx).Debug("AddAuth - Start")
-	prg.Auth[authType] = authObjI
+	prj.Auth[authType] = authObjI
 	return nil
 }
-func (prg *Project) RemoveAuth(ctx context.Context, authType string) error {
+func (prj *Project) RemoveAuth(ctx context.Context, authType string) error {
 	logs.WithContext(ctx).Debug("RemoveAuth - Start")
-	delete(prg.Auth, authType)
+	delete(prj.Auth, authType)
 	return nil
 }
 
@@ -81,4 +90,49 @@ func (mt *MessageTemplate) GetMessageText(vars string) string {
 		text = strings.Replace(text, "{#var#}", v, 1)
 	}
 	return text
+}
+
+func (prj *Project) CompareProject(ctx context.Context, compareProject Project) (StoreCompare, error) {
+	logs.WithContext(ctx).Debug("CompareProject - Start")
+	storeCompare := StoreCompare{}
+	for _, ma := range prj.Auth {
+		maNameI, _ := ma.GetAttribute(ctx, "AuthName")
+		maName := maNameI.(string)
+		var diffR utils.DiffReporter
+		aFound := false
+		for _, ca := range compareProject.Auth {
+			caNameI, _ := ca.GetAttribute(ctx, "AuthName")
+			caName := caNameI.(string)
+			if maName == caName {
+				aFound = true
+				if !cmp.Equal(ma, ca, cmp.Reporter(&diffR)) {
+					if storeCompare.MismatchAuth == nil {
+						storeCompare.MismatchAuth = make(map[string]interface{})
+					}
+					storeCompare.MismatchAuth[maName] = diffR.Output()
+				}
+				break
+			}
+		}
+		if !aFound {
+			storeCompare.DeleteAuth = append(storeCompare.DeleteAuth, maName)
+		}
+	}
+	for _, ca := range compareProject.Auth {
+		caNameI, _ := ca.GetAttribute(ctx, "AuthName")
+		caName := caNameI.(string)
+		rFound := false
+		for _, ma := range prj.Auth {
+			maNameI, _ := ma.GetAttribute(ctx, "AuthName")
+			maName := maNameI.(string)
+			if maName == caName {
+				rFound = true
+				break
+			}
+		}
+		if !rFound {
+			storeCompare.NewAuth = append(storeCompare.NewAuth, caName)
+		}
+	}
+	return storeCompare, nil
 }

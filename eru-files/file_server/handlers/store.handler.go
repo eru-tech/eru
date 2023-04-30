@@ -3,19 +3,75 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/eru-tech/eru/eru-files/file_model"
 	"github.com/eru-tech/eru/eru-files/module_store"
 	"github.com/eru-tech/eru/eru-files/storage"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 )
 
 type t interface {
 	t1()
 }
 
+func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("StoreCompareHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+
+		projectJson := json.NewDecoder(r.Body)
+		projectJson.DisallowUnknownFields()
+		var postBody interface{}
+		storeCompareMap := make(map[string]map[string]interface{})
+		storeCompare := file_model.StoreCompare{}
+
+		if err := projectJson.Decode(&postBody); err == nil {
+			storeCompareMap["projects"] = make(map[string]interface{})
+			storeCompareMap["projects"][projectID] = postBody
+			postBodyBytes, pbbErr := json.Marshal(storeCompareMap)
+			if pbbErr != nil {
+				logs.Logger.Error(pbbErr.Error())
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": pbbErr.Error()})
+				return
+			}
+			compareStore := module_store.GetStore(strings.ToUpper(os.Getenv("STORE_TYPE")))
+			umErr := module_store.UnMarshalStore(r.Context(), postBodyBytes, compareStore)
+			if umErr != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": umErr.Error()})
+				return
+			}
+			compareProject, cpErr := compareStore.GetProjectConfig(r.Context(), projectID)
+			if cpErr != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": cpErr.Error()})
+				return
+			}
+			myPrj, err := s.GetProjectConfig(r.Context(), projectID)
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+			storeCompare, err = myPrj.CompareProject(r.Context(), *compareProject)
+
+		} else {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(storeCompare)
+
+	}
+}
 func ProjectSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ProjectSaveHandler - Start")

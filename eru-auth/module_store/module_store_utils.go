@@ -39,7 +39,6 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 			logs.WithContext(ctx).Error(err.Error())
 			return err
 		}
-
 		for prj, prjJson := range prjs {
 			err = msi.SaveProject(ctx, prj, nil, false)
 			if err != nil {
@@ -55,7 +54,6 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 			if e != nil {
 				return err
 			}
-
 			var messageTemplates map[string]module_model.MessageTemplate
 			err = json.Unmarshal(*prjObjs["MessageTemplates"], &messageTemplates)
 			if err != nil {
@@ -135,4 +133,15 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 		}
 	}
 	return nil
+}
+
+func GetStore(storeType string) ModuleStoreI {
+	switch storeType {
+	case "POSTGRES":
+		return new(ModuleDbStore)
+	case "STANDALONE":
+		return new(ModuleFileStore)
+	default:
+		return nil
+	}
 }

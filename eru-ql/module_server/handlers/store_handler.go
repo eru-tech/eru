@@ -10,10 +10,7 @@ import (
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/gorilla/mux"
-	"log"
 	"net/http"
 )
 
@@ -35,68 +32,8 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
-			//if !cmp.Equal(*myPrj, compareProject, cmp.AllowUnexported(module_model.Project{}), cmp.Reporter(&diffR)) {
-			//log.Println(diffR.Output())
-			//}
 
-			for _, mq := range myPrj.MyQueries {
-				var diffR utils.DiffReporter
-				qFound := false
-				for _, cq := range compareProject.MyQueries {
-					if mq.QueryName == cq.QueryName {
-						qFound = true
-						if !cmp.Equal(mq, cq, cmp.Reporter(&diffR)) {
-							if storeCompare.MismatchQuries == nil {
-								storeCompare.MismatchQuries = make(map[string]interface{})
-							}
-							storeCompare.MismatchQuries[mq.QueryName] = diffR.Output()
-							log.Println("___________++++++++++++__________________")
-							log.Println(mq.QueryName)
-							log.Println(storeCompare.MismatchQuries[mq.QueryName])
-							log.Println("___________++++++++++++__________________")
-						}
-						break
-					}
-				}
-				if !qFound {
-					storeCompare.DeleteQueries = append(storeCompare.DeleteQueries, mq.QueryName)
-				}
-			}
-
-			for _, cq := range compareProject.MyQueries {
-				qFound := false
-				for _, mq := range myPrj.MyQueries {
-					if mq.QueryName == cq.QueryName {
-						qFound = true
-						break
-					}
-				}
-				if !qFound {
-					storeCompare.NewQueries = append(storeCompare.NewQueries, cq.QueryName)
-				}
-			}
-
-			//compare datasources
-			for _, md := range myPrj.DataSources {
-				var diffR utils.DiffReporter
-				dsFound := false
-				for _, cd := range compareProject.DataSources {
-					if md.DbAlias == cd.DbAlias {
-						dsFound = true
-						if !cmp.Equal(md, cd, cmpopts.IgnoreFields(module_model.DataSource{}, "Con"), cmpopts.IgnoreFields(module_model.TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
-							if storeCompare.MismatchDataSources == nil {
-								storeCompare.MismatchDataSources = make(map[string]interface{})
-							}
-							storeCompare.MismatchDataSources[md.DbAlias] = diffR.Output()
-
-						}
-						break
-					}
-				}
-				if !dsFound {
-					storeCompare.DeleteQueries = append(storeCompare.DeleteDataSources, md.DbAlias)
-				}
-			}
+			storeCompare, err = myPrj.CompareProject(r.Context(), compareProject)
 
 		} else {
 			server_handlers.FormatResponse(w, 400)

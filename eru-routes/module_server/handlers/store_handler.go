@@ -9,8 +9,6 @@ import (
 	"github.com/eru-tech/eru/eru-routes/routes"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/gorilla/mux"
 	"net/http"
 )
@@ -33,79 +31,7 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
-			//if !cmp.Equal(*myPrj, compareProject, cmp.AllowUnexported(module_model.Project{}), cmp.Reporter(&diffR)) {
-			//log.Println(diffR.Output())
-			//}
-
-			for _, mr := range myPrj.Routes {
-				var diffR utils.DiffReporter
-				rFound := false
-				for _, cr := range compareProject.Routes {
-					if mr.RouteName == cr.RouteName {
-						rFound = true
-						if !cmp.Equal(mr, cr, cmpopts.IgnoreFields(routes.TargetHost{}, "Host"), cmpopts.IgnoreFields(routes.TargetHost{}, "Scheme"), cmp.Reporter(&diffR)) {
-							if storeCompare.MismatchRoutes == nil {
-								storeCompare.MismatchRoutes = make(map[string]interface{})
-							}
-							storeCompare.MismatchRoutes[mr.RouteName] = diffR.Output()
-						}
-						break
-					}
-				}
-				if !rFound {
-					storeCompare.DeleteRoutes = append(storeCompare.DeleteRoutes, mr.RouteName)
-				}
-			}
-
-			for _, cr := range compareProject.Routes {
-				rFound := false
-				for _, mr := range myPrj.Routes {
-					if mr.RouteName == cr.RouteName {
-						rFound = true
-						break
-					}
-				}
-				if !rFound {
-					storeCompare.NewRoutes = append(storeCompare.NewRoutes, cr.RouteName)
-				}
-			}
-			/*
-				//compare funcs
-				for _, mf := range myPrj.FuncGroups {
-					var diffR utils.DiffReporter
-					fFound := false
-					for _, cf := range compareProject.FuncGroups {
-						if mf.FuncGroupName == cf.FuncGroupName {
-							fFound = true
-							if !cmp.Equal(mf, cf, cmpopts.IgnoreFields(routes.TargetHost{}, "Host"), cmpopts.IgnoreFields(routes.TargetHost{}, "Scheme"), cmp.Reporter(&diffR)) {
-								if storeCompare.MismatchFuncs == nil {
-									storeCompare.MismatchFuncs = make(map[string]interface{})
-								}
-								storeCompare.MismatchFuncs[mf.FuncGroupName] = diffR.Output()
-
-							}
-							break
-						}
-					}
-					if !fFound {
-						storeCompare.DeleteFuncs = append(storeCompare.DeleteFuncs, mf.FuncGroupName)
-					}
-				}
-
-				for _, cf := range compareProject.FuncGroups {
-					fFound := false
-					for _, mf := range myPrj.FuncGroups {
-						if mf.FuncGroupName == cf.FuncGroupName {
-							fFound = true
-							break
-						}
-					}
-					if !fFound {
-						storeCompare.NewFuncs = append(storeCompare.NewFuncs, cf.FuncGroupName)
-					}
-				}
-
-			*/
+			storeCompare, err = myPrj.CompareProject(r.Context(), compareProject)
 
 		} else {
 			server_handlers.FormatResponse(w, 400)

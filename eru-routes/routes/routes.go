@@ -70,8 +70,8 @@ type Route struct {
 	TransformRequest     string
 	TransformResponse    string
 	IsPublic             bool
-	Authorizer           string
-	AuthorizerException  []string
+	Authorizer           string      `json:"-"`
+	AuthorizerException  []string    `json:"-"`
 	TokenSecret          TokenSecret `json:"-"`
 	RemoveParams         RemoveParams
 	OnError              string
@@ -454,6 +454,9 @@ func (route *Route) RunRoute(ctx context.Context, req *http.Request, url string,
 
 		} else {
 			utils.PrintRequestBody(ctx, request, "printing request just before utils.ExecuteHttp")
+			logs.Logger.Info(request.URL.String())
+			logs.Logger.Info(request.Header.Get("Host"))
+			logs.Logger.Info(request.Method)
 			response, err = utils.ExecuteHttp(ctx, request)
 			if err != nil {
 				return
@@ -644,6 +647,8 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 			if err != nil {
 				return err
 			}
+			logs.Logger.Info("printing request body after processing template")
+			logs.Logger.Info(string(output))
 			err = json.Unmarshal(output, &vars.Body)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())

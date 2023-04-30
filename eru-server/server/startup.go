@@ -27,8 +27,9 @@ func Launch(serverRouter *mux.Router, port string) {
 	logs.Logger.Fatal(err.Error())
 
 }
-func Init() (*mux.Router, *Server, error) {
+func Init(store store.StoreI) (*mux.Router, *Server, error) {
 	s := new(Server)
+	s.Store = store
 	serverRouter := s.GetRouter()
 	return serverRouter, s, nil
 }
