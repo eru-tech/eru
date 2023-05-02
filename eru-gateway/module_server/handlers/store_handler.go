@@ -12,6 +12,17 @@ import (
 	"net/http"
 )
 
+func FetchVarsHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		service := vars["service"]
+		if service == "gateway" {
+
+		}
+	}
+}
+
 func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("StoreCompareHandler - Start")
