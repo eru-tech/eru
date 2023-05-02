@@ -25,15 +25,15 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		defer r.Body.Close()
 		logs.WithContext(r.Context()).Debug("RouteHandler - Start")
 		host, url := extractHostUrl(r)
-		logs.WithContext(r.Context()).Debug(host)
-		logs.WithContext(r.Context()).Debug(url)
+		logs.WithContext(r.Context()).Info(host)
+		logs.WithContext(r.Context()).Info(url)
 		tg, authorizer, addHeaders, err := s.GetTargetGroupAuthorizer(r.Context(), r)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		logs.WithContext(r.Context()).Debug(fmt.Sprint("authorizer.AuthorizerName = ", authorizer.AuthorizerName))
+		logs.WithContext(r.Context()).Info(fmt.Sprint("authorizer.AuthorizerName = ", authorizer.AuthorizerName))
 		if authorizer.AuthorizerName != "" {
 			token := r.Header.Get(authorizer.TokenHeaderKey)
 			if token == "" {

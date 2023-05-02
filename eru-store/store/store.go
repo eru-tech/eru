@@ -67,6 +67,7 @@ func (store *Store) FetchVars(ctx context.Context, projectId string) (variables 
 		logs.WithContext(ctx).Error(err.Error())
 		return &Variables{}, err
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint(*variables))
 	return
 }
 
@@ -75,15 +76,16 @@ func (store *Store) SaveVar(ctx context.Context, projectId string, newVar Vars, 
 	if store.Variables == nil {
 		store.Variables = make(map[string]*Variables)
 	}
-	if variables, ok := store.Variables[projectId]; !ok {
+	var variables *Variables
+	ok := false
+	if variables, ok = store.Variables[projectId]; !ok {
 		logs.WithContext(ctx).Info(fmt.Sprint("making new variable object for project : ", projectId))
 		store.Variables[projectId] = &Variables{}
-	} else {
-		if variables.Vars == nil {
-			variables.Vars = make(map[string]*Vars)
-		}
-		variables.Vars[newVar.Key] = &newVar
 	}
+	if variables.Vars == nil {
+		variables.Vars = make(map[string]*Vars)
+	}
+	variables.Vars[newVar.Key] = &newVar
 	err = s.SaveStore(ctx, "", s)
 	return
 }
