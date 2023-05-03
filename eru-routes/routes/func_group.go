@@ -9,6 +9,8 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"io"
 	"net/http"
 	"strconv"
@@ -126,7 +128,8 @@ func (funcStep *FuncStep) GetRouteName() (routeName string) {
 	return
 }
 func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, FuncThread int, LoopThread int) (response *http.Response, err error) {
-	ctx, span := otel.Tracer(server_handlers.ServerName).Start(octx, funcStep.GetRouteName())
+	pspan := oteltrace.SpanFromContext(req.Context())
+	ctx, span := otel.Tracer(server_handlers.ServerName).Start(octx, funcStep.GetRouteName(), oteltrace.WithAttributes(attribute.String("requestID", req.Header.Get(server_handlers.RequestIdKey)), attribute.String("traceID", pspan.SpanContext().TraceID().String()), attribute.String("spanID", pspan.SpanContext().SpanID().String())))
 	defer span.End()
 	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStep - Start : ", funcStep.GetRouteName()))
 	logs.WithContext(ctx).Info(fmt.Sprint("mainRouteName for ", funcStep.GetRouteName(), " is ", mainRouteName))

@@ -35,10 +35,11 @@ func requestIdMiddleWare(next http.Handler) http.Handler {
 func otelMiddleWare(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := r.Header.Get(server_handlers.RequestIdKey)
-		span := oteltrace.SpanFromContext(r.Context())
+		pspan := oteltrace.SpanFromContext(r.Context())
 		//if !span.IsRecording() {
 		//	logs.WithContext(r.Context()).Info("Span not found - making new tracer")
-		newCtx, span := otel.Tracer(server_handlers.ServerName).Start(r.Context(), "Initial", oteltrace.WithAttributes(attribute.String("requestId", requestID)))
+
+		newCtx, span := otel.Tracer(server_handlers.ServerName).Start(r.Context(), "Initial", oteltrace.WithAttributes(attribute.String("requestID", requestID), attribute.String("traceID", pspan.SpanContext().TraceID().String()), attribute.String("spanID", pspan.SpanContext().SpanID().String())))
 		defer span.End()
 		r = r.WithContext(newCtx)
 		//} else {
