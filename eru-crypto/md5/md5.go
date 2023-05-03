@@ -16,7 +16,7 @@ func Md5(ctx context.Context, str string, output string) (string, error) {
 	} else if output == "string" {
 		return string(h[:]), nil
 	}
-	err := errors.New(fmt.Sprint("error - unknow output", output))
+	err := errors.New(fmt.Sprint("error - unknown output", output))
 	logs.WithContext(ctx).Error(err.Error())
 	return "", err
 }
