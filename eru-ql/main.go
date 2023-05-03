@@ -32,15 +32,7 @@ func main() {
 			}
 		}()
 	}
-	tp, err := eruotel.TracerInit()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer func() {
-		if err = tp.Shutdown(context.Background()); err != nil {
-			logs.Logger.Error(fmt.Sprint("Error shutting down tracer provider: %v", err.Error()))
-		}
-	}()
+
 	envPort := os.Getenv("ERUQLPORT")
 	if envPort != "" {
 		port = envPort
