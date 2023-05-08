@@ -784,7 +784,7 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = trResVars
 			output, err := processTemplate(ctx, route.RouteName, route.TransformResponse, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
-			logs.WithContext(ctx).Info(fmt.Sprint(output))
+			logs.WithContext(ctx).Info(fmt.Sprint(string(output)))
 			if err != nil {
 				return &TemplateVars{}, err
 			}

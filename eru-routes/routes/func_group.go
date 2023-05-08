@@ -121,7 +121,7 @@ func (funcStep *FuncStep) GetRouteName() (routeName string) {
 	} else if funcStep.QueryName != "" {
 		routeName = funcStep.QueryName
 	} else if funcStep.Api.Host != "" {
-		routeName = funcStep.Api.Host
+		routeName = strings.Replace(funcStep.Api.Host, ".", "", -1)
 	} else if funcStep.RouteName != "" {
 		routeName = funcStep.RouteName
 	}
@@ -201,7 +201,9 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 				Header:        condRespHeader,
 			}
 			responses = append(responses, response)
-			logs.WithContext(ctx).Error(fmt.Sprint("error for  false condition : ", err.Error()))
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("error for  false condition : ", err.Error()))
+			}
 			return
 		}
 	}

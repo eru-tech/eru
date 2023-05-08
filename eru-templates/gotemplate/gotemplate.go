@@ -208,6 +208,10 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			logs.WithContext(ctx).Info(fmt.Sprint("logstring = ", str))
 			return
 		},
+		"logerror": func(str interface{}) (err error) {
+			logs.WithContext(ctx).Error(fmt.Sprint("logstring = ", str))
+			return
+		},
 		"uuid": func() (uuidStr string, err error) {
 			uuidStr = uuid.New().String()
 			return
