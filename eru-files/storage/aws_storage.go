@@ -138,17 +138,27 @@ func (awsStorage *AwsStorage) UploadFileB64(ctx context.Context, file []byte, fi
 		}
 		enc = ".enc"
 	}
+	logs.WithContext(ctx).Info("file encryption completed")
 	docId = ksuid.New().String()
 	if docType != "" {
 		docType = fmt.Sprint(docType, "_")
 	}
 	finalFileName := fmt.Sprint(docType, docId, "_", fileName, enc)
+	logs.WithContext(ctx).Info(fmt.Sprint("awsStorage.BucketName = ", awsStorage.BucketName))
+	logs.WithContext(ctx).Info(fmt.Sprint("fmt.Sprint(folderPath, \"/\", finalFileName) = ", fmt.Sprint(folderPath, "/", finalFileName)))
+
 	uploader := s3manager.NewUploader(awsStorage.session)
 	_, err = uploader.Upload(&s3manager.UploadInput{
 		Bucket: aws.String(awsStorage.BucketName),
 		Key:    aws.String(fmt.Sprint(folderPath, "/", finalFileName)),
 		Body:   bytes.NewReader(file),
 	})
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	logs.WithContext(ctx).Info("file upload completed")
+
 	return
 }
 

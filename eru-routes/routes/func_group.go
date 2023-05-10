@@ -121,7 +121,7 @@ func (funcStep *FuncStep) GetRouteName() (routeName string) {
 	} else if funcStep.QueryName != "" {
 		routeName = funcStep.QueryName
 	} else if funcStep.Api.Host != "" {
-		routeName = strings.Replace(funcStep.Api.Host, ".", "", -1)
+		routeName = strings.Replace(strings.Replace(funcStep.Api.Host, ".", "", -1), ":", "", -1)
 	} else if funcStep.RouteName != "" {
 		routeName = funcStep.RouteName
 	}

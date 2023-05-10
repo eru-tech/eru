@@ -186,14 +186,36 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			return newMap, nil
 		},
 		"getMapValue": func(orgMap map[string]interface{}, key string) (d interface{}, err error) {
-			if err != nil {
-				return orgMap, err
-			}
-			d, ok := orgMap[key]
+			d = make(map[string]interface{})
+			ok := false
+			d, ok = orgMap[key]
 			if !ok {
 				return orgMap, err
 			}
 			return d, nil
+		},
+		"getMapPointerValue": func(orgMap map[string]*interface{}, key string) (d interface{}, err error) {
+			d = make(map[string]interface{})
+			ok := false
+			d, ok = orgMap[key]
+			if !ok {
+				return orgMap, err
+			}
+			return d, nil
+		},
+		"getArrayValue": func(orgArray []interface{}, index int, emptyValue interface{}) (d interface{}) {
+			if emptyValue == "object" {
+				d = make(map[string]interface{})
+			} else if emptyValue == "string" {
+				d = ""
+			} else if emptyValue == "number" {
+				d = 0
+			}
+			if len(orgArray) <= index {
+				return d
+			}
+			d = orgArray[index]
+			return d
 		},
 		"logobject": func(v interface{}) (err error) {
 			vobj, err := json.Marshal(v)

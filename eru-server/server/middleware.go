@@ -50,7 +50,7 @@ func otelMiddleWare(next http.Handler) http.Handler {
 		//	r = r.WithContext(newCtx)
 
 		//}
-		w.Header().Set("trace_id", span.SpanContext().TraceID().String())
+		//w.Header().Set("trace_id", span.SpanContext().TraceID().String())
 		next.ServeHTTP(w, r)
 	})
 }
