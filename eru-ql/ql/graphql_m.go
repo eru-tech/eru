@@ -8,6 +8,7 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/graphql-go/graphql/language/ast"
+	"reflect"
 	"strings"
 )
 
@@ -263,9 +264,19 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 				mr[i].TableJoins[childTableName] = tj
 			} else {
 				cols = append(cols, k)
-				// TODO to open up below comments
-				updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
-				values = append(values, kv)
+				switch reflect.TypeOf(kv).Kind() {
+				case reflect.String:
+					str := kv.(string)
+					if strings.HasPrefix(str, "FIELD_") {
+						updateCols = append(updateCols, fmt.Sprint(k, " = ", fmt.Sprint(strings.Replace(str, "FIELD_", "", 1))))
+					} else {
+						updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
+						values = append(values, kv)
+					}
+				default:
+					updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
+					values = append(values, kv)
+				}
 
 			}
 		}

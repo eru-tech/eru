@@ -340,6 +340,8 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 	if val != nil {
 		if strings.HasPrefix(parentKey, "CONST_") {
 			parentKey = fmt.Sprint("'", strings.Replace(parentKey, "CONST_", "", 1), "'")
+		} else if strings.HasPrefix(parentKey, "FIELD_") {
+			parentKey = fmt.Sprint(strings.Replace(parentKey, "FIELD_", "", 1))
 		} else if !(strings.Contains(parentKey, ".")) {
 			parentKey = fmt.Sprint(mainTableName, ".", parentKey)
 		}
