@@ -226,7 +226,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 				//}
 				mapObj := make(map[string]interface{})
 				mapObj[colTableName] = v
-				om := OrderedMap{Rank: len(sqlObj.JoinClause) + 1, Obj: mapObj}
+				om := OrderedMap{Level: level, SubLevel: sublevel, Rank: len(sqlObj.JoinClause) + 1, Obj: mapObj}
 				sqlObj.JoinClause = append(sqlObj.JoinClause, &om)
 
 			case "calc":
@@ -326,7 +326,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 				}
 				mapObj := make(map[string]interface{})
 				mapObj[colTableName] = onClause
-				om := OrderedMap{Rank: len(sqlObj.JoinClause) + 1, Obj: mapObj}
+				om := OrderedMap{Level: level, SubLevel: sublevel, Rank: len(sqlObj.JoinClause) + 1, Obj: mapObj}
 				sqlObj.JoinClause = append(sqlObj.JoinClause, &om)
 				joinFound = true
 			}
@@ -559,9 +559,20 @@ func (sqlObj *SQLObjectQ) processJoins(ctx context.Context, val []*OrderedMap) (
 	for _, obj := range val {
 		o, _ := json.Marshal(obj.Obj)
 		logs.WithContext(ctx).Debug(string(o))
-		logs.WithContext(ctx).Debug(fmt.Sprint(obj.Rank))
+		logs.WithContext(ctx).Debug(fmt.Sprint("obj.Rank = ", obj.Rank))
+		logs.WithContext(ctx).Debug(fmt.Sprint("obj.Level = ", obj.Level))
+		logs.WithContext(ctx).Debug(fmt.Sprint("obj.SubLevel = ", obj.SubLevel))
 	}
 	sort.Sort(MapSorter(val))
+	logs.WithContext(ctx).Debug("after sorting")
+	for _, obj := range val {
+		o, _ := json.Marshal(obj.Obj)
+		logs.WithContext(ctx).Debug(string(o))
+		logs.WithContext(ctx).Debug(fmt.Sprint("obj.Rank = ", obj.Rank))
+		logs.WithContext(ctx).Debug(fmt.Sprint("obj.Level = ", obj.Level))
+		logs.WithContext(ctx).Debug(fmt.Sprint("obj.SubLevel = ", obj.SubLevel))
+	}
+
 	for _, obj := range val {
 		for tableName, v := range obj.Obj {
 			joinType := "LEFT" //default join value TODO schema joins has an option to define join type

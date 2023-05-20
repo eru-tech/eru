@@ -14,8 +14,10 @@ func GetQL(queryType string) QL {
 }
 
 type OrderedMap struct {
-	Rank int
-	Obj  map[string]interface{}
+	Rank     int
+	Level    int
+	SubLevel int
+	Obj      map[string]interface{}
 }
 
 type MapSorter []*OrderedMap
@@ -27,5 +29,5 @@ func (a MapSorter) Swap(i, j int) {
 	a[i], a[j] = a[j], a[i]
 }
 func (a MapSorter) Less(i, j int) bool {
-	return a[i].Rank < a[j].Rank
+	return a[i].Level < a[j].Level
 }
