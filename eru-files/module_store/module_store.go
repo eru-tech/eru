@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
@@ -20,6 +21,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"reflect"
 )
 
 type StoreHolder struct {
@@ -54,12 +56,12 @@ type ModuleStoreI interface {
 	RemoveStorage(ctx context.Context, storageName string, projectId string, realStore ModuleStoreI) error
 	GenerateRsaKeyPair(ctx context.Context, projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (rsaKeyPair erursa.RsaKeyPair, err error)
 	GenerateAesKey(ctx context.Context, projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (aesKey eruaes.AesKey, err error)
-	UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string) (docId string, err error)
-	UploadFileB64(ctx context.Context, projectId string, storageName string, file []byte, fileName string, docType string, fodlerPath string) (docId string, err error)
-	UploadFileFromUrl(ctx context.Context, projectId string, storageName string, url string, fileName string, docType string, fodlerPath string, fileType string) (docId string, err error)
-	DownloadFile(ctx context.Context, projectId string, storageName string, folderPath string, fileName string) (file []byte, mimeType string, err error)
-	DownloadFileB64(ctx context.Context, projectId string, storageName string, folderPath string, fileName string) (fileB64 string, mimeType string, err error)
-	DownloadFileUnzip(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest) (files map[string]FileObj, err error)
+	UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string, s ModuleStoreI) (docId string, err error)
+	UploadFileB64(ctx context.Context, projectId string, storageName string, file []byte, fileName string, docType string, fodlerPath string, s ModuleStoreI) (docId string, err error)
+	UploadFileFromUrl(ctx context.Context, projectId string, storageName string, url string, fileName string, docType string, fodlerPath string, fileType string, s ModuleStoreI) (docId string, err error)
+	DownloadFile(ctx context.Context, projectId string, storageName string, folderPath string, fileName string, s ModuleStoreI) (file []byte, mimeType string, err error)
+	DownloadFileB64(ctx context.Context, projectId string, storageName string, folderPath string, fileName string, s ModuleStoreI) (fileB64 string, mimeType string, err error)
+	DownloadFileUnzip(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (files map[string]FileObj, err error)
 }
 
 type ModuleStore struct {
@@ -124,51 +126,69 @@ func (ms *ModuleStore) SaveStorage(ctx context.Context, storageObj storage.Stora
 	return nil
 }
 
-func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string) (docId string, err error) {
+func (ms *ModuleStore) GetStorageClone(ctx context.Context, projectId string, storageName string, s ModuleStoreI) (storageObjClone storage.StorageI, prj *file_model.Project, err error) {
+	prj, err = ms.GetProjectConfig(ctx, projectId)
+	if err != nil {
+		return
+	}
+
+	if storageObj, ok := prj.Storages[storageName]; !ok {
+		err = errors.New(fmt.Sprint("storage ", storageName, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	} else {
+		storageObjJson, storageObjJsonErr := json.Marshal(storageObj)
+		if storageObjJsonErr != nil {
+			err = errors.New(fmt.Sprint("error while cloning storageObj (marshal)"))
+			logs.WithContext(ctx).Error(err.Error())
+			logs.WithContext(ctx).Error(storageObjJsonErr.Error())
+			return
+		}
+		storageObjJson = s.ReplaceVariables(ctx, projectId, storageObjJson)
+
+		iCloneI := reflect.New(reflect.TypeOf(storageObj))
+		storageObjCloneErr := json.Unmarshal(storageObjJson, iCloneI.Interface())
+		if storageObjCloneErr != nil {
+			err = errors.New(fmt.Sprint("error while cloning storageObj(unmarshal)"))
+			logs.WithContext(ctx).Error(err.Error())
+			logs.WithContext(ctx).Error(storageObjCloneErr.Error())
+			return
+		}
+		return iCloneI.Elem().Interface().(storage.StorageI), prj, nil
+	}
+}
+
+func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, s ModuleStoreI) (docId string, err error) {
 	logs.WithContext(ctx).Debug("UploadFile - Start")
-	prj, err := ms.GetProjectConfig(ctx, projectId)
+	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
+	if sErr != nil {
+		return
+	}
+	keyName, kpErr := storageObjClone.GetAttribute("KeyPair")
 	if err != nil {
+		err = kpErr
 		return
 	}
-
-	if storageObj, ok := prj.Storages[storageName]; !ok {
-		err = errors.New(fmt.Sprint("storage ", storageName, " not found"))
-		logs.WithContext(ctx).Info(err.Error())
-		return
-	} else {
-		keyName, kpErr := storageObj.GetAttribute("KeyPair")
-		if err != nil {
-			err = kpErr
-			return
-		}
-		docId, err = storageObj.UploadFile(ctx, file, header, docType, folderPath, prj.AesKeys[keyName.(string)])
-		return
-	}
+	docId, err = storageObjClone.UploadFile(ctx, file, header, docType, folderPath, prj.AesKeys[keyName.(string)])
+	return
 }
 
-func (ms *ModuleStore) UploadFileB64(ctx context.Context, projectId string, storageName string, file []byte, fileName string, docType string, folderPath string) (docId string, err error) {
+func (ms *ModuleStore) UploadFileB64(ctx context.Context, projectId string, storageName string, file []byte, fileName string, docType string, folderPath string, s ModuleStoreI) (docId string, err error) {
 	logs.WithContext(ctx).Debug("UploadFileB64 - Start")
-	prj, err := ms.GetProjectConfig(ctx, projectId)
+	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
+	if sErr != nil {
+		return
+	}
+	keyName, kpErr := storageObjClone.GetAttribute("KeyPair")
 	if err != nil {
+		err = kpErr
 		return
 	}
-
-	if storageObj, ok := prj.Storages[storageName]; !ok {
-		err = errors.New(fmt.Sprint("storage ", storageName, " not found"))
-		logs.WithContext(ctx).Info(err.Error())
-		return
-	} else {
-		keyName, kpErr := storageObj.GetAttribute("KeyPair")
-		if err != nil {
-			err = kpErr
-			return
-		}
-		docId, err = storageObj.UploadFileB64(ctx, file, fileName, docType, folderPath, prj.AesKeys[keyName.(string)])
-		return
-	}
+	docId, err = storageObjClone.UploadFileB64(ctx, file, fileName, docType, folderPath, prj.AesKeys[keyName.(string)])
+	return
 }
 
-func (ms *ModuleStore) UploadFileFromUrl(ctx context.Context, projectId string, storageName string, url string, fileName string, docType string, folderPath string, fileType string) (docId string, err error) {
+func (ms *ModuleStore) UploadFileFromUrl(ctx context.Context, projectId string, storageName string, url string, fileName string, docType string, folderPath string, fileType string, s ModuleStoreI) (docId string, err error) {
 	logs.WithContext(ctx).Debug("UploadFileFromUrl - Start")
 	reqHeaders := http.Header{}
 	res, respHeaders, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, reqHeaders, nil, nil, nil, nil)
@@ -183,7 +203,7 @@ func (ms *ModuleStore) UploadFileFromUrl(ctx context.Context, projectId string, 
 	if respMap, ok := res.(map[string]interface{}); ok {
 		if respBodyI, okb := respMap["body"]; okb {
 			respBody = respBodyI.(string)
-			return ms.UploadFileB64(ctx, projectId, storageName, []byte(respBody), fileName, docType, folderPath)
+			return ms.UploadFileB64(ctx, projectId, storageName, []byte(respBody), fileName, docType, folderPath, s)
 		} else {
 			err = errors.New("response body or file attribute not found")
 			logs.WithContext(ctx).Error(err.Error())
@@ -196,14 +216,14 @@ func (ms *ModuleStore) UploadFileFromUrl(ctx context.Context, projectId string, 
 	}
 }
 
-func (ms *ModuleStore) DownloadFileB64(ctx context.Context, projectId string, storageName string, folderPath string, fileName string) (fileB64 string, mimeType string, err error) {
+func (ms *ModuleStore) DownloadFileB64(ctx context.Context, projectId string, storageName string, folderPath string, fileName string, s ModuleStoreI) (fileB64 string, mimeType string, err error) {
 	logs.WithContext(ctx).Debug("DownloadFileB64 - Start")
-	f, mt, e := ms.DownloadFile(ctx, projectId, storageName, folderPath, fileName)
+	f, mt, e := ms.DownloadFile(ctx, projectId, storageName, folderPath, fileName, s)
 	return base64.StdEncoding.EncodeToString(f), mt, e
 }
-func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest) (files map[string]FileObj, err error) {
+func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (files map[string]FileObj, err error) {
 	logs.WithContext(ctx).Debug("DownloadFileUnzip - Start")
-	f, _, e := ms.DownloadFile(ctx, projectId, storageName, fileDownloadRequest.FolderPath, fileDownloadRequest.FileName)
+	f, _, e := ms.DownloadFile(ctx, projectId, storageName, fileDownloadRequest.FolderPath, fileDownloadRequest.FileName, s)
 	zipReader, err := zip.NewReader(bytes.NewReader(f), int64(len(f)))
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -260,26 +280,19 @@ func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, 
 	}
 	return files, e
 }
-func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, storageName string, folderPath string, fileName string) (file []byte, mimeType string, err error) {
+func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, storageName string, folderPath string, fileName string, s ModuleStoreI) (file []byte, mimeType string, err error) {
 	logs.WithContext(ctx).Debug("DownloadFile - Start")
-	prj, err := ms.GetProjectConfig(ctx, projectId)
+	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
+	if sErr != nil {
+		return
+	}
+	keyName, kpErr := storageObjClone.GetAttribute("KeyPair")
 	if err != nil {
+		err = kpErr
 		return
 	}
-
-	if storageObj, ok := prj.Storages[storageName]; !ok {
-		err = errors.New(fmt.Sprint("storage ", storageName, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
-		return
-	} else {
-		keyName, kpErr := storageObj.GetAttribute("KeyPair")
-		if err != nil {
-			err = kpErr
-			return
-		}
-		file, err = storageObj.DownloadFile(ctx, folderPath, fileName, prj.AesKeys[keyName.(string)])
-		return file, mimetype.Detect(file).String(), err
-	}
+	file, err = storageObjClone.DownloadFile(ctx, folderPath, fileName, prj.AesKeys[keyName.(string)])
+	return file, mimetype.Detect(file).String(), err
 }
 
 func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error {

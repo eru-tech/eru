@@ -388,3 +388,19 @@ func (r *DiffReporter) String() string {
 func (r *DiffReporter) Output() map[string]DiffOutput {
 	return r.diffs
 }
+
+func CloneInterface(ctx context.Context, i interface{}) (iClone interface{}, err error) {
+	logs.WithContext(ctx).Debug("cloneInterface - Start")
+	iBytes, err := json.Marshal(i)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	iCloneI := reflect.New(reflect.TypeOf(i))
+	err = json.Unmarshal(iBytes, iCloneI.Interface())
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return iCloneI.Elem().Interface(), nil
+}

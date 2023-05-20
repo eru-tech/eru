@@ -14,6 +14,7 @@ type StoreI interface {
 	SaveStore(ctx context.Context, fp string, ms StoreI) (err error)
 	SetDbType(dbtype string)
 	SetStoreTableName(tablename string)
+	SetVars(ctx context.Context, variables map[string]*Variables)
 	SaveVar(ctx context.Context, projectId string, newVar Vars, s StoreI) (err error)
 	RemoveVar(ctx context.Context, projectId string, key string, s StoreI) (err error)
 	SaveEnvVar(ctx context.Context, projectId string, newEnvVar EnvVars, s StoreI) (err error)
@@ -54,6 +55,10 @@ type Secrets struct {
 	Value string `json:"-"`
 }
 
+func (store *Store) SetVars(ctx context.Context, variables map[string]*Variables) {
+	store.Variables = variables
+}
+
 func (store *Store) FetchVars(ctx context.Context, projectId string) (variables *Variables, err error) {
 	logs.WithContext(ctx).Debug("FetchVars - Start")
 	if store.Variables == nil {
@@ -67,7 +72,6 @@ func (store *Store) FetchVars(ctx context.Context, projectId string) (variables 
 		logs.WithContext(ctx).Error(err.Error())
 		return &Variables{}, err
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(*variables))
 	return
 }
 

@@ -47,7 +47,7 @@ func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		file, mimeType, err := s.DownloadFile(r.Context(), projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"])
+		file, mimeType, err := s.DownloadFile(r.Context(), projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"], s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -86,7 +86,7 @@ func FileDownloadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		fileB64, mimeType, err := s.DownloadFileB64(r.Context(), projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"])
+		fileB64, mimeType, err := s.DownloadFileB64(r.Context(), projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"], s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -125,7 +125,7 @@ func FileDownloadHandlerUnzip(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		files, err := s.DownloadFileUnzip(r.Context(), projectId, storageName, dfFromObj)
+		files, err := s.DownloadFileUnzip(r.Context(), projectId, storageName, dfFromObj, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -189,7 +189,7 @@ func FileUploadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": "base64 decode failed"})
 			return
 		}
-		docId, err := s.UploadFileB64(r.Context(), projectId, storageName, fileBytes, fileName, docType, folderPath)
+		docId, err := s.UploadFileB64(r.Context(), projectId, storageName, fileBytes, fileName, docType, folderPath, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -258,7 +258,7 @@ func FileUploadHandlerFromUrl(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": "folder_path attribute missing"})
 			return
 		}
-		docId, err := s.UploadFileFromUrl(r.Context(), projectId, storageName, url, fileName, docType, folderPath, fileType)
+		docId, err := s.UploadFileFromUrl(r.Context(), projectId, storageName, url, fileName, docType, folderPath, fileType, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -310,7 +310,7 @@ func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 					return
 				}
 				//TODO - check for file size and check for file meme
-				docId, err := s.UploadFile(r.Context(), projectId, storageName, file, f, docType, folderPath)
+				docId, err := s.UploadFile(r.Context(), projectId, storageName, file, f, docType, folderPath, s)
 				if err != nil {
 					server_handlers.FormatResponse(w, 400)
 					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

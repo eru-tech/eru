@@ -7,6 +7,7 @@ import (
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	"github.com/eru-tech/eru/eru-files/storage"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-store/store"
 )
 
 func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
@@ -19,7 +20,15 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 	}
 
 	var prjs map[string]*json.RawMessage
+	var vars map[string]*store.Variables
 	if _, ok := storeMap["projects"]; ok {
+
+		err = json.Unmarshal(*storeMap["Variables"], &vars)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+		msi.SetVars(ctx, vars)
 
 		err = json.Unmarshal(*storeMap["projects"], &prjs)
 		if err != nil {
@@ -47,7 +56,6 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 				return err
 			}
 			p.AesKeys = aeskeys
-
 			var keypairs map[string]*json.RawMessage
 			err = json.Unmarshal(*prjObjs["rsa_keypairs"], &keypairs)
 			if err != nil {
