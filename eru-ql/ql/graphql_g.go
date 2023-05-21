@@ -1,15 +1,17 @@
 package ql
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-utils"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/kinds"
-	"log"
 	"reflect"
 	"sort"
 	"strconv"
@@ -46,7 +48,8 @@ type SQLCols struct {
 	GroupClause  []string
 }
 
-func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_model.DataSource, sqlMaker ds.SqlMakerI, vars map[string]interface{}, s module_store.ModuleStoreI, withColAlias bool) (err error) {
+func (sqlObj *SQLObjectQ) ProcessGraphQL(ctx context.Context, sel ast.Selection, datasource *module_model.DataSource, sqlMaker ds.SqlMakerI, vars map[string]interface{}, s module_store.ModuleStoreI, withColAlias bool) (err error) {
+	logs.WithContext(ctx).Debug("ProcessGraphQL - Start")
 	field := sel.(*ast.Field)
 	sqlObj.MainTableName = strings.Replace(field.Name.Value, "___", ".", -1) //replacing schema___tablename with schema.tablename
 	if field.Alias != nil {
@@ -57,33 +60,26 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_m
 	sqlObj.MainTableDB = field.Directives[0].Name.Value
 
 	/* we will need below block for tenant ds alias
-	   log.Print("field.Directives[0].Name.Value = " + field.Directives[0].Name.Value)
-	   	log.Print("loop on field.Directives[0].Arguments starts")
-	   	for _, vv := range field.Directives[0].Arguments {
-	   		log.Print("vv.Name.Value = "+vv.Name.Value)
-	   		log.Print("vv.Value.GetValue().(string)" + vv.Value.GetValue().(string))
-	   	}
-	   	log.Print("loop on field.Directives[0].Arguments ends")
+	for _, vv := range field.Directives[0].Arguments {
+	}
 	*/
 
-	//log.Print("len(field.Arguments) = " + string(len(field.Arguments)))
 	for _, ff := range field.Arguments { //TODO to add join to main table without having to add
 
-		v, e := ParseAstValue(ff.Value, vars)
-		log.Print(e)
+		v, e := ParseAstValue(ctx, ff.Value, vars)
+		if e != nil {
+			logs.WithContext(ctx).Error(e.Error())
+		}
 		switch ff.Name.Value {
 		case "where":
 			sqlObj.WhereClause = v
-			log.Print("sqlObj.WhereClause === ", sqlObj.WhereClause)
-			//wc, _ := sqlObj.processWhereClause(v, "", false)
-			//log.Print("final where clause = " + wc)
-			//sqlObj.WhereClause = fmt.Sprint(" where ", wc)
 		case "sort":
-			//sqlObj.processSortClause(ff.Value, gqd.FinalVariables)
 			sqlObj.SortClause = v
 		case "distinct":
 			if ff.Value.GetKind() != kinds.BooleanValue {
-				return errors.New("Non Boolean value received - distinct clause need boolean value")
+				err = errors.New("Non Boolean value received - distinct clause need boolean value")
+				logs.WithContext(ctx).Error(err.Error())
+				return err
 			}
 			sqlObj.DistinctResults = v.(bool)
 		case "limit": //TODO to handle if variable not found
@@ -91,7 +87,9 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_m
 				v = int(v.(float64))
 			}
 			if reflect.TypeOf(v).Kind() != reflect.Int {
-				return errors.New("Non Integer value received - limit clause need integer value")
+				err = errors.New("Non Integer value received - limit clause need integer value")
+				logs.WithContext(ctx).Error(err.Error())
+				return err
 			}
 			sqlObj.Limit = v.(int)
 		case "skip":
@@ -99,7 +97,9 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_m
 				v = int(v.(float64))
 			}
 			if reflect.TypeOf(v).Kind() != reflect.Int {
-				return errors.New("Non Integer value received - skip clause need integer value")
+				err = errors.New("Non Integer value received - skip clause need integer value")
+				logs.WithContext(ctx).Error(err.Error())
+				return err
 			}
 			//v, e := ParseAstValue(ff.Value, vars)
 			sqlObj.Skip = v.(int)
@@ -109,24 +109,19 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(sel ast.Selection, datasource *module_m
 	sqlCols := SQLCols{}
 	if field.SelectionSet == nil {
 		var tmpSelSet []ast.Selection
-		sqlCols, _ = sqlObj.processColumnList(tmpSelSet, sqlObj.MainTableName, vars, 0, 0, datasource, s)
+		sqlCols, _ = sqlObj.processColumnList(ctx, tmpSelSet, sqlObj.MainTableName, vars, 0, 0, datasource, s)
 		sqlCols.ColWithAlias = append(sqlCols.ColWithAlias, " * ")
-		//sqlCols.ColWithAlias[0] = " * "
 	} else {
-		sqlCols, _ = sqlObj.processColumnList(field.SelectionSet.Selections, sqlObj.MainTableName, vars, 0, 0, datasource, s)
+		sqlCols, _ = sqlObj.processColumnList(ctx, field.SelectionSet.Selections, sqlObj.MainTableName, vars, 0, 0, datasource, s)
 	}
-	log.Print("sqlCols is printed below")
-	log.Print(sqlCols)
 	sqlObj.Columns = sqlCols
-	err = sqlObj.MakeQuery(sqlMaker, withColAlias)
-	log.Print("query printed below")
-	log.Print(sqlObj.DBQuery)
+	err = sqlObj.MakeQuery(ctx, sqlMaker, withColAlias)
+	logs.WithContext(ctx).Info(fmt.Sprint("query  : ", sqlObj.DBQuery))
 	return err
 }
 
-func (sqlObj *SQLObjectQ) processColumnList(sel []ast.Selection, tableName string, vars map[string]interface{}, level int, sublevel int, datasource *module_model.DataSource, s module_store.ModuleStoreI) (sqlCols SQLCols, err string) {
-	//log.Print(fmt.Sprint("level = ", level, " sublevel = ", sublevel))
-	//log.Print("tableName === ", tableName)
+func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selection, tableName string, vars map[string]interface{}, level int, sublevel int, datasource *module_model.DataSource, s module_store.ModuleStoreI) (sqlCols SQLCols, err string) {
+	logs.WithContext(ctx).Debug("processColumnList - Start")
 	if sqlObj.queryLevel < level {
 		sqlObj.queryLevel = level
 	}
@@ -219,8 +214,11 @@ func (sqlObj *SQLObjectQ) processColumnList(sel []ast.Selection, tableName strin
 			switch a.Name.Value {
 			case "join":
 				joinFound = true
-				v, err := ParseAstValue(a.Value, vars)
-				log.Print(err) //TODO to exit if error
+				v, err := ParseAstValue(ctx, a.Value, vars)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
+				//TODO to exit if error
 				//sqlObj.processJoins(a.Value, nil, colTableName, vars)
 
 				//if sqlObj.JoinClause == nil {
@@ -228,15 +226,15 @@ func (sqlObj *SQLObjectQ) processColumnList(sel []ast.Selection, tableName strin
 				//}
 				mapObj := make(map[string]interface{})
 				mapObj[colTableName] = v
-				om := OrderedMap{Rank: len(sqlObj.JoinClause) + 1, Obj: mapObj}
+				om := OrderedMap{Level: level, SubLevel: sublevel, Rank: len(sqlObj.JoinClause) + 1, Obj: mapObj}
 				sqlObj.JoinClause = append(sqlObj.JoinClause, &om)
 
 			case "calc":
-				log.Print("calc calc calc calc")
-				log.Print(a.Value)
-				log.Print(vars)
-				v, err := ParseAstValue(a.Value, vars)
-				log.Print(err) //TODO to exit if error
+				v, err := ParseAstValue(ctx, a.Value, vars)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
+				//TODO to exit if error
 				//val = fmt.Sprint("'", v.(string), "'") //TODO to handle float value as variable value
 				actualType := reflect.TypeOf(v).String()
 				if actualType == "string" {
@@ -257,7 +255,7 @@ func (sqlObj *SQLObjectQ) processColumnList(sel []ast.Selection, tableName strin
 			tiq.Nested = true
 			sqlObj.tables[level][sublevel] = tiq
 			sqlChildCols := SQLCols{}
-			sqlChildCols, err = sqlObj.processColumnList(field.SelectionSet.Selections, colTableName, vars, level+1, mySublevel, datasource, s)
+			sqlChildCols, err = sqlObj.processColumnList(ctx, field.SelectionSet.Selections, colTableName, vars, level+1, mySublevel, datasource, s)
 			sqlCols.ColNames = append(sqlCols.ColNames, sqlChildCols.ColNames...)
 			sqlCols.ColWithAlias = append(sqlCols.ColWithAlias, sqlChildCols.ColWithAlias...)
 			sqlCols.GroupClause = append(sqlCols.GroupClause, sqlChildCols.GroupClause...)
@@ -300,58 +298,50 @@ func (sqlObj *SQLObjectQ) processColumnList(sel []ast.Selection, tableName strin
 			sqlCols.ColNames = append(sqlCols.ColNames, cName)
 		}
 		if !joinFound && colTableName != "" && colTableName != sqlObj.MainTableName {
-			log.Print("fetch joins for tables ", tableName, " and ", colTableName)
+			logs.WithContext(ctx).Info(fmt.Sprint("fetch joins for tables ", tableName, " and ", colTableName))
 			if sqlObj.tableNames == nil {
 				sqlObj.tableNames = make(map[string]string)
 			}
 			if _, ok := sqlObj.tableNames[colTableName]; !ok { //TODO to check simlar check of duplicate table in joins in join clause passed explicitly in query
-				log.Print("inside sqlObj.tableNames[colTableName]")
 				sqlObj.tableNames[colTableName] = ""
-				tj, e := datasource.GetTableJoins(tableName, colTableName, sqlObj.tableNames)
+				tj, e := datasource.GetTableJoins(ctx, tableName, colTableName, sqlObj.tableNames)
 				if e != nil {
+					logs.WithContext(ctx).Error(e.Error())
 					return SQLCols{}, e.Error()
 				}
-				//sqlObj.processJoins(nil, tj.GetOnClause(), colTableName, vars)
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)
 				}
-				sqlObj.SecurityClause[colTableName], e = getTableSecurityRule(sqlObj.ProjectId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables)
-				log.Print("-----------printing sqlObj.SecurityClause ----------------   ", colTableName)
-				log.Print(sqlObj.SecurityClause)
-				log.Print(e)
+				sqlObj.SecurityClause[colTableName], e = getTableSecurityRule(ctx, sqlObj.ProjectId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables)
 				if e != nil {
+					logs.WithContext(ctx).Error(e.Error())
 					return SQLCols{}, e.Error()
 				}
 				//if sqlObj.JoinClause == nil {
 				//	sqlObj.JoinClause = make(map[string]interface{})
 				//}
-				onClause, er := processMapVariable(tj.GetOnClause(), vars)
+				onClause, er := processMapVariable(ctx, tj.GetOnClause(ctx), vars)
 				if er != nil {
-					log.Print(er)
+					logs.WithContext(ctx).Error(er.Error())
 				}
-				log.Print("onClause = ", onClause)
 				mapObj := make(map[string]interface{})
 				mapObj[colTableName] = onClause
-				om := OrderedMap{Rank: len(sqlObj.JoinClause) + 1, Obj: mapObj}
+				om := OrderedMap{Level: level, SubLevel: sublevel, Rank: len(sqlObj.JoinClause) + 1, Obj: mapObj}
 				sqlObj.JoinClause = append(sqlObj.JoinClause, &om)
-				//sqlObj.JoinClause[colTableName] = onClause
 				joinFound = true
 			}
 		}
 	}
-	//log.Print("loop on field.SelectionSet.Selections ends")
-	//return strings.Join(tempArray, " , "), strings.Join(tempArrayC, " , "), strings.Join(tempArrayG, " , "), ""
 	return sqlCols, err
 }
 
-func processWhereClause(val interface{}, parentKey string, mainTableName string, isJoinClause bool) (whereClause string, err string) { //, gqr *graphQLRead
-	//q := pd.Variables["where"]
-	//log.Print("start start start start start start start start ")
-	//defer log.Print("end end end end end end end end ")
-	//log.Print("reflect.TypeOf(val) = " + reflect.TypeOf(val).Kind().String())
+func processWhereClause(ctx context.Context, val interface{}, parentKey string, mainTableName string, isJoinClause bool) (whereClause string, err string) { //, gqr *graphQLRead
+	logs.WithContext(ctx).Debug("processWhereClause - Start")
 	if val != nil {
 		if strings.HasPrefix(parentKey, "CONST_") {
 			parentKey = fmt.Sprint("'", strings.Replace(parentKey, "CONST_", "", 1), "'")
+		} else if strings.HasPrefix(parentKey, "FIELD_") {
+			parentKey = fmt.Sprint(strings.Replace(parentKey, "FIELD_", "", 1))
 		} else if !(strings.Contains(parentKey, ".")) {
 			parentKey = fmt.Sprint(mainTableName, ".", parentKey)
 		}
@@ -361,10 +351,6 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 			//tempArray := make([]string, len(reflect.ValueOf(val).MapKeys()))
 			for _, v := range reflect.ValueOf(val).MapKeys() {
 				newVal := reflect.ValueOf(val).MapIndex(v).Interface()
-				//if newVal == nil {
-				//	log.Print("Exiting as nil vlaue found for ",v ," of ", val)
-				//	return "", "" //exiting as we will ignore this condition as user has not passed any value for filter
-				//}
 				if newVal != nil {
 					var valPrefix, valSuffix = "", ""
 					if reflect.TypeOf(newVal).Kind().String() == "string" {
@@ -375,13 +361,14 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 					}
 					if v.String() == "$or" || v.String() == "or" {
 						if reflect.TypeOf(newVal).Kind().String() != "slice" {
-							log.Print("Error : or clause has single element")
-							return "", "or clause has single element"
+							errStr := "Error : or clause has single element"
+							logs.WithContext(ctx).Error(errStr)
+							return "", errStr
 						}
 						s := reflect.ValueOf(newVal)
 						innerTempArray := make([]string, s.Len())
 						for ii := 0; ii < s.Len(); ii++ {
-							innerTempArray[ii], err = processWhereClause(s.Index(ii).Interface(), v.String(), mainTableName, isJoinClause)
+							innerTempArray[ii], err = processWhereClause(ctx, s.Index(ii).Interface(), v.String(), mainTableName, isJoinClause)
 							if err != "" {
 								return "", err
 							}
@@ -419,12 +406,9 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 						case "$like":
 							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, "%", reflect.ValueOf(newVal), "%", valSuffix))
 						case "$btw":
-							log.Print("printing between clause")
-							log.Print(reflect.ValueOf(newVal))
-							log.Print(reflect.TypeOf(newVal))
 							btwClause, ok := reflect.ValueOf(newVal).Interface().(map[string]interface{})
 							if !ok {
-								log.Print("between clause is not a map")
+								logs.WithContext(ctx).Warn("between clause is not a map")
 							}
 							preFix := "'"
 							//checking only from value to determine with values recevied are int/float to avoid adding single quote in sql
@@ -448,7 +432,6 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 							switch reflect.TypeOf(newVal).Kind() {
 							case reflect.String:
 								s := reflect.ValueOf(newVal)
-								log.Print("s.String() == ", s.String())
 								if strings.HasPrefix(s.String(), "$") {
 
 								}
@@ -465,34 +448,25 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 								}
 								tempArray = append(tempArray, fmt.Sprint(parentKey, op, "(", strings.Join(temp, " , "), ")"))
 							default:
-								//return "", "$in and $nin clause needs array as a value"
-								log.Print("skipping $in and $nin clause as it needs array as a value but recevied ", newVal)
+								logs.WithContext(ctx).Warn(fmt.Sprint("skipping $in and $nin clause as it needs array as a value but recevied ", newVal))
 							}
 						default:
 							str := ""
-							log.Print(newVal)
-							log.Print(mainTableName)
-							str, err = processWhereClause(newVal, eru_utils.ReplaceUnderscoresWithDots(v.String()), mainTableName, isJoinClause)
-							log.Print("str = ", str)
+							str, err = processWhereClause(ctx, newVal, eru_utils.ReplaceUnderscoresWithDots(v.String()), mainTableName, isJoinClause)
 							if str == "" {
-								log.Print("skipping whereclause for ", newVal, " as there is no value provided by user  : ", str)
-								log.Print(err)
+								logs.WithContext(ctx).Warn(fmt.Sprint("skipping whereclause for ", newVal, " as there is no value provided by user  : ", str))
+
 							} else {
 								tempArray = append(tempArray, str)
 							}
 							if err != "" {
+								logs.WithContext(ctx).Error(err)
 								return "", err
 							}
 						}
 					}
 				}
 			}
-			//log.Print(fmt.Sprint("( ", strings.Join(tempArray, " and "), " )"))
-			//if isPartOfOr {
-			//	return strings.Join(tempArray, " and "), ""
-			//}
-			log.Print(tempArray)
-			log.Print("len for tempArray == ", len(tempArray))
 			if len(tempArray) > 0 {
 				return fmt.Sprint("( ", strings.Join(tempArray, " and "), " )"), ""
 			} else {
@@ -500,19 +474,15 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 			}
 
 		case reflect.String, reflect.Int, reflect.Float32, reflect.Float64:
-			//log.Print(fmt.Sprint(parentKey , " = " , reflect.ValueOf(val)))
 			var valPrefix, valSuffix = "", ""
 			if reflect.TypeOf(val).Kind().String() == "string" {
 				//TODO due to below statement - 2022-07-27T18:30:00.000Z date in filter is failing if passed in this format
 				//parse for date
-				log.Print("reflect.ValueOf(val).String()")
-				log.Print(reflect.ValueOf(val).String())
 				if !strings.Contains(reflect.ValueOf(val).String(), ".") || !isJoinClause {
 					valPrefix = "'"
 					valSuffix = "'"
 				}
 			}
-			log.Print("valPrefix, reflect.ValueOf(val).String() = ", valPrefix, reflect.ValueOf(val))
 			return fmt.Sprint(parentKey, " = ", valPrefix, reflect.ValueOf(val), valSuffix), ""
 		default:
 			return "", ""
@@ -521,18 +491,15 @@ func processWhereClause(val interface{}, parentKey string, mainTableName string,
 	return "", ""
 }
 
-func (sqlObj *SQLObjectQ) processSortClause(val interface{}) (sortClause string) {
+func (sqlObj *SQLObjectQ) processSortClause(ctx context.Context, val interface{}) (sortClause string) {
+	logs.WithContext(ctx).Debug("processSortClause - Start")
 	if val != nil {
 		isDesc := ""
 		_ = isDesc
 		//v, e := ParseAstValue(val, vars)
-		//log.Print(e)
 		switch reflect.TypeOf(val).Kind() {
 		case reflect.Slice:
-			log.Print("inside processSortClause reflect.Slice")
 			s := reflect.ValueOf(val)
-			log.Print(s)
-			log.Print("s.Len() = ", s.Len())
 			temp := make([]string, s.Len())
 			for i := 0; i < s.Len(); i++ {
 				isDesc = ""
@@ -584,40 +551,29 @@ func (sqlObj *SQLObjectQ) processSortClause(val interface{}) (sortClause string)
 			return fmt.Sprint(" order by ", s, isDesc)
 		default:
 		}
-		/*
-			switch val.GetKind() {
-			case kinds.StringValue:
-				v := val.(*ast.StringValue).Value
-				gqr.sortClause = make([]interface{}, 1)
-				gqr.sortClause[0] = v
-				log.Print("val.GetKind() = StringValue")
-				log.Print("val.(*ast.StringValue).Value = "+v)
-			case kinds.ListValue:
-				v,e := parseAstListValue(val)
-			case kinds.Variable:
-				log.Print("val.GetKind() = Variable")
-				v := val.(*ast.Variable)
-				log.Print("val.(*ast.Variable).Name.Value = "+ v.Name.Value )
-				gqr.sortClause = make([]interface{}, 1)
-				gqr.sortClause[0] = v.Name.Value
-				//log.Print(v.Name.Value)
-				//log.Print("pd.Variables[v.Name.Value]")
-				//log.Print((pd.Variables[v.Name.Value]))
-			default:
-				log.Print("inside default val kind")
-			}
-		*/
 	}
 	return ""
 }
-func (sqlObj *SQLObjectQ) processJoins(val []*OrderedMap) (strJoinClause string) {
-	log.Print("inside process Joins for === ")
+func (sqlObj *SQLObjectQ) processJoins(ctx context.Context, val []*OrderedMap) (strJoinClause string) {
+	logs.WithContext(ctx).Debug("processJoins - Start")
 	for _, obj := range val {
-		log.Print(obj)
+		o, _ := json.Marshal(obj.Obj)
+		logs.WithContext(ctx).Debug(string(o))
+		logs.WithContext(ctx).Debug(fmt.Sprint("obj.Rank = ", obj.Rank))
+		logs.WithContext(ctx).Debug(fmt.Sprint("obj.Level = ", obj.Level))
+		logs.WithContext(ctx).Debug(fmt.Sprint("obj.SubLevel = ", obj.SubLevel))
 	}
 	sort.Sort(MapSorter(val))
+	logs.WithContext(ctx).Debug("after sorting")
 	for _, obj := range val {
+		o, _ := json.Marshal(obj.Obj)
+		logs.WithContext(ctx).Debug(string(o))
+		logs.WithContext(ctx).Debug(fmt.Sprint("obj.Rank = ", obj.Rank))
+		logs.WithContext(ctx).Debug(fmt.Sprint("obj.Level = ", obj.Level))
+		logs.WithContext(ctx).Debug(fmt.Sprint("obj.SubLevel = ", obj.SubLevel))
+	}
 
+	for _, obj := range val {
 		for tableName, v := range obj.Obj {
 			joinType := "LEFT" //default join value TODO schema joins has an option to define join type
 			onClause := ""
@@ -626,15 +582,17 @@ func (sqlObj *SQLObjectQ) processJoins(val []*OrderedMap) (strJoinClause string)
 				for _, vv := range reflect.ValueOf(v).MapKeys() { //TODO remove reflect usage
 					if vv.String() == "joinType" {
 						jt, err := reflect.ValueOf(v).MapIndex(vv).Interface().(string)
-						log.Print(err)
+						if !err {
+							logs.WithContext(ctx).Warn("joinType value is not a string")
+						}
 						switch jt {
 						case "LEFT", "RIGHT", "INNER":
 							joinType = jt
 						default:
-							log.Print("valid values for joinType are LEFT RIGHT and INNER ")
+							logs.WithContext(ctx).Warn("valid values for joinType are LEFT RIGHT and INNER ")
 						}
 					} else if vv.String() == "on" {
-						oc, _ := processWhereClause(reflect.ValueOf(v).MapIndex(vv).Interface(), "", sqlObj.MainTableName, true)
+						oc, _ := processWhereClause(ctx, reflect.ValueOf(v).MapIndex(vv).Interface(), "", sqlObj.MainTableName, true)
 						onClause = oc
 					}
 				}
@@ -647,7 +605,8 @@ func (sqlObj *SQLObjectQ) processJoins(val []*OrderedMap) (strJoinClause string)
 	return strJoinClause
 }
 
-func (sqlObj *SQLObjectQ) MakeQuery(sqlMaker ds.SqlMakerI, withColAlias bool) (err error) {
+func (sqlObj *SQLObjectQ) MakeQuery(ctx context.Context, sqlMaker ds.SqlMakerI, withColAlias bool) (err error) {
+	logs.WithContext(ctx).Debug("MakeQuery - Start")
 	strDistinct := ""
 	strGroupClause := ""
 	strColums := ""
@@ -656,23 +615,16 @@ func (sqlObj *SQLObjectQ) MakeQuery(sqlMaker ds.SqlMakerI, withColAlias bool) (e
 	} else {
 		strColums = strings.Join(sqlObj.Columns.ColNames, " , ")
 	}
-	//log.Print("sqlObj.Columns.ColWithAlias = ", sqlObj.Columns.ColWithAlias)
-
-	//strColumns := strings.Join(sqlObj.Columns.ColNames, " , ")
-	//log.Print("sqlObj.JoinClause === ", sqlObj.JoinClause)
-	strJoinClause := sqlObj.processJoins(sqlObj.JoinClause)
-	//log.Print("strJoinClause == ", strJoinClause)
-	strWhereClause, e := processWhereClause(sqlObj.WhereClause, "", sqlObj.MainTableName, false)
+	strJoinClause := sqlObj.processJoins(ctx, sqlObj.JoinClause)
+	strWhereClause, e := processWhereClause(ctx, sqlObj.WhereClause, "", sqlObj.MainTableName, false)
 	if e != "" {
 		err = errors.New(e)
 	}
-	//log.Print("sqlObj.SecurityClause[sqlObj.MainTableName] = ", sqlObj.SecurityClause[sqlObj.MainTableName])
 
 	strAnd := ""
 	strSecurityClause := ""
 	for _, v := range sqlObj.SecurityClause {
 		if v != "" {
-			log.Print("strSecurityClause = ", strSecurityClause)
 			strSecurityClause = fmt.Sprint(strSecurityClause, strAnd, v)
 			strAnd = " and "
 		}
@@ -684,12 +636,11 @@ func (sqlObj *SQLObjectQ) MakeQuery(sqlMaker ds.SqlMakerI, withColAlias bool) (e
 			strWhereClause = strSecurityClause
 		}
 	}
-	log.Print("strWhereClause after = ", strWhereClause)
 	if strWhereClause != "" {
 		strWhereClause = fmt.Sprint(" where ", strWhereClause)
 	}
 
-	strSortClause := sqlObj.processSortClause(sqlObj.SortClause)
+	strSortClause := sqlObj.processSortClause(ctx, sqlObj.SortClause)
 	if sqlObj.HasAggregate && len(sqlObj.Columns.GroupClause) > 0 {
 		strGroupClause = fmt.Sprint(" group by ", strings.Join(sqlObj.Columns.GroupClause, " , "))
 	}
@@ -704,6 +655,6 @@ func (sqlObj *SQLObjectQ) MakeQuery(sqlMaker ds.SqlMakerI, withColAlias bool) (e
 	}
 	sqlObj.DBQuery = fmt.Sprint(withClause, "select ", strDistinct, strColums, " from ", fromTable, " ", strJoinClause, " ", strWhereClause, " ", strGroupClause, strSortClause)
 
-	sqlObj.DBQuery = sqlMaker.AddLimitSkipClause(sqlObj.DBQuery, sqlObj.Limit, sqlObj.Skip, 1000)
+	sqlObj.DBQuery = sqlMaker.AddLimitSkipClause(ctx, sqlObj.DBQuery, sqlObj.Limit, sqlObj.Skip, 1000)
 	return err
 }

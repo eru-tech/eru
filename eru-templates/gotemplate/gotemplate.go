@@ -2,6 +2,7 @@ package gotemplate
 
 import (
 	"bytes"
+	"context"
 	b64 "encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -11,8 +12,8 @@ import (
 	erumd5 "github.com/eru-tech/eru/eru-crypto/md5"
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/xuri/excelize/v2"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -26,8 +27,8 @@ type GoTemplate struct {
 	Template string
 }
 
-func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output interface{}, err error) {
-	log.Println("inside Execute of GoTemplate")
+func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFormat string) (output interface{}, err error) {
+	logs.WithContext(ctx).Debug("Execute - Start")
 	var funcs = template.FuncMap{
 		"repeat": func(n int) []int {
 			var res []int
@@ -42,15 +43,12 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		"marshalJSON": func(j interface{}) ([]byte, error) {
 			d, err := json.Marshal(j)
 			if err != nil {
-				log.Print(err)
+				logs.WithContext(ctx).Error(err.Error())
 			}
 			return d, err
 		},
 		"unmarshalJSON": func(b []byte) (d interface{}, err error) {
-			log.Println("inside unmarshalJSON")
-			log.Println(string(b))
 			err = json.Unmarshal(b, &d)
-			log.Println(d)
 			return
 		},
 		"b64Encode": func(str []byte) (string, error) {
@@ -59,7 +57,7 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		"b64Decode": func(str string) (string, error) {
 			decodeBytes, err := b64.StdEncoding.DecodeString(str)
 			if err != nil {
-				log.Println(err)
+				logs.WithContext(ctx).Error(err.Error())
 				//return empty string with nil error to silently proceed even if base64 conversion fails
 				return "", nil
 			}
@@ -77,59 +75,56 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return len(strJ), err
 		},
 		"aesEncryptECB": func(pb []byte, k []byte) ([]byte, error) {
-			dst, err := eruaes.EncryptECB(pb, k)
+			dst, err := eruaes.EncryptECB(ctx, pb, k)
 			return dst, err
 		},
 		"aesDecryptECB": func(eb []byte, k []byte) ([]byte, error) {
-			return eruaes.DecryptECB(eb, k)
+			return eruaes.DecryptECB(ctx, eb, k)
 		},
 		"aesEncryptCBC": func(pb []byte, k []byte, iv []byte) ([]byte, error) {
-			dst, err := eruaes.EncryptCBC(pb, k, iv)
+			dst, err := eruaes.EncryptCBC(ctx, pb, k, iv)
 			return []byte(dst), err
 		},
 		"aesDecryptCBC": func(eb []byte, k []byte, iv []byte) ([]byte, error) {
-			return eruaes.DecryptCBC(eb, k, iv)
+			return eruaes.DecryptCBC(ctx, eb, k, iv)
 		},
 		"encryptRSACert": func(j []byte, pubK string) ([]byte, error) {
-			return erursa.EncryptWithCert(j, pubK)
+			return erursa.EncryptWithCert(ctx, j, pubK)
 		},
 		"bytesToString": func(b []byte) string {
-			//str , uerr := strconv.Unquote(string(b))
-			//log.Print(uerr)
 			return string(b)
 		},
 		"stringToByte": func(s string) []byte {
-			log.Println(s)
 			return []byte(s)
 		},
 		"unquote": func(s string) string {
-			log.Println("inside unquote")
-			log.Println(s)
 			str, uerr := strconv.Unquote(string(s))
-			log.Print(uerr)
+			if uerr != nil {
+				logs.WithContext(ctx).Error(uerr.Error())
+			}
 			return str
 		},
 		"generateAesKey": func(bits int) ([]byte, error) {
-			aesObj, err := eruaes.GenerateKey(bits)
+			aesObj, err := eruaes.GenerateKey(ctx, bits)
 			if err != nil {
 				return nil, err
 			}
 			return aesObj.Key, nil
 		},
 		"shaHash": func(b string, bits int) (string, error) {
-			log.Print("printing input to shaHash")
-			log.Print(b)
 			switch bits {
 			case 256:
 				return hex.EncodeToString(erusha.NewSHA256([]byte(b))), nil
 			case 512:
 				return hex.EncodeToString(erusha.NewSHA512([]byte(b))), nil
 			default:
-				return "", errors.New(fmt.Sprint("SHA function not defined for ", bits, "bits"))
+				err = errors.New(fmt.Sprint("SHA function not defined for ", bits, "bits"))
+				logs.WithContext(ctx).Error(err.Error())
+				return "", err
 			}
 		},
 		"md5": func(str string, output string) (string, error) {
-			return erumd5.Md5(str, output)
+			return erumd5.Md5(ctx, str, output)
 		},
 		"PKCS7Pad": func(buf []byte, size int) []byte {
 			return eruaes.Pad(buf, size)
@@ -139,8 +134,6 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		},
 		"saveVar": func(vars map[string]interface{}, ketToSave string, valueToSave interface{}) error {
 			vars[ketToSave] = valueToSave
-			log.Print("saveVar printed below")
-			log.Print(vars)
 			return nil
 		},
 		"concatMapKeyVal": func(vars map[string]interface{}, keys []string, seprator string) string {
@@ -148,8 +141,6 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			for _, k := range keys {
 				str = fmt.Sprint(str, k, "=", vars[k], "|")
 			}
-			log.Print("printing result from concatMapKeyVal")
-			log.Print(str)
 			return str
 		},
 		"concatMapKeyValUnordered": func(vars map[string]interface{}, seprator string) string {
@@ -195,27 +186,52 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			return newMap, nil
 		},
 		"getMapValue": func(orgMap map[string]interface{}, key string) (d interface{}, err error) {
-			if err != nil {
-				return orgMap, err
-			}
-			d, ok := orgMap[key]
+			d = make(map[string]interface{})
+			ok := false
+			d, ok = orgMap[key]
 			if !ok {
 				return orgMap, err
 			}
 			return d, nil
 		},
+		"getMapPointerValue": func(orgMap map[string]*interface{}, key string) (d interface{}, err error) {
+			d = make(map[string]interface{})
+			ok := false
+			d, ok = orgMap[key]
+			if !ok {
+				return orgMap, err
+			}
+			return d, nil
+		},
+		"getArrayValue": func(orgArray []interface{}, index int, emptyValue interface{}) (d interface{}) {
+			if emptyValue == "object" {
+				d = make(map[string]interface{})
+			} else if emptyValue == "string" {
+				d = ""
+			} else if emptyValue == "number" {
+				d = 0
+			}
+			if len(orgArray) <= index {
+				return d
+			}
+			d = orgArray[index]
+			return d
+		},
 		"logobject": func(v interface{}) (err error) {
 			vobj, err := json.Marshal(v)
 			if err != nil {
-				log.Println(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return
 			}
-			log.Print("logobject printed below")
-			log.Println(string(vobj))
+			logs.WithContext(ctx).Info(fmt.Sprint("logobject = ", string(vobj)))
 			return
 		},
 		"logstring": func(str interface{}) (err error) {
-			log.Println("logstring = ", str)
+			logs.WithContext(ctx).Info(fmt.Sprint("logstring = ", str))
+			return
+		},
+		"logerror": func(str interface{}) (err error) {
+			logs.WithContext(ctx).Error(fmt.Sprint("logstring = ", str))
 			return
 		},
 		"uuid": func() (uuidStr string, err error) {
@@ -232,7 +248,6 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 			case "DAY":
 				datePart = string(dt.Day())
 			case "MONTHN":
-				log.Print(int(dt.Month()))
 				mStr := strconv.Itoa(int(dt.Month()))
 				datePart = strings.Repeat("0", 2-len(mStr)) + mStr
 			case "MONTH":
@@ -262,79 +277,64 @@ func (goTmpl *GoTemplate) Execute(obj interface{}, outputFormat string) (output 
 		},
 		"excelToJson": func(fData string, sheetNames string, firstRowHeader string, headers string, keys string) (fJson interface{}, err error) {
 
-			return excelToJson(fData, sheetNames, firstRowHeader, headers, keys)
+			return excelToJson(ctx, fData, sheetNames, firstRowHeader, headers, keys)
+		},
+		"null": func() interface{} {
+			return nil
 		},
 	}
 
 	buf := &bytes.Buffer{}
-	//log.Println("goTmpl.Name = ", goTmpl.Name)
-	//log.Println("goTmpl.Template = ", goTmpl.Template)
 
 	t := template.Must(template.New(goTmpl.Name).Funcs(funcs).Parse(goTmpl.Template))
 
-	//log.Print("printing vars from inside execute template" )
-	//objJ, _ := json.Marshal(obj)
-	//log.Print(string(objJ))
-
 	if err := t.Execute(buf, obj); err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return "", err
 	}
 	switch outputFormat {
 	case "string":
 		if buf.String() == "<no value>" {
-			return nil, errors.New("Template returned <no value>")
+			err = errors.New("Template returned <no value>")
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
 		}
 		return buf.String(), nil
 	case "json":
-		//log.Println("buf.String()")
-		//log.Println("-------------------")
-		//log.Println(buf.String())
 		if err = json.Unmarshal([]byte(buf.String()), &output); err != nil {
-			return nil, errors.New(fmt.Sprintf("Unable to marhsal templated output to JSON : ", buf.String(), " ", err))
+			err = errors.New(fmt.Sprintf("Unable to marhsal templated output to JSON : ", buf.String(), " ", err))
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
 		} else {
 			return
 		}
 	}
-	return nil, errors.New(fmt.Sprint("Unknown output format : ", outputFormat))
+	err = errors.New(fmt.Sprint("Unknown output format : ", outputFormat))
+	logs.WithContext(ctx).Error(err.Error())
+	return nil, err
 }
 
-func excelToJson(fData string, sheetNames string, firstRowHeader string, headers string, mapKeys string) (fJson interface{}, err error) {
-	//log.Println("sheetNames = ", sheetNames)
+func excelToJson(ctx context.Context, fData string, sheetNames string, firstRowHeader string, headers string, mapKeys string) (fJson interface{}, err error) {
 	sheetNameArray := strings.Split(sheetNames, ",")
-	//log.Println("len(sheetNames) = ", len(sheetNames))
-
-	//log.Println("headers = ", headers)
 	sheetHeadersArray := strings.Split(headers, ",")
-	//log.Println("len(sheetHeadersArray) = ", len(sheetHeadersArray))
-
-	//log.Println("firstRowHeader = ", firstRowHeader)
 	firstRowHeaderArray := strings.Split(firstRowHeader, ",")
-	//log.Println("len(firstRowHeaderArray) = ", len(firstRowHeaderArray))
-
-	//log.Println("mapKeys = ", mapKeys)
 	mapKeysArray := strings.Split(mapKeys, ",")
-	//log.Println("len(mapKeysArray) = ", len(mapKeysArray))
-
-	//if sheetHeadersArray[0] == "" && !firstRowHeader {
-	//	return map[string]string{"error": "header information missing"}, nil
-	//}
 
 	result := make(map[string][]map[string]interface{})
 	fDataDecoded, err := b64.StdEncoding.DecodeString(fData)
 	if err != nil {
-		log.Println(err)
-		//return empty string with nil error to silently proceed even if base64 conversion fails
+		logs.WithContext(ctx).Error(err.Error())
 		return "", nil
 	}
 	f, err := excelize.OpenReader(bytes.NewReader(fDataDecoded))
 	if err != nil {
-		log.Println(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return "", err
 	}
 	defer func() {
 		// Close the spreadsheet.
 		if err := f.Close(); err != nil {
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 		}
 	}()
 	sheetFound := false
@@ -360,7 +360,7 @@ func excelToJson(fData string, sheetNames string, firstRowHeader string, headers
 			if sNo < len(firstRowHeaderArray) {
 				isFirstRowHeader, err = strconv.ParseBool(firstRowHeaderArray[sNo])
 				if err != nil {
-					log.Println(err)
+					logs.WithContext(ctx).Error(err.Error())
 					isFirstRowHeader = false
 				}
 			}
@@ -379,7 +379,7 @@ func excelToJson(fData string, sheetNames string, firstRowHeader string, headers
 				rows, rErr := f.GetRows(sheetName)
 				if rErr != nil {
 					err = rErr
-					log.Println(err)
+					logs.WithContext(ctx).Error(err.Error())
 					return
 				}
 				for rNo, row := range rows {

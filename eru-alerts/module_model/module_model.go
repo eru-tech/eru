@@ -1,9 +1,10 @@
 package module_model
 
 import (
+	"context"
 	"fmt"
 	"github.com/eru-tech/eru/eru-alerts/channel"
-	"log"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 type ModuleProjectI interface {
@@ -15,15 +16,14 @@ type Project struct {
 	Channels         map[string]channel.ChannelI
 }
 
-func (prg *Project) AddChannel(channelObjI channel.ChannelI) error {
-	log.Println("inside AddChannel")
+func (prg *Project) AddChannel(ctx context.Context, channelObjI channel.ChannelI) error {
+	logs.WithContext(ctx).Debug("AddChannel - Start")
 	channelName, err := channelObjI.GetAttribute("ChannelName")
 	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
-
 	cKey := fmt.Sprint(channelName.(string))
-	log.Print(cKey)
 	if prg.Channels == nil {
 		prg.Channels = make(map[string]channel.ChannelI)
 	}

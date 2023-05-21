@@ -1,15 +1,15 @@
 package ql
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-writes/eru_writes"
-	"log"
-	"reflect"
 	"strings"
 )
 
@@ -19,25 +19,26 @@ type SQLData struct {
 	Cols    string `json:"cols"`
 }
 
-func (sqd *SQLData) SetQLData(mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) {
-	log.Print("inside SetQLData of SQLData")
-	sqd.SetQLDataCommon(mq, vars, executeFlag, tokenObj, isPublic, outputType)
+func (sqd *SQLData) SetQLData(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) {
+	logs.WithContext(ctx).Debug("SetQLData - Start")
+	sqd.SetQLDataCommon(ctx, mq, vars, executeFlag, tokenObj, isPublic, outputType)
 	//sqd.Query=mq.Query
 	//sqd.Variables=mq.Vars
 	sqd.DBAlias = mq.DBAlias
 	sqd.Cols = mq.Cols
 	//sqd.SetFinalVars(vars)
 }
-func (sqd *SQLData) Execute(projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error) {
-	log.Print("inside ExecuteSQL of SQLData")
+func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error) {
+	logs.WithContext(ctx).Debug("Execute of Sql - Start")
 	datasource := datasources[sqd.DBAlias]
 	if datasource == nil {
 		return nil, nil, errors.New(fmt.Sprint("dbAlias ", sqd.DBAlias, " not found"))
 	}
 	var result map[string]interface{}
 	sr := ds.GetSqlMaker(datasource.DbName)
-	log.Print("sqd.FinalVariables  = ", sqd.FinalVariables)
 	for k, v := range sqd.FinalVariables {
+		//logs.WithContext(ctx).Info(fmt.Sprint("v : ", v))
+		//logs.WithContext(ctx).Info(fmt.Sprint("k : ", k))
 		var str string
 		switch tp := v.(type) {
 		case float64:
@@ -52,43 +53,41 @@ func (sqd *SQLData) Execute(projectId string, datasources map[string]*module_mod
 			str = string(strBytes)
 			break
 		case []interface{}:
-			log.Print("[]interface {}:")
 			if iArray, ok := v.([]interface{}); ok {
-				log.Print(iArray)
 				for i, strText := range iArray {
-					log.Print(strText)
 					sep := ""
 					if i > 0 {
 						sep = " , "
 					}
 					str = fmt.Sprint(str, sep, "'", strText, "'")
 				}
-				log.Print(str)
 			}
 			break
 		default:
-			log.Print("from default")
-			log.Print(tp)
-			log.Print(reflect.TypeOf(v))
+			logs.WithContext(ctx).Warn(fmt.Sprint("Unhandled type for : ", tp))
 			// do noting
 			break
 		}
-		log.Print(k, " = ", str)
+		logs.WithContext(ctx).Debug(fmt.Sprint(k, " = ", str))
 		sqd.Query = strings.Replace(sqd.Query, fmt.Sprint("$", k), str, -1)
 
 	}
 	queryObj := QueryObject{}
 	queryObj.Query = sqd.Query
 	queryObj.Cols = sqd.Cols
-	log.Print("sqd.ExecuteFlag = ", sqd.ExecuteFlag)
 	if sqd.ExecuteFlag {
 		if sqd.OutputType == eru_writes.OutputTypeCsv || sqd.OutputType == eru_writes.OutputTypeExcel {
-			result, err = sr.ExecuteQueryForCsv(sqd.Query, datasource, "Results")
-			log.Print(err)
+			result, err = sr.ExecuteQueryForCsv(ctx, sqd.Query, datasource, "Results")
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
 			res = append(res, result)
 		} else {
-			result, err = sr.ExecutePreparedQuery(sqd.Query, datasource)
-			log.Print(err)
+			result, err = sr.ExecutePreparedQuery(ctx, sqd.Query, datasource)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+
 			res = append(res, result)
 		}
 	}

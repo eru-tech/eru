@@ -1,11 +1,12 @@
 package module_server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-gateway/module_store"
-	"log"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"os"
 	"strings"
 )
@@ -13,12 +14,12 @@ import (
 const StoreTableName = "erugateway_config"
 
 func StartUp() (module_store.ModuleStoreI, error) {
+	logs.WithContext(context.Background()).Debug("StartUp - Start")
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
 	if storeType == "" {
 		storeType = "STANDALONE"
-		log.Print("STORE_TYPE environment variable not found - loading default standlone store")
+		logs.WithContext(context.Background()).Info("STORE_TYPE environment variable not found - loading default standlone store")
 	}
-	log.Print(storeType)
 	var myStore module_store.ModuleStoreI
 	var err error
 	switch storeType {
@@ -30,16 +31,20 @@ func StartUp() (module_store.ModuleStoreI, error) {
 		// myStore, err = store.LoadStoreFromFile()
 		myStore = new(module_store.ModuleFileStore)
 		if err != nil {
+			logs.WithContext(context.Background()).Error(err.Error())
 			return nil, err
 		}
 	default:
-		return nil, errors.New(fmt.Sprint("Invalid STORE_TYPE ", storeType))
+		err = errors.New(fmt.Sprint("Invalid STORE_TYPE ", storeType))
+		logs.WithContext(context.Background()).Error(err.Error())
+		return nil, err
 	}
 	storeBytes, err := myStore.GetStoreByteArray("")
 	if err == nil {
 		err = json.Unmarshal(storeBytes, myStore)
 		//module_store.UnMarshalStore(storeBytes, myStore)
+	} else {
+		logs.WithContext(context.Background()).Error(err.Error())
 	}
-	//s.Store = myStore
 	return myStore, err
 }

@@ -1,13 +1,16 @@
 package module_store
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
 	"github.com/eru-tech/eru/eru-auth/module_model"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
-	"log"
+	"reflect"
 )
 
 type StoreHolder struct {
@@ -15,23 +18,19 @@ type StoreHolder struct {
 }
 type ModuleStoreI interface {
 	store.StoreI
-	SaveProject(projectId string, realStore ModuleStoreI, persist bool) error
-	RemoveProject(projectId string, realStore ModuleStoreI) error
-	GetProjectConfig(projectId string) (*module_model.Project, error)
-	GetProjectList() []map[string]interface{}
-	//SaveSmsGateway(projectId string, gatewayName string, smsGateway module_model.SmsGateway, realStore ModuleStoreI) error
-	//RemoveSmsGateway(projectId string, gatewayName string, realStore ModuleStoreI) error
-	//SaveEmailGateway(projectId string, gatewayName string, emailGateway module_model.EmailGateway, realStore ModuleStoreI) error
-	//RemoveEmailGateway(projectId string, gatewayName string, realStore ModuleStoreI) error
-	SaveMessageTemplate(projectId string, messageTemplate module_model.MessageTemplate, realStore ModuleStoreI) error
-	RemoveMessageTemplate(projectId string, templateId string, realStore ModuleStoreI) error
-	SaveGateway(gatewayObj gateway.GatewayI, projectId string, realStore ModuleStoreI, persist bool) error
-	RemoveGateway(gatewayName string, gatewayType string, channel string, projectId string, realStore ModuleStoreI) error
-	GetGatewayFromType(gatewayType string, channel string, projectId string) (gateway.GatewayI, error)
-	GetMessageTemplate(gatewayName string, projectId string, templateType string) (module_model.MessageTemplate, error)
-	SaveAuth(authObj auth.AuthI, projectId string, realStore ModuleStoreI, persist bool) error
-	RemoveAuth(authType string, projectId string, realStore ModuleStoreI) error
-	GetAuth(projectId string, authName string) (auth.AuthI, error)
+	SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error
+	RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error
+	GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error)
+	GetProjectList(ctx context.Context) []map[string]interface{}
+	SaveMessageTemplate(ctx context.Context, projectId string, messageTemplate module_model.MessageTemplate, realStore ModuleStoreI) error
+	RemoveMessageTemplate(ctx context.Context, projectId string, templateId string, realStore ModuleStoreI) error
+	SaveGateway(ctx context.Context, gatewayObj gateway.GatewayI, projectId string, realStore ModuleStoreI, persist bool) error
+	RemoveGateway(ctx context.Context, gatewayName string, gatewayType string, channel string, projectId string, realStore ModuleStoreI) error
+	GetGatewayFromType(ctx context.Context, gatewayType string, channel string, projectId string) (gateway.GatewayI, error)
+	GetMessageTemplate(ctx context.Context, gatewayName string, projectId string, templateType string) (module_model.MessageTemplate, error)
+	SaveAuth(ctx context.Context, authObj auth.AuthI, projectId string, realStore ModuleStoreI, persist bool) error
+	RemoveAuth(ctx context.Context, authType string, projectId string, realStore ModuleStoreI) error
+	GetAuth(ctx context.Context, projectId string, authName string, s ModuleStoreI) (auth.AuthI, error)
 }
 
 type ModuleStore struct {
@@ -47,8 +46,9 @@ type ModuleDbStore struct {
 	ModuleStore
 }
 
-func (ms *ModuleStore) SaveProject(projectId string, realStore ModuleStoreI, persist bool) error {
+func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error {
 	//TODO to handle edit project once new project attributes are finalized
+	logs.WithContext(ctx).Debug("SaveProject - Start")
 	if _, ok := ms.Projects[projectId]; !ok {
 		project := new(module_model.Project)
 		project.ProjectId = projectId
@@ -73,101 +73,58 @@ func (ms *ModuleStore) SaveProject(projectId string, realStore ModuleStoreI, per
 
 		ms.Projects[projectId] = project
 		if persist == true {
-			log.Print("SaveStore called from SaveProject")
-			return realStore.SaveStore("", realStore)
+			logs.WithContext(ctx).Info("SaveStore called from SaveProject")
+			return realStore.SaveStore(ctx, "", realStore)
 		} else {
 			return nil
 		}
 	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " already exists"))
+		err := errors.New(fmt.Sprint("Project ", projectId, " already exists"))
+		logs.WithContext(ctx).Info(err.Error())
+		return err
 	}
 }
 
-func (ms *ModuleStore) RemoveProject(projectId string, realStore ModuleStoreI) error {
+func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("RemoveProject - Start")
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
-		log.Print("SaveStore called from RemoveProject")
-		return realStore.SaveStore("", realStore)
+		logs.WithContext(ctx).Info("SaveStore called from RemoveProject")
+		return realStore.SaveStore(ctx, "", realStore)
 	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		logs.WithContext(ctx).Info(err.Error())
+		return err
 	}
 }
 
-func (ms *ModuleStore) GetProjectConfig(projectId string) (*module_model.Project, error) {
+func (ms *ModuleStore) GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error) {
+	logs.WithContext(ctx).Debug("GetProjectConfig - Start")
 	if _, ok := ms.Projects[projectId]; ok {
-		//log.Println(store.Projects[projectId])
 		return ms.Projects[projectId], nil
 	} else {
-		return nil, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		logs.WithContext(ctx).Info(err.Error())
+		return nil, err
 	}
 }
 
-func (ms *ModuleStore) GetProjectList() []map[string]interface{} {
+func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interface{} {
+	logs.WithContext(ctx).Debug("GetProjectList - Start")
 	projects := make([]map[string]interface{}, len(ms.Projects))
 	i := 0
 	for k := range ms.Projects {
 		project := make(map[string]interface{})
 		project["projectName"] = k
-		//project["lastUpdateDate"] = time.Now()
 		projects[i] = project
 		i++
 	}
 	return projects
 }
 
-/*
-func (ms *ModuleStore) SaveSmsGateway(projectId string, gatewayName string, smsGateway module_model.SmsGateway, realStore ModuleStoreI) error {
-	err := ms.checkProjectExists(projectId)
-	if err != nil {
-		return err
-	}
-	if ms.Projects[projectId].SmsGateways == nil {
-		ms.Projects[projectId].SmsGateways = make(map[string]module_model.SmsGateway)
-	}
-	ms.Projects[projectId].SmsGateways[gatewayName] = smsGateway
-	return realStore.SaveStore("", realStore)
-}
-
-func (ms *ModuleStore) RemoveSmsGateway(projectId string, gatewayName string, realStore ModuleStoreI) error {
-	err := ms.checkProjectExists(projectId)
-	if err != nil {
-		return err
-	}
-	if _, ok := ms.Projects[projectId].SmsGateways[gatewayName]; ok {
-		delete(ms.Projects[projectId].SmsGateways, gatewayName)
-		return realStore.SaveStore("", realStore)
-	} else {
-		return errors.New(fmt.Sprint("Smsgateway ", gatewayName, " does not exists"))
-	}
-}
-
-func (ms *ModuleStore) SaveEmailGateway(projectId string, gatewayName string, emailGateway module_model.EmailGateway, realStore ModuleStoreI) error {
-	err := ms.checkProjectExists(projectId)
-	if err != nil {
-		return err
-	}
-	if ms.Projects[projectId].EmailGateways == nil {
-		ms.Projects[projectId].EmailGateways = make(map[string]module_model.EmailGateway)
-	}
-	ms.Projects[projectId].EmailGateways[gatewayName] = emailGateway
-	return realStore.SaveStore("", realStore)
-}
-
-func (ms *ModuleStore) RemoveEmailGateway(projectId string, gatewayName string, realStore ModuleStoreI) error {
-	err := ms.checkProjectExists(projectId)
-	if err != nil {
-		return err
-	}
-	if _, ok := ms.Projects[projectId].EmailGateways[gatewayName]; ok {
-		delete(ms.Projects[projectId].EmailGateways, gatewayName)
-		return realStore.SaveStore("", realStore)
-	} else {
-		return errors.New(fmt.Sprint("Emailgateway ", gatewayName, " does not exists"))
-	}
-}
-*/
-func (ms *ModuleStore) SaveMessageTemplate(projectId string, messageTemplate module_model.MessageTemplate, realStore ModuleStoreI) error {
-	err := ms.checkProjectExists(projectId)
+func (ms *ModuleStore) SaveMessageTemplate(ctx context.Context, projectId string, messageTemplate module_model.MessageTemplate, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("SaveMessageTemplate - Start")
+	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		return err
 	}
@@ -176,53 +133,60 @@ func (ms *ModuleStore) SaveMessageTemplate(projectId string, messageTemplate mod
 	}
 	templateName := fmt.Sprint(messageTemplate.GatewayName, "_", messageTemplate.TemplateType)
 	ms.Projects[projectId].MessageTemplates[templateName] = messageTemplate
-	return realStore.SaveStore("", realStore)
+	return realStore.SaveStore(ctx, "", realStore)
 }
 
-func (ms *ModuleStore) RemoveMessageTemplate(projectId string, templateName string, realStore ModuleStoreI) error {
-	err := ms.checkProjectExists(projectId)
+func (ms *ModuleStore) RemoveMessageTemplate(ctx context.Context, projectId string, templateName string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("RemoveMessageTemplate - Start")
+	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		return err
 	}
 	if _, ok := ms.Projects[projectId].MessageTemplates[templateName]; ok {
 		delete(ms.Projects[projectId].MessageTemplates, templateName)
-		return realStore.SaveStore("", realStore)
+		return realStore.SaveStore(ctx, "", realStore)
 	} else {
-		return errors.New(fmt.Sprint("MessageTemplates ", templateName, " does not exists"))
+		err = errors.New(fmt.Sprint("MessageTemplates ", templateName, " does not exists"))
+		logs.WithContext(ctx).Info(err.Error())
+		return err
 	}
 }
 
-func (ms *ModuleStore) SaveGateway(gatewayObj gateway.GatewayI, projectId string, realStore ModuleStoreI, persist bool) error {
-	log.Println("inside SaveGateway")
-	prj, err := ms.GetProjectConfig(projectId)
+func (ms *ModuleStore) SaveGateway(ctx context.Context, gatewayObj gateway.GatewayI, projectId string, realStore ModuleStoreI, persist bool) error {
+	logs.WithContext(ctx).Debug("SaveGateway - Start")
+	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
-		log.Print(err)
 		return err
 	}
-	err = prj.AddGateway(gatewayObj)
+	err = prj.AddGateway(ctx, gatewayObj)
 	if persist == true {
-		return realStore.SaveStore("", realStore)
+		return realStore.SaveStore(ctx, "", realStore)
 	}
 	return nil
 }
 
-func (ms *ModuleStore) RemoveGateway(gatewayName string, gatewayType string, channel string, projectId string, realStore ModuleStoreI) error {
+func (ms *ModuleStore) RemoveGateway(ctx context.Context, gatewayName string, gatewayType string, channel string, projectId string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("RemoveGateway - Start")
 	if prg, ok := ms.Projects[projectId]; ok {
 		gKey := fmt.Sprint(gatewayName, "_", gatewayType, "_", channel)
 		if _, ok := prg.Gateways[gKey]; ok {
 			delete(prg.Gateways, gKey)
-			log.Print("SaveStore called from RemoveGateway")
-			return realStore.SaveStore("", realStore)
+			logs.WithContext(ctx).Info("SaveStore called from RemoveGateway")
+			return realStore.SaveStore(ctx, "", realStore)
 		} else {
-			return errors.New(fmt.Sprint("Gayeway ", gKey, " does not exists"))
+			err := errors.New(fmt.Sprint("Gateway ", gKey, " does not exists"))
+			logs.WithContext(ctx).Info(err.Error())
+			return err
 		}
 	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		logs.WithContext(ctx).Info(err.Error())
+		return err
 	}
 }
 
-func (ms *ModuleStore) GetGatewayFromType(gatewayType string, channel string, projectId string) (gateway.GatewayI, error) {
-
+func (ms *ModuleStore) GetGatewayFromType(ctx context.Context, gatewayType string, channel string, projectId string) (gateway.GatewayI, error) {
+	logs.WithContext(ctx).Debug("GetGatewayFromType - Start")
 	if prg, ok := ms.Projects[projectId]; ok {
 		//todo to random selection of gateway based on allocation in case multiple gateway are defined
 		if prg.Gateways != nil {
@@ -237,15 +201,22 @@ func (ms *ModuleStore) GetGatewayFromType(gatewayType string, channel string, pr
 				}
 			}
 		} else {
-			return nil, errors.New(fmt.Sprint("No Gateways Defined"))
+			err := errors.New(fmt.Sprint("No Gateways Defined"))
+			logs.WithContext(ctx).Info(err.Error())
+			return nil, err
 		}
 	} else {
-		return nil, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		logs.WithContext(ctx).Info(err.Error())
+		return nil, err
 	}
-	return nil, errors.New(fmt.Sprint("Gateway ", gatewayType, " not found"))
+	err := errors.New(fmt.Sprint("Gateway ", gatewayType, " not found"))
+	logs.WithContext(ctx).Info(err.Error())
+	return nil, err
 }
 
-func (ms *ModuleStore) GetMessageTemplate(gatewayName string, projectId string, templateType string) (mt module_model.MessageTemplate, err error) {
+func (ms *ModuleStore) GetMessageTemplate(ctx context.Context, gatewayName string, projectId string, templateType string) (mt module_model.MessageTemplate, err error) {
+	logs.WithContext(ctx).Debug("GetMessageTemplate - Start")
 	if prg, ok := ms.Projects[projectId]; ok {
 		if prg.MessageTemplates != nil {
 			for k, v := range prg.MessageTemplates {
@@ -254,75 +225,138 @@ func (ms *ModuleStore) GetMessageTemplate(gatewayName string, projectId string, 
 				}
 			}
 		} else {
-			return mt, errors.New(fmt.Sprint("No Message Templates Defined"))
+			err = errors.New(fmt.Sprint("No Message Templates Defined"))
+			logs.WithContext(ctx).Info(err.Error())
+			return mt, err
+
 		}
 	} else {
-		return mt, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		err = errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		logs.WithContext(ctx).Info(err.Error())
+		return mt, err
 	}
-	return mt, errors.New(fmt.Sprint("Message Template ", fmt.Sprint(gatewayName, "_", templateType), " not found"))
+	err = errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+	logs.WithContext(ctx).Info(err.Error())
+	return mt, err
 }
-func (ms *ModuleStore) SaveAuth(authObj auth.AuthI, projectId string, realStore ModuleStoreI, persist bool) error {
-	log.Println("inside SaveAuth")
-	prj, err := ms.GetProjectConfig(projectId)
+func (ms *ModuleStore) SaveAuth(ctx context.Context, authObj auth.AuthI, projectId string, realStore ModuleStoreI, persist bool) error {
+	logs.WithContext(ctx).Debug("SaveAuth - Start")
+
+	//cloning authObj to replace variables and execute PerformPreSaveTask with actual values
+	authObjClone, err := ms.GetAuthCloneObject(ctx, projectId, authObj, realStore)
+	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
-		log.Print(err)
 		return err
 	}
-	authName, err := authObj.GetAttribute("AuthName")
+	authName, err := authObjClone.GetAttribute(ctx, "AuthName")
 	if err != nil {
-		log.Print(err)
 		return err
 	}
 	if persist == true {
-		err = authObj.PerformPreSaveTask()
+		err = authObjClone.PerformPreSaveTask(ctx)
 		if err != nil {
-			log.Print(err)
 			return err
 		}
 	}
-
-	err = prj.AddAuth(authName.(string), authObj)
+	//save original authObj with variables
+	err = prj.AddAuth(ctx, authName.(string), authObj)
 	if err != nil {
-		log.Print(err)
 		return err
 	}
 
 	if persist == true {
-		return realStore.SaveStore("", realStore)
+		return realStore.SaveStore(ctx, "", realStore)
 	}
 	return nil
 }
-func (ms *ModuleStore) RemoveAuth(authName string, projectId string, realStore ModuleStoreI) (err error) {
+func (ms *ModuleStore) RemoveAuth(ctx context.Context, authName string, projectId string, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveAuth - Start")
 	if prg, ok := ms.Projects[projectId]; ok {
 		if authObj, ok := prg.Auth[authName]; ok {
-			err = authObj.PerformPreDeleteTask()
+			err = authObj.PerformPreDeleteTask(ctx)
 			if err != nil {
-				log.Println(err)
 				return
 			}
 		} else {
-			return errors.New(fmt.Sprint("Auth ", authName, " does not exists"))
+			err = errors.New(fmt.Sprint("Auth ", authName, " does not exists"))
+			logs.WithContext(ctx).Info(err.Error())
+			return err
 		}
-		prg.RemoveAuth(authName)
+		err = prg.RemoveAuth(ctx, authName)
+		if err != nil {
+			return err
+		}
 	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		err = errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		logs.WithContext(ctx).Info(err.Error())
+		return err
 	}
-	return realStore.SaveStore("", realStore)
+	return realStore.SaveStore(ctx, "", realStore)
 }
 
-func (ms *ModuleStore) GetAuth(projectId string, authName string) (auth.AuthI, error) {
-	if prg, ok := ms.Projects[projectId]; ok {
-		if prg.Auth != nil {
-			for k, v := range prg.Auth {
-				if k == authName {
-					return v, nil
+func (ms *ModuleStore) GetAuthClone(ctx context.Context, projectId string, authName string, s ModuleStoreI) (authObjClone auth.AuthI, err error) {
+	logs.WithContext(ctx).Debug("GetAuthClone - Start")
+	prj, err := ms.GetProjectConfig(ctx, projectId)
+	if err != nil {
+		return
+	}
+
+	if authObj, ok := prj.Auth[authName]; !ok {
+		err = errors.New(fmt.Sprint("auth ", authName, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	} else {
+		return ms.GetAuthCloneObject(ctx, projectId, authObj, s)
+	}
+}
+
+func (ms *ModuleStore) GetAuthCloneObject(ctx context.Context, projectId string, authObj auth.AuthI, s ModuleStoreI) (authObjClone auth.AuthI, err error) {
+	logs.WithContext(ctx).Debug("GetAuGetAuthCloneObjectth - Start")
+	authObjJson, authObjJsonErr := json.Marshal(authObj)
+	if authObjJsonErr != nil {
+		err = errors.New(fmt.Sprint("error while cloning authObj (marshal)"))
+		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(authObjJsonErr.Error())
+		return
+	}
+	authObjJson = s.ReplaceVariables(ctx, projectId, authObjJson)
+
+	iCloneI := reflect.New(reflect.TypeOf(authObj))
+	authObjCloneErr := json.Unmarshal(authObjJson, iCloneI.Interface())
+	if authObjCloneErr != nil {
+		err = errors.New(fmt.Sprint("error while cloning authObj(unmarshal)"))
+		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(authObjCloneErr.Error())
+		return
+	}
+	return iCloneI.Elem().Interface().(auth.AuthI), nil
+}
+
+func (ms *ModuleStore) GetAuth(ctx context.Context, projectId string, authName string, s ModuleStoreI) (auth.AuthI, error) {
+	logs.WithContext(ctx).Debug("GetAuth - Start")
+	return ms.GetAuthClone(ctx, projectId, authName, s)
+
+	/*
+		if prg, ok := ms.Projects[projectId]; ok {
+			if prg.Auth != nil {
+				for k, v := range prg.Auth {
+					if k == authName {
+
+						return v, nil
+					}
 				}
+			} else {
+				err := errors.New(fmt.Sprint("No Auth Defined for the project : ", projectId))
+				logs.WithContext(ctx).Info(err.Error())
+				return nil, err
 			}
 		} else {
-			return nil, errors.New(fmt.Sprint("No Auth Defined for the project : ", projectId))
+			err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+			logs.WithContext(ctx).Info(err.Error())
+			return nil, err
 		}
-	} else {
-		return nil, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
-	}
-	return nil, errors.New(fmt.Sprint("Auth ", authName, " not found"))
+		err := errors.New(fmt.Sprint("Auth ", authName, " not found"))
+		logs.WithContext(ctx).Info(err.Error())
+		return nil, err
+	*/
 }

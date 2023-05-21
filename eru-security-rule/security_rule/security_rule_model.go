@@ -1,11 +1,12 @@
 package security_rule
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
-	"log"
 	"strings"
 )
 
@@ -29,28 +30,29 @@ type SecurityRule struct {
 	CustomRule CustomRule
 }
 
-func (sr SecurityRule) Stringify(vars map[string]interface{}, ignoreIfNotFound bool) (str string, err error) {
-	log.Print(vars)
+func (sr SecurityRule) Stringify(ctx context.Context, vars map[string]interface{}, ignoreIfNotFound bool) (str string, err error) {
+	logs.WithContext(ctx).Debug("Stringify - Start")
 	if len(sr.CustomRule.AND) > 0 {
-		str, err = processRuleClause(sr.CustomRule.AND, "and", vars, ignoreIfNotFound)
+		str, err = processRuleClause(ctx, sr.CustomRule.AND, "and", vars, ignoreIfNotFound)
 		return
 	}
 	if len(sr.CustomRule.OR) > 0 {
-		str, err = processRuleClause(sr.CustomRule.OR, "or", vars, ignoreIfNotFound)
+		str, err = processRuleClause(ctx, sr.CustomRule.OR, "or", vars, ignoreIfNotFound)
 		return
 	}
 	return
 }
-func processRuleClause(rules []CustomRuleDetails, conditionType string, vars map[string]interface{}, ignoreIfNotFound bool) (ruleOutput string, err error) {
+func processRuleClause(ctx context.Context, rules []CustomRuleDetails, conditionType string, vars map[string]interface{}, ignoreIfNotFound bool) (ruleOutput string, err error) {
+	logs.WithContext(ctx).Debug("processRuleClause - Start")
 	var strArray []string
 	str := ""
 	for _, v := range rules {
 		if len(v.AND) > 0 {
-			str, err = processRuleClause(v.AND, "and", vars, ignoreIfNotFound)
+			str, err = processRuleClause(ctx, v.AND, "and", vars, ignoreIfNotFound)
 		} else if len(v.OR) > 0 {
-			str, err = processRuleClause(v.OR, "or", vars, ignoreIfNotFound)
+			str, err = processRuleClause(ctx, v.OR, "or", vars, ignoreIfNotFound)
 		} else {
-			str, err = stringifyRule(v, conditionType, vars, ignoreIfNotFound)
+			str, err = stringifyRule(ctx, v, conditionType, vars, ignoreIfNotFound)
 		}
 		if str != "" {
 			strArray = append(strArray, str)
@@ -63,7 +65,8 @@ func processRuleClause(rules []CustomRuleDetails, conditionType string, vars map
 	return
 }
 
-func stringifyRule(cd CustomRuleDetails, conditionType string, vars map[string]interface{}, ignoreIfNotFound bool) (str string, err error) {
+func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType string, vars map[string]interface{}, ignoreIfNotFound bool) (str string, err error) {
+	logs.WithContext(ctx).Debug("stringifyRule - Start")
 	op := ""
 	valPrefix := ""
 	valSuffix := ""
@@ -113,43 +116,43 @@ func stringifyRule(cd CustomRuleDetails, conditionType string, vars map[string]i
 		break
 	}
 
-	var1Bytes, err := processTemplate("customrule", cd.Variable1, vars, "string")
+	var1Bytes, err := processTemplate(ctx, "customrule", cd.Variable1, vars, "string")
 	if err == nil {
 		cd.Variable1 = fmt.Sprint(valPrefix, string(var1Bytes), valSuffix)
 	} else if ignoreIfNotFound && err.Error() != "no variable prefix found" {
 		return "", nil
 	}
-	var2Bytes, err := processTemplate("customrule", cd.Variable2, vars, "string")
+	var2Bytes, err := processTemplate(ctx, "customrule", cd.Variable2, vars, "string")
 	if err == nil {
 		cd.Variable2 = fmt.Sprint(valPrefix, string(var2Bytes), valSuffix)
 	} else if ignoreIfNotFound && err.Error() != "no variable prefix found" {
 		return "", nil
 	}
-	log.Print(fmt.Sprint(cd.Variable1, op, cd.Variable2))
 	return fmt.Sprint(cd.Variable1, op, cd.Variable2), nil
 }
 
-func processTemplate(templateName string, templateString string, vars map[string]interface{}, outputType string) (output []byte, err error) {
-
+func processTemplate(ctx context.Context, templateName string, templateString string, vars map[string]interface{}, outputType string) (output []byte, err error) {
+	logs.WithContext(ctx).Debug("stringifyRule - Start")
 	ruleValue := strings.SplitN(templateString, ".", 2)
 	if ruleValue[0] == "token" {
 		templateStr := fmt.Sprint("{{ .", ruleValue[1], " }}")
 		goTmpl := gotemplate.GoTemplate{templateName, templateStr}
-		outputObj, err := goTmpl.Execute(vars["token"], outputType)
+		outputObj, err := goTmpl.Execute(ctx, vars["token"], outputType)
 		if err != nil {
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		} else if outputType == "string" {
 			return []byte(outputObj.(string)), nil
 		} else {
 			output, err = json.Marshal(outputObj)
 			if err != nil {
-				log.Println(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return nil, err
 			}
 		}
 	} else {
 		err = errors.New("no variable prefix found")
+		logs.WithContext(ctx).Error(err.Error())
 	}
 	//todo - to add if prefix is not token
 	return

@@ -1,12 +1,13 @@
 package ds
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"log"
 	"strings"
 )
 
@@ -14,7 +15,8 @@ type PostgresSqlMaker struct {
 	SqlMaker
 }
 
-func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(rowCount int, colCount int, single bool) string {
+func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string {
+	logs.WithContext(ctx).Debug("GetPreparedQueryPlaceholder - Start")
 	var rowArray []string
 	startNo := 0
 	if single {
@@ -31,11 +33,13 @@ func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(rowCount int, colCount i
 	return strings.Join(rowArray, " , ")
 }
 
-func (pr *PostgresSqlMaker) GetTableMetaDataSQL() string {
+func (pr *PostgresSqlMaker) GetTableMetaDataSQL(ctx context.Context) string {
+	logs.WithContext(ctx).Debug("GetTableMetaDataSQL - Start")
 	return postgresTableMetaDataSQL
 }
 
-func (pr *PostgresSqlMaker) MakeCreateTableSQL(tableName string, tableObj map[string]module_model.TableColsMetaData) (string, error) {
+func (pr *PostgresSqlMaker) MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]module_model.TableColsMetaData) (string, error) {
+	logs.WithContext(ctx).Debug("MakeCreateTableSQL - Start")
 	var cols []string
 	var fks []string
 	pkCon := make(map[string][]string)
@@ -53,7 +57,7 @@ func (pr *PostgresSqlMaker) MakeCreateTableSQL(tableName string, tableObj map[st
 			uqCon[v.UqConstraintName] = append(uqCon[v.UqConstraintName], v.ColName)
 		}
 		if !v.PrimaryKey {
-			dt = pr.getErutoDBDataTypeMapping(v.OwnDataType)
+			dt = pr.getErutoDBDataTypeMapping(ctx, v.OwnDataType)
 			if dt == "NotSupported" {
 				return "", errors.New(fmt.Sprint("Unsupported Datatype : ", v.OwnDataType))
 			}
@@ -76,7 +80,6 @@ func (pr *PostgresSqlMaker) MakeCreateTableSQL(tableName string, tableObj map[st
 			fks = append(fks, fmt.Sprint("constraint fk_", v.TblName, v.ColName, " foreign key (", v.ColName, ") references ", v.FkTblSchema, ".", v.FkTblName, "(", v.FkColName, ")"))
 		}
 		cols = append(cols, fmt.Sprint(v.ColName, " ", dt, nl))
-		//log.Println(fmt.Sprint(v.ColName," ",dt,nl,pk))
 	}
 	var pk []string
 	for k, v := range pkCon {
@@ -97,49 +100,43 @@ func (pr *PostgresSqlMaker) MakeCreateTableSQL(tableName string, tableObj map[st
 	}
 
 	query := fmt.Sprint("create table ", tableName, " (", strings.Join(cols, " , "), " )")
-	//log.Println(query)
-	//log.Println(pk)
-	//log.Println(uq)
 	return query, nil
 }
 
-func (pr *PostgresSqlMaker) MakeDropTableSQL(tableName string) (string, error) {
+func (pr *PostgresSqlMaker) MakeDropTableSQL(ctx context.Context, tableName string) (string, error) {
+	logs.WithContext(ctx).Debug("MakeDropTableSQL - Start")
 	return fmt.Sprint("drop table ", tableName), nil
 }
 
-func (pr *PostgresSqlMaker) CreateConn(dataSource *module_model.DataSource) error {
+func (pr *PostgresSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
+	logs.WithContext(ctx).Debug("CreateConn - Start")
 	connString := fmt.Sprint("postgres://", dataSource.DbConfig.User, ":", dataSource.DbConfig.Password, "@", dataSource.DbConfig.Host, ":", dataSource.DbConfig.Port, "/", dataSource.DbConfig.DefaultSchema, "?sslmode=disable")
-	log.Print(connString)
-	//log.Print("CreateConn from PostgresSqlMaker called")
 	db, err := sqlx.Open("postgres", connString)
-	log.Print(err)
 	if err != nil {
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		dataSource.ConStatus = false
 		return err
 	}
-	log.Print("db connection successfull  fetch dummy query")
+	logs.WithContext(ctx).Info("db connection was successfully done for fetch dummy query")
 	_, err = db.Queryx("select 1")
-	log.Print(err)
 	if err != nil {
 		dataSource.ConStatus = false
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
-	log.Print("dummy query success - setting con as true")
+	logs.WithContext(ctx).Info("dummy query success - setting con as true")
 	dataSource.Con = db
 	dataSource.ConStatus = true
 	return nil
 }
 
-func (pr *PostgresSqlMaker) CheckMe() {
-	log.Print("I am PostgresSqlMaker")
+func (pr *PostgresSqlMaker) CheckMe(ctx context.Context) {
+	logs.WithContext(ctx).Info("I am PostgresSqlMaker")
 	pr.ChildChange = "changed by PostgresSqlMaker"
 }
 
-func (pr *PostgresSqlMaker) AddLimitSkipClause(query string, limit int, skip int, globalLimit int) (newQuery string) {
-	log.Print(limit)
-	log.Print(skip)
+func (pr *PostgresSqlMaker) AddLimitSkipClause(ctx context.Context, query string, limit int, skip int, globalLimit int) (newQuery string) {
+	logs.WithContext(ctx).Debug("AddLimitSkipClause - Start")
 	if limit > 0 {
 		newQuery = fmt.Sprint(query, " limit ", limit)
 	} else {
@@ -151,7 +148,8 @@ func (pr *PostgresSqlMaker) AddLimitSkipClause(query string, limit int, skip int
 	return newQuery
 }
 
-func (pr *PostgresSqlMaker) getDataTypeMapping(dataType string) string {
+func (pr *PostgresSqlMaker) getDataTypeMapping(ctx context.Context, dataType string) string {
+	logs.WithContext(ctx).Debug("getDataTypeMapping - Start")
 	if postgresDataTypeMapping[dataType] == "" {
 		return "NotSupported"
 	} else {
@@ -159,7 +157,8 @@ func (pr *PostgresSqlMaker) getDataTypeMapping(dataType string) string {
 	}
 }
 
-func (pr *PostgresSqlMaker) getErutoDBDataTypeMapping(dataType string) string {
+func (pr *PostgresSqlMaker) getErutoDBDataTypeMapping(ctx context.Context, dataType string) string {
+	logs.WithContext(ctx).Debug("getErutoDBDataTypeMapping - Start")
 	if postgresErutoDBDataTypeMapping[dataType] == "" {
 		return "NotSupported"
 	} else {

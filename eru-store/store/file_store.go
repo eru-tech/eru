@@ -1,10 +1,11 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"io/ioutil"
-	"log"
 	"os"
 )
 
@@ -17,73 +18,66 @@ type FileStore struct {
 func getStoreSaveFilePath() string {
 	wd, err := os.Getwd()
 	if err != nil {
-		log.Print(err)
+		logs.Logger.Error(err.Error())
 	}
-	log.Print("wd = ", wd)
-	log.Print("filePath = ", filePath)
+	logs.Logger.Info(fmt.Sprint("wd = ", wd))
+	logs.Logger.Info(fmt.Sprint("filePath = ", filePath))
 	return fmt.Sprint(wd, filePath)
 }
 func (store *FileStore) GetStoreByteArray(fp string) (b []byte, err error) {
-	log.Print("GetStoreByteArray from filestore")
+	logs.Logger.Debug("GetStoreByteArray - Start")
 	if fp == "" {
 		fp = getStoreSaveFilePath()
 	}
 	storeData, err := ioutil.ReadFile(fp)
 	if err != nil {
-		log.Println(err)
-		err = store.SaveStore(fp, store)
+		logs.Logger.Error(err.Error())
+		err = store.SaveStore(context.Background(), fp, store)
 		if err == nil {
 			storeData, err = json.Marshal(store)
 			if err != nil {
-				log.Print("error json.Marshal(store)")
-				log.Print(err)
+				logs.Logger.Error(err.Error())
 				return nil, err
 			}
 		}
 	}
-	//log.Println(string(storeData))
 	return storeData, err
 }
 func (store *FileStore) LoadStore(fp string, ms StoreI) (err error) {
-	log.Print("loading filestore")
+	logs.Logger.Debug("LoadStore - Start")
 	if fp == "" {
 		fp = getStoreSaveFilePath()
 	}
 	storeData, err := ioutil.ReadFile(fp)
-	log.Println(string(storeData))
 	if err != nil {
-		log.Print(err)
-		log.Print("creating new blank config file at ", fp)
-		store.SaveStore(fp, nil)
+		logs.Logger.Error(err.Error())
+		store.SaveStore(context.Background(), fp, nil)
 		return err
 	}
 	err = json.Unmarshal(storeData, ms)
 	if err != nil {
-		log.Print("error json.Unmarshal(storeData, ms)")
-		log.Print(err)
+		logs.WithContext(context.Background()).Error(err.Error())
 		return err
 	}
 	return nil
 }
 
-func (store *FileStore) SaveStore(fp string, ms StoreI) error {
-	log.Println("saving filestore")
+func (store *FileStore) SaveStore(ctx context.Context, fp string, ms StoreI) error {
+	logs.WithContext(ctx).Debug("SaveStore - Start")
 	if fp == "" {
 		fp = getStoreSaveFilePath()
 	}
 	var err error
 	var storeData []byte
-	log.Println("before json.Marshal")
 	storeData, err = json.Marshal(ms)
-	log.Println("after json.Marshal")
 	// Check for error during marshaling
 	if err != nil {
-		log.Print("marshaling error = ", err)
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 	err = ioutil.WriteFile(fp, storeData, 0644)
 	if err != nil {
-		log.Print("WriteFile error = ", err)
+		logs.WithContext(ctx).Error(err.Error())
 	}
 	return err
 }

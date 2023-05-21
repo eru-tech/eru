@@ -8,10 +8,24 @@ import (
 	"net/http"
 )
 
+func SetServiceName() {
+	server_handlers.ServerName = "eru-gateway"
+}
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
-	server_handlers.ServerName = "gateway"
+
+	//overwriting the handler of eru-server as gateway does not need variables and has to route to different services
+	serverRouter.Get("variables_list").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("variables_savevar").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("variables_removevar").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("variables_saveenvvar").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("variables_removeenvvar").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("variables_savesecret").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("variables_removesecret").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+
 	//store routes specific to files
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
+
+	storeRouter.Methods(http.MethodPost).Path("/listenerrule/compare").HandlerFunc(module_handlers.StoreCompareHandler(sh.Store))
 
 	storeRouter.Methods(http.MethodPost).Path("/listenerrule/save").HandlerFunc(module_handlers.SaveListenerRuleHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/listenerrule/remove/{listenerrulename}").HandlerFunc(module_handlers.RemoveListenerRuleHandler(sh.Store))

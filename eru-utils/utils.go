@@ -2,13 +2,14 @@ package eru_utils
 
 import (
 	"bytes"
-	"crypto/sha512"
-	"encoding/base64"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"log"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/google/go-cmp/cmp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"io"
 	"mime/multipart"
 	"net/http"
 	httpurl "net/url"
@@ -30,33 +31,35 @@ var httpClient = http.Client{
 	},
 }
 
-func getAttr(obj interface{}, fieldName string) reflect.Value {
+func getAttr(ctx context.Context, obj interface{}, fieldName string) reflect.Value {
+	logs.WithContext(ctx).Debug("getAttr - Start")
 	pointToStruct := reflect.ValueOf(obj) // addressable
 	curStruct := pointToStruct.Elem()
 	if curStruct.Kind() != reflect.Struct {
-		panic("not struct")
+		logs.WithContext(ctx).Error("not a struct")
 	}
 	curField := curStruct.FieldByName(fieldName) // type: reflect.Value
 	if !curField.IsValid() {
-		panic("not found:" + fieldName)
+		logs.WithContext(ctx).Error(fmt.Sprint(("not found:" + fieldName)))
 	}
 	return curField
 }
 
-func SetStructValue(obj interface{}, propName string, propValue interface{}) {
-	v := getAttr(obj, propName)
+func SetStructValue(ctx context.Context, obj interface{}, propName string, propValue interface{}) {
+	logs.WithContext(ctx).Debug("SetStructValue - Start")
+	v := getAttr(ctx, obj, propName)
 	v.Set(reflect.ValueOf(propValue))
 }
 
-func GetSha512(s string) string {
+/*func GetSha512(s string) string {
 	h := sha512.New()
 	h.Write([]byte(s))
 	sha := base64.URLEncoding.EncodeToString(h.Sum(nil))
 	return sha
-}
+}*/
 
-func ValidateStruct(s interface{}, parentKey string) error {
-
+func ValidateStruct(ctx context.Context, s interface{}, parentKey string) error {
+	logs.WithContext(ctx).Debug("ValidateStruct - Start")
 	if parentKey != "" {
 		parentKey = parentKey + "."
 	}
@@ -64,9 +67,7 @@ func ValidateStruct(s interface{}, parentKey string) error {
 	if f.Type().Kind().String() == "ptr" {
 		f = reflect.Indirect(reflect.ValueOf(s))
 	}
-	log.Println(f.Type())
 	var errs []string
-	//log.Println(f)
 	for i := 0; i < f.NumField(); i++ {
 		isError := false
 		isRequired := false
@@ -81,7 +82,7 @@ func ValidateStruct(s interface{}, parentKey string) error {
 		if !isError {
 			switch f.Field(i).Kind().String() {
 			case "struct":
-				e := ValidateStruct(f.Field(i).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name))
+				e := ValidateStruct(ctx, f.Field(i).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name))
 				if e != nil {
 					errs = append(errs, e.Error())
 				}
@@ -94,7 +95,7 @@ func ValidateStruct(s interface{}, parentKey string) error {
 
 						if ff.Index(0).Kind().String() == "struct" || ff.Index(0).Kind().String() == "slice" {
 							for ii := 0; ii < ff.Len(); ii++ {
-								e := ValidateStruct(ff.Index(ii).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name, "[", ii, "]"))
+								e := ValidateStruct(ctx, ff.Index(ii).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name, "[", ii, "]"))
 								if e != nil {
 									errs = append(errs, e.Error())
 								}
@@ -110,7 +111,9 @@ func ValidateStruct(s interface{}, parentKey string) error {
 	if len(errs) == 0 {
 		return nil
 	}
-	return errors.New(strings.Join(errs, " , "))
+	err := errors.New(strings.Join(errs, " , "))
+	logs.WithContext(ctx).Error(err.Error())
+	return err
 }
 
 func GetArrayPosition(s []string, value string) int {
@@ -126,71 +129,82 @@ func ReplaceUnderscoresWithDots(str string) string {
 	return strings.Replace(strings.Replace(str, "___", ".", 1), "__", ".", 1)
 }
 
-func PrintResponseBody(response *http.Response, msg string) {
-	body, err := ioutil.ReadAll(response.Body)
+func PrintResponseBody(ctx context.Context, response *http.Response, msg string) {
+	logs.WithContext(ctx).Debug("PrintResponseBody - Start")
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		log.Println(err)
+		logs.WithContext(ctx).Error(err.Error())
 	}
-	log.Println(msg)
+	logs.WithContext(ctx).Info(msg)
+	logs.WithContext(ctx).Info(fmt.Sprint(len(string(body))))
 	cl, _ := strconv.Atoi(response.Header.Get("Content-Length"))
 	if cl > 1000 {
-		log.Println(string(body)[1:1000])
+		logs.WithContext(ctx).Info(string(body)[1:1000])
+	} else if len(string(body)) > 1000 {
+		logs.WithContext(ctx).Info(string(body)[1:1000])
 	} else {
-		log.Println(string(body))
+		logs.WithContext(ctx).Info(string(body))
 	}
-	//log.Println(string(body))
-	log.Println(response.Header.Get("Content-Length"))
-	response.Body = ioutil.NopCloser(bytes.NewReader(body))
+	response.Body = io.NopCloser(bytes.NewReader(body))
 }
 
-func PrintRequestBody(request *http.Request, msg string) {
-	body, err := ioutil.ReadAll(request.Body)
+func PrintRequestBody(ctx context.Context, request *http.Request, msg string) {
+	logs.WithContext(ctx).Debug("PrintRequestBody - Start")
+	body, err := io.ReadAll(request.Body)
 	if err != nil {
-		log.Println(err)
+		logs.WithContext(ctx).Error(err.Error())
 	}
-	log.Println(msg)
+	logs.WithContext(ctx).Info(msg)
+	logs.WithContext(ctx).Info(fmt.Sprint(len(string(body))))
 	cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
-	if cl > 1000 {
-		log.Println(string(body)[1:1000])
+	if cl > 1000 && len(string(body)) > 1000 {
+		logs.WithContext(ctx).Info(string(body)[1:1000])
 	} else {
-		log.Println(string(body))
+		logs.WithContext(ctx).Info(string(body))
 	}
-	//log.Println(string(body))
-	log.Println(request.Header.Get("Content-Length"))
-	request.Body = ioutil.NopCloser(bytes.NewReader(body))
+	request.Body = io.NopCloser(bytes.NewReader(body))
 }
 
-func CallParallelHttp(method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}, rc chan *http.Response) (err error) {
-	resp, err := callHttp(method, url, headers, formData, reqCookies, params, postBody)
+func CallParallelHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}, rc chan *http.Response) (err error) {
+	logs.WithContext(ctx).Debug("CallParallelHttp - Start")
+	resp, err := callHttp(ctx, method, url, headers, formData, reqCookies, params, postBody)
 	if err == nil {
 		rc <- resp
 	}
 	return err
 }
 
-func ExecuteParallelHttp(req *http.Request, rc chan *http.Response) (err error) {
-	resp, err := ExecuteHttp(req)
+func ExecuteParallelHttp(ctx context.Context, req *http.Request, rc chan *http.Response) (err error) {
+	logs.WithContext(ctx).Debug("ExecuteParallelHttp - Start")
+	resp, err := ExecuteHttp(ctx, req)
 	if err == nil {
 		rc <- resp
 	}
 	return err
 }
 
-func ExecuteHttp(req *http.Request) (resp *http.Response, err error) {
-	resp, err = httpClient.Do(req)
+func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, err error) {
+	logs.WithContext(ctx).Debug("ExecuteHttp - Start")
+	//req = req.WithContext(ctx)
+	//resp, err = httpClient.Do(req)
+	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
 	return
 }
 
-func callHttp(method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (resp *http.Response, err error) {
+func HTTPClientTransporter(rt http.RoundTripper) http.RoundTripper {
+	return otelhttp.NewTransport(rt)
+}
+
+func callHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (resp *http.Response, err error) {
+	logs.WithContext(ctx).Debug("callHttp - Start")
 	reqBody, err := json.Marshal(postBody)
 	if err != nil {
-		log.Print("error in json.Marshal(postBody)")
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 	req, err := http.NewRequest(method, url, bytes.NewBuffer(reqBody))
 	if err != nil {
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 	for _, v := range reqCookies {
@@ -209,30 +223,27 @@ func callHttp(method string, url string, headers http.Header, formData map[strin
 	req.URL.RawQuery = reqParams.Encode()
 
 	reqContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
-	log.Print("reqContentType = ", reqContentType)
 	if reqContentType == multiPartForm {
-		log.Println("===========================")
-		log.Println("inside encodedForm || multiPartForm")
 		var reqBodyNew bytes.Buffer
 		multipartWriter := multipart.NewWriter(&reqBodyNew)
 		if err != nil {
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 		for fk, fd := range formData {
 			fieldWriter, err := multipartWriter.CreateFormField(fk)
 			if err != nil {
-				log.Println(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return nil, err
 			}
 			_, err = fieldWriter.Write([]byte(fd))
 			if err != nil {
-				log.Println(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return nil, err
 			}
 		}
 		multipartWriter.Close()
-		req.Body = ioutil.NopCloser(&reqBodyNew)
+		req.Body = io.NopCloser(&reqBodyNew)
 		if reqContentType == multiPartForm {
 			req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
 		}
@@ -247,91 +258,68 @@ func callHttp(method string, url string, headers http.Header, formData map[strin
 		}
 		encodedData := data.Encode()
 		reqBodyNew.WriteString(encodedData)
-		req.Body = ioutil.NopCloser(&reqBodyNew)
+		req.Body = io.NopCloser(&reqBodyNew)
 		req.Header.Set("Content-Length", strconv.Itoa(len(data.Encode())))
 		req.ContentLength = int64(len(data.Encode()))
 	}
-	PrintRequestBody(req, "printing request body from utils before http call")
-	log.Println(req)
-	return ExecuteHttp(req)
+	return ExecuteHttp(ctx, req)
 }
 
-func CallHttp(method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
-	resp, err := callHttp(method, url, headers, formData, reqCookies, params, postBody)
-	statusCode = resp.StatusCode
-	log.Println("resp from CallHttp")
-	log.Println(resp.Header)
-	log.Println(resp.Cookies())
-	log.Println(resp.StatusCode)
-	log.Println(resp.Status)
-	log.Print(resp)
+func CallHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
+	logs.WithContext(ctx).Debug("CallHttp - Start")
+	resp, err := callHttp(ctx, method, url, headers, formData, reqCookies, params, postBody)
 	if err != nil {
-		log.Print("error in httpClient.Do")
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, resp.Header, resp.Cookies(), resp.StatusCode, err
 	}
-
+	statusCode = resp.StatusCode
 	respHeaders = resp.Header
-	//respHeaders = make(map[string][]string)
-	//for k, v := range resp.Header {
-	//	respHeaders[k] = v
-	//}
 	respCookies = resp.Cookies()
 	defer resp.Body.Close()
-	log.Println("resp.ContentLength = ", resp.ContentLength)
 
 	//todo - check if below change from reqContentType to header.get breaks anything
 	//todo - merge conflict - main had below first if commented
 	contentType := strings.Split(headers.Get("Content-type"), ";")[0]
-	log.Print("contentType = ", contentType)
 	if resp.ContentLength > 0 || contentType == encodedForm || contentType == applicationJson {
 		if strings.Split(resp.Header.Get("content-type"), ";")[0] == applicationJson {
-			//PrintResponseBody(resp,"printing response body before json decode in utils.callhttp")
 			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
-				log.Print("error in json.NewDecoder of resp.Body")
-				//log.Print(resp.Body)
-				log.Print(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return nil, nil, nil, resp.StatusCode, err
 			}
 		} else {
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				log.Println(err)
+				logs.WithContext(ctx).Error(err.Error())
 			}
-			//log.Println(body)
 			resBody := make(map[string]interface{})
 			resBody["body"] = string(body)
 			res = resBody
 		}
 	} else {
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 		}
-		//log.Println(body)
 		resBody := make(map[string]interface{})
 		resBody["body"] = string(body)
 		res = resBody
 	}
-	//	log.Println(res)
-	//}
 	if resp.StatusCode >= 400 {
-		log.Print("error in httpClient.Do - response status code >=400 ")
 		statusCode = resp.StatusCode
 		resBytes, bytesErr := json.Marshal(res)
 		if bytesErr != nil {
-			log.Print("error in json.Marshal of httpClient.Do response")
-			log.Print(bytesErr)
+			logs.WithContext(ctx).Error(bytesErr.Error())
 			return nil, nil, nil, statusCode, bytesErr
 		}
-		//err = errors.New(strings.Replace(string(resBytes), "\"", "", -1))
 		err = errors.New(string(resBytes))
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, resp.Header, resp.Cookies(), statusCode, err
 	}
 	return
 }
 
-func CsvToMap(csvData [][]string, lowerCaseHeader bool) (jsonData []map[string]interface{}, err error) {
+func CsvToMap(ctx context.Context, csvData [][]string, lowerCaseHeader bool) (jsonData []map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("CsvToMap - Start")
 	charsToRemove := []string{"."}
 	for j, _ := range csvData[0] {
 		csvData[0][j] = regexp.MustCompile(`[^a-zA-Z0-9 ]+`).ReplaceAllString(csvData[0][j], "")
@@ -343,7 +331,6 @@ func CsvToMap(csvData [][]string, lowerCaseHeader bool) (jsonData []map[string]i
 			csvData[0][j] = strings.Replace(csvData[0][j], v, "", -1)
 		}
 	}
-
 	for i, line := range csvData {
 		if i > 0 {
 			jsonMap := make(map[string]interface{})
@@ -354,4 +341,65 @@ func CsvToMap(csvData [][]string, lowerCaseHeader bool) (jsonData []map[string]i
 		}
 	}
 	return
+}
+
+type DiffOutput struct {
+	Path   string
+	AddStr string
+	DelStr string
+}
+
+type DiffReporter struct {
+	path    cmp.Path
+	diffs   map[string]DiffOutput
+	diffStr []string
+}
+
+func (r *DiffReporter) PushStep(ps cmp.PathStep) {
+	r.path = append(r.path, ps)
+}
+
+func (r *DiffReporter) Report(rs cmp.Result) {
+	if !rs.Equal() {
+		vx, vy := r.path.Last().Values()
+		do := DiffOutput{}
+		path := fmt.Sprintf("%v ", r.path)
+		//do.Path = fmt.Sprintf("%v", strings.Replace(r.path.Last().String(), "\"", "", -1))
+		do.Path = fmt.Sprintf("%v", strings.Replace(r.path.GoString(), "\"", "", -1))
+		do.AddStr = fmt.Sprintf("%+v", vy)
+		do.DelStr = fmt.Sprintf("%+v", vx)
+		if r.diffs == nil {
+			r.diffs = make(map[string]DiffOutput)
+		}
+		r.diffs[path] = do
+		r.diffStr = append(r.diffStr, fmt.Sprintf("%#v:\n\t-: %+v\n\t+: %+v\n", r.path, vx, vy))
+	}
+}
+
+func (r *DiffReporter) PopStep() {
+	r.path = r.path[:len(r.path)-1]
+}
+
+func (r *DiffReporter) String() string {
+	return strings.Join(r.diffStr, "\n")
+}
+
+func (r *DiffReporter) Output() map[string]DiffOutput {
+	return r.diffs
+}
+
+func CloneInterface(ctx context.Context, i interface{}) (iClone interface{}, err error) {
+	logs.WithContext(ctx).Debug("cloneInterface - Start")
+	iBytes, err := json.Marshal(i)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	iCloneI := reflect.New(reflect.TypeOf(i))
+	err = json.Unmarshal(iBytes, iCloneI.Interface())
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return iCloneI.Elem().Interface(), nil
 }

@@ -1,9 +1,11 @@
 package channel
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-routes/routes"
-	"log"
 	"net/http"
 	"net/url"
 )
@@ -19,23 +21,22 @@ var httpClient = http.Client{
 	},
 }
 
-func (apiChannel *ApiChannel) MakeFromJson(rj *json.RawMessage) error {
-	log.Println("inside ApiGateway MakeFromJson")
+func (apiChannel *ApiChannel) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+	logs.WithContext(ctx).Debug("MakeFromJson - Start")
 	err := json.Unmarshal(*rj, &apiChannel)
 	if err != nil {
-		log.Print("error json.Unmarshal(*rj, &smsGateway)")
-		log.Print(err)
+		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 	return nil
 }
-func (apiChannel *ApiChannel) Execute(r *http.Request, mt MessageTemplate) (response *http.Response, err error) {
-
-	msg, msgErr := apiChannel.ProcessMessageTemplate(r, mt)
+func (apiChannel *ApiChannel) Execute(ctx context.Context, r *http.Request, mt MessageTemplate) (response *http.Response, err error) {
+	logs.WithContext(ctx).Debug("Execute - Start")
+	msg, msgErr := apiChannel.ProcessMessageTemplate(ctx, r, mt)
 	if msgErr != nil {
 		return nil, msgErr
 	}
-	log.Println("msg = ", msg)
+	logs.WithContext(ctx).Debug(fmt.Sprint("msg = ", msg))
 
 	trReqVars := &routes.TemplateVars{}
 	if trReqVars.Vars == nil {
@@ -43,15 +44,14 @@ func (apiChannel *ApiChannel) Execute(r *http.Request, mt MessageTemplate) (resp
 	}
 	trReqVars.Vars["Msg"] = msg.Msg
 	trReqVars.Vars["TemplateId"] = mt.TemplateId
-	response, _, err = apiChannel.Api.Execute(r, r.URL.Path, false, "", trReqVars, 1)
+	response, _, err = apiChannel.Api.Execute(ctx, r, r.URL.Path, false, "", trReqVars, 1)
 	return response, nil
 }
-func (apiChannel *ApiChannel) Send(msg string, templateId string, params url.Values) (map[string]interface{}, error) {
-	log.Println("inside ApiChannel Send")
+func (apiChannel *ApiChannel) Send(ctx context.Context, msg string, templateId string, params url.Values) (map[string]interface{}, error) {
+	logs.WithContext(ctx).Debug("Send - Start")
 
 	/*req, err := http.NewRequest(apiChannel.ApiMethod, apiChannel.ApiUrl, nil)
 		if err != nil {
-			log.Println(err)
 		}
 
 		for k, v := range apiChannel.QueryParams {
@@ -63,21 +63,15 @@ func (apiChannel *ApiChannel) Send(msg string, templateId string, params url.Val
 			}
 		}
 		req.URL.RawQuery = params.Encode()
-		log.Println(req)
 		response, err := httpClient.Do(req)
 		defer response.Body.Close()
 		if err != nil {
-			log.Println("---")
-			log.Println(err)
 			return nil, err
 		}
 
 		if err = json.NewDecoder(response.Body).Decode(&resBody); err != nil {
-			log.Print(err)
 			return nil, err
 		}
-		log.Println("==================")
-		log.Println(resBody)
 
 		//todo to remove this hard coded call and make it configurable
 		saveOtp := make(map[string][]map[string]string)
@@ -85,10 +79,8 @@ func (apiChannel *ApiChannel) Send(msg string, templateId string, params url.Val
 		saveDoc["mobile_no"] = params.Get("to")
 		saveDoc["otp"] = strings.SplitAfter(msg, " ")[0]
 		saveOtp["docs"] = append(saveOtp["docs"], saveDoc)
-		log.Println(saveOtp)
 		saveOtpReqBody, err := json.Marshal(saveOtp)
 		if err != nil {
-			log.Print(err)
 			return nil, err
 		}
 
@@ -96,10 +88,8 @@ func (apiChannel *ApiChannel) Send(msg string, templateId string, params url.Val
 		if eruQueriesURL == "" {
 			eruQueriesURL = "http://localhost:8087"
 		}
-		log.Print(saveOtpReqBody)
 		saveOtpResp, err := http.Post(fmt.Sprint(eruQueriesURL, "/store/smartvalues/myquery/execute/save_otp"), "application/json", bytes.NewBuffer(saveOtpReqBody))
 		if err != nil {
-			log.Print(err)
 			return nil, err
 		}
 		defer saveOtpResp.Body.Close()
@@ -108,11 +98,8 @@ func (apiChannel *ApiChannel) Send(msg string, templateId string, params url.Val
 	}
 
 	func (apiChannel *ApiChannel) MakeFromJson(rj *json.RawMessage) error {
-		log.Println("inside ApiChannel MakeFromJson")
 		err := json.Unmarshal(*rj, &apiChannel)
 		if err != nil {
-			log.Print("error json.Unmarshal(*rj, &apiChannel)")
-			log.Print(err)
 			return err
 		}
 		return nil

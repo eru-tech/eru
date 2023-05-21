@@ -1,10 +1,11 @@
 package eru_writes
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/xuri/excelize/v2"
-	"log"
 	"math"
 	"reflect"
 	"time"
@@ -29,7 +30,8 @@ type CellFormatter struct {
 	DataTypes []string
 }
 
-func (ewd *ExcelWriteData) WriteColumnar() (writeOutput []byte, err error) {
+func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byte, err error) {
+	logs.WithContext(ctx).Debug("WriteColumnar - Start")
 	if ewd.ColumnarDataMap == nil {
 		if ewd.ColumnarData == nil || len(ewd.ColumnarData) == 0 {
 			return nil, errors.New("excel data not found")
@@ -39,23 +41,20 @@ func (ewd *ExcelWriteData) WriteColumnar() (writeOutput []byte, err error) {
 		}
 	}
 
-	//log.Print(ewd.ColumnarDataMap)
-
 	f := excelize.NewFile()
 	defer func() {
 		if err := f.Close(); err != nil {
-			log.Println(err)
+			logs.WithContext(ctx).Error(err.Error())
 		}
 	}()
 	sheet1Found := false
 	for k, v := range ewd.ColumnarDataMap {
 		// Create a new sheet.
-		log.Print("k = ", k)
 		if k != "Sheet1" {
 			sheetIdx, sheetErr := f.NewSheet(k)
 			if err != nil {
 				err = sheetErr
-				log.Println(err)
+				logs.WithContext(ctx).Error(err.Error())
 				return
 			}
 			f.SetActiveSheet(sheetIdx)
@@ -115,13 +114,11 @@ func (ewd *ExcelWriteData) WriteColumnar() (writeOutput []byte, err error) {
 						}
 
 					case DataTypeDate:
-						log.Println(col.(string))
 						dtVal, dtValErr := time.Parse("2006/01/02", col.(string))
 						if dtValErr != nil {
-							log.Println(dtValErr)
+							logs.WithContext(ctx).Error(dtValErr.Error())
 							f.SetCellValue(k, fmt.Sprint(columnToLetter(cNo+1), rNo+1), col.(string))
 						} else {
-							log.Println(dtVal)
 							f.SetCellValue(k, fmt.Sprint(columnToLetter(cNo+1), rNo+1), dtVal)
 						}
 					default:
@@ -138,10 +135,10 @@ func (ewd *ExcelWriteData) WriteColumnar() (writeOutput []byte, err error) {
 
 		// Save spreadsheet by the given path.
 		if ewd.FileName != "" {
-			log.Print("saving file at ", ewd.FileName)
+			logs.WithContext(ctx).Info(fmt.Sprint("saving file at ", ewd.FileName))
 			if saveErr := f.SaveAs(fmt.Sprint(ewd.FileName)); saveErr != nil {
 				err = saveErr
-				log.Println(err)
+				logs.WithContext(ctx).Error(err.Error())
 			}
 		}
 	}
@@ -150,7 +147,7 @@ func (ewd *ExcelWriteData) WriteColumnar() (writeOutput []byte, err error) {
 	}
 	b, bErr := f.WriteToBuffer()
 	if bErr != nil {
-		log.Println(bErr)
+		logs.WithContext(ctx).Error(bErr.Error())
 		return nil, bErr
 	}
 	return b.Bytes(), nil

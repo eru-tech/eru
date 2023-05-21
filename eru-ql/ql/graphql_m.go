@@ -1,13 +1,14 @@
 package ql
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/graphql-go/graphql/language/ast"
-	//"github.com/jmoiron/sqlx"
-	"log"
+	"reflect"
 	"strings"
 )
 
@@ -43,13 +44,11 @@ type SQLObjectM struct {
 	OverwriteDoc  map[string]map[string]interface{} `json:"-"`
 }
 
-func (sqlObj *SQLObjectM) ProcessMutationGraphQL(sel ast.Selection, vars map[string]interface{}, datasource *module_model.DataSource) (err error) {
+func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Selection, vars map[string]interface{}, datasource *module_model.DataSource) (err error) {
 	//myself.CheckMe()
-	log.Print("inside ProcessMutationGraphQL")
-	//log.Print(sqlObj.PreparedQuery)
+	logs.WithContext(ctx).Debug("ProcessMutationGraphQL - Start")
 	field := sel.(*ast.Field)
 	docsFound := false
-	//errMsg := "-"
 	if field.Alias != nil {
 		sqlObj.MainAliasName = field.Alias.Value
 	} else {
@@ -106,67 +105,32 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(sel ast.Selection, vars map[str
 	var docs interface{}
 
 	for _, ff := range field.Arguments {
-		//log.Print("inside field.Arguments")
-		//log.Print(ff.Name.Value)
-		//log.Print(len(field.Arguments))
 		switch ff.Name.Value {
 
 		case "docs":
 			docsFound = true
-			varValue, e := ParseAstValue(ff.Value, vars)
+			varValue, e := ParseAstValue(ctx, ff.Value, vars)
 			if e != nil {
 				return e
 			}
 			docs = varValue
 
-			/*sqlObj.MutationRecords, err = sqlObj.processMutationDoc(varValue, datasource, sqlObj.MainTableName, sqlObj.NestedDoc,nil)
-			if err != nil {
-				log.Print(err.Error()) //TODO to pass this error as query result
-				// return nil, err
-				// no need to return here
-			}*/
-			/*
-				log.Print("sqlObj.MutationRecords printed below")
-				for i, mr := range sqlObj.MutationRecords {
-					log.Print("doc no = ",i)
-					log.Print("Cols = ",mr.Cols)
-					log.Print("NonNestedCols = ",mr.NonNestedCols)
-					log.Print("Values = ",mr.Values)
-					log.Print("NonNestedValues = ",mr.NonNestedValues)
-					log.Print("UpdatedCols = ",mr.UpdatedCols)
-					log.Print("TableJoins = ",mr.TableJoins)
-					log.Print("DBQuery = ",mr.DBQuery)
-					log.Print("--------------printing childrecords")
-					for kk,vv := range mr.ChildRecords {
-						log.Print(kk)
-						for ci, cmr := range vv {
-							log.Print("child doc no = ", ci)
-							log.Print("Cols = ", cmr.Cols)
-							log.Print("NonNestedCols = ", cmr.NonNestedCols)
-							log.Print("Values = ", cmr.Values)
-							log.Print("NonNestedValues = ", cmr.NonNestedValues)
-							log.Print("UpdatedCols = ", cmr.UpdatedCols)
-							log.Print("TableJoins = ", cmr.TableJoins)
-							log.Print("DBQuery = ",cmr.DBQuery)
-						}
-					}
-				}*/
 		case "query":
-			varValue, err := ParseAstValue(ff.Value, vars)
+			varValue, err := ParseAstValue(ctx, ff.Value, vars)
 			if err != nil {
 				return err
 			}
 			sqlObj.MutationSelectQuery = sqlObj.QueryObject[varValue.(string)].Query
 			sqlObj.MutationSelectCols = sqlObj.QueryObject[varValue.(string)].Cols
 			sqlObj.QueryType = "insertselect"
-			sqlObj.MakeMutationQuery(nil, sqlObj.MainTableName)
-			log.Print(sqlObj.DBQuery)
-			log.Print("sqlObj.PreparedQuery = ", sqlObj.PreparedQuery)
+			sqlObj.MakeMutationQuery(ctx, nil, sqlObj.MainTableName)
+			logs.WithContext(ctx).Info(sqlObj.DBQuery)
+			logs.WithContext(ctx).Info(fmt.Sprint("sqlObj.PreparedQuery = ", sqlObj.PreparedQuery))
 
 			//docsFound = true
 		case "txn":
 			if !sqlObj.SingleTxn { //ignore txn flag for each query if singleTxn directive exists
-				varValue, err := ParseAstValue(ff.Value, vars)
+				varValue, err := ParseAstValue(ctx, ff.Value, vars)
 				if err != nil {
 					return err
 				}
@@ -177,7 +141,7 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(sel ast.Selection, vars map[str
 				sqlObj.TxnFlag = v
 			}
 		case "where":
-			v, e := ParseAstValue(ff.Value, vars)
+			v, e := ParseAstValue(ctx, ff.Value, vars)
 			_ = v
 			if e != nil {
 				// TODO: return returnresult error
@@ -186,56 +150,31 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(sel ast.Selection, vars map[str
 			//wc, _ := sqlObj.processWhereClause(v, "", false)
 			//sqlObj.WhereClause = fmt.Sprint(" where ", wc)
 			sqlObj.WhereClause = v
-			log.Print("inside where found")
-			log.Print(sqlObj.WhereClause)
 		default:
 			//do nothing
 		}
 	}
-	log.Print("docsFound = ", docsFound)
 	if docsFound {
-		sqlObj.MutationRecords, err = sqlObj.processMutationDoc(docs, datasource, sqlObj.MainTableName, sqlObj.NestedDoc, nil)
-		//log.Println("sqlObj.MutationRecords after sqlObj.processMutationDoc call")
-		//log.Println(sqlObj.MutationRecords)
+		sqlObj.MutationRecords, err = sqlObj.processMutationDoc(ctx, docs, datasource, sqlObj.MainTableName, sqlObj.NestedDoc, nil)
 		if err != nil {
-			log.Print(err.Error()) //TODO to pass this error as query result
+			logs.WithContext(ctx).Error(err.Error())
+			//TODO to pass this error as query result
 			// return nil, err
 			// no need to return here
 		}
-		log.Print("sqlObj.MutationRecords   === ", len(sqlObj.MutationRecords))
 	}
-	//log.Print(sqlObj.MutationSelectQuery)
 	if sqlObj.QueryType == "delete" || sqlObj.PreparedQuery {
 		sqlObj.MutationRecords = make([]module_model.MutationRecord, 1) // dummy record added so that it enters for loop in ExecuteMutationQuery function
-		sqlObj.MakeMutationQuery(&sqlObj.MutationRecords[0], sqlObj.MainTableName)
+		sqlObj.MakeMutationQuery(ctx, &sqlObj.MutationRecords[0], sqlObj.MainTableName)
 	} else if !docsFound {
-		log.Print("docs not found")
+		logs.WithContext(ctx).Warn("docs not found")
 		return errors.New("missing 'docs' keyword - document to mutate not found") //TODO this error is not returned in graphql error
 	}
-
-	/*
-		res, er := sqlObj.ExecuteMutationQuery(datasource, myself)
-		if er != nil {
-			log.Print(er.Error())
-			errMsg = er.Error()
-			//return nil, er
-			// no need to return here - error is returned as part of result - if asked in the query.
-		}
-		returnResult = make(map[string]interface{})
-		if sqlObj.MutationReturn.ReturnError {
-			returnResult[sqlObj.MutationReturn.ReturnErrorAlias] = errMsg
-		}
-		if sqlObj.MutationReturn.ReturnDoc {
-			returnResult[sqlObj.MutationReturn.ReturnDocAlias] = res
-		}
-		//TODO : query alias to be returned for mutation
-		return returnResult, er
-	*/
 	return nil
 }
 
-func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_model.DataSource, parentTableName string, nested bool, jc []string) (mr []module_model.MutationRecord, e error) {
-	log.Print("**************** processMutationDoc called for ", parentTableName, " ", nested, " ****************")
+func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{}, datasource *module_model.DataSource, parentTableName string, nested bool, jc []string) (mr []module_model.MutationRecord, e error) {
+	logs.WithContext(ctx).Debug(fmt.Sprint("ProcessMutationGraphQL - Start : ", parentTableName, " ", nested))
 
 	sqlObj.NestedDoc = nested // updating if recursive call is made
 	docs, err := d.([]interface{})
@@ -248,7 +187,6 @@ func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_m
 	} else if sqlObj.QueryType == "update" {
 		return nil, errors.New("value of 'docs' cannot be an array")
 	}
-	//log.Print(" len(docs) == ", len(docs))
 	mr = make([]module_model.MutationRecord, len(docs))
 	for i, doc := range docs {
 
@@ -273,7 +211,6 @@ func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_m
 		//ii := 1
 		mr[i] = module_model.MutationRecord{}
 		colNo := 0
-		//log.Println(insertDoc)
 		for k, kv := range insertDoc {
 			colNo++
 			if i == 0 && !sqlObj.NestedDoc { // picking up columns only from first record in array as structure of all records should be same for non nested docs
@@ -288,13 +225,12 @@ func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_m
 				isArray = true
 			}
 			childTableName := strings.Replace(k, "___", ".", -1)
-			tj, e := datasource.GetTableJoins(parentTableName, childTableName, nil)
+			tj, e := datasource.GetTableJoins(ctx, parentTableName, childTableName, nil)
 			if e != nil {
-				//log.Println(e)
 				if isArray {
 					kv1, ee := json.Marshal(kv)
 					if ee != nil {
-						log.Println(ee)
+						logs.WithContext(ctx).Error(ee.Error())
 						return nil, ee
 					}
 					kv = string(kv1)
@@ -303,23 +239,19 @@ func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_m
 				}
 			}
 			if isArray {
-				//log.Println("inside isArray")
-				//tj, e := datasource.GetTableJoins(parentTableName, childTableName)
 				var joinCols []string
 				if tj.Table1Name == parentTableName {
 					joinCols = tj.Table1Cols
 				} else {
 					joinCols = tj.Table2Cols
 				}
-				log.Print("tj printed below -------------")
-				log.Print(tj)
 				//TODO ensure parent query has returning fields required for child join values
 				if e != nil {
 					return nil, e
 				}
-				childRecords, e = sqlObj.processMutationDoc(a1, datasource, childTableName, true, joinCols)
+				childRecords, e = sqlObj.processMutationDoc(ctx, a1, datasource, childTableName, true, joinCols)
 				if e != nil {
-					log.Print(e.Error())
+					logs.WithContext(ctx).Error(e.Error())
 					return nil, e
 				}
 				if mr[i].ChildRecords == nil {
@@ -331,21 +263,28 @@ func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_m
 				}
 				mr[i].TableJoins[childTableName] = tj
 			} else {
-				//log.Println("inside else of isArray")
 				cols = append(cols, k)
-				// TODO to open up below comments
-				updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
-				//colsPlaceholder = append(colsPlaceholder, myself.GetPreparedQueryPlaceholder(ii))
-				//_=colsPlaceholder
-				values = append(values, kv)
-				//log.Println("values printed from inside else of isArray")
-				//log.Println(values)
-				//ii++
+				if kv != nil {
+					switch reflect.TypeOf(kv).Kind() {
+					case reflect.String:
+						str := kv.(string)
+						if strings.HasPrefix(str, "FIELD_") {
+							updateCols = append(updateCols, fmt.Sprint(k, " = ", fmt.Sprint(strings.Replace(str, "FIELD_", "", 1))))
+						} else {
+							updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
+							values = append(values, kv)
+						}
+					default:
+						updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
+						values = append(values, kv)
+					}
+				} else {
+					updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
+					values = append(values, kv)
+				}
+
 			}
 		}
-		//log.Print("cols before sort = ", colsIfNotNested)
-		//sort.Strings(colsIfNotNested)
-		//log.Print("cols after sort = ", colsIfNotNested)
 		colFound := false
 		for _, jcol := range jc {
 			for _, qcol := range cols {
@@ -364,7 +303,6 @@ func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_m
 		//mr[i].ColsPlaceholder = strings.Join(colsPlaceholder, ",")
 		mr[i].ColsPlaceholder = "$ColsPlaceholder"
 		mr[i].Values = values
-		//log.Println("mr[i].Values == ", mr[i].Values)
 		mr[i].NonNestedCols = strings.Join(colsIfNotNested, ",")
 		for _, c := range strings.Split(mr[0].NonNestedCols, ",") {
 			nonNestedValue := insertDoc[c]
@@ -372,7 +310,7 @@ func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_m
 				if jf == c {
 					nonNestedValue1, ee := json.Marshal(nonNestedValue)
 					if ee != nil {
-						log.Println(ee)
+						logs.WithContext(ctx).Error(ee.Error())
 						return
 					}
 					nonNestedValue = string(nonNestedValue1)
@@ -381,54 +319,44 @@ func (sqlObj *SQLObjectM) processMutationDoc(d interface{}, datasource *module_m
 			valuesIfNotNested = append(valuesIfNotNested, nonNestedValue)
 		}
 		mr[i].NonNestedValues = valuesIfNotNested
-		sqlObj.MakeMutationQuery(&mr[i], parentTableName)
+		sqlObj.MakeMutationQuery(ctx, &mr[i], parentTableName)
 	}
-	//log.Print("sqlObj.NestedDoc == ", sqlObj.NestedDoc)
 	if !sqlObj.NestedDoc && len(docs) > 0 {
 		mr[0].Cols = mr[0].NonNestedCols
-		sqlObj.MakeMutationQuery(&mr[0], parentTableName)
+		sqlObj.MakeMutationQuery(ctx, &mr[0], parentTableName)
 	}
 	return mr, nil
 }
 
-func (sqlObj *SQLObjectM) MakeMutationQuery(doc *module_model.MutationRecord, tableName string) {
-	//log.Print(fmt.Sprint("sqlObj.MutationReturn.ReturnFields = ", sqlObj.MutationReturn.ReturnFields))
-	//log.Print(fmt.Sprint("sqlObj.MutationReturn.ReturnDoc = ", sqlObj.MutationReturn.ReturnDoc))
+func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_model.MutationRecord, tableName string) {
+	logs.WithContext(ctx).Debug("MakeMutationQuery - Start")
 	returningStr := ""
-	//log.Print("sqlObj.WhereClause == ", sqlObj.WhereClause)
-	strWhereClause, e := processWhereClause(sqlObj.WhereClause, "", sqlObj.MainTableName, false)
+	strWhereClause, e := processWhereClause(ctx, sqlObj.WhereClause, "", sqlObj.MainTableName, false)
 	if e != "" {
-		log.Print(e)
+		logs.WithContext(ctx).Error(e)
 		//TODO to return errors to main result
 		//err := errors.New(e)
 	}
 	if strWhereClause != "" {
 		strWhereClause = fmt.Sprint(" where ", strWhereClause)
 	}
-	//log.Print("strWhereClause ==", strWhereClause)
 	//if sqlObj.MutationReturn.ReturnDoc { ### commented the conditional check to add returning clause - not we will always add
 	//TODO to bring back conditional check
 	if sqlObj.MutationReturn.ReturnDoc {
 		returningStr = fmt.Sprint(" RETURNING ", sqlObj.MutationReturn.ReturnFields)
 	}
 	//}
-	//log.Print(fmt.Sprint("MakeMutationQuery from base SqlMaker called for ", sqlObj.QueryType))
 	query := ""
 	if sqlObj.PreparedQuery {
 		query = fmt.Sprint(sqlObj.QueryObject[sqlObj.MainTableName].Query, " ", returningStr)
 		sqlObj.DBQuery = query
-		//log.Print(query)
 		return
 	}
 	switch sqlObj.QueryType {
 	case "insertselect":
 		query = fmt.Sprint("insert into ", tableName, " ( ", sqlObj.MutationSelectCols, ") ", sqlObj.MutationSelectQuery, returningStr)
 		sqlObj.DBQuery = query
-	//	log.Print(query)
 	case "insert":
-		//log.Print(doc.TableJoins[tableName])
-		//log.Print(doc.TableJoins)
-		//log.Print(tableName)
 
 		/*for _, tjColVal := range tj.Table1Cols { //TODO test parent-child insertion extensively.
 			colFound := false
@@ -441,7 +369,6 @@ func (sqlObj *SQLObjectM) MakeMutationQuery(doc *module_model.MutationRecord, ta
 				}
 			}
 			if !colFound {
-				log.Print("inside !colFound")
 				cvColsArray = append(cvColsArray, tjColVal)
 				//childRec.Values = append(childRec.Values, resDoc[tjColVal])
 				cv[icv].Values = append(cv[icv].Values , resDoc[tjColVal])
@@ -452,16 +379,13 @@ func (sqlObj *SQLObjectM) MakeMutationQuery(doc *module_model.MutationRecord, ta
 
 		query = fmt.Sprint("insert into ", tableName, " (", doc.Cols,
 			") values ", doc.ColsPlaceholder, returningStr)
-		//log.Print(query)
 		doc.DBQuery = query
 	case "update":
 		query = fmt.Sprint("update ", tableName, " set ", doc.UpdatedCols,
 			" ", strWhereClause, " ", returningStr)
-		//log.Print(query)
 		doc.DBQuery = query
 	case "delete":
 		query = fmt.Sprint("delete from ", tableName, " ", strWhereClause, " ", returningStr)
-		//log.Print(query)
 		sqlObj.DBQuery = query
 	default:
 		//do nothing

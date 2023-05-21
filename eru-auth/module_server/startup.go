@@ -1,10 +1,11 @@
 package module_server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-auth/module_store"
-	"log"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"os"
 	"strings"
 )
@@ -15,9 +16,8 @@ func StartUp() (module_store.ModuleStoreI, error) {
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
 	if storeType == "" {
 		storeType = "STANDALONE"
-		log.Print("STORE_TYPE environment variable not found - loading default standlone store")
+		logs.WithContext(context.Background()).Info("STORE_TYPE environment variable not found - loading default standlone store")
 	}
-	log.Print(storeType)
 	var myStore module_store.ModuleStoreI
 	var err error
 	switch storeType {
@@ -35,10 +35,11 @@ func StartUp() (module_store.ModuleStoreI, error) {
 		return nil, errors.New(fmt.Sprint("Invalid STORE_TYPE ", storeType))
 	}
 	storeBytes, err := myStore.GetStoreByteArray("")
-	//log.Println(string(storeBytes))
 	if err == nil {
 		//err = json.Unmarshal(storeBytes, myStore)
-		module_store.UnMarshalStore(storeBytes, myStore)
+		module_store.UnMarshalStore(context.Background(), storeBytes, myStore)
+	} else {
+		logs.WithContext(context.Background()).Error(err.Error())
 	}
 	//s.Store = myStore
 	return myStore, err

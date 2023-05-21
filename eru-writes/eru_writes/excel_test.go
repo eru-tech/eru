@@ -1,23 +1,19 @@
 package eru_writes
 
 import (
-	"log"
+	"context"
 	"testing"
 )
 
 func TestColumnToLetter(t *testing.T) {
 	col := 65
-	log.Print(col, " = ", columnToLetter(col), " : ", letterToColumn(columnToLetter(col)))
 
 	col = 0
-	log.Print(col, " = ", columnToLetter(col), " : ", letterToColumn(columnToLetter(col)))
 
 	col = 1
-	log.Print(col, " = ", columnToLetter(col), " : ", letterToColumn(columnToLetter(col)))
 
 	col = 321
-	log.Print(col, " = ", columnToLetter(col), " : ", letterToColumn(columnToLetter(col)))
-
+	_ = col
 }
 func TestWriteColumnar(t *testing.T) {
 	ewd := ExcelWriteData{}
@@ -30,5 +26,5 @@ func TestWriteColumnar(t *testing.T) {
 	cf := CellFormatter{}
 	cf.DataTypes = []string{"int", "string", "boolean", "float", "date"}
 	ewd.CellFormat = cf
-	ewd.WriteColumnar()
+	ewd.WriteColumnar(context.Background())
 }

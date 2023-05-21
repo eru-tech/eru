@@ -1,12 +1,13 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-routes/routes"
-	utils "github.com/eru-tech/eru/eru-utils"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,21 +16,21 @@ import (
 
 type AuthI interface {
 	//Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error)
-	Login(loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error)
-	Logout(req *http.Request) (res interface{}, resStatusCode int, err error)
-	VerifyToken(tokenType string, token string) (res interface{}, err error)
-	GetAttribute(attributeName string) (attributeValue interface{}, err error)
-	GetUserInfo(access_token string) (identity Identity, err error)
-	FetchTokens(refresh_token string) (res interface{}, err error)
-	MakeFromJson(rj *json.RawMessage) (err error)
-	PerformPreSaveTask() (err error)
-	PerformPreDeleteTask() (err error)
-	GetUser(userId string) (identity Identity, err error)
-	UpdateUser(identityToUpdate Identity) (err error)
-	ChangePassword(req *http.Request, changePasswordObj ChangePassword) (err error)
-	GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (msg string, err error)
-	CompleteRecovery(recoveryPassword RecoveryPassword, cookies []*http.Cookie) (msg string, err error)
-	VerifyRecovery(recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error)
+	Login(ctx context.Context, loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error)
+	Logout(ctx context.Context, req *http.Request) (res interface{}, resStatusCode int, err error)
+	VerifyToken(ctx context.Context, tokenType string, token string) (res interface{}, err error)
+	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
+	GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error)
+	FetchTokens(ctx context.Context, refresh_token string) (res interface{}, err error)
+	MakeFromJson(ctx context.Context, rj *json.RawMessage) (err error)
+	PerformPreSaveTask(ctx context.Context) (err error)
+	PerformPreDeleteTask(ctx context.Context) (err error)
+	GetUser(ctx context.Context, userId string) (identity Identity, err error)
+	UpdateUser(ctx context.Context, identityToUpdate Identity) (err error)
+	ChangePassword(ctx context.Context, req *http.Request, changePasswordObj ChangePassword) (err error)
+	GenerateRecoveryCode(ctx context.Context, recoveryIdentifier RecoveryPostBody) (msg string, err error)
+	CompleteRecovery(ctx context.Context, recoveryPassword RecoveryPassword, cookies []*http.Cookie) (msg string, err error)
+	VerifyRecovery(ctx context.Context, recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error)
 }
 type ChangePassword struct {
 	OldPassword string `json:"old_password"`
@@ -83,15 +84,20 @@ type AuthHooks struct {
 	SRC routes.Route
 }
 
-func (auth *Auth) MakeFromJson(rj *json.RawMessage) error {
-	return errors.New("MakeFromJson Method not implemented")
+func (auth *Auth) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+	err := errors.New("MakeFromJson Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return err
 }
 
-func (auth *Auth) GenerateRecoveryCode(recoveryIdentifier RecoveryPostBody) (msg string, err error) {
-	return "", errors.New("GenerateRecoveryCode Method not implemented")
+func (auth *Auth) GenerateRecoveryCode(ctx context.Context, recoveryIdentifier RecoveryPostBody) (msg string, err error) {
+	err = errors.New("GenerateRecoveryCode Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return "", err
 }
 
-func (auth *Auth) sendRecoveryCode(email_id string, recovery_code string, recovery_time string, name string) (err error) {
+func (auth *Auth) sendRecoveryCode(ctx context.Context, email_id string, recovery_code string, recovery_time string, name string) (err error) {
+	logs.WithContext(ctx).Debug("sendRecoveryCode - Start")
 	trReqVars := &routes.TemplateVars{}
 	if trReqVars.Vars == nil {
 		trReqVars.Vars = make(map[string]interface{})
@@ -111,37 +117,46 @@ func (auth *Auth) sendRecoveryCode(email_id string, recovery_code string, recove
 	h := http.Header{}
 	h.Set("content-type", "application/json")
 	r.Header = h
-	log.Println("len(auth.Hooks.SRC.TargetHosts) = ", len(auth.Hooks.SRC.TargetHosts))
+	logs.WithContext(ctx).Info(fmt.Sprint("len(auth.Hooks.SRC.TargetHosts) = ", len(auth.Hooks.SRC.TargetHosts)))
 	if len(auth.Hooks.SRC.TargetHosts) > 0 {
-		response, _, respErr := auth.Hooks.SRC.Execute(r, "/", false, "", trReqVars, 1)
-		utils.PrintResponseBody(response, "send recovery code response")
+		_, _, respErr := auth.Hooks.SRC.Execute(r.Context(), r, "/", false, "", trReqVars, 1)
 		return respErr
 	} else {
-		log.Println("SRC hook not defined for auth. Thus no email was triggered.")
+		logs.WithContext(ctx).Warn("SRC hook not defined for auth. Thus no email was triggered.")
 	}
 	return
 }
 
-func (auth *Auth) CompleteRecovery(recoveryPassword RecoveryPassword, cookies []*http.Cookie) (msg string, err error) {
-	return "", errors.New("CompleteRecovery Method not implemented")
+func (auth *Auth) CompleteRecovery(ctx context.Context, recoveryPassword RecoveryPassword, cookies []*http.Cookie) (msg string, err error) {
+	err = errors.New("CompleteRecovery Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return "", err
 }
 
-func (auth *Auth) VerifyRecovery(recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error) {
-	return nil, nil, errors.New("CompleteRecovery Method not implemented")
+func (auth *Auth) VerifyRecovery(ctx context.Context, recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error) {
+	err = errors.New("VerifyRecovery Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return nil, nil, err
 }
 
-func (auth *Auth) VerifyToken(tokenType string, token string) (res interface{}, err error) {
-	return nil, errors.New("VerifyToken Method not implemented")
+func (auth *Auth) VerifyToken(ctx context.Context, tokenType string, token string) (res interface{}, err error) {
+	err = errors.New("VerifyToken Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return nil, err
 }
 
-func (auth *Auth) PerformPreSaveTask() (err error) {
-	return errors.New("PerformPreSaveTask Method not implemented")
+func (auth *Auth) PerformPreSaveTask(ctx context.Context) (err error) {
+	err = errors.New("PerformPreSaveTask Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return err
 }
-func (auth *Auth) PerformPreDeleteTask() (err error) {
-	return errors.New("PerformPreDeleteTask Method not implemented")
+func (auth *Auth) PerformPreDeleteTask(ctx context.Context) (err error) {
+	err = errors.New("PerformPreDeleteTask Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return err
 }
 
-func (auth *Auth) GetAttribute(attributeName string) (attributeValue interface{}, err error) {
+func (auth *Auth) GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error) {
 	switch attributeName {
 	case "AuthType":
 		return auth.AuthType, nil
@@ -150,36 +165,52 @@ func (auth *Auth) GetAttribute(attributeName string) (attributeValue interface{}
 	case "TokenHeaderKey":
 		return auth.TokenHeaderKey, nil
 	default:
-		return nil, errors.New("Attribute not found")
+		err := errors.New("Attribute not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
 }
 
-func (auth *Auth) GetUserInfo(access_token string) (identity Identity, err error) {
-	return Identity{}, errors.New("GetUserInfo Method not implemented")
+func (auth *Auth) GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error) {
+	err = errors.New("GetUserInfo Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return Identity{}, err
 }
 
-func (auth *Auth) GetUser(userId string) (identity Identity, err error) {
-	return Identity{}, errors.New("GetUser Method not implemented")
+func (auth *Auth) GetUser(ctx context.Context, userId string) (identity Identity, err error) {
+	err = errors.New("GetUser Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return Identity{}, err
 }
 
-func (auth *Auth) UpdateUser(identityToUpdate Identity) (err error) {
-	return errors.New("UpdateUser Method not implemented")
+func (auth *Auth) UpdateUser(ctx context.Context, identityToUpdate Identity) (err error) {
+	err = errors.New("UpdateUser Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return err
 }
 
-func (auth *Auth) FetchTokens(refresh_token string) (res interface{}, err error) {
-	return nil, errors.New("FetchTokens Method not implemented")
+func (auth *Auth) FetchTokens(ctx context.Context, refresh_token string) (res interface{}, err error) {
+	err = errors.New("FetchTokens Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return nil, err
 }
 
-func (auth *Auth) Login(loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
-	return Identity{}, LoginSuccess{}, errors.New("Login Method not implemented")
+func (auth *Auth) Login(ctx context.Context, loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
+	err = errors.New("Login Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return Identity{}, LoginSuccess{}, err
 }
 
-func (auth *Auth) Logout(req *http.Request) (res interface{}, resStatusCode int, err error) {
-	return nil, 400, errors.New("Login Method not implemented")
+func (auth *Auth) Logout(ctx context.Context, req *http.Request) (res interface{}, resStatusCode int, err error) {
+	err = errors.New("Logout Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return nil, 400, err
 }
 
-func (auth *Auth) ChangePassword(req *http.Request, changePasswordObj ChangePassword) (err error) {
-	return errors.New("ChangePassword Method not implemented")
+func (auth *Auth) ChangePassword(ctx context.Context, req *http.Request, changePasswordObj ChangePassword) (err error) {
+	err = errors.New("ChangePassword Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return err
 }
 
 func GetAuth(authType string) AuthI {
