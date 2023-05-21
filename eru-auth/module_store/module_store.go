@@ -2,6 +2,7 @@ package module_store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-auth/auth"
@@ -9,6 +10,7 @@ import (
 	"github.com/eru-tech/eru/eru-auth/module_model"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
+	"reflect"
 )
 
 type StoreHolder struct {
@@ -28,7 +30,7 @@ type ModuleStoreI interface {
 	GetMessageTemplate(ctx context.Context, gatewayName string, projectId string, templateType string) (module_model.MessageTemplate, error)
 	SaveAuth(ctx context.Context, authObj auth.AuthI, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveAuth(ctx context.Context, authType string, projectId string, realStore ModuleStoreI) error
-	GetAuth(ctx context.Context, projectId string, authName string) (auth.AuthI, error)
+	GetAuth(ctx context.Context, projectId string, authName string, s ModuleStoreI) (auth.AuthI, error)
 }
 
 type ModuleStore struct {
@@ -239,21 +241,24 @@ func (ms *ModuleStore) GetMessageTemplate(ctx context.Context, gatewayName strin
 }
 func (ms *ModuleStore) SaveAuth(ctx context.Context, authObj auth.AuthI, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveAuth - Start")
+
+	//cloning authObj to replace variables and execute PerformPreSaveTask with actual values
+	authObjClone, err := ms.GetAuthCloneObject(ctx, projectId, authObj, realStore)
 	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
 		return err
 	}
-	authName, err := authObj.GetAttribute(ctx, "AuthName")
+	authName, err := authObjClone.GetAttribute(ctx, "AuthName")
 	if err != nil {
 		return err
 	}
 	if persist == true {
-		err = authObj.PerformPreSaveTask(ctx)
+		err = authObjClone.PerformPreSaveTask(ctx)
 		if err != nil {
 			return err
 		}
 	}
-
+	//save original authObj with variables
 	err = prj.AddAuth(ctx, authName.(string), authObj)
 	if err != nil {
 		return err
@@ -289,26 +294,69 @@ func (ms *ModuleStore) RemoveAuth(ctx context.Context, authName string, projectI
 	return realStore.SaveStore(ctx, "", realStore)
 }
 
-func (ms *ModuleStore) GetAuth(ctx context.Context, projectId string, authName string) (auth.AuthI, error) {
+func (ms *ModuleStore) GetAuthClone(ctx context.Context, projectId string, authName string, s ModuleStoreI) (authObjClone auth.AuthI, err error) {
+	logs.WithContext(ctx).Debug("GetAuthClone - Start")
+	prj, err := ms.GetProjectConfig(ctx, projectId)
+	if err != nil {
+		return
+	}
+
+	if authObj, ok := prj.Auth[authName]; !ok {
+		err = errors.New(fmt.Sprint("auth ", authName, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	} else {
+		return ms.GetAuthCloneObject(ctx, projectId, authObj, s)
+	}
+}
+
+func (ms *ModuleStore) GetAuthCloneObject(ctx context.Context, projectId string, authObj auth.AuthI, s ModuleStoreI) (authObjClone auth.AuthI, err error) {
+	logs.WithContext(ctx).Debug("GetAuGetAuthCloneObjectth - Start")
+	authObjJson, authObjJsonErr := json.Marshal(authObj)
+	if authObjJsonErr != nil {
+		err = errors.New(fmt.Sprint("error while cloning authObj (marshal)"))
+		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(authObjJsonErr.Error())
+		return
+	}
+	authObjJson = s.ReplaceVariables(ctx, projectId, authObjJson)
+
+	iCloneI := reflect.New(reflect.TypeOf(authObj))
+	authObjCloneErr := json.Unmarshal(authObjJson, iCloneI.Interface())
+	if authObjCloneErr != nil {
+		err = errors.New(fmt.Sprint("error while cloning authObj(unmarshal)"))
+		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(authObjCloneErr.Error())
+		return
+	}
+	return iCloneI.Elem().Interface().(auth.AuthI), nil
+}
+
+func (ms *ModuleStore) GetAuth(ctx context.Context, projectId string, authName string, s ModuleStoreI) (auth.AuthI, error) {
 	logs.WithContext(ctx).Debug("GetAuth - Start")
-	if prg, ok := ms.Projects[projectId]; ok {
-		if prg.Auth != nil {
-			for k, v := range prg.Auth {
-				if k == authName {
-					return v, nil
+	return ms.GetAuthClone(ctx, projectId, authName, s)
+
+	/*
+		if prg, ok := ms.Projects[projectId]; ok {
+			if prg.Auth != nil {
+				for k, v := range prg.Auth {
+					if k == authName {
+
+						return v, nil
+					}
 				}
+			} else {
+				err := errors.New(fmt.Sprint("No Auth Defined for the project : ", projectId))
+				logs.WithContext(ctx).Info(err.Error())
+				return nil, err
 			}
 		} else {
-			err := errors.New(fmt.Sprint("No Auth Defined for the project : ", projectId))
+			err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 			logs.WithContext(ctx).Info(err.Error())
 			return nil, err
 		}
-	} else {
-		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		err := errors.New(fmt.Sprint("Auth ", authName, " not found"))
 		logs.WithContext(ctx).Info(err.Error())
 		return nil, err
-	}
-	err := errors.New(fmt.Sprint("Auth ", authName, " not found"))
-	logs.WithContext(ctx).Info(err.Error())
-	return nil, err
+	*/
 }

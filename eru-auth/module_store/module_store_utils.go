@@ -9,6 +9,7 @@ import (
 	"github.com/eru-tech/eru/eru-auth/gateway"
 	"github.com/eru-tech/eru/eru-auth/module_model"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-store/store"
 )
 
 func (ms *ModuleStore) checkProjectExists(ctx context.Context, projectId string) error {
@@ -29,6 +30,16 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return err
+	}
+
+	var vars map[string]*store.Variables
+	if _, ok := storeMap["Variables"]; ok {
+		err = json.Unmarshal(*storeMap["Variables"], &vars)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+		msi.SetVars(ctx, vars)
 	}
 
 	var prjs map[string]*json.RawMessage
@@ -121,7 +132,7 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 					authI := authtype.GetAuth(authType)
 					err = authI.MakeFromJson(ctx, authJson)
 					if err == nil {
-						err = msi.SaveAuth(ctx, authI, prj, nil, false)
+						err = msi.SaveAuth(ctx, authI, prj, msi, false)
 						if err != nil {
 							return err
 						}

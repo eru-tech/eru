@@ -47,7 +47,7 @@ func UserInfoHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName)
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -100,7 +100,7 @@ func FetchTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName)
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -127,7 +127,7 @@ func VerifyTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		tokenType := vars["tokentype"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName)
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -160,7 +160,7 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName)
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -201,7 +201,7 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName)
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -238,7 +238,7 @@ func VerifyRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName)
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -280,7 +280,7 @@ func CompleteRecoveryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName)
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -318,7 +318,7 @@ func LogoutHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName)
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -413,7 +413,7 @@ func GetUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName)
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -466,7 +466,7 @@ func UpdateUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 		}
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName)
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -503,7 +503,7 @@ func ChangePasswordHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName)
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

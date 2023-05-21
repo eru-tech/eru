@@ -268,12 +268,11 @@ func callHttp(ctx context.Context, method string, url string, headers http.Heade
 func CallHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
 	logs.WithContext(ctx).Debug("CallHttp - Start")
 	resp, err := callHttp(ctx, method, url, headers, formData, reqCookies, params, postBody)
-	statusCode = resp.StatusCode
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, resp.Header, resp.Cookies(), resp.StatusCode, err
 	}
-
+	statusCode = resp.StatusCode
 	respHeaders = resp.Header
 	respCookies = resp.Cookies()
 	defer resp.Body.Close()

@@ -19,16 +19,18 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 		return err
 	}
 
-	var prjs map[string]*json.RawMessage
 	var vars map[string]*store.Variables
-	if _, ok := storeMap["projects"]; ok {
-
+	if _, ok := storeMap["Variables"]; ok {
 		err = json.Unmarshal(*storeMap["Variables"], &vars)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return err
 		}
 		msi.SetVars(ctx, vars)
+	}
+
+	var prjs map[string]*json.RawMessage
+	if _, ok := storeMap["projects"]; ok {
 
 		err = json.Unmarshal(*storeMap["projects"], &prjs)
 		if err != nil {
