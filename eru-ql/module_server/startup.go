@@ -47,7 +47,7 @@ func StartUp() (module_store.ModuleStoreI, error) {
 	} else {
 		logs.WithContext(context.Background()).Error(err.Error())
 	}
-	err = myStore.SetDataSourceConnections(context.Background())
+	err = myStore.SetDataSourceConnections(context.Background(), myStore)
 	if err != nil {
 		logs.WithContext(context.Background()).Error(err.Error())
 	}

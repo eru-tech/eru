@@ -2,6 +2,7 @@ package module_store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -9,6 +10,7 @@ import (
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/eru-tech/eru/eru-store/store"
+	"reflect"
 	"strings"
 )
 
@@ -30,7 +32,7 @@ type ModuleStoreI interface {
 	GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error)
 	GetProjectConfigObject(ctx context.Context, projectId string) (pc module_model.ProjectConfig, err error)
 	GetProjectList(ctx context.Context) []map[string]interface{}
-	SetDataSourceConnections(ctx context.Context) (err error)
+	SetDataSourceConnections(ctx context.Context, realStore ModuleStoreI) (err error)
 	SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error
 	SaveDataSource(ctx context.Context, projectId string, datasource *module_model.DataSource, realStore ModuleStoreI) error
 	RemoveDataSource(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) error
@@ -141,16 +143,25 @@ func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interfac
 	return projects
 }
 
-func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context) (err error) {
+func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SetDataSourceConnections - Start")
 	for _, prj := range ms.Projects {
 		for _, datasource := range prj.DataSources {
 			i := ds.GetSqlMaker(datasource.DbName)
 			if i != nil {
-				err = i.CreateConn(ctx, datasource)
+				// making clone to replace variables with actual values to create DB connection
+				datasourceClone, err := ms.GetDatasourceCloneObject(ctx, prj.ProjectId, datasource, realStore)
+				if err != nil {
+					return err
+				}
+				err = i.CreateConn(ctx, datasourceClone)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 				}
+				//setting DB connection object in actual store
+				datasource.Con = datasourceClone.Con
+				datasource.ConStatus = datasourceClone.ConStatus
+
 			} else {
 				err = errors.New(fmt.Sprint(datasource.DbName, " not found"))
 				logs.WithContext(ctx).Error(err.Error())
@@ -171,6 +182,27 @@ func (ms *ModuleStore) SaveProjectConfig(ctx context.Context, projectId string, 
 	ms.Projects[projectId].ProjectConfig = projectConfig
 
 	return realStore.SaveStore(ctx, "", realStore)
+}
+func (ms *ModuleStore) GetDatasourceCloneObject(ctx context.Context, projectId string, datasource *module_model.DataSource, s ModuleStoreI) (datasourceClone *module_model.DataSource, err error) {
+	logs.WithContext(ctx).Debug("GetDatasourceCloneObject - Start")
+	datasourceObjJson, datasourceObjJsonErr := json.Marshal(datasource)
+	if datasourceObjJsonErr != nil {
+		err = errors.New(fmt.Sprint("error while cloning datasourceObj (marshal)"))
+		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(datasourceObjJsonErr.Error())
+		return
+	}
+	datasourceObjJson = s.ReplaceVariables(ctx, projectId, datasourceObjJson)
+
+	iCloneI := reflect.New(reflect.TypeOf(datasource))
+	datasourceObjCloneErr := json.Unmarshal(datasourceObjJson, iCloneI.Interface())
+	if datasourceObjCloneErr != nil {
+		err = errors.New(fmt.Sprint("error while cloning datasourceObj(unmarshal)"))
+		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(datasourceObjCloneErr.Error())
+		return
+	}
+	return iCloneI.Elem().Interface().(*module_model.DataSource), nil
 }
 
 func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, datasource *module_model.DataSource, realStore ModuleStoreI) error {
@@ -197,11 +229,18 @@ func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, dat
 	sqlMaker := ds.GetSqlMaker(datasource.DbName)
 	datasource.DbType = ds.GetDbType(datasource.DbName)
 
-	err = sqlMaker.CreateConn(ctx, datasource)
+	// making clone to replace variables with actual values to create DB connection
+	datasourceClone, err := ms.GetDatasourceCloneObject(ctx, projectId, datasource, realStore)
+	if err != nil {
+		return err
+	}
+	err = sqlMaker.CreateConn(ctx, datasourceClone)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 	}
-
+	//setting DB connection object in actual store
+	datasource.Con = datasourceClone.Con
+	datasource.ConStatus = datasourceClone.ConStatus
 	return realStore.SaveStore(ctx, "", realStore)
 }
 
