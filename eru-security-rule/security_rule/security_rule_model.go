@@ -132,7 +132,8 @@ func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType stri
 }
 
 func processTemplate(ctx context.Context, templateName string, templateString string, vars map[string]interface{}, outputType string) (output []byte, err error) {
-	logs.WithContext(ctx).Debug("stringifyRule - Start")
+	logs.WithContext(ctx).Debug("processTemplate - Start")
+	logs.WithContext(ctx).Info(fmt.Sprint("templateString = ", templateString))
 	ruleValue := strings.SplitN(templateString, ".", 2)
 	if ruleValue[0] == "token" {
 		templateStr := fmt.Sprint("{{ .", ruleValue[1], " }}")

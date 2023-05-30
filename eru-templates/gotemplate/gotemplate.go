@@ -242,6 +242,32 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			dt = time.Now().Format("2006-01-02")
 			return
 		},
+		"date_diff": func(indtstr string, n int, t string) (dt string, err error) {
+			indt, err := time.Parse("2006-01-02", indtstr)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				err = errors.New("Invalid date format - expected formatted 2006-01-02")
+				logs.WithContext(ctx).Error(err.Error())
+				return "", err
+			}
+			y := 0
+			m := 0
+			d := 0
+			switch t {
+			case "days":
+				d = n
+			case "months":
+				m = n
+			case "years":
+				y = n
+			default:
+				err = errors.New("Invalid type - expected values are years months and days")
+				logs.WithContext(ctx).Error(err.Error())
+				return "", err
+			}
+			dt = indt.AddDate(y, m, d).Format("2006-01-02")
+			return dt, nil
+		},
 		"date_part": func(dtStr string, dtPart string) (datePart string, err error) {
 			dt, err := time.Parse("2006-01-02", dtStr)
 			switch dtPart {
