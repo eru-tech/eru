@@ -9,7 +9,7 @@ require (
 	github.com/eru-tech/eru/eru-store v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-templates v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
-	github.com/eru-tech/eru/eru-writes v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/google/go-cmp v0.5.9
 	github.com/gorilla/mux v1.8.0
@@ -66,6 +66,6 @@ replace (
 	github.com/eru-tech/eru/eru-store => ../eru-store
 	github.com/eru-tech/eru/eru-templates => ../eru-templates
 	github.com/eru-tech/eru/eru-utils => ../eru-utils
-	github.com/eru-tech/eru/eru-writes => ../eru-writes
+	github.com/eru-tech/eru/eru-read-write => ../eru-read-write
 
 )

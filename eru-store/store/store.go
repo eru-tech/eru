@@ -85,6 +85,7 @@ func (store *Store) SaveVar(ctx context.Context, projectId string, newVar Vars, 
 	if variables, ok = store.Variables[projectId]; !ok {
 		logs.WithContext(ctx).Info(fmt.Sprint("making new variable object for project : ", projectId))
 		store.Variables[projectId] = &Variables{}
+		variables = store.Variables[projectId]
 	}
 	if variables.Vars == nil {
 		variables.Vars = make(map[string]*Vars)

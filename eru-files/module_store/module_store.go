@@ -14,6 +14,7 @@ import (
 	"github.com/eru-tech/eru/eru-files/file_model"
 	"github.com/eru-tech/eru/eru-files/storage"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_reads "github.com/eru-tech/eru/eru-read-write/eru-reads"
 	"github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gabriel-vasile/mimetype"
@@ -38,12 +39,15 @@ type FileDownloadRequest struct {
 	FolderPath      string   `json:"folder_path" eru:"required"`
 	InnerFileNames  []string `json:"inner_file_names" eru:"required"`
 	CsvAsJson       bool     `json:"csv_as_json"`
+	ExcelAsJson     bool     `json:"excel_as_json"`
+	ExcelSheets     []string `json:"excel_sheets"`
 	LowerCaseHeader bool     `json:"lower_case_header"`
 	Mime_Limit      uint32   `json:"mime_limit"`
 }
 
 const (
-	MIME_CSV = "text/csv"
+	MIME_CSV  = "text/csv"
+	MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
 type ModuleStoreI interface {
@@ -243,7 +247,7 @@ func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, 
 			fileToUnzip = true
 		}
 		if fileToUnzip {
-			logs.WithContext(ctx).Debug(fmt.Sprint("Reading file:", zipFile.Name))
+			logs.WithContext(ctx).Info(fmt.Sprint("Reading file:", zipFile.Name))
 			unzippedFileBytes, ziperr := readZipFile(ctx, zipFile)
 			if ziperr != nil {
 				err = ziperr
@@ -253,9 +257,9 @@ func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, 
 				mimetype.SetLimit(fileDownloadRequest.Mime_Limit)
 			}
 			fMime := mimetype.Detect(unzippedFileBytes)
-			logs.WithContext(ctx).Debug(fmt.Sprint("fileDownloadRequest.CsvAsJson = ", fileDownloadRequest.CsvAsJson))
-			logs.WithContext(ctx).Debug(fmt.Sprint("fMime = ", fMime))
-			logs.WithContext(ctx).Debug(fmt.Sprint("fileDownloadRequest.Mime_Limit = ", fileDownloadRequest.Mime_Limit))
+			logs.WithContext(ctx).Info(fmt.Sprint("fileDownloadRequest.CsvAsJson = ", fileDownloadRequest.CsvAsJson))
+			logs.WithContext(ctx).Info(fmt.Sprint("fMime = ", fMime))
+			logs.WithContext(ctx).Info(fmt.Sprint("fileDownloadRequest.Mime_Limit = ", fileDownloadRequest.Mime_Limit))
 
 			if fileDownloadRequest.CsvAsJson && fMime.Is(MIME_CSV) {
 				csvReader := csv.NewReader(bytes.NewReader(unzippedFileBytes))
@@ -271,6 +275,11 @@ func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, 
 					return
 				}
 				fo.File = jsonData
+			} else if fileDownloadRequest.ExcelAsJson && fMime.Is(MIME_XLSX) {
+				logs.WithContext(ctx).Info("inside MIME_XLSX")
+				erd := eru_reads.ExcelReadData{}
+				erd.ReadAsJson(ctx, unzippedFileBytes)
+				fo.File = base64.StdEncoding.EncodeToString(unzippedFileBytes)
 			} else {
 				fo.File = base64.StdEncoding.EncodeToString(unzippedFileBytes)
 			}

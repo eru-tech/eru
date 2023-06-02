@@ -9,7 +9,7 @@ import (
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
-	"github.com/eru-tech/eru/eru-writes/eru_writes"
+	"github.com/eru-tech/eru/eru-read-write/eru_writes"
 	"strings"
 )
 
