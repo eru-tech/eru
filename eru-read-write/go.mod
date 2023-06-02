@@ -1,4 +1,4 @@
-module github.com/eru-tech/eru/eru-writes
+module github.com/eru-tech/eru/eru-read-write
 
 go 1.20
 

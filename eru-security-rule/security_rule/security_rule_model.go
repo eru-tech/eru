@@ -115,13 +115,14 @@ func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType stri
 		//do nothing
 		break
 	}
-
+	logs.WithContext(ctx).Info(fmt.Sprint("cd.Variable2 = ", cd.Variable1))
 	var1Bytes, err := processTemplate(ctx, "customrule", cd.Variable1, vars, "string")
 	if err == nil {
 		cd.Variable1 = fmt.Sprint(valPrefix, string(var1Bytes), valSuffix)
 	} else if ignoreIfNotFound && err.Error() != "no variable prefix found" {
 		return "", nil
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint("cd.Variable2 = ", cd.Variable2))
 	var2Bytes, err := processTemplate(ctx, "customrule", cd.Variable2, vars, "string")
 	if err == nil {
 		cd.Variable2 = fmt.Sprint(valPrefix, string(var2Bytes), valSuffix)
@@ -139,6 +140,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		templateStr := fmt.Sprint("{{ .", ruleValue[1], " }}")
 		goTmpl := gotemplate.GoTemplate{templateName, templateStr}
 		outputObj, err := goTmpl.Execute(ctx, vars["token"], outputType)
+		logs.WithContext(ctx).Info(fmt.Sprint("output = ", outputObj.(string)))
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
@@ -151,6 +153,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 				return nil, err
 			}
 		}
+		logs.WithContext(ctx).Info(fmt.Sprint("output = ", string(output)))
 	} else {
 		err = errors.New("no variable prefix found")
 		logs.WithContext(ctx).Error(err.Error())
