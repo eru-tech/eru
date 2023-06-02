@@ -302,7 +302,6 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			return a * b
 		},
 		"excelToJson": func(fData string, sheetNames string, firstRowHeader string, headers string, keys string) (fJson interface{}, err error) {
-
 			return excelToJson(ctx, fData, sheetNames, firstRowHeader, headers, keys)
 		},
 		"null": func() interface{} {

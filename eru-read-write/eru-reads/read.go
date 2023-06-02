@@ -6,8 +6,13 @@ import (
 )
 
 type ReadData struct {
-	ColumnarDataHeader         []string
-	ColumnarDataHeaderFirstRow bool
+}
+
+type FileReadData struct {
+	HeaderRow     int      `json:"header_row"`
+	DataStartRow  int      `json:"data_start_row"`
+	ColumnHeaders []string `json:"column_headers"`
+	Columns       []int    `json:"columns"`
 }
 
 type ReadI interface {
