@@ -35,14 +35,14 @@ type FileObj struct {
 }
 
 type FileDownloadRequest struct {
-	FileName        string   `json:"file_name" eru:"required"`
-	FolderPath      string   `json:"folder_path" eru:"required"`
-	InnerFileNames  []string `json:"inner_file_names" eru:"required"`
-	CsvAsJson       bool     `json:"csv_as_json"`
-	ExcelAsJson     bool     `json:"excel_as_json"`
-	ExcelSheets     []string `json:"excel_sheets"`
-	LowerCaseHeader bool     `json:"lower_case_header"`
-	Mime_Limit      uint32   `json:"mime_limit"`
+	FileName        string                                       `json:"file_name" eru:"required"`
+	FolderPath      string                                       `json:"folder_path" eru:"required"`
+	InnerFileNames  []string                                     `json:"inner_file_names" eru:"required"`
+	CsvAsJson       bool                                         `json:"csv_as_json"`
+	ExcelAsJson     bool                                         `json:"excel_as_json"`
+	ExcelSheets     map[string]map[string]eru_reads.FileReadData `json:"excel_sheets"`
+	LowerCaseHeader bool                                         `json:"lower_case_header"`
+	Mime_Limit      uint32                                       `json:"mime_limit"`
 }
 
 const (
@@ -277,9 +277,27 @@ func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, 
 				fo.File = jsonData
 			} else if fileDownloadRequest.ExcelAsJson && fMime.Is(MIME_XLSX) {
 				logs.WithContext(ctx).Info("inside MIME_XLSX")
-				erd := eru_reads.ExcelReadData{}
-				erd.ReadAsJson(ctx, unzippedFileBytes)
-				fo.File = base64.StdEncoding.EncodeToString(unzippedFileBytes)
+				logs.WithContext(ctx).Info(fmt.Sprint("fileDownloadRequest.ExcelAsJson = ", fileDownloadRequest.ExcelAsJson))
+				if !fileDownloadRequest.ExcelAsJson {
+					fo.File = base64.StdEncoding.EncodeToString(unzippedFileBytes)
+				} else {
+					var sheets map[string]eru_reads.FileReadData
+					if fileDownloadRequest.ExcelSheets != nil {
+						for fn, v := range fileDownloadRequest.ExcelSheets {
+							if fn == zipFile.Name || fn == "*" {
+								sheets = v
+								break
+							}
+						}
+					}
+					erd := eru_reads.ExcelReadData{Sheets: sheets}
+					jsonData, jsonErr := erd.ReadAsJson(ctx, unzippedFileBytes)
+					if jsonErr != nil {
+						err = jsonErr
+						return
+					}
+					fo.File = jsonData
+				}
 			} else {
 				fo.File = base64.StdEncoding.EncodeToString(unzippedFileBytes)
 			}

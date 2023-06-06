@@ -208,14 +208,16 @@ func (store *Store) SetStoreTableName(tablename string) {
 func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text []byte) (returnText []byte) {
 	logs.WithContext(ctx).Debug("ReplaceVariables - Start")
 	textStr := string(text)
-	for k, v := range store.Variables[projectId].Vars {
-		textStr = strings.Replace(textStr, fmt.Sprint("$VAR_", k), v.Value, -1)
-	}
-	for k, v := range store.Variables[projectId].EnvVars {
-		textStr = strings.Replace(textStr, fmt.Sprint("$ENV_", k), v.Value, -1)
-	}
-	for k, v := range store.Variables[projectId].Secrets {
-		textStr = strings.Replace(textStr, fmt.Sprint("$SECRET_", k), v.Value, -1)
+	if store.Variables[projectId] != nil {
+		for k, v := range store.Variables[projectId].Vars {
+			textStr = strings.Replace(textStr, fmt.Sprint("$VAR_", k), v.Value, -1)
+		}
+		for k, v := range store.Variables[projectId].EnvVars {
+			textStr = strings.Replace(textStr, fmt.Sprint("$ENV_", k), v.Value, -1)
+		}
+		for k, v := range store.Variables[projectId].Secrets {
+			textStr = strings.Replace(textStr, fmt.Sprint("$SECRET_", k), v.Value, -1)
+		}
 	}
 	return []byte(textStr)
 }
