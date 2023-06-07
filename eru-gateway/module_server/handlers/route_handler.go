@@ -110,6 +110,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		//defer response.Body.Close()
 		for k, v := range response.Header {
+			logs.WithContext(r.Context()).Info(fmt.Sprint(k, " - ", v))
 			w.Header()[k] = v
 		}
 		w.WriteHeader(response.StatusCode)
@@ -120,6 +121,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+		logs.WithContext(r.Context()).Info(fmt.Sprint(w.Header()))
 	}
 }
 func extractHostUrl(request *http.Request) (string, string) {
