@@ -109,6 +109,13 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		//defer response.Body.Close()
+
+		//remove CORS headers from w else it is getting passed even if rsponse is not sedning any header
+		w.Header().Del("Access-Control-Allow-Credentials")
+		w.Header().Del("Access-Control-Allow-Origin")
+		w.Header().Del("Access-Control-Allow-Headers")
+		w.Header().Del("Access-Control-Allow-Methods")
+
 		for k, v := range response.Header {
 			logs.WithContext(r.Context()).Info(fmt.Sprint(k, " - ", v))
 			w.Header()[k] = v
