@@ -21,6 +21,8 @@ func MakeCorsObject() *cors.Cors {
 	logs.WithContext(context.Background()).Info(fmt.Sprint("Allowed Origins = ", AllowedOrigins))
 	return cors.New(cors.Options{
 		AllowCredentials: true,
+		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
 			logs.WithContext(context.Background()).Info(fmt.Sprint("Origin Asked = ", s))
 			logs.WithContext(context.Background()).Info(fmt.Sprint("Allowed Origins = ", AllowedOrigins))
@@ -40,8 +42,7 @@ func MakeCorsObject() *cors.Cors {
 			return false
 		},
 		//AllowedOrigins: []string{"127.0.0.1"},
-		AllowedMethods: []string{"GET", "PUT", "POST", "DELETE"},
-		AllowedHeaders: []string{"Authorization", "Content-Type"},
+		Debug: true,
 		//ExposedHeaders: []string{"Authorization", "Content-Type"},
 	})
 }
