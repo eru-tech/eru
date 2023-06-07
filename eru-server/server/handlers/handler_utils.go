@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/rs/cors"
@@ -16,16 +17,21 @@ func FormatResponse(w http.ResponseWriter, status int) {
 
 // makeCorsObject takes required config and make a new cors object
 func MakeCorsObject() *cors.Cors {
+	logs.WithContext(context.Background()).Info("Inside MakeCorsObject")
 	return cors.New(cors.Options{
 		AllowCredentials: true,
-		AllowOriginFunc: func(s string) bool {
-			logs.Logger.Info(fmt.Sprint("Origin Asked = ", s))
-			logs.Logger.Info(fmt.Sprint("Allowed Asked = ", AllowedOrigins))
-			if AllowedOrigins != "" {
+		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
+			logs.WithContext(context.Background()).Info(fmt.Sprint("Origin Asked = ", s))
+			logs.WithContext(context.Background()).Info(fmt.Sprint("Allowed Asked = ", AllowedOrigins))
+			if AllowedOrigins == "" {
+				logs.WithContext(context.Background()).Info(fmt.Sprint("inside AllowedOrigins != \"\""))
 				return true
 			}
 			envOrigin := strings.Split(AllowedOrigins, ",")
+			logs.WithContext(context.Background()).Info(fmt.Sprint(envOrigin))
 			for _, o := range envOrigin {
+				logs.WithContext(context.Background()).Info(fmt.Sprint("checking for ", o))
+				logs.WithContext(context.Background()).Info(fmt.Sprint(o == s))
 				if o == s {
 					return true
 				}
