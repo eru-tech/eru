@@ -10,6 +10,7 @@ import (
 )
 
 var ServerName = "unkown"
+var AllowedOrigins = ""
 var RequestIdKey = "request_id"
 
 func HelloHandler(w http.ResponseWriter, r *http.Request) {
