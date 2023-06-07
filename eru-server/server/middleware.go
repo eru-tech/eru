@@ -14,6 +14,9 @@ import (
 
 func requestIdMiddleWare(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "OPTIONS" {
+			return
+		}
 		logs.Logger.Info("requestIdMiddleWare called")
 		requestID := r.Header.Get(server_handlers.RequestIdKey)
 		if requestID == "" {
