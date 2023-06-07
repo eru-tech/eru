@@ -164,8 +164,8 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(ctx context.Context, r *http.Req
 			}
 		}
 	}
-	err := errors.New(fmt.Sprint("Listener Rule not found for this request"))
-	logs.WithContext(ctx).Info(err.Error())
+	err := errors.New(fmt.Sprint("Listener Rule not found for request host = ", r.Host, " and path = ", r.URL))
+	logs.WithContext(ctx).Error(err.Error())
 	return module_model.TargetHost{}, module_model.Authorizer{}, nil, err
 }
 

@@ -37,6 +37,7 @@ func requestIdMiddleWare(next http.Handler) http.Handler {
 
 func otelMiddleWare(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Info("inside otelMiddleWare")
 		requestID := r.Header.Get(server_handlers.RequestIdKey)
 		pspan := oteltrace.SpanFromContext(r.Context())
 		//if !span.IsRecording() {
