@@ -10,6 +10,7 @@ import (
 )
 
 var ServerName = "unkown"
+var AllowedOrigins = ""
 var RequestIdKey = "request_id"
 
 func HelloHandler(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +50,8 @@ func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	res["Cookies"] = r.Cookies()
 	FormatResponse(w, 200)
 	_ = json.NewEncoder(w).Encode(res)
+	logs.Logger.Info("w.Header() from echo handler")
+	logs.Logger.Info(fmt.Sprint(w.Header()))
 
 }
 

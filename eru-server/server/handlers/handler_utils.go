@@ -3,6 +3,7 @@ package handlers
 import (
 	"github.com/rs/cors"
 	"net/http"
+	"strings"
 )
 
 func FormatResponse(w http.ResponseWriter, status int) {
@@ -15,12 +16,22 @@ func FormatResponse(w http.ResponseWriter, status int) {
 func MakeCorsObject() *cors.Cors {
 	return cors.New(cors.Options{
 		AllowCredentials: true,
-		AllowOriginFunc: func(s string) bool {
-			return true
+		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
+			if AllowedOrigins == "" {
+				return true
+			}
+			envOrigin := strings.Split(AllowedOrigins, ",")
+			for _, o := range envOrigin {
+				if o == s {
+					return true
+				}
+			}
+			return false
 		},
 		//AllowedOrigins: []string{"127.0.0.1"},
-		AllowedMethods: []string{"GET", "PUT", "POST", "DELETE"},
-		AllowedHeaders: []string{"Authorization", "Content-Type"},
+		//Debug: true,
 		//ExposedHeaders: []string{"Authorization", "Content-Type"},
 	})
 }

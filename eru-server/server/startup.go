@@ -7,8 +7,8 @@ import (
 	"github.com/eru-tech/eru/eru-store/store"
 	"github.com/gorilla/mux"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"log"
 	"net/http"
+	"os"
 )
 
 type Server struct {
@@ -17,15 +17,13 @@ type Server struct {
 
 func Launch(serverRouter *mux.Router, port string) {
 	// Allow cors
+	handlers.AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
 	corsObj := handlers.MakeCorsObject()
 	r := otelhttp.NewHandler(corsObj.Handler(requestIdMiddleWare(otelMiddleWare(serverRouter))), handlers.ServerName)
 	http.Handle("/", r)
 	logs.Logger.Info(fmt.Sprint("Starting server ", handlers.ServerName, " on ", port))
 	err := http.ListenAndServe(":"+port, nil)
-	log.Println("printing error of ListenAndServe")
-	log.Println(err.Error())
-	logs.Logger.Fatal(err.Error())
-
+	logs.Logger.Error(fmt.Sprint("printing error of ListenAndServe = ", err.Error()))
 }
 func Init(store store.StoreI) (*mux.Router, *Server, error) {
 	s := new(Server)
