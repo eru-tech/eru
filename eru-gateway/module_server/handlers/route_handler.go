@@ -23,7 +23,7 @@ var httpClient = http.Client{
 func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		logs.WithContext(r.Context()).Info("RouteHandler - Start")
+		logs.WithContext(r.Context()).Debug("RouteHandler - Start")
 		host, url := extractHostUrl(r)
 		logs.WithContext(r.Context()).Info(host)
 		logs.WithContext(r.Context()).Info(url)
@@ -128,8 +128,8 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-		logs.WithContext(r.Context()).Info(fmt.Sprint("---------------------------"))
-		logs.WithContext(r.Context()).Info(fmt.Sprint(w.Header()))
+		//logs.WithContext(r.Context()).Info(fmt.Sprint("---------------------------"))
+		//logs.WithContext(r.Context()).Info(fmt.Sprint(w.Header()))
 	}
 }
 func extractHostUrl(request *http.Request) (string, string) {
