@@ -283,6 +283,8 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			server_handlers.FormatResponse(w, 200)
 		}
 		_ = json.NewEncoder(w).Encode(res)
+		logs.WithContext(r.Context()).Info(fmt.Sprint("---------------------------"))
+		logs.WithContext(r.Context()).Info(fmt.Sprint(w.Header()))
 		return
 	}
 }

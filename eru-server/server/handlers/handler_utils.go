@@ -31,7 +31,7 @@ func MakeCorsObject() *cors.Cors {
 			return false
 		},
 		//AllowedOrigins: []string{"127.0.0.1"},
-		Debug: true,
+		//Debug: true,
 		//ExposedHeaders: []string{"Authorization", "Content-Type"},
 	})
 }
