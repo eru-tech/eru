@@ -21,13 +21,13 @@ func MakeCorsObject() *cors.Cors {
 	logs.WithContext(context.Background()).Info(fmt.Sprint("Allowed Origins = ", AllowedOrigins))
 	return cors.New(cors.Options{
 		AllowCredentials: true,
-		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE"},
+		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
 			logs.WithContext(context.Background()).Info(fmt.Sprint("Origin Asked = ", s))
 			logs.WithContext(context.Background()).Info(fmt.Sprint("Allowed Origins = ", AllowedOrigins))
 			if AllowedOrigins == "" {
-				logs.WithContext(context.Background()).Info(fmt.Sprint("inside AllowedOrigins != \"\""))
+				logs.WithContext(context.Background()).Info(fmt.Sprint("inside AllowedOrigins == \"\""))
 				return true
 			}
 			envOrigin := strings.Split(AllowedOrigins, ",")
