@@ -121,6 +121,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+		logs.WithContext(r.Context()).Info(fmt.Sprint("---------------------------"))
 		logs.WithContext(r.Context()).Info(fmt.Sprint(w.Header()))
 	}
 }

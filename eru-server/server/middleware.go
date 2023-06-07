@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/google/uuid"
@@ -17,7 +16,6 @@ func requestIdMiddleWare(next http.Handler) http.Handler {
 		if r.Method == "OPTIONS" {
 			return
 		}
-		logs.Logger.Info("requestIdMiddleWare called")
 		requestID := r.Header.Get(server_handlers.RequestIdKey)
 		if requestID == "" {
 			// set a new request id header of request
@@ -33,15 +31,12 @@ func requestIdMiddleWare(next http.Handler) http.Handler {
 			traceId = ""
 		}
 		r = r.WithContext(logs.NewContext(r.Context(), zap.String(server_handlers.RequestIdKey, requestID), zap.String("spanID", spanId), zap.String("traceID", traceId)))
-		logs.Logger.Info("w.Header() from requestIdMiddleWare")
-		logs.Logger.Info(fmt.Sprint(w.Header()))
 		next.ServeHTTP(w, r)
 	})
 }
 
 func otelMiddleWare(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logs.Logger.Info("otelMiddleWare called")
 		requestID := r.Header.Get(server_handlers.RequestIdKey)
 		pspan := oteltrace.SpanFromContext(r.Context())
 		//if !span.IsRecording() {
@@ -59,8 +54,6 @@ func otelMiddleWare(next http.Handler) http.Handler {
 
 		//}
 		//w.Header().Set("trace_id", span.SpanContext().TraceID().String())
-		logs.Logger.Info("w.Header() from otelMiddleWare")
-		logs.Logger.Info(fmt.Sprint(w.Header()))
 		next.ServeHTTP(w, r)
 	})
 }
