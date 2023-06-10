@@ -918,10 +918,14 @@ func (kratosHydraAuth *KratosHydraAuth) ChangePassword(ctx context.Context, req 
 	}
 	if identity, ok := tokenObj["identity"]; ok {
 		i, e := json.Marshal(identity)
-		logs.WithContext(ctx).Error(e.Error())
+		if e != nil {
+			logs.WithContext(ctx).Error(e.Error())
+		}
 		identityMap := Identity{}
 		ee := json.Unmarshal(i, &identityMap)
-		logs.WithContext(ctx).Error(ee.Error())
+		if ee != nil {
+			logs.WithContext(ctx).Error(ee.Error())
+		}
 		logs.WithContext(ctx).Info(fmt.Sprint(identityMap))
 		sessionToken = identityMap.AuthDetails.SessionToken
 		identifier = identityMap.Attributes["email"].(string)
