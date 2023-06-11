@@ -33,13 +33,16 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 	}
 
 	var vars map[string]*store.Variables
+	logs.WithContext(ctx).Info(fmt.Sprint(storeMap["Variables"]))
 	if _, ok := storeMap["Variables"]; ok {
-		err = json.Unmarshal(*storeMap["Variables"], &vars)
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			return err
+		if storeMap["Variables"] != nil {
+			err = json.Unmarshal(*storeMap["Variables"], &vars)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			msi.SetVars(ctx, vars)
 		}
-		msi.SetVars(ctx, vars)
 	}
 
 	var prjs map[string]*json.RawMessage
