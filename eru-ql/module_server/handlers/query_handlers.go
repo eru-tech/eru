@@ -242,8 +242,6 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			}
-
-			w.WriteHeader(http.StatusOK)
 			if encode == "encode" {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"file": b64.StdEncoding.EncodeToString(b)})
@@ -252,6 +250,7 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				w.Header().Set("Content-Disposition", "attachment; filename=query.xlsx")
 				_, _ = io.Copy(w, bytes.NewReader(b))
 			}
+			w.WriteHeader(http.StatusOK)
 			return
 		} else if outputType == eru_writes.OutputTypeCsv {
 			b := &bytes.Buffer{} // creates IO Writer
@@ -280,11 +279,15 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 					}
 				}
 			}
-
+			if encode == "encode" {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"file": b64.StdEncoding.EncodeToString(b.Bytes())})
+			} else {
+				w.Header().Set("Content-Type", "text/csv")
+				w.Header().Set("Content-Disposition", "attachment; filename=query.csv")
+				_, _ = io.Copy(w, bytes.NewReader(b.Bytes()))
+			}
 			w.WriteHeader(http.StatusOK)
-			w.Header().Set("Content-Type", "text/csv")
-			w.Header().Set("Content-Disposition", "attachment; filename=query.csv")
-			_, _ = io.Copy(w, bytes.NewReader(b.Bytes()))
 			return
 		} else {
 			server_handlers.FormatResponse(w, 200)
