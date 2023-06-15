@@ -43,6 +43,7 @@ type FuncStep struct {
 	FunctionName         string
 	QueryName            string
 	QueryOutput          string
+	QueryOutputEncode    bool
 	Api                  TargetHost
 	ApiPath              string
 	Path                 string

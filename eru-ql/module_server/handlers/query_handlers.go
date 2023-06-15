@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	b64 "encoding/base64"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -131,6 +132,7 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 		projectID := vars["project"]
 		queryName := vars["queryname"]
 		outputType := vars["outputtype"]
+		encode := vars["encode"]
 
 		projectConfig, err := s.GetProjectConfigObject(r.Context(), projectID)
 		if err != nil {
@@ -242,9 +244,14 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			}
 
 			w.WriteHeader(http.StatusOK)
-			w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-			w.Header().Set("Content-Disposition", "attachment; filename=query.xlsx")
-			_, _ = io.Copy(w, bytes.NewReader(b))
+			if encode == "encode" {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"file": b64.StdEncoding.EncodeToString(b)})
+			} else {
+				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				w.Header().Set("Content-Disposition", "attachment; filename=query.xlsx")
+				_, _ = io.Copy(w, bytes.NewReader(b))
+			}
 			return
 		} else if outputType == eru_writes.OutputTypeCsv {
 			b := &bytes.Buffer{} // creates IO Writer
