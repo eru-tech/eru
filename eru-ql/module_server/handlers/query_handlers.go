@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	b64 "encoding/base64"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -131,6 +132,7 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 		projectID := vars["project"]
 		queryName := vars["queryname"]
 		outputType := vars["outputtype"]
+		encode := vars["encode"]
 
 		projectConfig, err := s.GetProjectConfigObject(r.Context(), projectID)
 		if err != nil {
@@ -223,10 +225,12 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			for _, v := range res {
 				for k, excelData := range v {
 					if records, ok := excelData.([][]interface{}); ok {
-						if ewd.ColumnarDataMap == nil {
-							ewd.ColumnarDataMap = make(map[string][][]interface{})
+						if len(records[0]) > 0 {
+							if ewd.ColumnarDataMap == nil {
+								ewd.ColumnarDataMap = make(map[string][][]interface{})
+							}
+							ewd.ColumnarDataMap[k] = records
 						}
-						ewd.ColumnarDataMap[k] = records
 					} else {
 						err = errors.New(fmt.Sprint("incorrect excel data format"))
 						server_handlers.FormatResponse(w, 400)
@@ -240,11 +244,15 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			}
-
+			if encode == "encode" {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"file": b64.StdEncoding.EncodeToString(b)})
+			} else {
+				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+				w.Header().Set("Content-Disposition", "attachment; filename=query.xlsx")
+				_, _ = io.Copy(w, bytes.NewReader(b))
+			}
 			w.WriteHeader(http.StatusOK)
-			w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-			w.Header().Set("Content-Disposition", "attachment; filename=query.xlsx")
-			_, _ = io.Copy(w, bytes.NewReader(b))
 			return
 		} else if outputType == eru_writes.OutputTypeCsv {
 			b := &bytes.Buffer{} // creates IO Writer
@@ -252,20 +260,22 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			for _, v := range res {
 				for _, csvData := range v {
 					if records, ok := csvData.([][]interface{}); ok {
-						var csvStrData [][]string
-						tmpArray, tmpErr := json.Marshal(records)
-						if tmpErr != nil {
-							err = tmpErr
-							server_handlers.FormatResponse(w, 400)
-							_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+						if len(records[0]) > 0 {
+							var csvStrData [][]string
+							tmpArray, tmpErr := json.Marshal(records)
+							if tmpErr != nil {
+								err = tmpErr
+								server_handlers.FormatResponse(w, 400)
+								_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+							}
+							tmpErr = json.Unmarshal(tmpArray, &csvStrData)
+							if tmpErr != nil {
+								err = tmpErr
+								server_handlers.FormatResponse(w, 400)
+								_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+							}
+							ww.WriteAll(csvStrData)
 						}
-						tmpErr = json.Unmarshal(tmpArray, &csvStrData)
-						if tmpErr != nil {
-							err = tmpErr
-							server_handlers.FormatResponse(w, 400)
-							_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-						}
-						ww.WriteAll(csvStrData)
 					} else {
 						err = errors.New(fmt.Sprint("inccorect csv data format"))
 						server_handlers.FormatResponse(w, 400)
@@ -273,11 +283,15 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 					}
 				}
 			}
-
+			if encode == "encode" {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"file": b64.StdEncoding.EncodeToString(b.Bytes())})
+			} else {
+				w.Header().Set("Content-Type", "text/csv")
+				w.Header().Set("Content-Disposition", "attachment; filename=query.csv")
+				_, _ = io.Copy(w, bytes.NewReader(b.Bytes()))
+			}
 			w.WriteHeader(http.StatusOK)
-			w.Header().Set("Content-Type", "text/csv")
-			w.Header().Set("Content-Disposition", "attachment; filename=query.csv")
-			_, _ = io.Copy(w, bytes.NewReader(b.Bytes()))
 			return
 		} else {
 			server_handlers.FormatResponse(w, 200)
