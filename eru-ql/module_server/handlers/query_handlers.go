@@ -225,10 +225,12 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			for _, v := range res {
 				for k, excelData := range v {
 					if records, ok := excelData.([][]interface{}); ok {
-						if ewd.ColumnarDataMap == nil {
-							ewd.ColumnarDataMap = make(map[string][][]interface{})
+						if len(records[0]) > 0 {
+							if ewd.ColumnarDataMap == nil {
+								ewd.ColumnarDataMap = make(map[string][][]interface{})
+							}
+							ewd.ColumnarDataMap[k] = records
 						}
-						ewd.ColumnarDataMap[k] = records
 					} else {
 						err = errors.New(fmt.Sprint("incorrect excel data format"))
 						server_handlers.FormatResponse(w, 400)
@@ -258,20 +260,22 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			for _, v := range res {
 				for _, csvData := range v {
 					if records, ok := csvData.([][]interface{}); ok {
-						var csvStrData [][]string
-						tmpArray, tmpErr := json.Marshal(records)
-						if tmpErr != nil {
-							err = tmpErr
-							server_handlers.FormatResponse(w, 400)
-							_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+						if len(records[0]) > 0 {
+							var csvStrData [][]string
+							tmpArray, tmpErr := json.Marshal(records)
+							if tmpErr != nil {
+								err = tmpErr
+								server_handlers.FormatResponse(w, 400)
+								_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+							}
+							tmpErr = json.Unmarshal(tmpArray, &csvStrData)
+							if tmpErr != nil {
+								err = tmpErr
+								server_handlers.FormatResponse(w, 400)
+								_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+							}
+							ww.WriteAll(csvStrData)
 						}
-						tmpErr = json.Unmarshal(tmpArray, &csvStrData)
-						if tmpErr != nil {
-							err = tmpErr
-							server_handlers.FormatResponse(w, 400)
-							_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-						}
-						ww.WriteAll(csvStrData)
 					} else {
 						err = errors.New(fmt.Sprint("inccorect csv data format"))
 						server_handlers.FormatResponse(w, 400)
