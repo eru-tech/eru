@@ -14,6 +14,7 @@ import (
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/xuri/excelize/v2"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -298,8 +299,103 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			str = strings.Replace(str, "\\u0000", "", -1)
 			return
 		},
+		"add": func(args ...interface{}) (result float64, err error) {
+			num := 0.0
+			for _, a := range args {
+				switch v := a.(type) {
+				case int, float64:
+					_ = v
+					num, err = strconv.ParseFloat(fmt.Sprintf("%v", a), 64)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return
+					}
+					result = result + num
+				default:
+					err = errors.New("Non Numeric Input")
+					return
+				}
+			}
+			return result, nil
+		},
+		"sub": func(a interface{}, b interface{}) (result float64, err error) {
+			var n1, n2 float64
+			switch v := a.(type) {
+			case int, float64:
+				_ = v
+				n1, err = strconv.ParseFloat(fmt.Sprintf("%v", a), 64)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return
+				}
+			default:
+				err = errors.New("Non Numeric Input")
+				return
+			}
+			switch v := b.(type) {
+			case int, float64:
+				_ = v
+				n2, err = strconv.ParseFloat(fmt.Sprintf("%v", b), 64)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return
+				}
+			default:
+				err = errors.New("Non Numeric Input")
+				return
+			}
+			result = n1 - n2
+			return result, nil
+		},
+		"div": func(a interface{}, b interface{}) (result float64, err error) {
+			var n1, n2 float64
+			switch v := a.(type) {
+			case int, float64:
+				_ = v
+				n1, err = strconv.ParseFloat(fmt.Sprintf("%v", a), 64)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return
+				}
+			default:
+				err = errors.New("Non Numeric Input")
+				return
+			}
+			switch v := b.(type) {
+			case int, float64:
+				_ = v
+				n2, err = strconv.ParseFloat(fmt.Sprintf("%v", b), 64)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return
+				}
+			default:
+				err = errors.New("Non Numeric Input")
+				return
+			}
+			result = n1 / n2
+			return result, nil
+		},
 		"mul": func(a float64, b float64) (result float64) {
 			return a * b
+		},
+		"round": func(a interface{}, r float64) (result float64, err error) {
+			var n1 float64
+			m := 1.0
+			switch v := a.(type) {
+			case int, float64:
+				_ = v
+				n1, err = strconv.ParseFloat(fmt.Sprintf("%v", a), 64)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return
+				}
+			default:
+				err = errors.New("Non Numeric Input")
+				return
+			}
+			result = math.Round(n1*m*r) / (m * r)
+			return result, nil
 		},
 		"excelToJson": func(fData string, sheetNames string, firstRowHeader string, headers string, keys string) (fJson interface{}, err error) {
 			return excelToJson(ctx, fData, sheetNames, firstRowHeader, headers, keys)
