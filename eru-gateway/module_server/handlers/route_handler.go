@@ -117,7 +117,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		w.Header().Del("Access-Control-Allow-Methods")
 
 		for k, v := range response.Header {
-			logs.WithContext(r.Context()).Info(fmt.Sprint(k, " - ", v))
+			//logs.WithContext(r.Context()).Info(fmt.Sprint(k, " - ", v))
 			w.Header()[k] = v
 		}
 		w.WriteHeader(response.StatusCode)
