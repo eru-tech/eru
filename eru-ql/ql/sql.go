@@ -46,6 +46,14 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			break
 		case string:
 			str = v.(string)
+			vBytes, err := processTemplate(ctx, "variable", str, sqd.FinalVariables, "string", "")
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, nil, err
+			}
+			if string(vBytes) != "" {
+				str = string(vBytes)
+			}
 			break
 		case map[string]interface{}:
 			strBytes, strBytesErr := json.Marshal(v)
