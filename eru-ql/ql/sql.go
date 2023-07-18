@@ -10,6 +10,7 @@ import (
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-read-write/eru_writes"
+	"reflect"
 	"strings"
 )
 
@@ -37,8 +38,32 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 	var result map[string]interface{}
 	sr := ds.GetSqlMaker(datasource.DbName)
 	for k, v := range sqd.FinalVariables {
-		//logs.WithContext(ctx).Info(fmt.Sprint("v : ", v))
-		//logs.WithContext(ctx).Info(fmt.Sprint("k : ", k))
+		var str string
+		switch tp := v.(type) {
+		case []interface{}:
+			if iArray, ok := v.([]interface{}); ok {
+				for i, strText := range iArray {
+					sep := ""
+					if i > 0 {
+						sep = " , "
+					}
+					str = fmt.Sprint(str, sep, "'", strText, "'")
+				}
+			}
+			logs.WithContext(ctx).Info(fmt.Sprint(k, " = ", str))
+			sqd.FinalVariables[k] = str
+			sqd.Query = strings.Replace(sqd.Query, fmt.Sprint("$", k), str, -1)
+			break
+		default:
+			// do noting
+			_ = tp
+			break
+		}
+	}
+	for k, v := range sqd.FinalVariables {
+		logs.WithContext(ctx).Info(fmt.Sprint("v : ", reflect.TypeOf(v)))
+		logs.WithContext(ctx).Info(fmt.Sprint("v : ", v))
+		logs.WithContext(ctx).Info(fmt.Sprint("k : ", k))
 		var str string
 		switch tp := v.(type) {
 		case float64:
@@ -46,6 +71,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			break
 		case string:
 			str = v.(string)
+			logs.WithContext(ctx).Info(fmt.Sprint(sqd.FinalVariables))
 			vBytes, err := processTemplate(ctx, "variable", str, sqd.FinalVariables, "string", "")
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
@@ -60,25 +86,14 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			err = strBytesErr
 			str = string(strBytes)
 			break
-		case []interface{}:
-			if iArray, ok := v.([]interface{}); ok {
-				for i, strText := range iArray {
-					sep := ""
-					if i > 0 {
-						sep = " , "
-					}
-					str = fmt.Sprint(str, sep, "'", strText, "'")
-				}
-			}
-			break
 		default:
 			logs.WithContext(ctx).Warn(fmt.Sprint("Unhandled type for : ", tp))
 			// do noting
 			break
 		}
-		logs.WithContext(ctx).Debug(fmt.Sprint(k, " = ", str))
+		logs.WithContext(ctx).Info(fmt.Sprint(k, " = ", str))
+		sqd.FinalVariables[k] = str
 		sqd.Query = strings.Replace(sqd.Query, fmt.Sprint("$", k), str, -1)
-
 	}
 	queryObj := QueryObject{}
 	queryObj.Query = sqd.Query
