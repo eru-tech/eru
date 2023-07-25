@@ -112,6 +112,7 @@ type FilePart struct {
 type TemplateVars struct {
 	Headers          map[string]interface{}
 	FormData         map[string]interface{}
+	FileData         []FilePart
 	Params           map[string]interface{}
 	Vars             map[string]interface{}
 	Body             interface{}
@@ -455,7 +456,7 @@ func (route *Route) RunRoute(ctx context.Context, req *http.Request, url string,
 		} else {
 			utils.PrintRequestBody(ctx, request, "printing request just before utils.ExecuteHttp")
 			logs.Logger.Info(request.URL.String())
-			logs.Logger.Info(request.Header.Get("Host"))
+			logs.Logger.Info(request.Header.Get("content-type"))
 			logs.Logger.Info(request.Method)
 			response, err = utils.ExecuteHttp(ctx, request)
 			if err != nil {
@@ -500,7 +501,6 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 			return
 		}
 	}
-
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 
 	scheme, host, port, path, method, err := route.GetTargetSchemeHostPortPath(ctx, url)
@@ -560,6 +560,7 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 	}
 	multiPart := false
 	logs.WithContext(ctx).Info(fmt.Sprint("reqContentType from makeMultipart = ", reqContentType))
+
 	if reqContentType == multiPartForm {
 		multiPart = true
 		mpvars := &FuncTemplateVars{}
@@ -605,11 +606,13 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 		}
 
 		*/
-		vars.FormData, vars.FormDataKeyArray, err = processMultipart(ctx, reqContentType, request, route.RemoveParams.FormData, vars.FormData)
+		utils.PrintRequestBody(ctx, request, "printing request from route.transformRequest before multipart processing")
+
+		vars.FormData, vars.FormDataKeyArray, vars.FileData, err = processMultipart(ctx, reqContentType, request, route.RemoveParams.FormData, vars.FormData)
 		if err != nil {
 			return
 		}
-
+		utils.PrintRequestBody(ctx, request, "printing request from route.transformRequest after multipart processing")
 	} else if reqContentType == encodedForm {
 		rpfErr := request.ParseForm()
 		if rpfErr != nil {

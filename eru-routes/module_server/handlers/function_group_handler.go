@@ -31,6 +31,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+
 		response, err := funcGroup.Execute(r.Context(), r, module_store.FuncThreads, module_store.LoopThreads)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)

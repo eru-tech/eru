@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,6 +38,7 @@ type FileDownloadRequest struct {
 	FolderPath      string                                       `json:"folder_path" eru:"required"`
 	InnerFileNames  []string                                     `json:"inner_file_names" eru:"required"`
 	CsvAsJson       bool                                         `json:"csv_as_json"`
+	CsvDelimited    int32                                        `json:"csv_delimited"`
 	ExcelAsJson     bool                                         `json:"excel_as_json"`
 	ExcelSheets     map[string]map[string]eru_reads.FileReadData `json:"excel_sheets"`
 	LowerCaseHeader bool                                         `json:"lower_case_header"`
@@ -46,6 +46,7 @@ type FileDownloadRequest struct {
 }
 
 const (
+	MIME_TEXT = "text/plain"
 	MIME_CSV  = "text/csv"
 	MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
@@ -63,8 +64,9 @@ type ModuleStoreI interface {
 	UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string, s ModuleStoreI) (docId string, err error)
 	UploadFileB64(ctx context.Context, projectId string, storageName string, file []byte, fileName string, docType string, fodlerPath string, s ModuleStoreI) (docId string, err error)
 	UploadFileFromUrl(ctx context.Context, projectId string, storageName string, url string, fileName string, docType string, fodlerPath string, fileType string, s ModuleStoreI) (docId string, err error)
-	DownloadFile(ctx context.Context, projectId string, storageName string, folderPath string, fileName string, s ModuleStoreI) (file []byte, mimeType string, err error)
-	DownloadFileB64(ctx context.Context, projectId string, storageName string, folderPath string, fileName string, s ModuleStoreI) (fileB64 string, mimeType string, err error)
+	DownloadFile(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (file []byte, mimeType string, err error)
+	DownloadFileAsJson(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (jsonData []map[string]interface{}, err error)
+	DownloadFileB64(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, err error)
 	DownloadFileUnzip(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (files map[string]FileObj, err error)
 }
 
@@ -163,7 +165,7 @@ func (ms *ModuleStore) GetStorageClone(ctx context.Context, projectId string, st
 }
 
 func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, s ModuleStoreI) (docId string, err error) {
-	logs.WithContext(ctx).Debug("UploadFile - Start")
+	logs.WithContext(ctx).Info("UploadFile - Start")
 	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
 		return
@@ -220,14 +222,14 @@ func (ms *ModuleStore) UploadFileFromUrl(ctx context.Context, projectId string, 
 	}
 }
 
-func (ms *ModuleStore) DownloadFileB64(ctx context.Context, projectId string, storageName string, folderPath string, fileName string, s ModuleStoreI) (fileB64 string, mimeType string, err error) {
+func (ms *ModuleStore) DownloadFileB64(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, err error) {
 	logs.WithContext(ctx).Debug("DownloadFileB64 - Start")
-	f, mt, e := ms.DownloadFile(ctx, projectId, storageName, folderPath, fileName, s)
+	f, mt, e := ms.DownloadFile(ctx, projectId, storageName, fileDownloadRequest, s)
 	return base64.StdEncoding.EncodeToString(f), mt, e
 }
 func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (files map[string]FileObj, err error) {
 	logs.WithContext(ctx).Debug("DownloadFileUnzip - Start")
-	f, _, e := ms.DownloadFile(ctx, projectId, storageName, fileDownloadRequest.FolderPath, fileDownloadRequest.FileName, s)
+	f, _, e := ms.DownloadFile(ctx, projectId, storageName, fileDownloadRequest, s)
 	zipReader, err := zip.NewReader(bytes.NewReader(f), int64(len(f)))
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -262,14 +264,7 @@ func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, 
 			logs.WithContext(ctx).Info(fmt.Sprint("fileDownloadRequest.Mime_Limit = ", fileDownloadRequest.Mime_Limit))
 
 			if fileDownloadRequest.CsvAsJson && fMime.Is(MIME_CSV) {
-				csvReader := csv.NewReader(bytes.NewReader(unzippedFileBytes))
-				csvData, csvErr := csvReader.ReadAll()
-				if csvErr != nil {
-					err = csvErr
-					logs.WithContext(ctx).Error(err.Error())
-					return
-				}
-				jsonData, jsonErr := utils.CsvToMap(ctx, csvData, fileDownloadRequest.LowerCaseHeader)
+				jsonData, jsonErr := csvToJson(ctx, unzippedFileBytes, fileDownloadRequest)
 				if jsonErr != nil {
 					err = jsonErr
 					return
@@ -307,7 +302,7 @@ func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, 
 	}
 	return files, e
 }
-func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, storageName string, folderPath string, fileName string, s ModuleStoreI) (file []byte, mimeType string, err error) {
+func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (file []byte, mimeType string, err error) {
 	logs.WithContext(ctx).Debug("DownloadFile - Start")
 	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
@@ -318,8 +313,25 @@ func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, stora
 		err = kpErr
 		return
 	}
-	file, err = storageObjClone.DownloadFile(ctx, folderPath, fileName, prj.AesKeys[keyName.(string)])
+	file, err = storageObjClone.DownloadFile(ctx, fileDownloadRequest.FolderPath, fileDownloadRequest.FileName, prj.AesKeys[keyName.(string)])
 	return file, mimetype.Detect(file).String(), err
+}
+
+func (ms *ModuleStore) DownloadFileAsJson(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (jsonData []map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("DownloadFileAsJson - Start")
+	f, _, e := ms.DownloadFile(ctx, projectId, storageName, fileDownloadRequest, s)
+	if e != nil {
+		logs.WithContext(ctx).Error(e.Error())
+		return
+	}
+	fMime := mimetype.Detect(f)
+	if fileDownloadRequest.CsvAsJson && (fMime.Is(MIME_TEXT) || fMime.Is(MIME_CSV)) {
+		jsonData, err = csvToJson(ctx, f, fileDownloadRequest)
+		if err != nil {
+			return
+		}
+	}
+	return
 }
 
 func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error {

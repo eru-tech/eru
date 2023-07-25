@@ -1,13 +1,17 @@
 package module_store
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	"github.com/eru-tech/eru/eru-files/storage"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
+	utils "github.com/eru-tech/eru/eru-utils"
 )
 
 func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
@@ -108,4 +112,25 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 		}
 	}
 	return nil
+}
+
+func csvToJson(ctx context.Context, fileBytes []byte, fileDownloadRequest FileDownloadRequest) (jsonData []map[string]interface{}, err error) {
+	logs.WithContext(ctx).Info(fmt.Sprint("inside csvToJson"))
+	csvReader := csv.NewReader(bytes.NewReader(fileBytes))
+	logs.WithContext(ctx).Info(fmt.Sprint("fileDownloadRequest.CsvDelimited = ", fileDownloadRequest.CsvDelimited))
+	if fileDownloadRequest.CsvDelimited != 0 {
+		csvReader.Comma = rune(fileDownloadRequest.CsvDelimited)
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(csvReader.Comma))
+	csvData, csvErr := csvReader.ReadAll()
+	if csvErr != nil {
+		err = csvErr
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	jsonData, err = utils.CsvToMap(ctx, csvData, fileDownloadRequest.LowerCaseHeader)
+	if err != nil {
+		return
+	}
+	return jsonData, err
 }
