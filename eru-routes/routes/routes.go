@@ -559,7 +559,6 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 		}
 	}
 	multiPart := false
-	logs.WithContext(ctx).Info(fmt.Sprint("reqContentType from makeMultipart = ", reqContentType))
 
 	if reqContentType == multiPartForm {
 		multiPart = true

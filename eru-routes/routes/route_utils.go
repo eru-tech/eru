@@ -53,7 +53,9 @@ func loadRequestVars(ctx context.Context, vars *TemplateVars, request *http.Requ
 
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	logs.WithContext(ctx).Info(fmt.Sprint("reqContentType = ", reqContentType))
-	if reqContentType == applicationjson {
+	logs.WithContext(ctx).Info(fmt.Sprint("request.ContentLength = ", request.ContentLength))
+	if reqContentType == applicationjson && request.ContentLength > 0 {
+
 		tmplBodyFromReq := json.NewDecoder(request.Body)
 		tmplBodyFromReq.DisallowUnknownFields()
 		if err = tmplBodyFromReq.Decode(&vars.Body); err != nil {
@@ -187,6 +189,9 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 			return nil, err
 		}
 		output = []byte(strings.TrimSuffix(buffer.String(), "\n"))
+		if string(output) == "null" {
+			output = []byte("")
+		}
 		return
 	}
 }

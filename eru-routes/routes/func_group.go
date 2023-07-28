@@ -509,15 +509,18 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		if err != nil {
 			return req, &TemplateVars{}, err
 		}
-		err = json.Unmarshal(output, &vars.Body)
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			return req, &TemplateVars{}, err
+		if string(output) != "" {
+			err = json.Unmarshal(output, &vars.Body)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return req, &TemplateVars{}, err
+			}
 		}
 		req.Body = io.NopCloser(bytes.NewBuffer(output))
 		req.Header.Set("Content-Length", strconv.Itoa(len(output)))
 		req.ContentLength = int64(len(output))
-	} else if !makeMultiPartCalled {
+
+	} else if !makeMultiPartCalled && req.ContentLength > 0 {
 		logs.WithContext(ctx).Info("inside !makeMultiPartCalled")
 		rb, err1 := json.Marshal(vars.Body)
 		if err1 != nil {

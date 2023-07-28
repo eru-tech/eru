@@ -311,7 +311,7 @@ func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 			//keyPairName := formData.Value["keyPairName"][0]
 			fileNames := make(map[string]string)
-			files := formData.File["file_1"]
+			files := formData.File["files"]
 			logs.WithContext(r.Context()).Info(fmt.Sprint(formData.File))
 			for _, f := range files {
 				logs.WithContext(r.Context()).Info(fmt.Sprint("inside range files"))
