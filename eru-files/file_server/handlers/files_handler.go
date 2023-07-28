@@ -30,7 +30,7 @@ func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		storageName := vars["storagename"]
 
-		var err error
+		//var err error
 
 		//ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
 		//defer cancel()
@@ -38,26 +38,38 @@ func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		dfFromReq := json.NewDecoder(r.Body)
 		dfFromReq.DisallowUnknownFields()
-		dfFromObj := make(map[string]string)
-
+		//dfFromObj := make(map[string]string)
+		dfFromObj := module_store.FileDownloadRequest{}
 		if err := dfFromReq.Decode(&dfFromObj); err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-
-		file, mimeType, err := s.DownloadFile(r.Context(), projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"], s)
-		if err != nil {
-			server_handlers.FormatResponse(w, 400)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			return
+		if dfFromObj.ExcelAsJson || dfFromObj.CsvAsJson {
+			logs.WithContext(r.Context()).Info(fmt.Sprint(dfFromObj.CsvAsJson))
+			file, err := s.DownloadFileAsJson(r.Context(), projectId, storageName, dfFromObj, s)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+			server_handlers.FormatResponse(w, http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{"file": file})
+		} else {
+			file, mimeType, err := s.DownloadFile(r.Context(), projectId, storageName, dfFromObj, s)
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+			//server_handlers.FormatResponse(w,http.StatusOK)
+			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Content-Type", mimeType)
+			w.Header().Set("Content-Disposition", fmt.Sprint("attachment; filename=", strings.Replace(dfFromObj.FileName, ".enc", "", -1)))
+			_, _ = io.Copy(w, bytes.NewReader(file))
 		}
-		//server_handlers.FormatResponse(w,http.StatusOK)
-		w.WriteHeader(http.StatusOK)
-		w.Header().Set("Content-Type", mimeType)
-		w.Header().Set("Content-Disposition", fmt.Sprint("attachment; filename=", strings.Replace(dfFromObj["file_name"], ".enc", "", -1)))
-		_, _ = io.Copy(w, bytes.NewReader(file))
 	}
 }
 
@@ -77,8 +89,8 @@ func FileDownloadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		dfFromReq := json.NewDecoder(r.Body)
 		dfFromReq.DisallowUnknownFields()
-		dfFromObj := make(map[string]string)
-
+		//dfFromObj := make(map[string]string)
+		dfFromObj := module_store.FileDownloadRequest{}
 		if err := dfFromReq.Decode(&dfFromObj); err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -86,7 +98,7 @@ func FileDownloadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		fileB64, mimeType, err := s.DownloadFileB64(r.Context(), projectId, storageName, dfFromObj["folder_path"], dfFromObj["file_name"], s)
+		fileB64, mimeType, err := s.DownloadFileB64(r.Context(), projectId, storageName, dfFromObj, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -285,16 +297,24 @@ func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		//_ = ctx
 
 		reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
+		logs.WithContext(r.Context()).Info(fmt.Sprint(reqContentType))
 		if reqContentType == encodedForm || reqContentType == multiPartForm {
 			err = r.ParseMultipartForm((1 << 20) * 10)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+			}
+			utils.PrintRequestBody(r.Context(), r, "printing request from FileUploadHandler")
 
 			formData := r.MultipartForm
 			folderPath := formData.Value["folderpath"][0]
 			docTypes := formData.Value["doctype"]
+
 			//keyPairName := formData.Value["keyPairName"][0]
 			fileNames := make(map[string]string)
 			files := formData.File["files"]
+			logs.WithContext(r.Context()).Info(fmt.Sprint(formData.File))
 			for _, f := range files {
+				logs.WithContext(r.Context()).Info(fmt.Sprint("inside range files"))
 				docType := ""
 				for _, dt := range docTypes {
 					tmpDt := strings.Split(dt, ":")

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -304,6 +305,7 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 			//TODO - we have to return routevars
 			response, err = RunFuncSteps(ctx, funcStep.FuncGroup.FuncSteps, request, reqVars, resVars, "", funcThread, loopThread)
 		} else {
+			eru_utils.PrintRequestBody(ctx, request, "printing request before funcStep.Route.Execute")
 			response, routevars, err = funcStep.Route.Execute(ctx, request, funcStep.Path, funcStep.Async, asyncMsg, reqVars[funcStep.GetRouteName()], loopThread)
 		}
 
@@ -425,8 +427,8 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	newContentTypeFull := req.Header.Get("Content-type")
 	newContentType := strings.Split(newContentTypeFull, ";")[0]
 
-	logs.WithContext(ctx).Debug(fmt.Sprint("newContentType = ", newContentType))
-	logs.WithContext(ctx).Debug(fmt.Sprint("oldContentType = ", oldContentType))
+	logs.WithContext(ctx).Info(fmt.Sprint("newContentTypeFull = ", newContentTypeFull))
+	logs.WithContext(ctx).Info(fmt.Sprint("oldContentTypeFull = ", oldContentTypeFull))
 
 	//first check if original request is not multipart but the new request to be forwarded to target host is multipart - then make multipart body from json body
 	// else if original request is multipart/form , we process the same
@@ -468,12 +470,12 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		if oldContentType == multiPartForm {
 			//resetting it back to old content type as processMultipart will not be able to read the request body
 			req.Header.Set("Content-type", oldContentTypeFull)
-			vars.FormData, vars.FormDataKeyArray, err = processMultipart(ctx, oldContentType, req, funcStep.RemoveParams.FormData, vars.FormData)
+			vars.FormData, vars.FormDataKeyArray, vars.FileData, err = processMultipart(ctx, oldContentType, req, funcStep.RemoveParams.FormData, vars.FormData)
 			if err != nil {
 				return
 			}
 			//changing it back to new content type once process multipart has read the request body and loaded vars.formdata
-			req.Header.Set("Content-type", newContentType)
+			req.Header.Set("Content-type", newContentTypeFull)
 		} else if oldContentType == encodedForm {
 			rpfErr := req.ParseForm()
 			if rpfErr != nil {
@@ -507,15 +509,18 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		if err != nil {
 			return req, &TemplateVars{}, err
 		}
-		err = json.Unmarshal(output, &vars.Body)
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			return req, &TemplateVars{}, err
+		if string(output) != "" {
+			err = json.Unmarshal(output, &vars.Body)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return req, &TemplateVars{}, err
+			}
 		}
 		req.Body = io.NopCloser(bytes.NewBuffer(output))
 		req.Header.Set("Content-Length", strconv.Itoa(len(output)))
 		req.ContentLength = int64(len(output))
-	} else if !makeMultiPartCalled {
+
+	} else if !makeMultiPartCalled && req.ContentLength > 0 {
 		logs.WithContext(ctx).Info("inside !makeMultiPartCalled")
 		rb, err1 := json.Marshal(vars.Body)
 		if err1 != nil {

@@ -422,6 +422,9 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 		}
 		return buf.String(), nil
 	case "json":
+		if buf.String() == "<no value>" {
+			return nil, err
+		}
 		if err = json.Unmarshal([]byte(buf.String()), &output); err != nil {
 			err = errors.New(fmt.Sprintf("Unable to marhsal templated output to JSON : ", buf.String(), " ", err))
 			logs.WithContext(ctx).Error(err.Error())

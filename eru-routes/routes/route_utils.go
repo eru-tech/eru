@@ -53,7 +53,9 @@ func loadRequestVars(ctx context.Context, vars *TemplateVars, request *http.Requ
 
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	logs.WithContext(ctx).Info(fmt.Sprint("reqContentType = ", reqContentType))
-	if reqContentType == applicationjson {
+	logs.WithContext(ctx).Info(fmt.Sprint("request.ContentLength = ", request.ContentLength))
+	if reqContentType == applicationjson && request.ContentLength > 0 {
+
 		tmplBodyFromReq := json.NewDecoder(request.Body)
 		tmplBodyFromReq.DisallowUnknownFields()
 		if err = tmplBodyFromReq.Decode(&vars.Body); err != nil {
@@ -187,6 +189,9 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 			return nil, err
 		}
 		output = []byte(strings.TrimSuffix(buffer.String(), "\n"))
+		if string(output) == "null" {
+			output = []byte("")
+		}
 		return
 	}
 }
@@ -305,7 +310,7 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 	return
 }
 
-func processMultipart(ctx context.Context, reqContentType string, request *http.Request, formDataRemove []string, formData map[string]interface{}) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, err error) {
+func processMultipart(ctx context.Context, reqContentType string, request *http.Request, formDataRemove []string, formData map[string]interface{}) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, varsFileData []FilePart, err error) {
 	logs.WithContext(ctx).Debug("processMultipart - Start")
 	logs.WithContext(ctx).Info(fmt.Sprint("reqContentType = ", reqContentType))
 	varsFormData = make(map[string]interface{})
@@ -341,31 +346,38 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 				if !removeFlag && part != nil {
 					logs.WithContext(ctx).Debug("inside !removeFlag")
 					if part.FileName() != "" {
-
+						logs.WithContext(ctx).Info(fmt.Sprint("inside part.FileName() != \"\"", part.FileName()))
 						fileWriter, err := createFormFileCopy(multipartWriter, part)
 						if err != nil {
 							logs.WithContext(ctx).Error(err.Error())
-							return nil, nil, err
+							return nil, nil, nil, err
 						}
 						buf := new(bytes.Buffer)
 						_, err = buf.ReadFrom(part)
 						if err != nil {
 							logs.WithContext(ctx).Error(err.Error())
-							return nil, nil, err
+							return nil, nil, nil, err
 						}
 						_, ferr := fileWriter.Write(buf.Bytes())
 						if ferr != nil {
 							err = ferr
 							logs.WithContext(ctx).Error(err.Error())
-							return nil, nil, err
+							return nil, nil, nil, err
 						}
-						fk := fmt.Sprint("file_", i)
-						varsFormData[fk] = b64.StdEncoding.EncodeToString(buf.Bytes())
+						//fk := fmt.Sprint("file_", i)
+						formName := strings.Replace(strings.Replace(part.FormName(), "[", "", -1), "]", "", -1)
+						logs.WithContext(ctx).Info(formName)
+						filePart := FilePart{}
+						filePart.FileName = part.FileName()
+						filePart.FileVarName = formName
+						filePart.FileContent = b64.StdEncoding.EncodeToString(buf.Bytes())
 
+						varsFileData = append(varsFileData, filePart)
+						//varsFormData[fk] = b64.StdEncoding.EncodeToString(buf.Bytes())
 						_, err = io.Copy(fileWriter, part)
 						if err != nil {
 							logs.WithContext(ctx).Error(err.Error())
-							return nil, nil, err
+							return nil, nil, nil, err
 						}
 
 					} else {
@@ -375,12 +387,12 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 						fieldWriter, err := multipartWriter.CreateFormField(part.FormName())
 						if err != nil {
 							logs.WithContext(ctx).Error(err.Error())
-							return nil, nil, err
+							return nil, nil, nil, err
 						}
 						_, err = fieldWriter.Write(buf.Bytes())
 						if err != nil {
 							logs.WithContext(ctx).Error(err.Error())
-							return nil, nil, err
+							return nil, nil, nil, err
 						}
 						formName := strings.Replace(strings.Replace(part.FormName(), "[", "", -1), "]", "", -1)
 						varsFormData[formName] = buf.String()
@@ -391,37 +403,38 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 					break
 				}
 			}
-		}
 
-		for fk, fd := range formData {
-			toIgnore := false
-			for _, k := range varsFormDataKeyArray {
-				if k == fk {
-					toIgnore = true
-					break
+			//moved below for loop inside check for multipart= true
+			for fk, fd := range formData {
+				toIgnore := false
+				for _, k := range varsFormDataKeyArray {
+					if k == fk {
+						toIgnore = true
+						break
+					}
+				}
+				if !toIgnore {
+					fieldWriter, err := multipartWriter.CreateFormField(fk)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return nil, nil, nil, err
+					}
+					_, err = fieldWriter.Write([]byte(fd.(string)))
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return nil, nil, nil, err
+					}
+					varsFormData[fk] = fd
+					varsFormDataKeyArray = append(varsFormDataKeyArray, fk)
 				}
 			}
-			if !toIgnore {
-				fieldWriter, err := multipartWriter.CreateFormField(fk)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-					return nil, nil, err
-				}
-				_, err = fieldWriter.Write([]byte(fd.(string)))
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-					return nil, nil, err
-				}
-				varsFormData[fk] = fd
-				varsFormDataKeyArray = append(varsFormDataKeyArray, fk)
-			}
-		}
-		multipartWriter.Close()
-		request.Body = io.NopCloser(&reqBody)
-		request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
-		request.Header.Set("Content-Length", strconv.Itoa(reqBody.Len()))
-		request.ContentLength = int64(reqBody.Len())
-		//defer request.Body.Close()
+			multipartWriter.Close()
+			request.Body = io.NopCloser(&reqBody)
+			request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+			request.Header.Set("Content-Length", strconv.Itoa(reqBody.Len()))
+			request.ContentLength = int64(reqBody.Len())
+			//defer request.Body.Close()
+		} // moved it as multipart need not be processed at all if there was error in reading it
 	}
 	return
 }
