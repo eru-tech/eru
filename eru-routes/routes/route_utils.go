@@ -404,37 +404,36 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 				}
 			}
 
-			//moved below for loop inside check for multipart= true
-			for fk, fd := range formData {
-				toIgnore := false
-				for _, k := range varsFormDataKeyArray {
-					if k == fk {
-						toIgnore = true
-						break
-					}
-				}
-				if !toIgnore {
-					fieldWriter, err := multipartWriter.CreateFormField(fk)
-					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
-						return nil, nil, nil, err
-					}
-					_, err = fieldWriter.Write([]byte(fd.(string)))
-					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
-						return nil, nil, nil, err
-					}
-					varsFormData[fk] = fd
-					varsFormDataKeyArray = append(varsFormDataKeyArray, fk)
+		}
+		for fk, fd := range formData {
+			toIgnore := false
+			for _, k := range varsFormDataKeyArray {
+				if k == fk {
+					toIgnore = true
+					break
 				}
 			}
-			multipartWriter.Close()
-			request.Body = io.NopCloser(&reqBody)
-			request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
-			request.Header.Set("Content-Length", strconv.Itoa(reqBody.Len()))
-			request.ContentLength = int64(reqBody.Len())
-			//defer request.Body.Close()
-		} // moved it as multipart need not be processed at all if there was error in reading it
+			if !toIgnore {
+				fieldWriter, err := multipartWriter.CreateFormField(fk)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return nil, nil, nil, err
+				}
+				_, err = fieldWriter.Write([]byte(fd.(string)))
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return nil, nil, nil, err
+				}
+				varsFormData[fk] = fd
+				varsFormDataKeyArray = append(varsFormDataKeyArray, fk)
+			}
+		}
+		multipartWriter.Close()
+		request.Body = io.NopCloser(&reqBody)
+		request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+		request.Header.Set("Content-Length", strconv.Itoa(reqBody.Len()))
+		request.ContentLength = int64(reqBody.Len())
+		//defer request.Body.Close()
 	}
 	return
 }
