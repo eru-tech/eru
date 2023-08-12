@@ -286,6 +286,15 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			}
 			return
 		},
+		"date_format": func(dtStr string, srcLayout string, newLayout string) (datePart string, err error) {
+			vDate, vErr := time.Parse(srcLayout, dtStr)
+			if vErr != nil {
+				err = vErr
+				return
+			}
+			datePart = vDate.Format(newLayout)
+			return
+		},
 		"concat": func(sep string, inStr ...string) (str string, err error) {
 			str = strings.Join(inStr, sep)
 			return
