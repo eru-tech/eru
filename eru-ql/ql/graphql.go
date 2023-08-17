@@ -358,7 +358,7 @@ func ParseAstValue(ctx context.Context, value ast.Value, vars map[string]interfa
 		if strings.Contains(v, "__") {
 			v = strings.ReplaceAll(v, "__", ".")
 		}
-
+		//TODO - also consider moving this vars loop for INT value
 		for varsK, varsV := range vars {
 			if str, ok := varsV.(string); ok {
 				v = strings.ReplaceAll(v, fmt.Sprint("$", varsK), str)
@@ -507,7 +507,7 @@ func processMapVariable(ctx context.Context, m map[string]interface{}, vars map[
 						logs.WithContext(ctx).Info(fmt.Sprint("removing key ", mapKey, " from list of variables"))
 						delete(m, mapKey)
 					}
-					logs.WithContext(ctx).Info(fmt.Sprint("variable ", v.(string), " replace with ", m[mapKey]))
+					//logs.WithContext(ctx).Info(fmt.Sprint("variable ", v.(string), " replace with ", m[mapKey]))
 				} else {
 					vBytes, err := processTemplate(ctx, "variable", v.(string), vars, "string", "")
 					if err != nil {
