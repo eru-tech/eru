@@ -10,7 +10,6 @@ import (
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-read-write/eru_writes"
-	"reflect"
 	"strings"
 )
 
@@ -61,9 +60,9 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 		}
 	}
 	for k, v := range sqd.FinalVariables {
-		logs.WithContext(ctx).Info(fmt.Sprint("v : ", reflect.TypeOf(v)))
-		logs.WithContext(ctx).Info(fmt.Sprint("v : ", v))
-		logs.WithContext(ctx).Info(fmt.Sprint("k : ", k))
+		//logs.WithContext(ctx).Info(fmt.Sprint("v : ", reflect.TypeOf(v)))
+		//logs.WithContext(ctx).Info(fmt.Sprint("v : ", v))
+		//logs.WithContext(ctx).Info(fmt.Sprint("k : ", k))
 		var str string
 		switch tp := v.(type) {
 		case float64:
@@ -71,7 +70,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			break
 		case string:
 			str = v.(string)
-			logs.WithContext(ctx).Info(fmt.Sprint(sqd.FinalVariables))
+			//logs.WithContext(ctx).Info(fmt.Sprint(sqd.FinalVariables))
 			vBytes, err := processTemplate(ctx, "variable", str, sqd.FinalVariables, "string", "")
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
@@ -91,7 +90,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			// do noting
 			break
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint(k, " = ", str))
+		//logs.WithContext(ctx).Info(fmt.Sprint(k, " = ", str))
 		sqd.FinalVariables[k] = str
 		sqd.Query = strings.Replace(sqd.Query, fmt.Sprint("$", k), str, -1)
 	}
