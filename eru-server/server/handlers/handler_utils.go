@@ -28,7 +28,8 @@ func MakeCorsObject() *cors.Cors {
 			}
 			envOrigin := strings.Split(AllowedOrigins, ",")
 			for _, o := range envOrigin {
-				if o == s {
+				oo := strings.Replace(o, "*.", "", -1)
+				if strings.Contains(s, oo) {
 					return true
 				}
 			}
