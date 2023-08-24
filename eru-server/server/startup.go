@@ -18,6 +18,7 @@ type Server struct {
 func Launch(serverRouter *mux.Router, port string) {
 	// Allow cors
 	handlers.AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
+	logs.Logger.Info(fmt.Sprint("AllowedOrigins = ", handlers.AllowedOrigins))
 	corsObj := handlers.MakeCorsObject()
 	r := otelhttp.NewHandler(corsObj.Handler(requestIdMiddleWare(otelMiddleWare(serverRouter))), handlers.ServerName)
 	http.Handle("/", r)

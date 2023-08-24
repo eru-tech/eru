@@ -74,6 +74,10 @@ func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType stri
 		valPrefix = "'"
 		valSuffix = "'"
 	}
+	if cd.Operator == "like" {
+		valPrefix = "'%"
+		valSuffix = "%'"
+	}
 	switch cd.Operator {
 	case "btw":
 		op = " between "
@@ -115,7 +119,7 @@ func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType stri
 		//do nothing
 		break
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("cd.Variable2 = ", cd.Variable1))
+	logs.WithContext(ctx).Info(fmt.Sprint("cd.Variable1 = ", cd.Variable1))
 	var1Bytes, err := processTemplate(ctx, "customrule", cd.Variable1, vars, "string")
 	if err == nil {
 		cd.Variable1 = fmt.Sprint(valPrefix, string(var1Bytes), valSuffix)
