@@ -23,13 +23,15 @@ func MakeCorsObject() *cors.Cors {
 		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
 			logs.Logger.Info(fmt.Sprint("AllowedOrigins = ", AllowedOrigins))
 			logs.Logger.Info(fmt.Sprint("s = ", s))
+			dn := strings.Split(s, "//")[1]
+			logs.Logger.Info(fmt.Sprint("dn = ", dn))
 			if AllowedOrigins == "" {
 				return true
 			}
 			envOrigin := strings.Split(AllowedOrigins, ",")
 			for _, o := range envOrigin {
 				oo := strings.Replace(o, "*.", "", -1)
-				if strings.Contains(s, oo) {
+				if strings.Contains(dn, oo) {
 					return true
 				}
 			}
