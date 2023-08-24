@@ -22,6 +22,7 @@ func MakeCorsObject() *cors.Cors {
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
 			logs.Logger.Info(fmt.Sprint("AllowedOrigins = ", AllowedOrigins))
+			logs.Logger.Info(fmt.Sprint("s = ", s))
 			if AllowedOrigins == "" {
 				return true
 			}
