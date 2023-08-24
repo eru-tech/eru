@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/rs/cors"
 	"net/http"
 	"strings"
@@ -19,6 +21,7 @@ func MakeCorsObject() *cors.Cors {
 		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
+			logs.Logger.Info(fmt.Sprint("AllowedOrigins = ", AllowedOrigins))
 			if AllowedOrigins == "" {
 				return true
 			}
