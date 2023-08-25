@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"fmt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/rs/cors"
 	"net/http"
 	"strings"
@@ -19,12 +21,15 @@ func MakeCorsObject() *cors.Cors {
 		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
+			dn := strings.Split(s, "//")[1]
+			logs.Logger.Info(fmt.Sprint("dn = ", dn))
 			if AllowedOrigins == "" {
 				return true
 			}
 			envOrigin := strings.Split(AllowedOrigins, ",")
 			for _, o := range envOrigin {
-				if o == s {
+				oo := strings.Replace(o, "*.", "", -1)
+				if strings.Contains(dn, oo) {
 					return true
 				}
 			}
