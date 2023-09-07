@@ -269,7 +269,9 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 					case reflect.String:
 						str := kv.(string)
 						if strings.HasPrefix(str, "FIELD_") {
-							updateCols = append(updateCols, fmt.Sprint(k, " = ", fmt.Sprint(strings.Replace(str, "FIELD_", "", 1))))
+							updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
+							values = append(values, fmt.Sprint(strings.Replace(str, "FIELD_", "", 1)))
+							//updateCols = append(updateCols, fmt.Sprint(k, " = ", fmt.Sprint(strings.Replace(str, "FIELD_", "", 1))))
 						} else {
 							updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
 							values = append(values, kv)
