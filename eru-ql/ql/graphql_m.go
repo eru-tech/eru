@@ -210,9 +210,8 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 
 		//ii := 1
 		mr[i] = module_model.MutationRecord{}
-		colNo := 0
+		colNo := 1
 		for k, kv := range insertDoc {
-			colNo++
 			if i == 0 && !sqlObj.NestedDoc { // picking up columns only from first record in array as structure of all records should be same for non nested docs
 				colsIfNotNested = append(colsIfNotNested, k)
 			}
@@ -269,22 +268,22 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 					case reflect.String:
 						str := kv.(string)
 						if strings.HasPrefix(str, "FIELD_") {
-							updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
-							values = append(values, fmt.Sprint(strings.Replace(str, "FIELD_", "", 1)))
-							//updateCols = append(updateCols, fmt.Sprint(k, " = ", fmt.Sprint(strings.Replace(str, "FIELD_", "", 1))))
+							updateCols = append(updateCols, fmt.Sprint(k, " = ", fmt.Sprint(strings.Replace(str, "FIELD_", "", 1))))
 						} else {
 							updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
 							values = append(values, kv)
+							colNo++
 						}
 					default:
 						updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
 						values = append(values, kv)
+						colNo++
 					}
 				} else {
 					updateCols = append(updateCols, fmt.Sprint(k, " = ", "$UpdateColPlaceholder", colNo))
 					values = append(values, kv)
+					colNo++
 				}
-
 			}
 		}
 		colFound := false
