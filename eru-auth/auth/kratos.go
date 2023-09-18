@@ -619,6 +619,7 @@ func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(ctx context.Context
 
 	iParams := make(map[string]string)
 	iParams["credentials_identifier"] = recoveryIdentifier.Username
+	iParams["per_page"] = "500"
 
 	iRes, _, _, _, iResErr := utils.CallHttp(ctx, http.MethodGet, iUrl.String(), headers, nil, nil, iParams, nil)
 
