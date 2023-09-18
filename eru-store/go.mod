@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/lib/pq v1.2.0
 )
@@ -14,4 +15,9 @@ require (
 	go.uber.org/zap v1.24.0 // indirect
 )
 
-replace github.com/eru-tech/eru/eru-logs => ../eru-logs
+replace (
+	github.com/eru-tech/eru/eru-logs => ../eru-logs
+	github.com/eru-tech/eru/eru-repos => ../eru-repos
+	github.com/eru-tech/eru/eru-utils => ../eru-utils
+)
+

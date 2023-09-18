@@ -319,17 +319,39 @@ func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, stora
 
 func (ms *ModuleStore) DownloadFileAsJson(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (jsonData []map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("DownloadFileAsJson - Start")
-	f, _, e := ms.DownloadFile(ctx, projectId, storageName, fileDownloadRequest, s)
+	f, m, e := ms.DownloadFile(ctx, projectId, storageName, fileDownloadRequest, s)
 	if e != nil {
 		logs.WithContext(ctx).Error(e.Error())
 		return
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint(m))
+
 	fMime := mimetype.Detect(f)
+	logs.WithContext(ctx).Info(fmt.Sprint("fileDownloadRequest.ExcelAsJson = ", fileDownloadRequest.ExcelAsJson))
+	logs.WithContext(ctx).Info(fmt.Sprint("fMime ", fMime))
+
 	if fileDownloadRequest.CsvAsJson && (fMime.Is(MIME_TEXT) || fMime.Is(MIME_CSV)) {
 		jsonData, err = csvToJson(ctx, f, fileDownloadRequest)
 		if err != nil {
 			return
 		}
+	} else if fileDownloadRequest.ExcelAsJson && fMime.Is(MIME_XLSX) {
+		var sheets map[string]eru_reads.FileReadData
+		if fileDownloadRequest.ExcelSheets != nil {
+			for fn, v := range fileDownloadRequest.ExcelSheets {
+				if fn == fileDownloadRequest.FileName || fn == "*" {
+					sheets = v
+					break
+				}
+			}
+		}
+		erd := eru_reads.ExcelReadData{Sheets: sheets}
+		jsonDataObj, jsonErr := erd.ReadAsJson(ctx, f)
+		if jsonErr != nil {
+			err = jsonErr
+			return
+		}
+		jsonData = append(jsonData, jsonDataObj)
 	}
 	return
 }

@@ -107,24 +107,24 @@ func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ProjectConfigSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		logs.WithContext(r.Context()).Debug("ProjectConfigSaveHandler - Start")
+		logs.WithContext(r.Context()).Debug("ProjectSetingsSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 
 		prjConfigFromReq := json.NewDecoder(r.Body)
 		prjConfigFromReq.DisallowUnknownFields()
 
-		var projectCOnfig module_model.ProjectConfig
+		var projectSettings module_model.ProjectSettings
 
-		if err := prjConfigFromReq.Decode(&projectCOnfig); err != nil {
+		if err := prjConfigFromReq.Decode(&projectSettings); err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := utils.ValidateStruct(r.Context(), projectCOnfig, "")
+			err := utils.ValidateStruct(r.Context(), projectSettings, "")
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
 				server_handlers.FormatResponse(w, 400)
@@ -133,14 +133,14 @@ func ProjectConfigSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		err := s.SaveProjectConfig(r.Context(), projectId, projectCOnfig, s)
+		err := s.SaveProjectSettings(r.Context(), projectId, projectSettings, s)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
 			server_handlers.FormatResponse(w, 200)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("project config config for ", projectId, " saved successfully")})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("project settings for ", projectId, " saved successfully")})
 		}
 	}
 }

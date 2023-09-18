@@ -47,7 +47,6 @@ func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		if dfFromObj.ExcelAsJson || dfFromObj.CsvAsJson {
-			logs.WithContext(r.Context()).Info(fmt.Sprint(dfFromObj.CsvAsJson))
 			file, err := s.DownloadFileAsJson(r.Context(), projectId, storageName, dfFromObj, s)
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())

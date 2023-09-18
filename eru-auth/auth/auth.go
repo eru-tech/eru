@@ -31,6 +31,7 @@ type AuthI interface {
 	GenerateRecoveryCode(ctx context.Context, recoveryIdentifier RecoveryPostBody) (msg string, err error)
 	CompleteRecovery(ctx context.Context, recoveryPassword RecoveryPassword, cookies []*http.Cookie) (msg string, err error)
 	VerifyRecovery(ctx context.Context, recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error)
+	GetUrl(ctx context.Context, state string) (url string, msParams MsParams, err error)
 }
 type ChangePassword struct {
 	OldPassword string `json:"old_password"`
@@ -38,8 +39,12 @@ type ChangePassword struct {
 }
 
 type LoginPostBody struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username     string `json:"username"`
+	Password     string `json:"password"`
+	IdpCode      string `json:"code"`
+	IdpRequestId string `json:"requestId"`
+	CodeVerifier string `json:"-"`
+	Nonce        string `json:"-"`
 }
 
 type RecoveryPostBody struct {
@@ -82,6 +87,12 @@ type Auth struct {
 
 type AuthHooks struct {
 	SRC routes.Route
+}
+
+func (auth *Auth) GetUrl(ctx context.Context, state string) (url string, msParams MsParams, err error) {
+	err = errors.New("GetUrl Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
 }
 
 func (auth *Auth) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
@@ -217,6 +228,8 @@ func GetAuth(authType string) AuthI {
 	switch authType {
 	case "KRATOS-HYDRA":
 		return new(KratosHydraAuth)
+	case "MICROSOFT":
+		return new(MsAuth)
 	default:
 		return new(Auth)
 	}

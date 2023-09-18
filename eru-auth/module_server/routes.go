@@ -52,5 +52,6 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	authRouter.Methods(http.MethodGet).PathPrefix("/{authname}/getuser").HandlerFunc(module_handlers.GetUserHandler(sh.Store))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/updateuser").HandlerFunc(module_handlers.UpdateUserHandler(sh.Store))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/changepassword").HandlerFunc(module_handlers.ChangePasswordHandler(sh.Store))
+	authRouter.Methods(http.MethodGet).PathPrefix("/{authname}/getssourl").HandlerFunc(module_handlers.GetSsoUrl(sh.Store))
 
 }

@@ -470,7 +470,6 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		if oldContentType == multiPartForm {
 			//resetting it back to old content type as processMultipart will not be able to read the request body
 			req.Header.Set("Content-type", oldContentTypeFull)
-			vars.FormData, vars.FormDataKeyArray, vars.FileData, err = processMultipart(ctx, oldContentType, req, funcStep.RemoveParams.FormData, vars.FormData)
 			if err != nil {
 				return
 			}

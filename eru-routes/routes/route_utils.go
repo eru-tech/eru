@@ -310,7 +310,7 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 	return
 }
 
-func processMultipart(ctx context.Context, reqContentType string, request *http.Request, formDataRemove []string, formData map[string]interface{}) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, varsFileData []FilePart, err error) {
+func processMultipart(ctx context.Context, reqContentType string, request *http.Request, formDataRemove []string, formData map[string]interface{}, fileData []FilePart) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, varsFileData []FilePart, err error) {
 	logs.WithContext(ctx).Debug("processMultipart - Start")
 	logs.WithContext(ctx).Info(fmt.Sprint("reqContentType = ", reqContentType))
 	varsFormData = make(map[string]interface{})
@@ -318,10 +318,11 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 		logs.WithContext(ctx).Info("inside encodedForm || multiPartForm of processMultipart")
 		var reqBody bytes.Buffer
 		multipartWriter := multipart.NewWriter(&reqBody)
-		multiPart, err := request.MultipartReader()
+		multiPart, mErr := request.MultipartReader()
 		requestHasMultipart := true
-		if err != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("error from request.MultipartReader() : ", err.Error()))
+		if mErr != nil {
+			//err = mErr
+			logs.WithContext(ctx).Error(fmt.Sprint("error from request.MultipartReader() : ", mErr.Error()))
 			requestHasMultipart = false
 		}
 		logs.WithContext(ctx).Info(fmt.Sprint("requestHasMultipart = ", requestHasMultipart))
@@ -426,6 +427,49 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 				}
 				varsFormData[fk] = fd
 				varsFormDataKeyArray = append(varsFormDataKeyArray, fk)
+			}
+		}
+		for _, fl := range fileData {
+			filenameStr := string(fl.FileName)
+			if str, err := strconv.Unquote(filenameStr); err == nil {
+				filenameStr = str
+			}
+			filevarnameStr := string(fl.FileVarName)
+			if str, err := strconv.Unquote(filevarnameStr); err == nil {
+				filevarnameStr = str
+			}
+			filecontentStr := string(fl.FileContent)
+			str := ""
+			if str, err = strconv.Unquote(filecontentStr); err == nil {
+				filecontentStr = str
+			}
+			decodeBytes := []byte("")
+			decodeBytes, err = b64.StdEncoding.DecodeString(filecontentStr)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return
+			}
+
+			var tempFile *os.File
+			fn, _ := uuid.NewUUID()
+
+			tempFile, err = ioutil.TempFile(os.TempDir(), fn.String())
+			defer tempFile.Close()
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("Temp file creation failed : ", err.Error()))
+				return
+			}
+			//TODO - hard coded pdf content type to be removed
+
+			fileWriter, err := createFormFile(multipartWriter, "application/pdf", filevarnameStr, filenameStr)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, nil, nil, err
+			}
+			_, err = io.Copy(fileWriter, bytes.NewBuffer(decodeBytes))
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, nil, nil, err
 			}
 		}
 		multipartWriter.Close()

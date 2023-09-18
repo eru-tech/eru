@@ -69,7 +69,12 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 		} else {
 			for chNo, ch := range sheetObj.ColumnHeaders {
 				if ch == "" {
-					colHeaders = append(colHeaders, rows[sheetObj.HeaderRow][chNo])
+					logs.WithContext(ctx).Info(fmt.Sprint(len(rows[sheetObj.HeaderRow]), " > ", chNo))
+					if len(rows[sheetObj.HeaderRow]) > chNo {
+						colHeaders = append(colHeaders, rows[sheetObj.HeaderRow][chNo])
+					} else {
+						colHeaders = append(colHeaders, "")
+					}
 				} else {
 					colHeaders = append(colHeaders, ch)
 				}
@@ -92,7 +97,12 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 			if rowNo+1 >= sheetObj.DataStartRow {
 				sheetRow := make(map[string]interface{})
 				for _, colNo := range cols {
-					sheetRow[colHeaders[colNo-1]] = row[colNo-1]
+					if len(row) > colNo-1 {
+						sheetRow[colHeaders[colNo-1]] = row[colNo-1]
+					} else {
+						sheetRow[colHeaders[colNo-1]] = ""
+					}
+
 				}
 				sheetData = append(sheetData, sheetRow)
 			}

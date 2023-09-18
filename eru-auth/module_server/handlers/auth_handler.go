@@ -177,6 +177,14 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
+		msParams, err := s.GetPkceEvent(r.Context(), loginPostBody.IdpRequestId, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		loginPostBody.CodeVerifier = msParams.CodeVerifier
+		loginPostBody.Nonce = msParams.Nonce
 		res, tokens, err := authObjI.Login(r.Context(), loginPostBody, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
@@ -519,6 +527,42 @@ func ChangePasswordHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		server_handlers.FormatResponse(w, http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": "password updated successfully"})
+		return
+	}
+}
+
+func GetSsoUrl(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("GetSsoUrl - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		params := r.URL.Query()
+		state := params.Get("state")
+
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		url, msParams, err := authObjI.GetUrl(r.Context(), state)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		err = s.SavePkceEvent(r.Context(), msParams, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"url": url, "requestId": msParams.ClientRequestId})
 		return
 	}
 }

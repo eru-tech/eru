@@ -10,7 +10,13 @@ import (
 	"github.com/eru-tech/eru/eru-auth/module_model"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
+	"github.com/google/uuid"
 	"reflect"
+)
+
+const (
+	INSERT_PKCE_EVENT = "insert into eruauth_pkce_events (pkce_event_id,code_verifier,code_challenge,request_id,nonce,url) values ($1,$2,$3,$4,$5,$6)"
+	SELECT_PKCE_EVENT = "select * from eruauth_pkce_events where request_id = $1"
 )
 
 type StoreHolder struct {
@@ -31,6 +37,8 @@ type ModuleStoreI interface {
 	SaveAuth(ctx context.Context, authObj auth.AuthI, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveAuth(ctx context.Context, authType string, projectId string, realStore ModuleStoreI) error
 	GetAuth(ctx context.Context, projectId string, authName string, s ModuleStoreI) (auth.AuthI, error)
+	SavePkceEvent(ctx context.Context, msParams auth.MsParams, s ModuleStoreI) (err error)
+	GetPkceEvent(ctx context.Context, requestId string, s ModuleStoreI) (msParams auth.MsParams, err error)
 }
 
 type ModuleStore struct {
@@ -359,4 +367,42 @@ func (ms *ModuleStore) GetAuth(ctx context.Context, projectId string, authName s
 		logs.WithContext(ctx).Info(err.Error())
 		return nil, err
 	*/
+}
+
+func (ms *ModuleStore) SavePkceEvent(ctx context.Context, msParams auth.MsParams, s ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("SavePkceEvent - Start")
+	var queries []store.Queries
+	query := store.Queries{}
+	query.Query = INSERT_PKCE_EVENT
+	var vals []interface{}
+	vals = append(vals, uuid.New().String(), msParams.CodeVerifier, msParams.CodeChallenge, msParams.ClientRequestId, msParams.Nonce, msParams.Url)
+	query.Vals = vals
+	queries = append(queries, query)
+	output, err := s.ExecuteDbSave(ctx, queries)
+	logs.WithContext(ctx).Info(fmt.Sprint(output))
+	if err != nil {
+		logs.WithContext(ctx).Info(err.Error())
+	}
+	return
+}
+
+func (ms *ModuleStore) GetPkceEvent(ctx context.Context, requestId string, s ModuleStoreI) (msParams auth.MsParams, err error) {
+	logs.WithContext(ctx).Debug("GetPkceEvent - Start")
+	query := store.Queries{}
+	query.Query = SELECT_PKCE_EVENT
+	var vals []interface{}
+	vals = append(vals, requestId)
+	query.Vals = vals
+	output, err := s.ExecuteDbFetch(ctx, query)
+	if len(output) > 0 {
+		msParams.CodeVerifier = output[0]["code_verifier"].(string)
+		msParams.CodeChallenge = output[0]["code_challenge"].(string)
+		msParams.ClientRequestId = output[0]["request_id"].(string)
+		msParams.Nonce = output[0]["nonce"].(string)
+		msParams.Url = output[0]["url"].(string)
+	}
+	if err != nil {
+		logs.WithContext(ctx).Info(err.Error())
+	}
+	return
 }

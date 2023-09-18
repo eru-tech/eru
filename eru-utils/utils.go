@@ -277,7 +277,6 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 	respHeaders = resp.Header
 	respCookies = resp.Cookies()
 	defer resp.Body.Close()
-
 	//todo - check if below change from reqContentType to header.get breaks anything
 	//todo - merge conflict - main had below first if commented
 	contentType := strings.Split(headers.Get("Content-type"), ";")[0]
