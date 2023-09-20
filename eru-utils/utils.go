@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	models "github.com/eru-tech/eru/eru-models"
 	"github.com/google/go-cmp/cmp"
+	"github.com/jmoiron/sqlx"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"io"
 	"mime/multipart"
@@ -402,4 +404,93 @@ func CloneInterface(ctx context.Context, i interface{}) (iClone interface{}, err
 		return
 	}
 	return iCloneI.Elem().Interface(), nil
+}
+
+func ExecuteDbFetch(ctx context.Context, db *sqlx.DB, query models.Queries) (output []map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("ExecuteDbFetch - Start")
+
+	rows, err := db.Queryx(query.Query, query.Vals...)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	mapping := make(map[string]interface{})
+	colsType, ee := rows.ColumnTypes()
+	if ee != nil {
+		return nil, ee
+	}
+	for rows.Next() {
+		innerResultRow := make(map[string]interface{})
+		ee = rows.MapScan(mapping)
+		if ee != nil {
+			return nil, ee
+		}
+		for _, colType := range colsType {
+			if colType.DatabaseTypeName() == "NUMERIC" && mapping[colType.Name()] != nil {
+				f := 0.0
+				if reflect.TypeOf(mapping[colType.Name()]).String() == "[]uint8" {
+					f, err = strconv.ParseFloat(string(mapping[colType.Name()].([]byte)), 64)
+					mapping[colType.Name()] = f
+				} else if reflect.TypeOf(mapping[colType.Name()]).String() == "float64" {
+					f = mapping[colType.Name()].(float64)
+					mapping[colType.Name()] = f
+				}
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return nil, err
+				}
+			} else if (colType.DatabaseTypeName() == "JSONB" || colType.DatabaseTypeName() == "JSON") && mapping[colType.Name()] != nil {
+				bytesToUnmarshal := mapping[colType.Name()].([]byte)
+				var v map[string]interface{}
+				err = json.Unmarshal(bytesToUnmarshal, &v)
+				if err != nil {
+					return nil, err
+				}
+				mapping[colType.Name()] = &v
+			}
+			innerResultRow[colType.Name()] = mapping[colType.Name()]
+		}
+		output = append(output, innerResultRow)
+	}
+	return
+}
+
+func ExecuteDbSave(ctx context.Context, db *sqlx.DB, queries []models.Queries) (output [][]map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("ExecuteDbSave - Start")
+
+	tx := db.MustBegin()
+	for _, q := range queries {
+		//logs.WithContext(ctx).Info(q.Query)
+		//logs.WithContext(ctx).Info(fmt.Sprint(q.Vals))
+		stmt, err := tx.PreparexContext(ctx, q.Query)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.PreparexContext : ", err.Error()))
+			tx.Rollback()
+			return nil, err
+		}
+		rw, err := stmt.QueryxContext(ctx, q.Vals...)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("Error in stmt.QueryxContext : ", err.Error()))
+			tx.Rollback()
+			return nil, err
+		}
+		var innerOutput []map[string]interface{}
+		for rw.Rows.Next() {
+			resDoc := make(map[string]interface{})
+			err = rw.MapScan(resDoc)
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("Error in rw.MapScan : ", err.Error()))
+				tx.Rollback()
+				return nil, err
+			}
+			innerOutput = append(innerOutput, resDoc)
+		}
+		output = append(output, innerOutput)
+	}
+	err = tx.Commit()
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.Commit : ", err.Error()))
+		tx.Rollback()
+	}
+	return
 }

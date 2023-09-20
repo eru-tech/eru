@@ -808,14 +808,14 @@ func (kratosHydraAuth *KratosHydraAuth) Login(ctx context.Context, loginPostBody
 				return
 			}
 
-			consentChallenge, loginAcceptRequestCookies, loginAcceptErr := kratosHydraAuth.Hydra.acceptLoginRequest(ctx, kratosSession.Session.Identity.Id, loginChallenge, loginChallengeCookies)
+			consentChallenge, loginAcceptRequestCookies, loginAcceptErr := kratosHydraAuth.Hydra.AcceptLoginRequest(ctx, kratosSession.Session.Identity.Id, loginChallenge, loginChallengeCookies)
 			if loginAcceptErr != nil {
 				err = loginAcceptErr
 				return
 			}
 			identityHolder := make(map[string]interface{})
 			identityHolder["identity"] = identity
-			tokens, cosentAcceptErr := kratosHydraAuth.Hydra.acceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
+			tokens, cosentAcceptErr := kratosHydraAuth.Hydra.AcceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
 			if cosentAcceptErr != nil {
 				err = cosentAcceptErr
 				return

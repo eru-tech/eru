@@ -26,7 +26,6 @@ func StartUp() (module_store.ModuleStoreI, error) {
 		myStore.SetDbType(storeType)
 		myStore.SetStoreTableName(StoreTableName)
 		myStore.CreateConn()
-		logs.Logger.Info(fmt.Sprint(myStore.GetConn()))
 	case "STANDALONE":
 		// myStore, err = store.LoadStoreFromFile()
 		myStore = new(module_store.ModuleFileStore)

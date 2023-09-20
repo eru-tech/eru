@@ -12,11 +12,13 @@ import (
 	"github.com/eru-tech/eru/eru-store/store"
 	"github.com/google/uuid"
 	"reflect"
+	"strings"
 )
 
 const (
-	INSERT_PKCE_EVENT = "insert into eruauth_pkce_events (pkce_event_id,code_verifier,code_challenge,request_id,nonce,url) values ($1,$2,$3,$4,$5,$6)"
-	SELECT_PKCE_EVENT = "select * from eruauth_pkce_events where request_id = $1"
+	INSERT_PKCE_EVENT   = "insert into eruauth_pkce_events (pkce_event_id,code_verifier,code_challenge,request_id,nonce,url) values ($1,$2,$3,$4,$5,$6)"
+	SELECT_PKCE_EVENT   = "select * from eruauth_pkce_events where request_id = $1"
+	SELECT_IDENTITY_SUB = "select * from eruauth_identities where identity_provider_id = $1"
 )
 
 type StoreHolder struct {
@@ -314,12 +316,15 @@ func (ms *ModuleStore) GetAuthClone(ctx context.Context, projectId string, authN
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	} else {
-		return ms.GetAuthCloneObject(ctx, projectId, authObj, s)
+		authObjClone, err = ms.GetAuthCloneObject(ctx, projectId, authObj, s)
+		authObjClone.SetAuthDb(GetAuthDb(s.GetDbType()))
+		return
 	}
 }
 
 func (ms *ModuleStore) GetAuthCloneObject(ctx context.Context, projectId string, authObj auth.AuthI, s ModuleStoreI) (authObjClone auth.AuthI, err error) {
 	logs.WithContext(ctx).Debug("GetAuGetAuthCloneObjectth - Start")
+
 	authObjJson, authObjJsonErr := json.Marshal(authObj)
 	if authObjJsonErr != nil {
 		err = errors.New(fmt.Sprint("error while cloning authObj (marshal)"))
@@ -405,4 +410,15 @@ func (ms *ModuleStore) GetPkceEvent(ctx context.Context, requestId string, s Mod
 		logs.WithContext(ctx).Info(err.Error())
 	}
 	return
+}
+
+func GetAuthDb(dbType string) auth.AuthDbI {
+	switch strings.ToUpper(dbType) {
+	case "POSTGRES":
+		return new(auth.AuthDbPostgres)
+	case "MYSQL":
+		return new(auth.AuthDbMysql)
+	default:
+		return new(auth.AuthDb)
+	}
 }

@@ -166,6 +166,16 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+
+		}
+
 		loginPostBodyFromReq := json.NewDecoder(r.Body)
 		loginPostBodyFromReq.DisallowUnknownFields()
 
@@ -177,12 +187,25 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		msParams, err := s.GetPkceEvent(r.Context(), loginPostBody.IdpRequestId, s)
-		if err != nil {
-			server_handlers.FormatResponse(w, 400)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			return
+		msParams := auth.MsParams{}
+		if authName == "ms" {
+			msParams, err = s.GetPkceEvent(r.Context(), loginPostBody.IdpRequestId, s)
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
 		}
+
+		if authName == "ms" || authName == "eru" {
+			msParams, err = s.GetPkceEvent(r.Context(), loginPostBody.IdpRequestId, s)
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		}
+
 		loginPostBody.CodeVerifier = msParams.CodeVerifier
 		loginPostBody.Nonce = msParams.Nonce
 		res, tokens, err := authObjI.Login(r.Context(), loginPostBody, true)

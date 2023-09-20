@@ -10,7 +10,9 @@ require (
 	github.com/eru-tech/eru/eru-store v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
 	github.com/google/go-cmp v0.5.9
+	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
+	github.com/jmoiron/sqlx v1.3.4
 	golang.org/x/oauth2 v0.6.0
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
 )
@@ -18,6 +20,7 @@ require (
 require (
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
+	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-templates v0.0.0-00010101000000-000000000000 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
@@ -26,9 +29,7 @@ require (
 	github.com/goccy/go-json v0.9.6 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.1 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0 // indirect
-	github.com/jmoiron/sqlx v1.3.4 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.0 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
@@ -71,6 +72,7 @@ require (
 replace (
 	github.com/eru-tech/eru/eru-crypto => ../eru-crypto
 	github.com/eru-tech/eru/eru-logs => ../eru-logs
+	github.com/eru-tech/eru/eru-models => ../eru-models
 	github.com/eru-tech/eru/eru-repos => ../eru-repos
 	github.com/eru-tech/eru/eru-routes => ../eru-routes
 	github.com/eru-tech/eru/eru-server => ../eru-server

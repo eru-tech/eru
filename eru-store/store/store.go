@@ -18,6 +18,7 @@ type StoreI interface {
 	SetDbType(dbtype string)
 	CreateConn() error
 	GetConn() *sqlx.DB
+	GetDbType() string
 	ExecuteDbSave(ctx context.Context, queries []Queries) (output [][]map[string]interface{}, err error)
 	ExecuteDbFetch(ctx context.Context, query Queries) (output []map[string]interface{}, err error)
 	SetStoreTableName(tablename string)
@@ -64,6 +65,10 @@ type EnvVars struct {
 type Secrets struct {
 	Key   string
 	Value string `json:"-"`
+}
+
+func (store *Store) GetDbType() string {
+	return ""
 }
 
 func (store *Store) SetVars(ctx context.Context, variables map[string]*Variables) {

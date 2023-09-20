@@ -40,6 +40,10 @@ func (store *DbStore) SetDbType(dbtype string) {
 	store.DbType = strings.ToLower(dbtype)
 }
 
+func (store *DbStore) GetDbType() string {
+	return store.DbType
+}
+
 func (store *DbStore) SetStoreTableName(tablename string) {
 	store.StoreTableName = strings.ToLower(tablename)
 }

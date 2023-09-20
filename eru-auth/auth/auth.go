@@ -16,6 +16,8 @@ import (
 
 type AuthI interface {
 	//Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error)
+	SetAuthDb(authDbI AuthDbI)
+	GetAuthDb() (authDbI AuthDbI)
 	Login(ctx context.Context, loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error)
 	Logout(ctx context.Context, req *http.Request) (res interface{}, resStatusCode int, err error)
 	VerifyToken(ctx context.Context, tokenType string, token string) (res interface{}, err error)
@@ -33,6 +35,12 @@ type AuthI interface {
 	VerifyRecovery(ctx context.Context, recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error)
 	GetUrl(ctx context.Context, state string) (url string, msParams MsParams, err error)
 }
+
+const (
+	SELECT_IDENTITY_SUB = "select * from eruauth_identities where identity_provider_id = ???"
+	INSERT_IDENTITY     = "insert into eruauth_identities (identity_id,identity_provider,identity_provider_id,traits,attributes) values (???,???,???,???,???)"
+)
+
 type ChangePassword struct {
 	OldPassword string `json:"old_password"`
 	NewPassword string `json:"new_password"`
@@ -83,10 +91,38 @@ type Auth struct {
 	AuthName       string
 	TokenHeaderKey string
 	Hooks          AuthHooks
+	AuthDb         AuthDbI `json:"-"`
 }
 
 type AuthHooks struct {
 	SRC routes.Route
+}
+
+type IdentifierConfig struct {
+	Enable    bool   `json:"enable"`
+	IdpMapper string `json:"idpMapper"`
+}
+
+type Identifiers struct {
+	Email    IdentifierConfig `json:"email"`
+	Mobile   IdentifierConfig `json:"mobile"`
+	Username IdentifierConfig `json:"userName"`
+}
+
+type UserTraits struct {
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	Email     string `json:"email"`
+	Mobile    string `json:"mobile"`
+	Username  string `json:"userName"`
+}
+
+func (auth *Auth) SetAuthDb(authDbI AuthDbI) {
+	auth.AuthDb = authDbI
+}
+
+func (auth *Auth) GetAuthDb() (authDbI AuthDbI) {
+	return auth.AuthDb
 }
 
 func (auth *Auth) GetUrl(ctx context.Context, state string) (url string, msParams MsParams, err error) {

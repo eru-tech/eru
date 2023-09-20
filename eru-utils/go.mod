@@ -4,6 +4,9 @@ go 1.20
 
 require (
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000
+	github.com/google/go-cmp v0.5.9
+	github.com/jmoiron/sqlx v1.3.4
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.25.0
 )
 
@@ -20,4 +23,7 @@ require (
 	go.uber.org/zap v1.24.0 // indirect
 )
 
-replace github.com/eru-tech/eru/eru-logs => ../eru-logs
+replace (
+	github.com/eru-tech/eru/eru-logs => ../eru-logs
+	github.com/eru-tech/eru/eru-models => ../eru-models
+)
