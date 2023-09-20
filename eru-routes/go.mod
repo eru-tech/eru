@@ -19,6 +19,7 @@ require (
 require (
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
+	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
@@ -66,6 +67,7 @@ require (
 replace (
 	github.com/eru-tech/eru/eru-crypto => ../eru-crypto
 	github.com/eru-tech/eru/eru-logs => ../eru-logs
+	github.com/eru-tech/eru/eru-models => ../eru-models
 	github.com/eru-tech/eru/eru-repos => ../eru-repos
 	github.com/eru-tech/eru/eru-server => ../eru-server
 	github.com/eru-tech/eru/eru-store => ../eru-store
