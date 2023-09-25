@@ -155,19 +155,23 @@ func (hydraConfig HydraConfig) GetUserInfo(ctx context.Context, access_token str
 	}
 }
 
-func (kratosHydraAuth *KratosHydraAuth) FetchTokens(ctx context.Context, refresh_token string) (res interface{}, err error) {
+func (kratosHydraAuth *KratosHydraAuth) FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error) {
 	logs.WithContext(ctx).Debug("FetchTokens - Start")
+	return kratosHydraAuth.Hydra.fetchTokens(ctx, refresh_token)
+}
+
+func (hydraConfig HydraConfig) fetchTokens(ctx context.Context, refresh_token string) (res interface{}, err error) {
 	dummyMap := make(map[string]string)
 	headers := http.Header{}
 	headers.Add("content-type", "application/x-www-form-urlencoded")
 	formData := make(map[string]string)
 	formData["refresh_token"] = refresh_token
 	formData["grant_type"] = "refresh_token"
-	for _, v := range kratosHydraAuth.Hydra.HydraClients {
+	for _, v := range hydraConfig.HydraClients {
 		formData["client_id"] = v.ClientId
 		break
 	}
-	res, _, _, _, err = utils.CallHttp(ctx, "POST", fmt.Sprint(kratosHydraAuth.Hydra.GetPublicUrl(), "/oauth2/token"), headers, formData, nil, dummyMap, dummyMap)
+	res, _, _, _, err = utils.CallHttp(ctx, "POST", fmt.Sprint(hydraConfig.GetPublicUrl(), "/oauth2/token"), headers, formData, nil, dummyMap, dummyMap)
 	if err != nil {
 		return nil, err
 	}
@@ -454,6 +458,7 @@ func (hydraConfig HydraConfig) AcceptConsentRequest(ctx context.Context, identit
 
 	paramsMap := make(map[string]string)
 	paramsMap["consent_challenge"] = consentChallenge
+
 	postUrl := fmt.Sprint(hydraConfig.GetAminUrl(), "/admin/oauth2/auth/requests/consent/accept")
 	resp, _, respCookies, _, err := utils.CallHttp(ctx, http.MethodPut, postUrl, headers, dummyMap, loginCookies, paramsMap, hydraCLR)
 	respCookies = append(respCookies, loginCookies...)
@@ -463,7 +468,6 @@ func (hydraConfig HydraConfig) AcceptConsentRequest(ctx context.Context, identit
 	code := ""
 	if respMap, ok := resp.(map[string]interface{}); ok {
 		if redirectUrl, ok1 := respMap["redirect_to"]; ok1 {
-			logs.WithContext(ctx).Info(redirectUrl.(string))
 			_, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(ctx, http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
 			respCookies = append(respCookies, respCookies2...)
 			if err2 != nil {
@@ -471,9 +475,7 @@ func (hydraConfig HydraConfig) AcceptConsentRequest(ctx context.Context, identit
 			}
 			if statusCode2 >= 300 && statusCode2 < 400 {
 				redirectLocation := respHeaders2["Location"][0]
-				logs.WithContext(ctx).Info(redirectLocation)
 				params := strings.Split(redirectLocation, "?")[1]
-				logs.WithContext(ctx).Info(fmt.Sprint(params))
 				codeParam := strings.Split(params, "&")[0]
 				code = strings.Split(codeParam, "=")[1]
 
@@ -488,9 +490,6 @@ func (hydraConfig HydraConfig) AcceptConsentRequest(ctx context.Context, identit
 					return
 				}
 
-				logs.WithContext(ctx).Info(fmt.Sprint("code = ", code))
-				logs.WithContext(ctx).Info(fmt.Sprint("respCookies = ", respCookies))
-
 				token, tokenErr := outhConfig.Exchange(ctx, code)
 				if tokenErr != nil {
 					err = tokenErr
@@ -498,6 +497,7 @@ func (hydraConfig HydraConfig) AcceptConsentRequest(ctx context.Context, identit
 					return
 				}
 				idt := token.Extra("id_token")
+				logs.WithContext(ctx).Info(idt.(string))
 				loginSuccess := LoginSuccess{}
 				loginSuccess.AccessToken = token.AccessToken
 				loginSuccess.RefreshToken = token.RefreshToken

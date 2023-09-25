@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	b64 "encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -46,51 +47,44 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser)
 	identity.Id = uuid.New().String()
 
 	if eruAuth.EruConfig.Identifiers.Email.Enable {
+		userTraits.Email = registerUser.Email
+		identity.Attributes["email"] = userTraits.Email
 		if registerUser.Email != "" {
-			userTraits.Email = registerUser.Email
-			identity.Attributes["email"] = userTraits.Email
-
+			identifierFound = true
 			insertQueryIcEmail := models.Queries{}
 			insertQueryIcEmail.Query = eruAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY_CREDENTIALS)
 			insertQueryIcEmail.Vals = append(insertQueryIcEmail.Vals, uuid.New().String(), identity.Id, userTraits.Email, "email")
 			insertQueryIcEmail.Rank = 2
 
 			insertQueries = append(insertQueries, &insertQueryIcEmail)
-
-			identifierFound = true
 		} else {
 			requiredIdentifiers = append(requiredIdentifiers, "email")
 		}
 	}
 	if eruAuth.EruConfig.Identifiers.Mobile.Enable {
+		userTraits.Mobile = registerUser.Mobile
+		identity.Attributes["mobile"] = userTraits.Mobile
 		if registerUser.Mobile != "" {
-			userTraits.Mobile = registerUser.Mobile
-			identity.Attributes["mobile"] = userTraits.Mobile
-
+			identifierFound = true
 			insertQueryIcMobile := models.Queries{}
 			insertQueryIcMobile.Query = eruAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY_CREDENTIALS)
 			insertQueryIcMobile.Vals = append(insertQueryIcMobile.Vals, uuid.New().String(), identity.Id, userTraits.Mobile, "mobile")
 			insertQueryIcMobile.Rank = 3
 			insertQueries = append(insertQueries, &insertQueryIcMobile)
-
-			identifierFound = true
 		} else {
 			requiredIdentifiers = append(requiredIdentifiers, "mobile")
 		}
 	}
 	if eruAuth.EruConfig.Identifiers.Username.Enable {
+		userTraits.Username = registerUser.Username
+		identity.Attributes["userName"] = userTraits.Username
 		if registerUser.Username != "" {
 			identifierFound = true
-			userTraits.Username = registerUser.Username
-			identity.Attributes["userName"] = userTraits.Username
-
 			insertQueryIcUsername := models.Queries{}
 			insertQueryIcUsername.Query = eruAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY_CREDENTIALS)
 			insertQueryIcUsername.Vals = append(insertQueryIcUsername.Vals, uuid.New().String(), identity.Id, userTraits.Username, "userName")
 			insertQueryIcUsername.Rank = 4
 			insertQueries = append(insertQueries, &insertQueryIcUsername)
-
-			identifierFound = true
 		} else {
 			requiredIdentifiers = append(requiredIdentifiers, "userName")
 		}
@@ -142,9 +136,14 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser)
 
 	insertPQuery := models.Queries{}
 	insertPQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY_PASSWORD)
-	passwordHash := hex.EncodeToString(erusha.NewSHA512([]byte(registerUser.Password)))
-	logs.WithContext(ctx).Info(registerUser.Password)
-	logs.WithContext(ctx).Info(passwordHash)
+
+	passwordBytes, passwordErr := b64.StdEncoding.DecodeString(registerUser.Password)
+	if passwordErr != nil {
+		logs.WithContext(ctx).Error(passwordErr.Error())
+		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+	}
+	passwordHash := hex.EncodeToString(erusha.NewSHA512(passwordBytes))
+
 	insertPQuery.Vals = append(insertPQuery.Vals, uuid.New().String(), identity.Id, passwordHash)
 	insertPQuery.Rank = 5
 	insertQueries = append(insertQueries, &insertPQuery)
@@ -211,6 +210,7 @@ func (eruAuth *EruAuth) MakeFromJson(ctx context.Context, rj *json.RawMessage) e
 func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userId string, token map[string]interface{}) (err error) {
 	logs.WithContext(ctx).Debug("UpdateUser - Start")
 	userTraits := UserTraits{}
+	var userTraitsArray []string
 	userAttrs := make(map[string]interface{})
 	var queries []*models.Queries
 	tokenAttributes, tokenErr := getTokenAttributes(ctx, token)
@@ -221,15 +221,17 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 
 	logs.WithContext(ctx).Info(fmt.Sprint(tokenAttributes))
 	for k, v := range tokenAttributes {
-		logs.WithContext(ctx).Info(fmt.Sprint(k, " ", v))
+		userTraitsFound := false
 		if k == "email" {
+			userTraitsFound = true
+			userTraitsArray = append(userTraitsArray, k)
 			if emailAttr, emailAttrOk := identity.Attributes["email"]; emailAttrOk {
 				logs.WithContext(ctx).Info(fmt.Sprint(k, " ", v))
 				if v != emailAttr {
 					if v != "" {
 						delQuery := models.Queries{}
 						delQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, DELETE_IDENTITY_CREDENTIALS)
-						delQuery.Vals = append(delQuery.Vals, identity.Id, k)
+						delQuery.Vals = append(delQuery.Vals, identity.Id, k, v)
 						delQuery.Rank = 1
 						queries = append(queries, &delQuery)
 					}
@@ -244,20 +246,27 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 				} else {
 					userTraits.Email = emailAttr.(string)
 				}
+			} else {
+				userTraits.Email = v.(string)
 			}
 		}
 
 		if k == "mobile" {
+			logs.WithContext(ctx).Info(fmt.Sprint("inside mobile for = ", v))
+			userTraitsFound = true
+			userTraitsArray = append(userTraitsArray, k)
 			if mobileAttr, mobileAttrOk := identity.Attributes["mobile"]; mobileAttrOk {
+				logs.WithContext(ctx).Info(fmt.Sprint("mobileAttr = ", mobileAttr))
 				if v != mobileAttr {
+					logs.WithContext(ctx).Info(fmt.Sprint(v, "!=", mobileAttr))
 					if v != "" {
+						logs.WithContext(ctx).Info("inside v != \"\"")
 						delQuery := models.Queries{}
 						delQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, DELETE_IDENTITY_CREDENTIALS)
-						delQuery.Vals = append(delQuery.Vals, identity.Id, k)
+						delQuery.Vals = append(delQuery.Vals, identity.Id, k, v)
 						delQuery.Rank = 3
 						queries = append(queries, &delQuery)
 					}
-
 					userTraits.Mobile = mobileAttr.(string)
 					insertQueryIcMobile := models.Queries{}
 					insertQueryIcMobile.Query = eruAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY_CREDENTIALS)
@@ -267,16 +276,20 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 				} else {
 					userTraits.Mobile = mobileAttr.(string)
 				}
+			} else {
+				userTraits.Mobile = v.(string)
 			}
 		}
 
 		if k == "userName" {
+			userTraitsFound = true
+			userTraitsArray = append(userTraitsArray, k)
 			if userNameAttr, userNameAttrOk := identity.Attributes["userName"]; userNameAttrOk {
 				if v != userNameAttr {
 					if v != "" {
 						delQuery := models.Queries{}
 						delQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, DELETE_IDENTITY_CREDENTIALS)
-						delQuery.Vals = append(delQuery.Vals, identity.Id, k)
+						delQuery.Vals = append(delQuery.Vals, identity.Id, k, v)
 						delQuery.Rank = 5
 						queries = append(queries, &delQuery)
 					}
@@ -291,9 +304,13 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 				} else {
 					userTraits.Username = userNameAttr.(string)
 				}
+			} else {
+				userTraits.Username = v.(string)
 			}
 		}
 		if k == "firstName" {
+			userTraitsFound = true
+			userTraitsArray = append(userTraitsArray, k)
 			if firstNameAttr, firstNameAttrOk := identity.Attributes["firstName"]; firstNameAttrOk {
 				userTraits.FirstName = firstNameAttr.(string)
 			} else {
@@ -301,6 +318,8 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 			}
 		}
 		if k == "lastName" {
+			userTraitsFound = true
+			userTraitsArray = append(userTraitsArray, k)
 			if lastNameAttr, lastNameAttrOk := identity.Attributes["lastName"]; lastNameAttrOk {
 				userTraits.LastName = lastNameAttr.(string)
 			} else {
@@ -308,6 +327,8 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 			}
 		}
 		if k == "emailVerified" {
+			userTraitsFound = true
+			userTraitsArray = append(userTraitsArray, k)
 			if emailVerifiedAttr, emailVerifiedAttrOk := identity.Attributes["emailVerified"]; emailVerifiedAttrOk {
 				userTraits.EmailVerified = emailVerifiedAttr.(bool)
 			} else {
@@ -315,17 +336,29 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 			}
 		}
 		if k == "mobileVerified" {
+			userTraitsFound = true
+			userTraitsArray = append(userTraitsArray, k)
 			if mobileVerifiedAttr, mobileVerifiedAttrOk := identity.Attributes["mobileVerified"]; mobileVerifiedAttrOk {
 				userTraits.MobileVerified = mobileVerifiedAttr.(bool)
 			} else {
 				userTraits.MobileVerified = v.(bool)
 			}
 		}
-		userAttrs[k] = v
+		if !userTraitsFound {
+			userAttrs[k] = v
+		}
 	}
-
 	for k, v := range identity.Attributes {
-		userAttrs[k] = v
+		kFound := false
+		for _, ut := range userTraitsArray {
+			if ut == k {
+				kFound = true
+				break
+			}
+		}
+		if !kFound {
+			userAttrs[k] = v
+		}
 	}
 
 	userTraitsBytes, userTraitsBytesErr := json.Marshal(userTraits)
@@ -349,10 +382,15 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 	queries = append(queries, &updateQuery)
 
 	sort.Sort(models.QueriesSorter(queries))
-
+	for _, v := range queries {
+		logs.WithContext(ctx).Info(fmt.Sprint(v))
+	}
 	insertOutput, err := utils.ExecuteDbSave(ctx, eruAuth.AuthDb.GetConn(), queries)
 	logs.WithContext(ctx).Info(fmt.Sprint(insertOutput))
 	if err != nil {
+		if strings.Contains(err.Error(), "unique_identity_credential") {
+			return errors.New("user with same credentials already exists")
+		}
 		logs.WithContext(ctx).Error(err.Error())
 		return errors.New("something went wrong - please try again")
 	}
@@ -382,6 +420,7 @@ func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, 
 	identity.Id = loginOutput[0]["identity_id"].(string)
 	identity.Status = loginOutput[0]["status"].(string)
 	identity.Attributes = make(map[string]interface{})
+
 	if attrs, attrsOk := loginOutput[0]["attributes"].(*map[string]interface{}); attrsOk {
 		for k, v := range *attrs {
 			identity.Attributes[k] = v
@@ -392,27 +431,66 @@ func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, 
 			identity.Attributes[k] = v
 		}
 	}
-
 	if withTokens {
-		loginChallenge, loginChallengeCookies, loginChallengeErr := eruAuth.Hydra.GetLoginChallenge(ctx)
-		if loginChallengeErr != nil {
-			err = loginChallengeErr
-			return
-		}
-
-		consentChallenge, loginAcceptRequestCookies, loginAcceptErr := eruAuth.Hydra.AcceptLoginRequest(ctx, identity.Id, loginChallenge, loginChallengeCookies)
-		if loginAcceptErr != nil {
-			err = loginAcceptErr
-			return
-		}
-		identityHolder := make(map[string]interface{})
-		identityHolder["identity"] = identity
-		eruTokens, cosentAcceptErr := eruAuth.Hydra.AcceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
-		if cosentAcceptErr != nil {
-			err = cosentAcceptErr
-			return
-		}
-		return identity, eruTokens, nil
+		eruTokens, eruTokensErr := eruAuth.makeTokens(ctx, identity)
+		return identity, eruTokens, eruTokensErr
 	}
 	return identity, LoginSuccess{}, nil
+}
+
+func (eruAuth *EruAuth) FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("FetchTokens - Start")
+	logs.WithContext(ctx).Info(userId)
+
+	loginQuery := models.Queries{}
+	loginQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY)
+	loginQuery.Vals = append(loginQuery.Vals, userId)
+	loginQuery.Rank = 1
+
+	loginOutput, err := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), loginQuery)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, errors.New("something went wrong - please try again")
+	}
+
+	if len(loginOutput) == 0 {
+		err = errors.New("user not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	identity := Identity{}
+	identity.Id = loginOutput[0]["identity_id"].(string)
+	identity.Status = loginOutput[0]["status"].(string)
+	identity.Attributes = make(map[string]interface{})
+
+	if attrs, attrsOk := loginOutput[0]["attributes"].(*map[string]interface{}); attrsOk {
+		for k, v := range *attrs {
+			identity.Attributes[k] = v
+		}
+	}
+	if traits, traitsOk := loginOutput[0]["traits"].(*map[string]interface{}); traitsOk {
+		for k, v := range *traits {
+			identity.Attributes[k] = v
+		}
+	}
+	return eruAuth.makeTokens(ctx, identity)
+}
+
+func (eruAuth *EruAuth) makeTokens(ctx context.Context, identity Identity) (eruTokens LoginSuccess, err error) {
+	loginChallenge, loginChallengeCookies, loginChallengeErr := eruAuth.Hydra.GetLoginChallenge(ctx)
+	if loginChallengeErr != nil {
+		err = loginChallengeErr
+		return
+	}
+
+	consentChallenge, loginAcceptRequestCookies, loginAcceptErr := eruAuth.Hydra.AcceptLoginRequest(ctx, identity.Id, loginChallenge, loginChallengeCookies)
+	if loginAcceptErr != nil {
+		err = loginAcceptErr
+		return
+	}
+	identityHolder := make(map[string]interface{})
+	identityHolder["identity"] = identity
+	logs.WithContext(ctx).Info(fmt.Sprint(identity.Attributes))
+	eruTokens, err = eruAuth.Hydra.AcceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
+	return
 }

@@ -24,7 +24,7 @@ type AuthI interface {
 	VerifyToken(ctx context.Context, tokenType string, token string) (res interface{}, err error)
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
 	GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error)
-	FetchTokens(ctx context.Context, refresh_token string) (res interface{}, err error)
+	FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) (err error)
 	PerformPreSaveTask(ctx context.Context) (err error)
 	PerformPreDeleteTask(ctx context.Context) (err error)
@@ -42,9 +42,10 @@ const (
 	INSERT_IDENTITY             = "insert into eruauth_identities (identity_id,identity_provider,identity_provider_id,traits,attributes) values (???,???,???,???,???)"
 	UPDATE_IDENTITY             = "update eruauth_identities set traits = ??? , attributes = ??? where identity_id = ???"
 	INSERT_IDENTITY_CREDENTIALS = "insert into eruauth_identity_credentials (identity_credential_id , identity_id, identity_credential, identity_credential_type) values (???,???,???,???)"
-	DELETE_IDENTITY_CREDENTIALS = "delete from eruauth_identity_credentials where identity_id = ??? and identity_credential_type = ??? "
+	DELETE_IDENTITY_CREDENTIALS = "delete from eruauth_identity_credentials where identity_id = ??? and identity_credential_type = ??? and identity_credential = ??? "
 	INSERT_IDENTITY_PASSWORD    = "insert into eruauth_identity_passwords (identity_password_id,identity_id,identity_password) values (??? , ??? , ???)"
 	SELECT_LOGIN                = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a inner join eruauth_identity_credentials b on a.identity_id=b.identity_id and b.identity_credential= ??? inner join eruauth_identity_passwords c on a.identity_id=c.identity_id and c.identity_password= ???"
+	SELECT_IDENTITY             = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a  where a.identity_id = ???"
 )
 
 type ChangePassword struct {
@@ -249,7 +250,7 @@ func (auth *Auth) UpdateUser(ctx context.Context, identityToUpdate Identity, use
 	return err
 }
 
-func (auth *Auth) FetchTokens(ctx context.Context, refresh_token string) (res interface{}, err error) {
+func (auth *Auth) FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error) {
 	err = errors.New("FetchTokens Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err
