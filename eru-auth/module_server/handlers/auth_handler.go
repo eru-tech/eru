@@ -503,8 +503,52 @@ func UpdateUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+
+		}
+
 		identity.Attributes = userAttributes
-		err = authObjI.UpdateUser(r.Context(), identity)
+
+		tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "TokenHeaderKey")
+		userId := ""
+		tokenObj := make(map[string]interface{})
+		if tokenKeyErr == nil {
+
+			tokenStr := r.Header.Get(tokenKey.(string))
+
+			if tokenStr != "" {
+				err = json.Unmarshal([]byte(tokenStr), &tokenObj)
+				if err != nil {
+					logs.WithContext(r.Context()).Error(fmt.Sprint("error while unmarshalling token claim : ", err.Error()))
+					server_handlers.FormatResponse(w, 400)
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					return
+				}
+				logs.WithContext(r.Context()).Info(fmt.Sprint(tokenObj))
+				if iObj, iObjOk := tokenObj["identity"]; iObjOk {
+					if iObjMap, iObjMapOk := iObj.(map[string]interface{}); iObjMapOk {
+						if uid, userIdOk := iObjMap["id"]; userIdOk {
+							userId = uid.(string)
+						}
+					}
+				}
+			}
+		}
+		if userId == "" {
+			err = errors.New("userid not found")
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		identity.Id = userId
+		err = authObjI.UpdateUser(r.Context(), identity, userId, tokenObj)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -554,7 +598,7 @@ func ChangePasswordHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func GetSsoUrl(s module_store.ModuleStoreI) http.HandlerFunc {
+func GetSsoUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("GetSsoUrl - Start")
 		vars := mux.Vars(r)
@@ -587,5 +631,56 @@ func GetSsoUrl(s module_store.ModuleStoreI) http.HandlerFunc {
 		server_handlers.FormatResponse(w, http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"url": url, "requestId": msParams.ClientRequestId})
 		return
+	}
+}
+
+func RegisterHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("RegisterHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+
+		}
+
+		registerPostBodyFromReq := json.NewDecoder(r.Body)
+		registerPostBodyFromReq.DisallowUnknownFields()
+
+		var registerPostBody auth.RegisterUser
+
+		if err = registerPostBodyFromReq.Decode(&registerPostBody); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		res, tokens, err := authObjI.Register(r.Context(), registerPostBody)
+		if err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			server_handlers.FormatResponse(w, http.StatusOK)
+			if tokens.IdToken != "" {
+				_ = json.NewEncoder(w).Encode(tokens)
+			} else {
+				_ = json.NewEncoder(w).Encode(res)
+			}
+			return
+		}
 	}
 }

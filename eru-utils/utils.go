@@ -456,7 +456,7 @@ func ExecuteDbFetch(ctx context.Context, db *sqlx.DB, query models.Queries) (out
 	return
 }
 
-func ExecuteDbSave(ctx context.Context, db *sqlx.DB, queries []models.Queries) (output [][]map[string]interface{}, err error) {
+func ExecuteDbSave(ctx context.Context, db *sqlx.DB, queries []*models.Queries) (output [][]map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ExecuteDbSave - Start")
 
 	tx := db.MustBegin()

@@ -19,6 +19,7 @@ type AuthI interface {
 	SetAuthDb(authDbI AuthDbI)
 	GetAuthDb() (authDbI AuthDbI)
 	Login(ctx context.Context, loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error)
+	Register(ctx context.Context, registerUser RegisterUser) (identity Identity, loginSuccess LoginSuccess, err error)
 	Logout(ctx context.Context, req *http.Request) (res interface{}, resStatusCode int, err error)
 	VerifyToken(ctx context.Context, tokenType string, token string) (res interface{}, err error)
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
@@ -28,7 +29,7 @@ type AuthI interface {
 	PerformPreSaveTask(ctx context.Context) (err error)
 	PerformPreDeleteTask(ctx context.Context) (err error)
 	GetUser(ctx context.Context, userId string) (identity Identity, err error)
-	UpdateUser(ctx context.Context, identityToUpdate Identity) (err error)
+	UpdateUser(ctx context.Context, identityToUpdate Identity, userId string, token map[string]interface{}) (err error)
 	ChangePassword(ctx context.Context, req *http.Request, changePasswordObj ChangePassword) (err error)
 	GenerateRecoveryCode(ctx context.Context, recoveryIdentifier RecoveryPostBody) (msg string, err error)
 	CompleteRecovery(ctx context.Context, recoveryPassword RecoveryPassword, cookies []*http.Cookie) (msg string, err error)
@@ -37,8 +38,13 @@ type AuthI interface {
 }
 
 const (
-	SELECT_IDENTITY_SUB = "select * from eruauth_identities where identity_provider_id = ???"
-	INSERT_IDENTITY     = "insert into eruauth_identities (identity_id,identity_provider,identity_provider_id,traits,attributes) values (???,???,???,???,???)"
+	SELECT_IDENTITY_SUB         = "select * from eruauth_identities where identity_provider_id = ???"
+	INSERT_IDENTITY             = "insert into eruauth_identities (identity_id,identity_provider,identity_provider_id,traits,attributes) values (???,???,???,???,???)"
+	UPDATE_IDENTITY             = "update eruauth_identities set traits = ??? , attributes = ??? where identity_id = ???"
+	INSERT_IDENTITY_CREDENTIALS = "insert into eruauth_identity_credentials (identity_credential_id , identity_id, identity_credential, identity_credential_type) values (???,???,???,???)"
+	DELETE_IDENTITY_CREDENTIALS = "delete from eruauth_identity_credentials where identity_id = ??? and identity_credential_type = ??? "
+	INSERT_IDENTITY_PASSWORD    = "insert into eruauth_identity_passwords (identity_password_id,identity_id,identity_password) values (??? , ??? , ???)"
+	SELECT_LOGIN                = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a inner join eruauth_identity_credentials b on a.identity_id=b.identity_id and b.identity_credential= ??? inner join eruauth_identity_passwords c on a.identity_id=c.identity_id and c.identity_password= ???"
 )
 
 type ChangePassword struct {
@@ -110,11 +116,18 @@ type Identifiers struct {
 }
 
 type UserTraits struct {
-	FirstName string `json:"firstName"`
-	LastName  string `json:"lastName"`
-	Email     string `json:"email"`
-	Mobile    string `json:"mobile"`
-	Username  string `json:"userName"`
+	FirstName      string `json:"firstName"`
+	LastName       string `json:"lastName"`
+	Email          string `json:"email"`
+	Mobile         string `json:"mobile"`
+	Username       string `json:"userName"`
+	EmailVerified  bool   `json:"emailVerified"`
+	MobileVerified bool   `json:"mobileVerified"`
+}
+
+type RegisterUser struct {
+	UserTraits
+	Password string `json:"password"`
 }
 
 func (auth *Auth) SetAuthDb(authDbI AuthDbI) {
@@ -230,7 +243,7 @@ func (auth *Auth) GetUser(ctx context.Context, userId string) (identity Identity
 	return Identity{}, err
 }
 
-func (auth *Auth) UpdateUser(ctx context.Context, identityToUpdate Identity) (err error) {
+func (auth *Auth) UpdateUser(ctx context.Context, identityToUpdate Identity, userId string, token map[string]interface{}) (err error) {
 	err = errors.New("UpdateUser Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return err
@@ -244,6 +257,12 @@ func (auth *Auth) FetchTokens(ctx context.Context, refresh_token string) (res in
 
 func (auth *Auth) Login(ctx context.Context, loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
 	err = errors.New("Login Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return Identity{}, LoginSuccess{}, err
+}
+
+func (auth *Auth) Register(ctx context.Context, registerUser RegisterUser) (identity Identity, loginSuccess LoginSuccess, err error) {
+	err = errors.New("Register Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return Identity{}, LoginSuccess{}, err
 }
@@ -266,8 +285,35 @@ func GetAuth(authType string) AuthI {
 		return new(KratosHydraAuth)
 	case "MICROSOFT":
 		return new(MsAuth)
+	case "ERU":
+		return new(EruAuth)
 	default:
 		return new(Auth)
 	}
 	return nil
+}
+
+func getTokenAttributes(ctx context.Context, token map[string]interface{}) (tokenObj map[string]interface{}, tokenErr bool) {
+	if tokenIdentity, tokenIdentityOk := token["identity"]; tokenIdentityOk {
+		if tokenIdentityMap, tokenIdentityMapOk := tokenIdentity.(map[string]interface{}); tokenIdentityMapOk {
+			if tokenAttrs, tokenAttrsOk := tokenIdentityMap["attributes"]; tokenAttrsOk {
+				if tokenAttrsMap, tokenAttrsMapOK := tokenAttrs.(map[string]interface{}); tokenAttrsMapOK {
+					tokenObj = tokenAttrsMap
+				} else {
+					logs.WithContext(ctx).Error("token attributes is not a map")
+					tokenErr = true
+				}
+			} else {
+				logs.WithContext(ctx).Error("token attributes not found")
+				tokenErr = true
+			}
+		} else {
+			logs.WithContext(ctx).Error("token identity is not a map")
+			tokenErr = true
+		}
+	} else {
+		logs.WithContext(ctx).Error("token identity not found")
+		tokenErr = true
+	}
+	return
 }

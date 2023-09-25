@@ -884,9 +884,9 @@ func (kratosHydraAuth *KratosHydraAuth) getKratosUser(ctx context.Context, userI
 	}
 }
 
-func (kratosHydraAuth *KratosHydraAuth) UpdateUser(ctx context.Context, identityToUpdate Identity) (err error) {
+func (kratosHydraAuth *KratosHydraAuth) UpdateUser(ctx context.Context, identityToUpdate Identity, userId string, token map[string]interface{}) (err error) {
 	logs.WithContext(ctx).Debug("UpdateUser - Start")
-	userId := identityToUpdate.Attributes["sub"].(string)
+	//userId := identityToUpdate.Attributes["sub"].(string)
 	kratosIdentity, err := kratosHydraAuth.getKratosUser(ctx, userId)
 	err = convertFromIdentity(ctx, identityToUpdate, &kratosIdentity)
 	if err != nil {

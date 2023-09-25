@@ -118,17 +118,19 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 	loginRes, _, _, _, loginErr := utils.CallHttp(ctx, http.MethodPost, msAuth.MsConfig.TokenUrl, headers, msLoginFormBody, nil, nil, nil)
 	if loginErr != nil {
 		logs.WithContext(ctx).Error(fmt.Sprint(map[string]interface{}{"request_id": loginPostBody.IdpRequestId, "error": fmt.Sprint(loginErr)}))
-		return Identity{}, LoginSuccess{}, errors.New("Something Went Wrong, Please Try Again.")
+		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 	}
 
-	//idToken := "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Ii1LSTNROW5OUjdiUm9meG1lWm9YcWJIWkdldyJ9.eyJhdWQiOiI5OTFlMDZjMy0zYmUwLTQ3ZTAtOGVjYS02MTBhMjk4NzkwMmEiLCJpc3MiOiJodHRwczovL2xvZ2luLm1pY3Jvc29mdG9ubGluZS5jb20vZGViM2Q3MzktMzMxNS00YzE2LThiNDgtMGFmMDVlYjM1NDQ4L3YyLjAiLCJpYXQiOjE2OTUxMzg3MDMsIm5iZiI6MTY5NTEzODcwMywiZXhwIjoxNjk1MTQyNjAzLCJhaW8iOiJBVFFBeS84VUFBQUExZkxBcStibkJUTWlIRnYyNCtXcm1GUGk5dERBdDhIaWZvSGFyQ0tPNDdBcE0rUTNBK1pkdEEzYWtWYkdBckR6IiwibmFtZSI6IkFsdGFmIEJhcmFkaWEiLCJub25jZSI6IjM0MzczZGQ2LWMzMmUtNGFlNC05ZjAxLTQ2NmQ4NTAzNWQwZCIsIm9pZCI6IjBmNmIxNTRiLWIxYzItNDIyNi1hMGRjLTYzMzlmZDQ2ZTc3ZSIsInByZWZlcnJlZF91c2VybmFtZSI6ImFsdGFmQGVydS10ZWNoLmNvbSIsInJoIjoiMC5BVDBBT2RlejNoVXpGa3lMU0Fyd1hyTlVTTU1HSHBuZ08tQkhqc3BoQ2ltSGtDcWhBR0UuIiwic3ViIjoiNmowM2pab3ozWXVKc2NDMHZLSDNtbDB0MEtyN19mYVhxc3U2ZlA0TEpOSSIsInRpZCI6ImRlYjNkNzM5LTMzMTUtNGMxNi04YjQ4LTBhZjA1ZWIzNTQ0OCIsInV0aSI6Ii12TTNac1dVZ0VpQnItZjVkbkphQUEiLCJ2ZXIiOiIyLjAifQ.QTjDYbfjzWC4vGz6CfVJE3DplC75z8jgGwAUKkoKw9zukiXjzy9p4lqXpHeajUTq7H9qXIBlt10tZEsvybCzrfXV0stpUy_TxSXXD_02alDB1ut6yrQVVC1pGzWbaFFcY2WMSH2tiLvEcrOc3fe-yc_4G-QbMfVTiSwXjJJOfyttP37Us0vbtKSXIWaikx0GXReGbwLyMVLWii233qAisRcAQpK178TcWj5Tu9q3WlYBGjhS9TBI-ZZ4_OkwtCyGjP7G1LalikxCVrjt9NbkJPDIqg61omebWpZftI5EhcqpMQPOtp-GMFpjzxsfTZ4WIFVP1QByB8AXb183rBtr0A"
 	idToken := ""
+
 	if lMap, lMapOk := loginRes.(map[string]interface{}); lMapOk {
+
 		if lToken, lTokensOk := lMap["id_token"]; lTokensOk {
 			logs.WithContext(ctx).Info(fmt.Sprint(loginRes))
 			idToken = lToken.(string)
 		}
 	}
+
 	logs.WithContext(ctx).Info(idToken)
 
 	tokens, tokensErr := jwt.DecryptTokenJWK(ctx, idToken, msAuth.MsConfig.JwkUrl)
@@ -149,7 +151,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 		}
 		if nonce != loginPostBody.Nonce {
 			logs.WithContext(ctx).Error(fmt.Sprint("incorrect nonce : ", nonce, " expected nonce : ", loginPostBody.Nonce))
-			return Identity{}, LoginSuccess{}, errors.New("Something Went Wrong, Please Try Again.")
+			return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 		}
 
 		if tokenSub, tokenSubOk := tokenMap["sub"]; tokenSubOk {
@@ -162,7 +164,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 		if outputErr != nil {
 			err = outputErr
 			logs.WithContext(ctx).Error(err.Error())
-			return Identity{}, LoginSuccess{}, errors.New("Something Went Wrong, Please Try Again.")
+			return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 		}
 		if identity.Attributes == nil {
 			identity.Attributes = make(map[string]interface{})
@@ -204,7 +206,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 			if userTraitsBytesErr != nil {
 				err = userTraitsBytesErr
 				logs.WithContext(ctx).Error(err.Error())
-				return Identity{}, LoginSuccess{}, errors.New("Something Went Wrong, Please Try Again.")
+				return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 			}
 
 			identity.Id = uuid.New().String()
@@ -222,19 +224,19 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 			if userAttrsBytesErr != nil {
 				err = userAttrsBytesErr
 				logs.WithContext(ctx).Error(err.Error())
-				return Identity{}, LoginSuccess{}, errors.New("Something Went Wrong, Please Try Again.")
+				return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 			}
 
-			var insertQueries []models.Queries
+			var insertQueries []*models.Queries
 			insertQuery := models.Queries{}
 			insertQuery.Query = msAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY)
 			insertQuery.Vals = append(insertQuery.Vals, identity.Id, msAuth.AuthName, sub, string(userTraitsBytes), string(userAttrsBytes))
-			insertQueries = append(insertQueries, insertQuery)
+			insertQueries = append(insertQueries, &insertQuery)
 			insertOutput, err := utils.ExecuteDbSave(ctx, msAuth.AuthDb.GetConn(), insertQueries)
 			logs.WithContext(ctx).Info(fmt.Sprint(insertOutput))
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
-				return Identity{}, LoginSuccess{}, errors.New("Something Went Wrong, Please Try Again.")
+				return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 			}
 		} else {
 			identity.Id = output[0]["identity_id"].(string)
@@ -257,7 +259,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 		}
 	} else {
 		logs.WithContext(ctx).Error("token recevied from IDP is not a map")
-		return Identity{}, LoginSuccess{}, errors.New("Something Went Wrong, Please Try Again.")
+		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 	}
 
 	if withTokens {
