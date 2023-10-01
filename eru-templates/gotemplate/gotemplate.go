@@ -8,19 +8,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	sprig "github.com/Masterminds/sprig/v3"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
 	erumd5 "github.com/eru-tech/eru/eru-crypto/md5"
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
 	"math"
 	"strconv"
 	"strings"
-	"time"
-	//"strconv"
-	"github.com/google/uuid"
 	"text/template"
+	"time"
 )
 
 type GoTemplate struct {
@@ -417,11 +417,14 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 		"null": func() interface{} {
 			return nil
 		},
+		"char_index": func(s string, c string) int {
+			return strings.Index(s, c)
+		},
 	}
 
 	buf := &bytes.Buffer{}
 
-	t := template.Must(template.New(goTmpl.Name).Funcs(funcs).Parse(goTmpl.Template))
+	t := template.Must(template.New(goTmpl.Name).Funcs(funcs).Funcs(sprig.FuncMap()).Parse(goTmpl.Template))
 
 	if err := t.Execute(buf, obj); err != nil {
 		logs.WithContext(ctx).Error(err.Error())

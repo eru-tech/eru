@@ -284,7 +284,7 @@ func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, 
 	var errArray []string
 	for k, v := range cloneFunc.FuncSteps {
 		fs := cloneFunc.FuncSteps[k]
-		err = ms.loadRoutesForFunction(ctx, fs, v.RouteName, projectId, host, v.Path, method, headers, s)
+		err = ms.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, host, v.Path, method, headers, s)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			errArray = append(errArray, err.Error())
@@ -298,7 +298,7 @@ func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, 
 	return
 }
 
-func (ms *ModuleStore) loadRoutesForFunction(ctx context.Context, funcStep *routes.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (err error) {
+func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *routes.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug(fmt.Sprint("loadRoutesForFunction - Start : ", funcStep.GetRouteName()))
 	var errArray []string
 	r := routes.Route{}
@@ -363,7 +363,7 @@ func (ms *ModuleStore) loadRoutesForFunction(ctx context.Context, funcStep *rout
 	for ck, cv := range funcStep.FuncSteps {
 		logs.WithContext(ctx).Info("inside funcStep.FuncSteps - child iteration")
 		fs := funcStep.FuncSteps[ck]
-		err = ms.loadRoutesForFunction(ctx, fs, cv.RouteName, projectId, host, cv.Path, method, headers, s)
+		err = ms.LoadRoutesForFunction(ctx, fs, cv.RouteName, projectId, host, cv.Path, method, headers, s)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			errArray = append(errArray, err.Error())

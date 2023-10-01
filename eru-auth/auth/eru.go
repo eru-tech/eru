@@ -12,8 +12,10 @@ import (
 	models "github.com/eru-tech/eru/eru-models"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
+	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
 type EruAuth struct {
@@ -26,7 +28,7 @@ type EruConfig struct {
 	Identifiers Identifiers `json:"identifiers" eru:"required"`
 }
 
-func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser) (identity Identity, loginSuccess LoginSuccess, err error) {
+func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser, projectId string) (identity Identity, loginSuccess LoginSuccess, err error) {
 	logs.WithContext(ctx).Debug("Register - Start")
 
 	if registerUser.Password == "" {
@@ -177,6 +179,13 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser)
 		err = cosentAcceptErr
 		return
 	}
+
+	if eruAuth.Hooks.SWEF.FuncGroupName != "" {
+		eruAuth.sendWelcomeEmail(ctx, userTraits.Email, userTraits.FirstName, projectId, "email")
+	} else {
+		logs.WithContext(ctx).Info("SWEF hook not defined")
+	}
+
 	return identity, eruTokens, nil
 }
 
@@ -492,5 +501,240 @@ func (eruAuth *EruAuth) makeTokens(ctx context.Context, identity Identity) (eruT
 	identityHolder["identity"] = identity
 	logs.WithContext(ctx).Info(fmt.Sprint(identity.Attributes))
 	eruTokens, err = eruAuth.Hydra.AcceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
+	return
+}
+
+func (eruAuth *EruAuth) GenerateRecoveryCode(ctx context.Context, recoveryIdentifier RecoveryPostBody, projectId string, silentFlag bool) (msg string, err error) {
+	logs.WithContext(ctx).Debug("GenerateRecoveryCode - Start")
+
+	recoveryQuery := models.Queries{}
+	recoveryQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY_CREDENTIAL)
+	recoveryQuery.Vals = append(recoveryQuery.Vals, recoveryIdentifier.Username)
+	recoveryQuery.Rank = 1
+
+	recoveryOutput, err := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), recoveryQuery)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return "", errors.New("something went wrong - please try again")
+	}
+
+	if len(recoveryOutput) == 0 {
+		err = errors.New("user not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return "", err
+	}
+	name := ""
+	if fn, fnOk := recoveryOutput[0]["first_name"]; fnOk {
+		name = fn.(string)
+	}
+	credentialType := ""
+	if ct, ctOk := recoveryOutput[0]["identity_credential_type"]; ctOk {
+		credentialType = ct.(string)
+	}
+	otp := ""
+	otp, err = eruAuth.generateOtp(ctx, recoveryIdentifier.Username, credentialType, OTP_PURPOSE_RECOVERY, silentFlag)
+	if !silentFlag {
+		err = eruAuth.sendCode(ctx, recoveryIdentifier.Username, otp, fmt.Sprint(time.Now().Add(time.Minute*5).Format("02 Jan 06 15:04 MST")), name, projectId, OTP_PURPOSE_RECOVERY, credentialType)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	return
+}
+
+func (eruAuth *EruAuth) GenerateVerifyCode(ctx context.Context, verifyIdentifier VerifyPostBody, projectId string, silentFlag bool) (msg string, err error) {
+	logs.WithContext(ctx).Debug("GenerateVerifyCode - Start")
+	verifyQuery := models.Queries{}
+	verifyQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY_CREDENTIAL)
+	verifyQuery.Vals = append(verifyQuery.Vals, verifyIdentifier.Username)
+	verifyQuery.Rank = 1
+
+	verifyOutput, err := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), verifyQuery)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return "", errors.New("something went wrong - please try again")
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(verifyOutput))
+	if len(verifyOutput) == 0 {
+		err = errors.New("user not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return "", err
+	}
+	name := " "
+	if fn, fnOk := verifyOutput[0]["first_name"]; fnOk {
+		name = fn.(string)
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("name = ", name))
+	if ct, ctOk := verifyOutput[0]["identity_credential_type"]; ctOk {
+		if verifyIdentifier.CredentialType != ct.(string) {
+			err = errors.New("user not found")
+			logs.WithContext(ctx).Error(err.Error())
+			return "", err
+		}
+	}
+	otp := ""
+	otp, err = eruAuth.generateOtp(ctx, verifyIdentifier.Username, verifyIdentifier.CredentialType, OTP_PURPOSE_VERIFY, silentFlag)
+
+	if !silentFlag {
+		err = eruAuth.sendCode(ctx, verifyIdentifier.Username, otp, fmt.Sprint(time.Now().Add(time.Minute*5).Format("02 Jan 06 15:04 MST")), name, projectId, OTP_PURPOSE_VERIFY, verifyIdentifier.CredentialType)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	return
+}
+
+func (eruAuth *EruAuth) VerifyCode(ctx context.Context, verifyCode VerifyCode, tokenObj map[string]interface{}, withToken bool) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("VerifyCode - Start")
+	verifyQuery := models.Queries{}
+	verifyQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, VERIFY_OTP)
+	verifyQuery.Vals = append(verifyQuery.Vals, verifyCode.UserId, verifyCode.Code, verifyCode.Id, OTP_PURPOSE_VERIFY)
+	verifyQuery.Rank = 1
+
+	verifyOutput, err := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), verifyQuery)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, errors.New("something went wrong - please try again")
+	}
+
+	if len(verifyOutput) == 0 {
+		err = errors.New("code not found - please check and try again")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	credentialType := ""
+	if ct, ctOk := verifyOutput[0]["identity_credential_type"]; ctOk {
+		credentialType = ct.(string)
+	}
+
+	identity := Identity{}
+	identity.Id = verifyCode.UserId
+	identity.Attributes = make(map[string]interface{})
+	if credentialType == "email" {
+		identity.Attributes["emailVerified"] = true
+	}
+	if credentialType == "mobile" {
+		identity.Attributes["mobileVerified"] = true
+	}
+	err = eruAuth.UpdateUser(ctx, identity, verifyCode.UserId, tokenObj)
+
+	if withToken {
+		return eruAuth.FetchTokens(ctx, "", verifyCode.UserId)
+	}
+	return
+}
+
+func (eruAuth *EruAuth) ChangePassword(ctx context.Context, tokenObj map[string]interface{}, userId string, changePasswordObj ChangePassword) (err error) {
+	logs.WithContext(ctx).Debug("ChangePassword - Start")
+
+	loginQuery := models.Queries{}
+	loginQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, SELECT_LOGIN_ID)
+	loginQuery.Vals = append(loginQuery.Vals, changePasswordObj.OldPassword, userId)
+	loginQuery.Rank = 1
+
+	loginOutput, err := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), loginQuery)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return errors.New("something went wrong - please try again")
+	}
+
+	if len(loginOutput) == 0 {
+		err = errors.New("invalid credentials - please try again")
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	var queries []*models.Queries
+	cpQuery := models.Queries{}
+	cpQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, CHANGE_PASSWORD)
+	cpQuery.Vals = append(cpQuery.Vals, changePasswordObj.NewPassword, userId)
+	cpQuery.Rank = 1
+	queries = append(queries, &cpQuery)
+
+	_, err = utils.ExecuteDbSave(ctx, eruAuth.AuthDb.GetConn(), queries)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return errors.New("something went wrong - please try again")
+	}
+	return
+}
+
+func (eruAuth *EruAuth) VerifyRecovery(ctx context.Context, recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error) {
+	verifyQuery := models.Queries{}
+	verifyQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, VERIFY_RECOVERY_OTP)
+	verifyQuery.Vals = append(verifyQuery.Vals, recoveryPassword.Code, recoveryPassword.Id, OTP_PURPOSE_RECOVERY)
+	verifyQuery.Rank = 1
+
+	verifyOutput, err := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), verifyQuery)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, errors.New("something went wrong - please try again")
+	}
+
+	if len(verifyOutput) == 0 {
+		err = errors.New("code not found - please check and try again")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, err
+	}
+	userId := ""
+	if id, idOk := verifyOutput[0]["identity_id"]; idOk {
+		userId = id.(string)
+	} else {
+		err = errors.New("user not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, err
+	}
+
+	var queries []*models.Queries
+	cpQuery := models.Queries{}
+	cpQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, CHANGE_PASSWORD)
+	cpQuery.Vals = append(cpQuery.Vals, recoveryPassword.Password, userId)
+	cpQuery.Rank = 1
+	queries = append(queries, &cpQuery)
+
+	_, err = utils.ExecuteDbSave(ctx, eruAuth.AuthDb.GetConn(), queries)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, errors.New("something went wrong - please try again")
+	}
+	res = make(map[string]string)
+	res["status"] = "account recovery successful"
+	return
+}
+
+func (eruAuth *EruAuth) RemoveUser(ctx context.Context, removeUser RemoveUser) (err error) {
+	logs.WithContext(ctx).Debug("RemoveUser - Start")
+
+	var queries []*models.Queries
+	idiQuery := models.Queries{}
+	idiQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, INSERT_DELETED_IDENTITY)
+	idiQuery.Vals = append(idiQuery.Vals, removeUser.UserId)
+	idiQuery.Rank = 1
+	queries = append(queries, &idiQuery)
+
+	dipQuery := models.Queries{}
+	dipQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, DELETE_IDENTITY_PASSWORD)
+	dipQuery.Vals = append(dipQuery.Vals, removeUser.UserId)
+	dipQuery.Rank = 2
+	queries = append(queries, &dipQuery)
+
+	dicQuery := models.Queries{}
+	dicQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, DELETE_IDENTITY_CREDENTIALS_ID)
+	dicQuery.Vals = append(dicQuery.Vals, removeUser.UserId)
+	dicQuery.Rank = 3
+	queries = append(queries, &dicQuery)
+
+	diQuery := models.Queries{}
+	diQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, DELETE_IDENTITY)
+	diQuery.Vals = append(diQuery.Vals, removeUser.UserId)
+	diQuery.Rank = 4
+	queries = append(queries, &diQuery)
+
+	_, err = utils.ExecuteDbSave(ctx, eruAuth.AuthDb.GetConn(), queries)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return errors.New("something went wrong - please try again")
+	}
 	return
 }

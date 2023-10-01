@@ -10,6 +10,7 @@ import (
 	erujwt "github.com/eru-tech/eru/eru-crypto/jwt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 	"io"
 	"io/ioutil"
@@ -46,6 +47,9 @@ func loadRequestVars(ctx context.Context, vars *TemplateVars, request *http.Requ
 	for k, v := range request.Header {
 		vars.Headers[k] = v
 	}
+
+	utils.PrintRequestBody(ctx, request, "printing request from loadRequestVars")
+
 	vars.Params = make(map[string]interface{})
 	for k, v := range request.URL.Query() {
 		vars.Params[k] = v
@@ -562,8 +566,6 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 
 func clubResponses(ctx context.Context, responses []*http.Response, trResVars []*TemplateVars, errs []error) (response *http.Response, trResVar *TemplateVars, err error) {
 	logs.WithContext(ctx).Debug("clubResponses - Start")
-	logs.WithContext(ctx).Info(fmt.Sprint("len(responses) = ", len(responses)))
-	logs.WithContext(ctx).Info(fmt.Sprint("len(errs) = ", len(errs)))
 	if len(errs) > 0 {
 		logs.WithContext(ctx).Error(fmt.Sprint(errs))
 	}

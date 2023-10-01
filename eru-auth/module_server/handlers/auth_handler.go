@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"github.com/gorilla/mux"
 	"math/rand"
 	"net/http"
+	"strconv"
 )
 
 func UserInfoHandler(s module_store.ModuleStoreI) http.HandlerFunc {
@@ -242,15 +244,6 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		if authName == "ms" || authName == "eru" {
-			msParams, err = s.GetPkceEvent(r.Context(), loginPostBody.IdpRequestId, s)
-			if err != nil {
-				server_handlers.FormatResponse(w, 400)
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-				return
-			}
-		}
-
 		loginPostBody.CodeVerifier = msParams.CodeVerifier
 		loginPostBody.Nonce = msParams.Nonce
 		res, tokens, err := authObjI.Login(r.Context(), loginPostBody, true)
@@ -277,10 +270,23 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		authName := vars["authname"]
 
+		params := r.URL.Query()
+		isSilentStr := params.Get("silent")
+		silentFlag := false
+		silentFlag, _ = strconv.ParseBool(isSilentStr)
+
 		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
 			return
 		}
 
@@ -295,18 +301,149 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		res, err := authObjI.GenerateRecoveryCode(r.Context(), recoveryPostBody)
+		_, err = authObjI.GenerateRecoveryCode(r.Context(), recoveryPostBody, projectId, silentFlag)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
 			server_handlers.FormatResponse(w, http.StatusOK)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": res})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "code sent successfully"})
 			return
 		}
 	}
 }
+
+func GetVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("GetVerifyCodeHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		params := r.URL.Query()
+		isSilentStr := params.Get("silent")
+		silentFlag := false
+		var silentFlagErr error
+		silentFlag, silentFlagErr = strconv.ParseBool(isSilentStr)
+		logs.WithContext(r.Context()).Info(fmt.Sprint("silentFlag = ", silentFlag))
+		if silentFlagErr != nil {
+			logs.WithContext(r.Context()).Info(silentFlagErr.Error())
+		}
+
+		verifyPostBodyFromReq := json.NewDecoder(r.Body)
+		verifyPostBodyFromReq.DisallowUnknownFields()
+
+		var verifyPostBody auth.VerifyPostBody
+
+		if err := verifyPostBodyFromReq.Decode(&verifyPostBody); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+
+		}
+
+		_, err = authObjI.GenerateVerifyCode(r.Context(), verifyPostBody, projectId, silentFlag)
+		if err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			server_handlers.FormatResponse(w, http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "code sent successfully"})
+			return
+		}
+	}
+}
+
+func CheckVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("CheckVerifyCodeHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+
+		}
+
+		verifyReq := json.NewDecoder(r.Body)
+		verifyReq.DisallowUnknownFields()
+
+		var verifyCode auth.VerifyCode
+
+		if err = verifyReq.Decode(&verifyCode); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "TokenHeaderKey")
+		if tokenKeyErr != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": tokenKeyErr.Error()})
+			return
+		}
+		tokenStr := r.Header.Get(tokenKey.(string))
+		tokenObj, tokenObjErr := getToken(r.Context(), tokenStr)
+		if tokenObjErr != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": tokenObjErr.Error()})
+			return
+		}
+		userId, userIdErr := getUserIdFromToken(tokenObj)
+		if userIdErr != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": userIdErr.Error()})
+			return
+		}
+		verifyCode.UserId = userId
+
+		res, err := authObjI.VerifyCode(r.Context(), verifyCode, tokenObj, true)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "not verified"})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		if res != nil {
+			_ = json.NewEncoder(w).Encode(res)
+		} else {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "verified"})
+		}
+		return
+	}
+}
+
 func VerifyRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("VerifyRecoveryCodeHandler - Start")
@@ -320,7 +457,14 @@ func VerifyRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+		}
 		recoveryReq := json.NewDecoder(r.Body)
 		recoveryReq.DisallowUnknownFields()
 
@@ -440,7 +584,6 @@ func GenerateOtpHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": mterr.Error()})
 				return
 			}
-			//todo : to generate otp based on project setting 4 digits or 6 digits
 			otp := fmt.Sprint(rand.Intn(999999-100000) + 100000)
 			res, senderr := gatewayI.Send(r.Context(), mt.GetMessageText(otp), mt.TemplateId, r.URL.Query())
 			if senderr != nil {
@@ -561,35 +704,22 @@ func UpdateUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		identity.Attributes = userAttributes
 
 		tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "TokenHeaderKey")
-		userId := ""
-		tokenObj := make(map[string]interface{})
-		if tokenKeyErr == nil {
-
-			tokenStr := r.Header.Get(tokenKey.(string))
-
-			if tokenStr != "" {
-				err = json.Unmarshal([]byte(tokenStr), &tokenObj)
-				if err != nil {
-					logs.WithContext(r.Context()).Error(fmt.Sprint("error while unmarshalling token claim : ", err.Error()))
-					server_handlers.FormatResponse(w, 400)
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-					return
-				}
-				logs.WithContext(r.Context()).Info(fmt.Sprint(tokenObj))
-				if iObj, iObjOk := tokenObj["identity"]; iObjOk {
-					if iObjMap, iObjMapOk := iObj.(map[string]interface{}); iObjMapOk {
-						if uid, userIdOk := iObjMap["id"]; userIdOk {
-							userId = uid.(string)
-						}
-					}
-				}
-			}
-		}
-		if userId == "" {
-			err = errors.New("userid not found")
-			logs.WithContext(r.Context()).Error(err.Error())
+		if tokenKeyErr != nil {
 			server_handlers.FormatResponse(w, 400)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": tokenKeyErr.Error()})
+			return
+		}
+		tokenStr := r.Header.Get(tokenKey.(string))
+		tokenObj, tokenObjErr := getToken(r.Context(), tokenStr)
+		if tokenObjErr != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": tokenObjErr.Error()})
+			return
+		}
+		userId, userIdErr := getUserIdFromToken(tokenObj)
+		if userIdErr != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": userIdErr.Error()})
 			return
 		}
 		identity.Id = userId
@@ -629,8 +759,36 @@ func ChangePasswordHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
 
-		err = authObjI.ChangePassword(r.Context(), r, changePasswordObj)
+		}
+		tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "TokenHeaderKey")
+		if tokenKeyErr != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": tokenKeyErr.Error()})
+			return
+		}
+		tokenStr := r.Header.Get(tokenKey.(string))
+		tokenObj, tokenObjErr := getToken(r.Context(), tokenStr)
+		if tokenObjErr != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": tokenObjErr.Error()})
+			return
+		}
+		userId, userIdErr := getUserIdFromToken(tokenObj)
+		if userIdErr != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": userIdErr.Error()})
+			return
+		}
+
+		err = authObjI.ChangePassword(r.Context(), tokenObj, userId, changePasswordObj)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -713,7 +871,7 @@ func RegisterHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		res, tokens, err := authObjI.Register(r.Context(), registerPostBody)
+		res, tokens, err := authObjI.Register(r.Context(), registerPostBody, projectId)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -727,5 +885,79 @@ func RegisterHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 			return
 		}
+	}
+}
+
+func getToken(ctx context.Context, tokenStr string) (tokenObj map[string]interface{}, err error) {
+	if tokenStr != "" {
+		err = json.Unmarshal([]byte(tokenStr), &tokenObj)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("error while unmarshalling token claim : ", err.Error()))
+			return
+		}
+	} else {
+		err = errors.New("token not found")
+	}
+	return
+}
+
+func getUserIdFromToken(tokenObj map[string]interface{}) (userId string, err error) {
+	if iObj, iObjOk := tokenObj["identity"]; iObjOk {
+		if iObjMap, iObjMapOk := iObj.(map[string]interface{}); iObjMapOk {
+			if uid, userIdOk := iObjMap["id"]; userIdOk {
+				userId = uid.(string)
+			}
+		}
+	}
+	if userId == "" {
+		err = errors.New("userid not found")
+		return
+	}
+	return
+}
+
+func RemoveIdentityHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("RemoveIdentityHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+
+		}
+
+		removeUserPostBodyFromReq := json.NewDecoder(r.Body)
+		removeUserPostBodyFromReq.DisallowUnknownFields()
+
+		var removeUserPostBody auth.RemoveUser
+
+		if err = removeUserPostBodyFromReq.Decode(&removeUserPostBody); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		err = authObjI.RemoveUser(r.Context(), removeUserPostBody)
+		if err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "identity deleted successfully"})
+		return
 	}
 }

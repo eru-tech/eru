@@ -107,7 +107,11 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 	}()
 	loopCounter := 0
 	for _, fs := range funcSteps {
-		funcJob := FuncJob{loopCounter, req, fs, reqVars, resVars, "", mainRouteName, funcThread, loopThread, "true"}
+		r, rErr := CloneRequest(ctx, req)
+		if rErr != nil {
+			logs.WithContext(ctx).Error(rErr.Error())
+		}
+		funcJob := FuncJob{loopCounter, r, fs, reqVars, resVars, "", mainRouteName, funcThread, loopThread, "true"}
 		funcJobs <- funcJob
 		loopCounter++
 	}

@@ -81,7 +81,7 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 
 	var funcJobs = make(chan FuncJob, 10)
 	var funcResults = make(chan FuncResult, 10)
-	startTime := time.Now()
+	//startTime := time.Now()
 	go allocateFunc(ctx, request, funcSteps, reqVars, resVars, funcJobs, mainRouteName, funcThreads, loopThreads)
 	done := make(chan bool)
 
@@ -109,9 +109,9 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 
 	createWorkerPoolFunc(ctx, noOfWorkers, funcJobs, funcResults)
 	<-done
-	endTime := time.Now()
-	diff := endTime.Sub(startTime)
-	logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
+	//endTime := time.Now()
+	//diff := endTime.Sub(startTime)
+	//logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
 	response, _, err = clubResponses(ctx, responses, nil, errs)
 
 	return
@@ -383,14 +383,10 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	var loopArray []interface{}
 	if funcStep.LoopVariable != "" {
 		fvars := &FuncTemplateVars{}
-		logs.WithContext(ctx).Info(fmt.Sprint(vars.LoopVars))
-		logs.WithContext(ctx).Info(fmt.Sprint(vars.LoopVar))
-		logs.WithContext(ctx).Info(fmt.Sprint("funcStep.LoopVariable = ", funcStep.LoopVariable))
 		fvars.Vars = vars
 		fvars.ResVars = resVars
 		fvars.ReqVars = reqVars
 		output, outputErr := processTemplate(ctx, funcStep.GetRouteName(), funcStep.LoopVariable, fvars, "json", "", "")
-		logs.WithContext(ctx).Info(fmt.Sprint("loop variable after template processing : ", string(output)))
 		if outputErr != nil {
 			err = outputErr
 			return
@@ -408,8 +404,6 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint("loopArray = ", loopArray))
-
 	} else {
 		//dummy row added to create a job
 		loopArray = append(loopArray, make(map[string]interface{}))

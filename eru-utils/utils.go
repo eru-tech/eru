@@ -73,6 +73,7 @@ func ValidateStruct(ctx context.Context, s interface{}, parentKey string) error 
 	for i := 0; i < f.NumField(); i++ {
 		isError := false
 		isRequired := false
+		isOptional := false
 		projectTags := f.Type().Field(i).Tag.Get("eru")
 		if strings.Contains(projectTags, "required") {
 			isRequired = true
@@ -81,7 +82,10 @@ func ValidateStruct(ctx context.Context, s interface{}, parentKey string) error 
 				isError = true
 			}
 		}
-		if !isError {
+		if strings.Contains(projectTags, "optional") {
+			isOptional = true
+		}
+		if !isError && !isOptional {
 			switch f.Field(i).Kind().String() {
 			case "struct":
 				e := ValidateStruct(ctx, f.Field(i).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name))

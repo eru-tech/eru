@@ -598,7 +598,7 @@ func (kratosHydraAuth *KratosHydraAuth) CompleteRecovery(ctx context.Context, re
 	return msg, err
 }
 
-func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(ctx context.Context, recoveryIdentifier RecoveryPostBody) (msg string, err error) {
+func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(ctx context.Context, recoveryIdentifier RecoveryPostBody, projectId string, silentFlag bool) (msg string, err error) {
 	logs.WithContext(ctx).Debug("GenerateRecoveryCode - Start")
 	userid := ""
 	firstName := ""
@@ -698,7 +698,7 @@ func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(ctx context.Context
 	rExpiryStr := rcResMap["expires_at"].(string)
 	rExpiryStr = rExpiryStr[0:strings.LastIndex(rExpiryStr, ".")]
 
-	err = kratosHydraAuth.sendRecoveryCode(ctx, recoveryIdentifier.Username, rCode, fmt.Sprint(rExpiryStr, " GMT"), firstName)
+	err = kratosHydraAuth.sendCode(ctx, recoveryIdentifier.Username, rCode, fmt.Sprint(rExpiryStr, " GMT"), firstName, projectId, OTP_PURPOSE_RECOVERY, "email")
 	if err != nil {
 		return "", err
 	}
@@ -902,21 +902,13 @@ func (kratosHydraAuth *KratosHydraAuth) UpdateUser(ctx context.Context, identity
 	return
 }
 
-func (kratosHydraAuth *KratosHydraAuth) ChangePassword(ctx context.Context, req *http.Request, changePassword ChangePassword) (err error) {
+func (kratosHydraAuth *KratosHydraAuth) ChangePassword(ctx context.Context, tokenObj map[string]interface{}, userId string, changePassword ChangePassword) (err error) {
 	logs.WithContext(ctx).Debug("ChangePassword - Start")
-	req.Header.Set("Origin", "")
+	headers := http.Header{}
+	headers.Set("Origin", "")
 	sessionToken := ""
 	identifier := ""
-	tokenObj := make(map[string]interface{})
-	//todo - remove hardcoding of claims and change it to projectConfig.TokenSecret.HeaderKey
-	tokenStr := req.Header.Get("Claims")
-	if tokenStr != "" {
-		err = json.Unmarshal([]byte(tokenStr), &tokenObj)
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			return err
-		}
-	}
+
 	if identity, ok := tokenObj["identity"]; ok {
 		i, e := json.Marshal(identity)
 		if e != nil {
@@ -946,13 +938,13 @@ func (kratosHydraAuth *KratosHydraAuth) ChangePassword(ctx context.Context, req 
 		logs.WithContext(ctx).Info(err.Error())
 		return
 	}
-	req.Header.Set("X-Session-Token", sessionToken)
+	headers.Set("X-Session-Token", sessionToken)
 	port := kratosHydraAuth.Kratos.PublicPort
 	if port != "" {
 		port = fmt.Sprint(":", port)
 	}
 
-	res, _, _, _, resErr := utils.CallHttp(ctx, http.MethodGet, fmt.Sprint(kratosHydraAuth.Kratos.PublicScheme, "://", kratosHydraAuth.Kratos.PublicHost, port, "/self-service/settings/api"), req.Header, nil, nil, nil, nil)
+	res, _, _, _, resErr := utils.CallHttp(ctx, http.MethodGet, fmt.Sprint(kratosHydraAuth.Kratos.PublicScheme, "://", kratosHydraAuth.Kratos.PublicHost, port, "/self-service/settings/api"), headers, nil, nil, nil, nil)
 	if resErr != nil {
 		err = resErr
 		return
@@ -977,7 +969,7 @@ func (kratosHydraAuth *KratosHydraAuth) ChangePassword(ctx context.Context, req 
 	changePasswordBody["method"] = "password"
 	changePasswordBody["password"] = changePassword.NewPassword
 
-	_, _, _, _, cpResErr := utils.CallHttp(ctx, http.MethodPost, fmt.Sprint(kratosHydraAuth.Kratos.PublicScheme, "://", kratosHydraAuth.Kratos.PublicHost, port, "/self-service/settings"), req.Header, nil, nil, flowParams, changePasswordBody)
+	_, _, _, _, cpResErr := utils.CallHttp(ctx, http.MethodPost, fmt.Sprint(kratosHydraAuth.Kratos.PublicScheme, "://", kratosHydraAuth.Kratos.PublicHost, port, "/self-service/settings"), headers, nil, nil, flowParams, changePasswordBody)
 	if cpResErr != nil {
 		err = cpResErr
 		errMap := make(map[string]interface{})
