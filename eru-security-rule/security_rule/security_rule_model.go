@@ -144,7 +144,6 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		templateStr := fmt.Sprint("{{ .", ruleValue[1], " }}")
 		goTmpl := gotemplate.GoTemplate{templateName, templateStr}
 		outputObj, err := goTmpl.Execute(ctx, vars["token"], outputType)
-		logs.WithContext(ctx).Info(fmt.Sprint("output = ", outputObj.(string)))
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
@@ -157,7 +156,6 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 				return nil, err
 			}
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint("output = ", string(output)))
 	} else {
 		err = errors.New("no variable prefix found")
 		logs.WithContext(ctx).Error(err.Error())

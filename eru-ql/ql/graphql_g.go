@@ -2,7 +2,6 @@ package ql
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -337,6 +336,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 
 func processWhereClause(ctx context.Context, val interface{}, parentKey string, mainTableName string, isJoinClause bool) (whereClause string, err string) { //, gqr *graphQLRead
 	logs.WithContext(ctx).Debug("processWhereClause - Start")
+
 	if val != nil {
 		if strings.HasPrefix(parentKey, "CONST_") {
 			parentKey = fmt.Sprint("'", strings.Replace(parentKey, "CONST_", "", 1), "'")
@@ -402,7 +402,13 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 						}
 						switch v.String() {
 						case "$gte", "$lte", "$gt", "$lt", "$eq", "$ne":
-							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, reflect.ValueOf(newVal), valSuffix))
+							valTmp := reflect.ValueOf(newVal).String()
+							if strings.HasPrefix(valTmp, "FIELD_") {
+								valTmp = strings.Replace(valTmp, "FIELD_", "", -1)
+								valPrefix = ""
+								valSuffix = ""
+							}
+							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, valTmp, valSuffix))
 						case "$like":
 							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, "%", reflect.ValueOf(newVal), "%", valSuffix))
 						case "$btw":
@@ -455,7 +461,6 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 							str, err = processWhereClause(ctx, newVal, eru_utils.ReplaceUnderscoresWithDots(v.String()), mainTableName, isJoinClause)
 							if str == "" {
 								logs.WithContext(ctx).Warn(fmt.Sprint("skipping whereclause for ", newVal, " as there is no value provided by user  : ", str))
-
 							} else {
 								tempArray = append(tempArray, str)
 							}
@@ -474,7 +479,7 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 			}
 
 		case reflect.String, reflect.Int, reflect.Float32, reflect.Float64:
-			var valPrefix, valSuffix = "", ""
+			var newVal, valPrefix, valSuffix = "", "", ""
 			if reflect.TypeOf(val).Kind().String() == "string" {
 				//TODO due to below statement - 2022-07-27T18:30:00.000Z date in filter is failing if passed in this format
 				//parse for date
@@ -482,8 +487,14 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 					valPrefix = "'"
 					valSuffix = "'"
 				}
+				newVal = reflect.ValueOf(val).String()
+				if strings.HasPrefix(newVal, "FIELD_") {
+					valPrefix = ""
+					valSuffix = ""
+					newVal = strings.Replace(newVal, "FIELD_", "", -1)
+				}
 			}
-			return fmt.Sprint(parentKey, " = ", valPrefix, reflect.ValueOf(val), valSuffix), ""
+			return fmt.Sprint(parentKey, " = ", valPrefix, newVal, valSuffix), ""
 		default:
 			return "", ""
 		}
@@ -556,22 +567,8 @@ func (sqlObj *SQLObjectQ) processSortClause(ctx context.Context, val interface{}
 }
 func (sqlObj *SQLObjectQ) processJoins(ctx context.Context, val []*OrderedMap) (strJoinClause string) {
 	logs.WithContext(ctx).Debug("processJoins - Start")
-	for _, obj := range val {
-		o, _ := json.Marshal(obj.Obj)
-		logs.WithContext(ctx).Debug(string(o))
-		logs.WithContext(ctx).Debug(fmt.Sprint("obj.Rank = ", obj.Rank))
-		logs.WithContext(ctx).Debug(fmt.Sprint("obj.Level = ", obj.Level))
-		logs.WithContext(ctx).Debug(fmt.Sprint("obj.SubLevel = ", obj.SubLevel))
-	}
+
 	sort.Sort(MapSorter(val))
-	logs.WithContext(ctx).Debug("after sorting")
-	for _, obj := range val {
-		o, _ := json.Marshal(obj.Obj)
-		logs.WithContext(ctx).Debug(string(o))
-		logs.WithContext(ctx).Debug(fmt.Sprint("obj.Rank = ", obj.Rank))
-		logs.WithContext(ctx).Debug(fmt.Sprint("obj.Level = ", obj.Level))
-		logs.WithContext(ctx).Debug(fmt.Sprint("obj.SubLevel = ", obj.SubLevel))
-	}
 
 	for _, obj := range val {
 		for tableName, v := range obj.Obj {
