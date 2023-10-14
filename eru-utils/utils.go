@@ -194,6 +194,9 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	logs.WithContext(ctx).Debug("ExecuteHttp - Start")
 	//req = req.WithContext(ctx)
 	//resp, err = httpClient.Do(req)
+	for _, c := range req.Cookies() {
+		logs.WithContext(ctx).Info(c.String())
+	}
 	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
 	return
 }
