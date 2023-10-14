@@ -2,6 +2,7 @@ package jwt
 
 import (
 	"context"
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -106,4 +107,19 @@ func DecryptTokenJWK(ctx context.Context, strToken string, jwkurl string) (objTo
 	err = errors.New("AUTH: JWT token could not be verified")
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err
+}
+func CreateJWT(ctx context.Context, privateKeyStr string, claimsMap map[string]interface{}) (tokenString string, err error) {
+	token := jwt.New(jwt.SigningMethodRS256)
+
+	var privateKey *rsa.PrivateKey
+	if privateKey, err = jwt.ParseRSAPrivateKeyFromPEM([]byte(privateKeyStr)); err != nil {
+		return
+	}
+
+	claims := token.Claims.(jwt.MapClaims)
+	for k, v := range claimsMap {
+		claims[k] = v
+	}
+	tokenString, err = token.SignedString(privateKey)
+	return
 }

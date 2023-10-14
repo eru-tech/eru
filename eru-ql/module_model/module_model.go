@@ -40,39 +40,31 @@ type StoreCompare struct {
 }
 
 type Project struct {
-	ProjectId     string                 `eru:"required"`
-	DataSources   map[string]*DataSource //DB alias is the key
-	MyQueries     map[string]*MyQuery    //queryName is key
-	ProjectConfig ProjectConfig
+	ProjectId       string                 `eru:"required"`
+	DataSources     map[string]*DataSource //DB alias is the key
+	MyQueries       map[string]*MyQuery    //queryName is key
+	ProjectSettings ProjectSettings
+}
+type ProjectSettings struct {
+	AesKey    string
+	ClaimsKey string
 }
 
-type AesKey struct {
-	Key string
-	//Bits int
-}
+/*
+	type AesKey struct {
+		Key string
+		//Bits int
+	}
 
-type ProjectConfig struct {
-	AesKey         AesKey
-	TokenSecret    TokenSecret
-	ProjectGitRepo ProjectGitRepo
-}
-
-type TokenSecret struct {
-	HeaderKey  string
-	SecretAlgo string
-	SecretKey  string
-	JwkUrl     string
-	Audience   []string
-	Issuer     []string
-}
-
-type ProjectGitRepo struct {
-	RepoName   string
-	BranchName string
-	AuthMode   string
-	AuthKey    string
-}
-
+	type TokenSecret struct {
+		HeaderKey  string
+		SecretAlgo string
+		SecretKey  string
+		JwkUrl     string
+		Audience   []string
+		Issuer     []string
+	}
+*/
 type MyQuery struct {
 	QueryName    string
 	Query        string
@@ -316,6 +308,9 @@ func (ds *DataSource) GetTableJoins(ctx context.Context, parentTableName string,
 func (ds *DataSource) AddTableJoins(ctx context.Context, tj *TableJoins) {
 	logs.WithContext(ctx).Debug("AddTableJoins - Start")
 	tempKey := fmt.Sprint(tj.Table1Name, "___", tj.Table2Name)
+	if ds.TableJoins == nil {
+		ds.TableJoins = make(map[string]*TableJoins)
+	}
 	ds.TableJoins[tempKey] = tj
 }
 func (ds *DataSource) RemoveTableJoins(ctx context.Context, tj *TableJoins) {

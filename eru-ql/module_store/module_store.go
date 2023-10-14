@@ -30,10 +30,10 @@ type ModuleStoreI interface {
 	SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error
 	GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error)
-	GetProjectConfigObject(ctx context.Context, projectId string) (pc module_model.ProjectConfig, err error)
+	GetProjectSettingsObject(ctx context.Context, projectId string) (pc module_model.ProjectSettings, err error)
 	GetProjectList(ctx context.Context) []map[string]interface{}
 	SetDataSourceConnections(ctx context.Context, realStore ModuleStoreI) (err error)
-	SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error
+	SaveProjectSettings(ctx context.Context, projectId string, projectConfig module_model.ProjectSettings, realStore ModuleStoreI) error
 	SaveDataSource(ctx context.Context, projectId string, datasource *module_model.DataSource, realStore ModuleStoreI) error
 	RemoveDataSource(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) error
 	GetDataSource(ctx context.Context, projectId string, dbAlias string) (datasource *module_model.DataSource, err error)
@@ -116,10 +116,10 @@ func (ms *ModuleStore) GetProjectConfig(ctx context.Context, projectId string) (
 	}
 }
 
-func (ms *ModuleStore) GetProjectConfigObject(ctx context.Context, projectId string) (pc module_model.ProjectConfig, err error) {
+func (ms *ModuleStore) GetProjectSettingsObject(ctx context.Context, projectId string) (pc module_model.ProjectSettings, err error) {
 	logs.WithContext(ctx).Debug("GetProjectConfigObject - Start")
 	if _, ok := ms.Projects[projectId]; ok {
-		return ms.Projects[projectId].ProjectConfig, nil
+		return ms.Projects[projectId].ProjectSettings, nil
 	} else {
 		err = errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 		if err != nil {
@@ -146,6 +146,7 @@ func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interfac
 func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SetDataSourceConnections - Start")
 	for _, prj := range ms.Projects {
+		logs.WithContext(ctx).Info(prj.ProjectId)
 		for _, datasource := range prj.DataSources {
 			i := ds.GetSqlMaker(datasource.DbName)
 			if i != nil {
@@ -171,18 +172,17 @@ func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore M
 	return nil
 }
 
-func (ms *ModuleStore) SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error {
+func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
 	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
-
-	ms.Projects[projectId].ProjectConfig = projectConfig
-
+	ms.Projects[projectId].ProjectSettings = projectSettings
 	return realStore.SaveStore(ctx, "", realStore)
 }
+
 func (ms *ModuleStore) GetDatasourceCloneObject(ctx context.Context, projectId string, datasource *module_model.DataSource, s ModuleStoreI) (datasourceClone *module_model.DataSource, err error) {
 	logs.WithContext(ctx).Debug("GetDatasourceCloneObject - Start")
 	datasourceObjJson, datasourceObjJsonErr := json.Marshal(datasource)

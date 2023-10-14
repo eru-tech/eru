@@ -28,4 +28,5 @@ require (
 replace (
 	github.com/eru-tech/eru/eru-logs => ../eru-logs
 	github.com/eru-tech/eru/eru-store => ../eru-store
+	github.com/eru-tech/eru/eru-repos => ../eru-repos
 )

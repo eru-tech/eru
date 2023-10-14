@@ -9,6 +9,8 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"os"
+	"reflect"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,6 +22,13 @@ type DbStore struct {
 	StoreTableName string
 	storeType      string
 	conStr         string
+	Con            *sqlx.DB `json:"-"`
+	ConStatus      bool     `json:"-"`
+}
+
+type Queries struct {
+	Query string
+	Vals  []interface{}
 }
 
 func getStoreDbPath() string {
@@ -29,6 +38,10 @@ func getStoreDbPath() string {
 }
 func (store *DbStore) SetDbType(dbtype string) {
 	store.DbType = strings.ToLower(dbtype)
+}
+
+func (store *DbStore) GetDbType() string {
+	return store.DbType
 }
 
 func (store *DbStore) SetStoreTableName(tablename string) {
@@ -187,4 +200,138 @@ func (store *DbStore) getStoreDBConnStr() (string, error) {
 		return "", err
 	}
 	return dbConStr, nil
+}
+
+func (store *DbStore) CreateConn() error {
+	logs.Logger.Debug("CreateConn - Start")
+	connString := getStoreDbPath()
+	db, err := sqlx.Open(store.DbType, connString)
+	if err != nil {
+		logs.Logger.Error(err.Error())
+		store.ConStatus = false
+		return err
+	}
+	logs.Logger.Info("db connection was successfully done for fetch dummy query")
+	_, err = db.Queryx("select 1")
+	if err != nil {
+		store.ConStatus = false
+		logs.Logger.Error(err.Error())
+		return err
+	}
+	logs.Logger.Info("dummy query success - setting con as true")
+	store.Con = db
+	store.ConStatus = true
+	return nil
+}
+
+func (store *DbStore) GetConn() *sqlx.DB {
+	logs.Logger.Debug("CreateConn - Start")
+	return store.Con
+}
+
+func (store *DbStore) ExecuteDbFetch(ctx context.Context, query Queries) (output []map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("ExecuteDbFetch - Start")
+
+	db := store.GetConn()
+	if db == nil {
+		err = store.CreateConn()
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		db = store.GetConn()
+	}
+
+	rows, err := db.Queryx(query.Query, query.Vals...)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	mapping := make(map[string]interface{})
+	colsType, ee := rows.ColumnTypes()
+	if ee != nil {
+		return nil, ee
+	}
+	for rows.Next() {
+		innerResultRow := make(map[string]interface{})
+		ee = rows.MapScan(mapping)
+		if ee != nil {
+			return nil, ee
+		}
+		for _, colType := range colsType {
+			if colType.DatabaseTypeName() == "NUMERIC" && mapping[colType.Name()] != nil {
+				f := 0.0
+				if reflect.TypeOf(mapping[colType.Name()]).String() == "[]uint8" {
+					f, err = strconv.ParseFloat(string(mapping[colType.Name()].([]byte)), 64)
+					mapping[colType.Name()] = f
+				} else if reflect.TypeOf(mapping[colType.Name()]).String() == "float64" {
+					f = mapping[colType.Name()].(float64)
+					mapping[colType.Name()] = f
+				}
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return nil, err
+				}
+			} else if (colType.DatabaseTypeName() == "JSONB" || colType.DatabaseTypeName() == "JSON") && mapping[colType.Name()] != nil {
+				bytesToUnmarshal := mapping[colType.Name()].([]byte)
+				var v interface{}
+				err = json.Unmarshal(bytesToUnmarshal, &v)
+				if err != nil {
+					return nil, err
+				}
+				mapping[colType.Name()] = &v
+			}
+			innerResultRow[colType.Name()] = mapping[colType.Name()]
+		}
+		output = append(output, innerResultRow)
+	}
+	return
+}
+
+func (store *DbStore) ExecuteDbSave(ctx context.Context, queries []Queries) (output [][]map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("ExecuteDbSave - Start")
+	db := store.GetConn()
+	if db == nil {
+		err = store.CreateConn()
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		db = store.GetConn()
+	}
+	tx := db.MustBegin()
+	for _, q := range queries {
+		//logs.WithContext(ctx).Info(q.Query)
+		//logs.WithContext(ctx).Info(fmt.Sprint(q.Vals))
+		stmt, err := tx.PreparexContext(ctx, q.Query)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.PreparexContext : ", err.Error()))
+			tx.Rollback()
+			return nil, err
+		}
+		rw, err := stmt.QueryxContext(ctx, q.Vals...)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("Error in stmt.QueryxContext : ", err.Error()))
+			tx.Rollback()
+			return nil, err
+		}
+		var innerOutput []map[string]interface{}
+		for rw.Rows.Next() {
+			resDoc := make(map[string]interface{})
+			err = rw.MapScan(resDoc)
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("Error in rw.MapScan : ", err.Error()))
+				tx.Rollback()
+				return nil, err
+			}
+			innerOutput = append(innerOutput, resDoc)
+		}
+		output = append(output, innerOutput)
+	}
+	err = tx.Commit()
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.Commit : ", err.Error()))
+		tx.Rollback()
+	}
+	return
 }

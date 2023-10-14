@@ -2,9 +2,12 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	repos "github.com/eru-tech/eru/eru-repos/repos"
+	"github.com/jmoiron/sqlx"
 	"strings"
 )
 
@@ -13,6 +16,11 @@ type StoreI interface {
 	GetStoreByteArray(fp string) (b []byte, err error)
 	SaveStore(ctx context.Context, fp string, ms StoreI) (err error)
 	SetDbType(dbtype string)
+	CreateConn() error
+	GetConn() *sqlx.DB
+	GetDbType() string
+	ExecuteDbSave(ctx context.Context, queries []Queries) (output [][]map[string]interface{}, err error)
+	ExecuteDbFetch(ctx context.Context, query Queries) (output []map[string]interface{}, err error)
 	SetStoreTableName(tablename string)
 	SetVars(ctx context.Context, variables map[string]*Variables)
 	SaveVar(ctx context.Context, projectId string, newVar Vars, s StoreI) (err error)
@@ -23,6 +31,9 @@ type StoreI interface {
 	RemoveSecret(ctx context.Context, projectId string, key string, s StoreI) (err error)
 	FetchVars(ctx context.Context, projectId string) (variables *Variables, err error)
 	ReplaceVariables(ctx context.Context, projectId string, text []byte) (returnText []byte)
+	SaveRepo(ctx context.Context, projectId string, repo repos.Repo, s StoreI) (err error)
+	FetchRepo(ctx context.Context, projectId string) (repo *repos.Repo, err error)
+	GetProjectConfigForRepo(ctx context.Context, projectId string, ms StoreI) (repoData map[string]map[string]interface{}, err error)
 	//SaveProject(projectId string, realStore StoreI) error
 	//RemoveProject(projectId string, realStore StoreI) error
 	//GetProjectConfig(projectId string) (*model.ProjectI, error)
@@ -31,7 +42,8 @@ type StoreI interface {
 
 type Store struct {
 	//Projects map[string]*model.Project //ProjectId is the key
-	Variables map[string]*Variables
+	Variables    map[string]*Variables
+	ProjectRepos map[string]*repos.Repo
 }
 
 type Variables struct {
@@ -53,6 +65,10 @@ type EnvVars struct {
 type Secrets struct {
 	Key   string
 	Value string `json:"-"`
+}
+
+func (store *Store) GetDbType() string {
+	return ""
 }
 
 func (store *Store) SetVars(ctx context.Context, variables map[string]*Variables) {
@@ -205,6 +221,26 @@ func (store *Store) SetStoreTableName(tablename string) {
 	//do nothing
 }
 
+func (store *Store) CreateConn() error {
+	logs.Logger.Info("CreateConn not implemented")
+	return nil
+}
+
+func (store *Store) GetConn() *sqlx.DB {
+	logs.Logger.Info("GetConn not implemented")
+	return nil
+}
+
+func (store *Store) ExecuteDbFetch(ctx context.Context, query Queries) (output []map[string]interface{}, err error) {
+	logs.Logger.Info("ExecuteDbFetch not implemented")
+	return
+}
+
+func (store *Store) ExecuteDbSave(ctx context.Context, queries []Queries) (output [][]map[string]interface{}, err error) {
+	logs.Logger.Info("ExecuteDbFetch not implemented")
+	return
+}
+
 func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text []byte) (returnText []byte) {
 	logs.WithContext(ctx).Debug("ReplaceVariables - Start")
 	textStr := string(text)
@@ -220,6 +256,93 @@ func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text
 		}
 	}
 	return []byte(textStr)
+}
+
+func (store *Store) FetchRepo(ctx context.Context, projectId string) (repo *repos.Repo, err error) {
+	logs.WithContext(ctx).Debug("FetchRepo - Start")
+	if store.ProjectRepos == nil {
+		err = errors.New("No repo defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return &repos.Repo{}, err
+	}
+	ok := false
+	if repo, ok = store.ProjectRepos[projectId]; !ok {
+		err = errors.New(fmt.Sprint("Repo not defined for project :", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+		return &repos.Repo{}, err
+	}
+	return
+}
+
+func (store *Store) SaveRepo(ctx context.Context, projectId string, repo repos.Repo, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveRepo - Start")
+	if store.ProjectRepos == nil {
+		store.ProjectRepos = make(map[string]*repos.Repo)
+	}
+	var prjRepos *repos.Repo
+	_ = prjRepos
+	ok := false
+	if prjRepos, ok = store.ProjectRepos[projectId]; !ok {
+		logs.WithContext(ctx).Info(fmt.Sprint("making new repo object for project : ", projectId))
+		store.ProjectRepos[projectId] = &repos.Repo{}
+	}
+	store.ProjectRepos[projectId] = &repo
+	err = s.SaveStore(ctx, "", s)
+	return
+}
+
+func (store *Store) GetProjectConfigForRepo(ctx context.Context, projectId string, ms StoreI) (repoData map[string]map[string]interface{}, err error) {
+	repoData = make(map[string]map[string]interface{})
+	repoInnerData := make(map[string]interface{})
+	repoData[projectId] = repoInnerData
+	storeBytes, err := json.Marshal(ms)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	storeMap := make(map[string]interface{})
+	err = json.Unmarshal(storeBytes, &storeMap)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	for k, v := range storeMap {
+		logs.WithContext(ctx).Info(k)
+		if k == "projects" {
+			logs.WithContext(ctx).Info("inside projects")
+			if prjMap, prjMapOk := v.(map[string]interface{}); prjMapOk {
+				if prj, ok := prjMap[projectId]; ok {
+					repoInnerData["config"] = prj
+				} else {
+					return nil, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+				}
+			} else {
+				logs.WithContext(ctx).Info("map failed")
+			}
+		} else if k == "Variables" {
+			if VarsMap, VarsMapOk := v.(map[string]interface{}); VarsMapOk {
+				if vars, ok := VarsMap[projectId]; ok {
+					repoInnerData["variables"] = vars
+				}
+			}
+		} else if k == "ProjectRepos" {
+			if ReposMap, ReposMapOk := v.(map[string]interface{}); ReposMapOk {
+				if repo, ok := ReposMap[projectId]; ok {
+					repoBytes, repoBytesErr := json.Marshal(repo)
+					if repoBytesErr != nil {
+						return nil, repoBytesErr
+					}
+					repoStruct := repos.Repo{}
+					repoMapErr := json.Unmarshal(repoBytes, &repoStruct)
+					if repoMapErr != nil {
+						return nil, repoMapErr
+					}
+					repoInnerData["repo"] = repoStruct
+				}
+			}
+		}
+	}
+	return
 }
 
 /*

@@ -606,8 +606,7 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 
 		*/
 		utils.PrintRequestBody(ctx, request, "printing request from route.transformRequest before multipart processing")
-
-		vars.FormData, vars.FormDataKeyArray, vars.FileData, err = processMultipart(ctx, reqContentType, request, route.RemoveParams.FormData, vars.FormData)
+		vars.FormData, vars.FormDataKeyArray, vars.FileData, err = processMultipart(ctx, reqContentType, request, route.RemoveParams.FormData, vars.FormData, vars.FileData)
 		if err != nil {
 			return
 		}

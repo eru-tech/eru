@@ -134,14 +134,14 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 		outputType := vars["outputtype"]
 		encode := vars["encode"]
 
-		projectConfig, err := s.GetProjectConfigObject(r.Context(), projectID)
+		projectSettings, err := s.GetProjectSettingsObject(r.Context(), projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		tokenObj := make(map[string]interface{})
-		tokenStr := r.Header.Get(projectConfig.TokenSecret.HeaderKey)
+		tokenStr := r.Header.Get(projectSettings.ClaimsKey)
 		if tokenStr != "" {
 			err = json.Unmarshal([]byte(tokenStr), &tokenObj)
 			if err != nil {
@@ -309,14 +309,14 @@ func GraphqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		outputType := vars["outputtype"]
-		projectConfig, err := s.GetProjectConfigObject(r.Context(), projectID)
+		projectSettings, err := s.GetProjectSettingsObject(r.Context(), projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		tokenObj := make(map[string]interface{})
-		tokenStr := r.Header.Get(projectConfig.TokenSecret.HeaderKey)
+		tokenStr := r.Header.Get(projectSettings.ClaimsKey)
 
 		if tokenStr != "" {
 			err = json.Unmarshal([]byte(tokenStr), &tokenObj)
@@ -377,14 +377,14 @@ func SqlExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		outputType := vars["outputtype"]
-		projectConfig, err := s.GetProjectConfigObject(r.Context(), projectID)
+		projectSettings, err := s.GetProjectSettingsObject(r.Context(), projectID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		tokenObj := make(map[string]interface{})
-		tokenStr := r.Header.Get(projectConfig.TokenSecret.HeaderKey)
+		tokenStr := r.Header.Get(projectSettings.ClaimsKey)
 		if tokenStr != "" {
 			err = json.Unmarshal([]byte(tokenStr), &tokenObj)
 			if err != nil {

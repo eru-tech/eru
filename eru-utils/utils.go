@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	models "github.com/eru-tech/eru/eru-models"
 	"github.com/google/go-cmp/cmp"
+	"github.com/jmoiron/sqlx"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"io"
 	"mime/multipart"
@@ -71,6 +73,7 @@ func ValidateStruct(ctx context.Context, s interface{}, parentKey string) error 
 	for i := 0; i < f.NumField(); i++ {
 		isError := false
 		isRequired := false
+		isOptional := false
 		projectTags := f.Type().Field(i).Tag.Get("eru")
 		if strings.Contains(projectTags, "required") {
 			isRequired = true
@@ -79,7 +82,10 @@ func ValidateStruct(ctx context.Context, s interface{}, parentKey string) error 
 				isError = true
 			}
 		}
-		if !isError {
+		if strings.Contains(projectTags, "optional") {
+			isOptional = true
+		}
+		if !isError && !isOptional {
 			switch f.Field(i).Kind().String() {
 			case "struct":
 				e := ValidateStruct(ctx, f.Field(i).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name))
@@ -268,6 +274,7 @@ func callHttp(ctx context.Context, method string, url string, headers http.Heade
 
 func CallHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
 	logs.WithContext(ctx).Debug("CallHttp - Start")
+	logs.WithContext(ctx).Info(url)
 	resp, err := callHttp(ctx, method, url, headers, formData, reqCookies, params, postBody)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -277,7 +284,6 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 	respHeaders = resp.Header
 	respCookies = resp.Cookies()
 	defer resp.Body.Close()
-
 	//todo - check if below change from reqContentType to header.get breaks anything
 	//todo - merge conflict - main had below first if commented
 	contentType := strings.Split(headers.Get("Content-type"), ";")[0]
@@ -403,4 +409,93 @@ func CloneInterface(ctx context.Context, i interface{}) (iClone interface{}, err
 		return
 	}
 	return iCloneI.Elem().Interface(), nil
+}
+
+func ExecuteDbFetch(ctx context.Context, db *sqlx.DB, query models.Queries) (output []map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("ExecuteDbFetch - Start")
+
+	rows, err := db.Queryx(query.Query, query.Vals...)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	mapping := make(map[string]interface{})
+	colsType, ee := rows.ColumnTypes()
+	if ee != nil {
+		return nil, ee
+	}
+	for rows.Next() {
+		innerResultRow := make(map[string]interface{})
+		ee = rows.MapScan(mapping)
+		if ee != nil {
+			return nil, ee
+		}
+		for _, colType := range colsType {
+			if colType.DatabaseTypeName() == "NUMERIC" && mapping[colType.Name()] != nil {
+				f := 0.0
+				if reflect.TypeOf(mapping[colType.Name()]).String() == "[]uint8" {
+					f, err = strconv.ParseFloat(string(mapping[colType.Name()].([]byte)), 64)
+					mapping[colType.Name()] = f
+				} else if reflect.TypeOf(mapping[colType.Name()]).String() == "float64" {
+					f = mapping[colType.Name()].(float64)
+					mapping[colType.Name()] = f
+				}
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return nil, err
+				}
+			} else if (colType.DatabaseTypeName() == "JSONB" || colType.DatabaseTypeName() == "JSON") && mapping[colType.Name()] != nil {
+				bytesToUnmarshal := mapping[colType.Name()].([]byte)
+				var v map[string]interface{}
+				err = json.Unmarshal(bytesToUnmarshal, &v)
+				if err != nil {
+					return nil, err
+				}
+				mapping[colType.Name()] = &v
+			}
+			innerResultRow[colType.Name()] = mapping[colType.Name()]
+		}
+		output = append(output, innerResultRow)
+	}
+	return
+}
+
+func ExecuteDbSave(ctx context.Context, db *sqlx.DB, queries []*models.Queries) (output [][]map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("ExecuteDbSave - Start")
+
+	tx := db.MustBegin()
+	for _, q := range queries {
+		//logs.WithContext(ctx).Info(q.Query)
+		//logs.WithContext(ctx).Info(fmt.Sprint(q.Vals))
+		stmt, err := tx.PreparexContext(ctx, q.Query)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.PreparexContext : ", err.Error()))
+			tx.Rollback()
+			return nil, err
+		}
+		rw, err := stmt.QueryxContext(ctx, q.Vals...)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("Error in stmt.QueryxContext : ", err.Error()))
+			tx.Rollback()
+			return nil, err
+		}
+		var innerOutput []map[string]interface{}
+		for rw.Rows.Next() {
+			resDoc := make(map[string]interface{})
+			err = rw.MapScan(resDoc)
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("Error in rw.MapScan : ", err.Error()))
+				tx.Rollback()
+				return nil, err
+			}
+			innerOutput = append(innerOutput, resDoc)
+		}
+		output = append(output, innerOutput)
+	}
+	err = tx.Commit()
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.Commit : ", err.Error()))
+		tx.Rollback()
+	}
+	return
 }
