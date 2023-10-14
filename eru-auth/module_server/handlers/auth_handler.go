@@ -522,6 +522,9 @@ func CompleteRecoveryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		msg := ""
+		for _, c := range r.Cookies() {
+			logs.WithContext(r.Context()).Info(c.String())
+		}
 		msg, err = authObjI.CompleteRecovery(r.Context(), recoveryPassword, r.Cookies())
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
