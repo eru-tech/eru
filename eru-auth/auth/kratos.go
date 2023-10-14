@@ -939,6 +939,8 @@ func (kratosHydraAuth *KratosHydraAuth) ChangePassword(ctx context.Context, toke
 		return
 	}
 	headers.Set("X-Session-Token", sessionToken)
+	headers.Set("content-type", "application/json")
+
 	port := kratosHydraAuth.Kratos.PublicPort
 	if port != "" {
 		port = fmt.Sprint(":", port)
@@ -949,7 +951,7 @@ func (kratosHydraAuth *KratosHydraAuth) ChangePassword(ctx context.Context, toke
 		err = resErr
 		return
 	}
-
+	logs.WithContext(ctx).Info(fmt.Sprint(res))
 	flowParams := make(map[string]string)
 	if resMap, ok := res.(map[string]interface{}); ok {
 		if flowId, fOk := resMap["id"]; fOk {
