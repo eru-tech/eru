@@ -301,13 +301,17 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		_, err = authObjI.GenerateRecoveryCode(r.Context(), recoveryPostBody, projectId, silentFlag)
+		res, err := authObjI.GenerateRecoveryCode(r.Context(), recoveryPostBody, projectId, silentFlag)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
 			server_handlers.FormatResponse(w, http.StatusOK)
+			if authName == "ory" {
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": res})
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "code sent successfully"})
 			return
 		}
