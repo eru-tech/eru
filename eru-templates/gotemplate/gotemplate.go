@@ -148,7 +148,7 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			str := ""
 			for k, _ := range vars {
 				if keyFirst {
-					str = fmt.Sprint(str, k, seprator, vars[k])
+					str = fmt.Sprint(str, k, seprator, vars[k], varSeprator)
 				} else {
 					str = fmt.Sprint(str, vars[k], seprator, k, varSeprator)
 				}
