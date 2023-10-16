@@ -144,13 +144,13 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			}
 			return str
 		},
-		"concatMapKeyValUnordered": func(vars map[string]interface{}, seprator string, keyFirst bool) string {
+		"concatMapKeyValUnordered": func(vars map[string]interface{}, seprator string, keyFirst bool, varSeprator string) string {
 			str := ""
 			for k, _ := range vars {
 				if keyFirst {
 					str = fmt.Sprint(str, k, seprator, vars[k])
 				} else {
-					str = fmt.Sprint(str, vars[k], seprator, k)
+					str = fmt.Sprint(str, vars[k], seprator, k, varSeprator)
 				}
 
 			}
