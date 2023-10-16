@@ -424,7 +424,7 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 
 	buf := &bytes.Buffer{}
 
-	t := template.Must(template.New(goTmpl.Name).Funcs(funcs).Funcs(sprig.FuncMap()).Parse(goTmpl.Template))
+	t := template.Must(template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(funcs).Parse(goTmpl.Template))
 
 	if err := t.Execute(buf, obj); err != nil {
 		logs.WithContext(ctx).Error(err.Error())
