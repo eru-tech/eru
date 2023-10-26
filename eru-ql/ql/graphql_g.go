@@ -478,23 +478,23 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 				return "", ""
 			}
 
-		case reflect.String, reflect.Int, reflect.Float32, reflect.Float64:
+		case reflect.String:
 			var newVal, valPrefix, valSuffix = "", "", ""
-			if reflect.TypeOf(val).Kind().String() == "string" {
-				//TODO due to below statement - 2022-07-27T18:30:00.000Z date in filter is failing if passed in this format
-				//parse for date
-				if !strings.Contains(reflect.ValueOf(val).String(), ".") || !isJoinClause {
-					valPrefix = "'"
-					valSuffix = "'"
-				}
-				newVal = reflect.ValueOf(val).String()
-				if strings.HasPrefix(newVal, "FIELD_") {
-					valPrefix = ""
-					valSuffix = ""
-					newVal = strings.Replace(newVal, "FIELD_", "", -1)
-				}
+			//TODO due to below statement - 2022-07-27T18:30:00.000Z date in filter is failing if passed in this format
+			//parse for date
+			if !strings.Contains(reflect.ValueOf(val).String(), ".") || !isJoinClause {
+				valPrefix = "'"
+				valSuffix = "'"
+			}
+			newVal = reflect.ValueOf(val).String()
+			if strings.HasPrefix(newVal, "FIELD_") {
+				valPrefix = ""
+				valSuffix = ""
+				newVal = strings.Replace(newVal, "FIELD_", "", -1)
 			}
 			return fmt.Sprint(parentKey, " = ", valPrefix, newVal, valSuffix), ""
+		case reflect.Int, reflect.Float32, reflect.Float64:
+			return fmt.Sprint(parentKey, " = ", reflect.ValueOf(val)), ""
 		default:
 			return "", ""
 		}
