@@ -10,6 +10,7 @@ import (
 	"fmt"
 	sprig "github.com/Masterminds/sprig/v3"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
+	"github.com/eru-tech/eru/eru-crypto/jwt"
 	erumd5 "github.com/eru-tech/eru/eru-crypto/md5"
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
@@ -419,6 +420,9 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 		},
 		"char_index": func(s string, c string) int {
 			return strings.Index(s, c)
+		},
+		"new_jwt": func(privateKeyStr string, claimsMap map[string]interface{}) (tokenString string, err error) {
+			return jwt.CreateJWT(ctx, privateKeyStr, claimsMap)
 		},
 	}
 
