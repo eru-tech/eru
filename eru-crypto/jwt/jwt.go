@@ -112,6 +112,7 @@ func CreateJWT(ctx context.Context, privateKeyStr string, claimsMap map[string]i
 	token := jwt.New(jwt.SigningMethodRS256)
 
 	var privateKey *rsa.PrivateKey
+
 	if privateKey, err = jwt.ParseRSAPrivateKeyFromPEM([]byte(privateKeyStr)); err != nil {
 		return
 	}

@@ -279,12 +279,14 @@ func (kratosHydraAuth *KratosHydraAuth) Logout(ctx context.Context, req *http.Re
 	tokenObj := make(map[string]interface{})
 	//todo - remove hardcoding of claims and change it to projectConfig.TokenSecret.HeaderKey
 	tokenStr := req.Header.Get("Claims")
+	logs.WithContext(ctx).Info(tokenStr)
 	if tokenStr != "" {
 		err = json.Unmarshal([]byte(tokenStr), &tokenObj)
 		if err != nil {
 			return nil, 400, err
 		}
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint(tokenObj))
 	if identity, ok := tokenObj["identity"]; ok {
 		if identityMap, iOk := identity.(map[string]interface{}); iOk {
 			if authDetails, adOk := identityMap["auth_details"]; adOk {
