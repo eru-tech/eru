@@ -158,6 +158,11 @@ func (store *DbStore) SaveStore(ctx context.Context, dbString string, ms StoreI)
 		return err
 	}
 	strStoreData := strings.Replace(string(storeData), "'", "''", -1)
+
+	if strings.Contains(strStoreData, "IntrospectionQuery") {
+		logs.WithContext(ctx).Info(fmt.Sprint("IntrospectionQuery found in store config"))
+	}
+
 	query := fmt.Sprint("update ", store.StoreTableName, " set create_date=current_timestamp , config = '", strStoreData, "' returning create_date")
 	stmt, err := tx.PreparexContext(ctx, query)
 	if err != nil {
