@@ -31,12 +31,24 @@ type ModuleProjectI interface {
 }
 
 type StoreCompare struct {
-	DeleteQueries       []string
-	NewQueries          []string
-	MismatchQuries      map[string]interface{}
-	DeleteDataSources   []string
-	NewDataSources      []string
-	MismatchDataSources map[string]interface{}
+	DeleteQueries               []string
+	NewQueries                  []string
+	MismatchQueries             map[string]interface{}
+	DeleteDataSources           []string
+	NewDataSources              []string
+	MismatchDataSources         map[string]interface{}
+	DeleteTables                []string
+	NewTables                   []string
+	MismatchTables              map[string]interface{}
+	DeleteJoins                 []string
+	NewJoins                    []string
+	MismatchJoins               map[string]interface{}
+	DeleteTableSecurity         []string
+	NewTableSecurity            []string
+	MismatchTableSecurity       map[string]interface{}
+	DeleteTableTransformation   []string
+	NewTableTransformation      []string
+	MismatchTableTransformation map[string]interface{}
 }
 
 type Project struct {
@@ -352,10 +364,10 @@ func (prj *Project) CompareProject(ctx context.Context, compareProject Project) 
 			if mq.QueryName == cq.QueryName {
 				qFound = true
 				if !cmp.Equal(mq, cq, cmp.Reporter(&diffR)) {
-					if storeCompare.MismatchQuries == nil {
-						storeCompare.MismatchQuries = make(map[string]interface{})
+					if storeCompare.MismatchQueries == nil {
+						storeCompare.MismatchQueries = make(map[string]interface{})
 					}
-					storeCompare.MismatchQuries[mq.QueryName] = diffR.Output()
+					storeCompare.MismatchQueries[mq.QueryName] = diffR.Output()
 				}
 				break
 			}
@@ -385,32 +397,160 @@ func (prj *Project) CompareProject(ctx context.Context, compareProject Project) 
 		for _, cd := range compareProject.DataSources {
 			if md.DbAlias == cd.DbAlias {
 				dsFound = true
-				if !cmp.Equal(md, cd, cmpopts.IgnoreFields(DataSource{}, "Con"), cmpopts.IgnoreFields(TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
+				if !cmp.Equal(md, cd, cmpopts.IgnoreFields(DataSource{}, "Con", "SchemaTables", "SchemaTablesTransformation", "TableJoins"), cmpopts.IgnoreFields(TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
 					if storeCompare.MismatchDataSources == nil {
 						storeCompare.MismatchDataSources = make(map[string]interface{})
 					}
 					storeCompare.MismatchDataSources[md.DbAlias] = diffR.Output()
 				}
+
+				for mstKey, mst := range md.SchemaTables {
+					var diffSt utils.DiffReporter
+					stFound := false
+					for cstKey, cst := range cd.SchemaTables {
+						if mstKey == cstKey {
+							stFound = true
+							if !cmp.Equal(mst, cst, cmpopts.IgnoreFields(TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffSt)) {
+								if storeCompare.MismatchTables == nil {
+									storeCompare.MismatchTables = make(map[string]interface{})
+								}
+								storeCompare.MismatchTables[mstKey] = diffSt.Output()
+							}
+							break
+						}
+					}
+					if !stFound {
+						storeCompare.DeleteTables = append(storeCompare.DeleteTables, mstKey)
+					}
+				}
+				for cstK, _ := range cd.SchemaTables {
+					sFound := false
+					for mstK, _ := range md.SchemaTables {
+						if mstK == cstK {
+							sFound = true
+							break
+						}
+					}
+					if !sFound {
+						storeCompare.NewTables = append(storeCompare.NewTables, cstK)
+					}
+				}
+
+				for mstKey, mst := range md.SchemaTablesSecurity {
+					var diffSt utils.DiffReporter
+					stFound := false
+					for cstKey, cst := range cd.SchemaTablesSecurity {
+						if mstKey == cstKey {
+							stFound = true
+							if !cmp.Equal(mst, cst, cmp.Reporter(&diffSt)) {
+								if storeCompare.MismatchTableSecurity == nil {
+									storeCompare.MismatchTableSecurity = make(map[string]interface{})
+								}
+								storeCompare.MismatchTableSecurity[mstKey] = diffSt.Output()
+							}
+							break
+						}
+					}
+					if !stFound {
+						storeCompare.DeleteTableSecurity = append(storeCompare.DeleteTableSecurity, mstKey)
+					}
+				}
+				for cstK, _ := range cd.SchemaTablesSecurity {
+					sFound := false
+					for mstK, _ := range md.SchemaTablesSecurity {
+						if mstK == cstK {
+							sFound = true
+							break
+						}
+					}
+					if !sFound {
+						storeCompare.NewTableSecurity = append(storeCompare.NewTableSecurity, cstK)
+					}
+				}
+
+				for mstKey, mst := range md.SchemaTablesTransformation {
+					var diffSt utils.DiffReporter
+					stFound := false
+					for cstKey, cst := range cd.SchemaTablesTransformation {
+						if mstKey == cstKey {
+							stFound = true
+							if !cmp.Equal(mst, cst, cmp.Reporter(&diffSt)) {
+								if storeCompare.MismatchTableTransformation == nil {
+									storeCompare.MismatchTableTransformation = make(map[string]interface{})
+								}
+								storeCompare.MismatchTableTransformation[mstKey] = diffSt.Output()
+							}
+							break
+						}
+					}
+					if !stFound {
+						storeCompare.DeleteTableTransformation = append(storeCompare.DeleteTableTransformation, mstKey)
+					}
+				}
+				for cstK, _ := range cd.SchemaTablesTransformation {
+					sFound := false
+					for mstK, _ := range md.SchemaTablesTransformation {
+						if mstK == cstK {
+							sFound = true
+							break
+						}
+					}
+					if !sFound {
+						storeCompare.NewTableTransformation = append(storeCompare.NewTableTransformation, cstK)
+					}
+				}
+
+				for mstKey, mst := range md.TableJoins {
+					var diffSt utils.DiffReporter
+					stFound := false
+					for cstKey, cst := range cd.TableJoins {
+						if mstKey == cstKey {
+							stFound = true
+							if !cmp.Equal(*mst, *cst, cmp.Reporter(&diffSt)) {
+								if storeCompare.MismatchJoins == nil {
+									storeCompare.MismatchJoins = make(map[string]interface{})
+								}
+								storeCompare.MismatchJoins[mstKey] = diffSt.Output()
+							}
+							break
+						}
+					}
+					if !stFound {
+						storeCompare.DeleteJoins = append(storeCompare.DeleteJoins, mstKey)
+					}
+				}
+				for cstK, _ := range cd.TableJoins {
+					sFound := false
+					for mstK, _ := range md.TableJoins {
+						if mstK == cstK {
+							sFound = true
+							break
+						}
+					}
+					if !sFound {
+						storeCompare.NewJoins = append(storeCompare.NewJoins, cstK)
+					}
+				}
+
 				break
 			}
 		}
 		if !dsFound {
-			storeCompare.DeleteQueries = append(storeCompare.DeleteDataSources, md.DbAlias)
+			storeCompare.DeleteDataSources = append(storeCompare.DeleteDataSources, md.DbAlias)
 		}
-
-		for _, cd := range compareProject.DataSources {
-			dFound := false
-			for _, md := range prj.DataSources {
-				if md.DbAlias == cd.DbAlias {
-					dFound = true
-					break
-				}
-			}
-			if !dFound {
-				storeCompare.NewDataSources = append(storeCompare.NewDataSources, cd.DbAlias)
-			}
-		}
-
 	}
+	for _, cd := range compareProject.DataSources {
+		dFound := false
+		for _, md := range prj.DataSources {
+			if md.DbAlias == cd.DbAlias {
+				dFound = true
+				break
+			}
+		}
+		if !dFound {
+			storeCompare.NewDataSources = append(storeCompare.NewDataSources, cd.DbAlias)
+		}
+	}
+
 	return storeCompare, nil
 }
