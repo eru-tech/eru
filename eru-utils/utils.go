@@ -142,7 +142,7 @@ func PrintResponseBody(ctx context.Context, response *http.Response, msg string)
 		logs.WithContext(ctx).Error(err.Error())
 	}
 	logs.WithContext(ctx).Info(msg)
-	logs.WithContext(ctx).Info(fmt.Sprint(len(string(body))))
+	logs.WithContext(ctx).Info(fmt.Sprint(response.Request.URL))
 	cl, _ := strconv.Atoi(response.Header.Get("Content-Length"))
 	if cl > 1000 {
 		logs.WithContext(ctx).Info(string(body)[1:1000])
@@ -161,8 +161,7 @@ func PrintRequestBody(ctx context.Context, request *http.Request, msg string) {
 		logs.WithContext(ctx).Error(err.Error())
 	}
 	logs.WithContext(ctx).Info(msg)
-	logs.WithContext(ctx).Info(fmt.Sprint(len(string(body))))
-	logs.WithContext(ctx).Info(fmt.Sprint(request.Header))
+	logs.WithContext(ctx).Info(fmt.Sprint(request.URL))
 	cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
 	if cl > 1000 && len(string(body)) > 1000 {
 		logs.WithContext(ctx).Info(string(body)[1:1000])
@@ -194,9 +193,9 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	logs.WithContext(ctx).Debug("ExecuteHttp - Start")
 	//req = req.WithContext(ctx)
 	//resp, err = httpClient.Do(req)
-	for _, c := range req.Cookies() {
-		logs.WithContext(ctx).Info(c.String())
-	}
+	//for _, c := range req.Cookies() {
+	//	logs.WithContext(ctx).Info(c.String())
+	//}
 	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
 	return
 }

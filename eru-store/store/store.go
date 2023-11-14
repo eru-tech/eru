@@ -32,6 +32,7 @@ type StoreI interface {
 	FetchVars(ctx context.Context, projectId string) (variables *Variables, err error)
 	ReplaceVariables(ctx context.Context, projectId string, text []byte) (returnText []byte)
 	SaveRepo(ctx context.Context, projectId string, repo repos.Repo, s StoreI) (err error)
+	SaveRepoToken(ctx context.Context, projectId string, repo repos.RepoToken, s StoreI) (err error)
 	FetchRepo(ctx context.Context, projectId string) (repo *repos.Repo, err error)
 	GetProjectConfigForRepo(ctx context.Context, projectId string, ms StoreI) (repoData map[string]map[string]interface{}, err error)
 	//SaveProject(projectId string, realStore StoreI) error
@@ -42,8 +43,9 @@ type StoreI interface {
 
 type Store struct {
 	//Projects map[string]*model.Project //ProjectId is the key
-	Variables    map[string]*Variables
-	ProjectRepos map[string]*repos.Repo
+	Variables         map[string]*Variables
+	ProjectRepos      map[string]*repos.Repo
+	ProjectRepoTokens map[string]*repos.RepoToken
 }
 
 type Variables struct {
@@ -287,6 +289,23 @@ func (store *Store) SaveRepo(ctx context.Context, projectId string, repo repos.R
 		store.ProjectRepos[projectId] = &repos.Repo{}
 	}
 	store.ProjectRepos[projectId] = &repo
+	err = s.SaveStore(ctx, "", s)
+	return
+}
+
+func (store *Store) SaveRepoToken(ctx context.Context, projectId string, repoToken repos.RepoToken, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveRepoToken - Start")
+	if store.ProjectRepoTokens == nil {
+		store.ProjectRepoTokens = make(map[string]*repos.RepoToken)
+	}
+	var prjRepoToken *repos.RepoToken
+	_ = prjRepoToken
+	ok := false
+	if prjRepoToken, ok = store.ProjectRepoTokens[projectId]; !ok {
+		logs.WithContext(ctx).Info(fmt.Sprint("making new repo token object for project : ", projectId))
+		store.ProjectRepoTokens[projectId] = &repos.RepoToken{}
+	}
+	store.ProjectRepoTokens[projectId] = &repoToken
 	err = s.SaveStore(ctx, "", s)
 	return
 }

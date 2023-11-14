@@ -344,7 +344,7 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 
 	var jobs = make(chan Job, 10)
 	var results = make(chan Result, 10)
-	startTime := time.Now()
+	//startTime := time.Now()
 	go allocate(ctx, request, url, trReqVars, loopArray, jobs, async, asyncMsg)
 	done := make(chan bool)
 	//go result(done,results,responses, trResVars,errs)
@@ -377,9 +377,9 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 	createWorkerPool(ctx, route, noOfWorkers, jobs, results)
 	<-done
 	response, trResVar, resErr = clubResponses(ctx, responses, trResVars, errs)
-	endTime := time.Now()
-	diff := endTime.Sub(startTime)
-	logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
+	//endTime := time.Now()
+	//diff := endTime.Sub(startTime)
+	//logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
 	logs.WithContext(ctx).Info(fmt.Sprint("Route Execute - End : ", route.RouteName))
 	return
 }

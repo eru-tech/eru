@@ -36,12 +36,18 @@ func (repo *Repo) GetAttribute(attrName string) (attrValue interface{}) {
 }
 
 type Repo struct {
-	RepoType   string `json:"repoType"`
-	RepoName   string `json:"repoName"`
-	BranchName string `json:"branchName"`
-	AuthMode   string `json:"authMode"`
-	AuthKey    string `json:"authKey"`
-	AutoCommit bool   `json:"autoCommit"`
+	RepoType       string `json:"repoType"`
+	RepoName       string `json:"repoName"`
+	BranchName     string `json:"branchName"`
+	AuthMode       string `json:"authMode"`
+	AuthKey        string `json:"authKey"`
+	AutoCommit     bool   `json:"autoCommit"`
+	InstallationId string `json:"installationId"`
+}
+
+type RepoToken struct {
+	RepoToken       string `json:"repoToken"`
+	RepoTokenExpiry string `json:"repoTokenExpiry"`
 }
 
 func GetRepo(repoType string, repo Repo) RepoI {

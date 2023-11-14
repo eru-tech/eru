@@ -86,8 +86,6 @@ func allocate(ctx context.Context, req *http.Request, u string, vars *TemplateVa
 		}
 	}()
 	loopCounter := 0
-	logs.WithContext(ctx).Info(fmt.Sprint("printing loopArray from allocate = ", loopArray))
-	logs.WithContext(ctx).Info(fmt.Sprint(len(loopArray)))
 	for loopCounter < len(loopArray) {
 		laVars := *vars
 		laVars.LoopVar = loopArray[loopCounter]
@@ -106,7 +104,8 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 		}
 	}()
 	loopCounter := 0
-	for _, fs := range funcSteps {
+	for fk, fs := range funcSteps {
+		fs.FuncKey = fk
 		r, rErr := CloneRequest(ctx, req)
 		if rErr != nil {
 			logs.WithContext(ctx).Error(rErr.Error())
@@ -115,7 +114,6 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 		funcJobs <- funcJob
 		loopCounter++
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("len(funcJobs) allocateFunc= ", len(funcJobs)))
 	close(funcJobs)
 }
 func createWorkerPoolFunc(ctx context.Context, noOfWorkers int, funcJobs chan FuncJob, funcResults chan FuncResult) {
@@ -146,7 +144,7 @@ func workerFunc(ctx context.Context, wg *sync.WaitGroup, funcJobs chan FuncJob, 
 	for funcJob := range funcJobs {
 		//currentJob = funcJob
 		if funcJob.mainRouteName == "" {
-			funcJob.mainRouteName = funcJob.funcStep.GetRouteName()
+			funcJob.mainRouteName = funcJob.funcStep.FuncKey
 		}
 		resp, e := funcJob.funcStep.RunFuncStep(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.funcThread, funcJob.loopThread)
 		if e != nil {
@@ -166,11 +164,14 @@ func allocateFuncInner(ctx context.Context, req *http.Request, funcStep *FuncSte
 		}
 	}()
 	loopCounter := 0
-	logs.WithContext(ctx).Info(fmt.Sprint("len(loopArray) from allocateFuncInner = ", len(loopArray)))
+	logs.WithContext(ctx).Info(fmt.Sprint("len(loopArray) from = allocateFuncInner", len(loopArray)))
+	logs.WithContext(ctx).Info(fmt.Sprint(loopArray))
+	logs.WithContext(ctx).Info(fmt.Sprint(funcStep.Route))
 	for loopCounter < len(loopArray) {
 		reqVarsI, _ := cloneInterface(ctx, reqVars)
 		reqVarsClone, _ := reqVarsI.(map[string]*TemplateVars)
 		reqVarsClone[funcStep.GetRouteName()].LoopVar = loopArray[loopCounter]
+		reqVarsClone[funcStep.FuncKey].LoopVar = loopArray[loopCounter]
 		funcJob := FuncJob{loopCounter, req, funcStep, reqVarsClone, resVars, asyncMessage, mainRouteName, funcThread, loopThread, strCond}
 		funcJobs <- funcJob
 		loopCounter++
@@ -195,7 +196,6 @@ func createWorkerPoolFuncInner(ctx context.Context, noOfWorkers int, funcJobs ch
 }
 func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan FuncJob, funcResults chan FuncResult) {
 	logs.WithContext(ctx).Debug("workerFuncInner - Start")
-	logs.WithContext(ctx).Info(fmt.Sprint("len(funcJobs) = ", len(funcJobs)))
 	defer func() {
 		if r := recover(); r != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in workerFuncInner: ", r))
@@ -207,8 +207,10 @@ func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan Func
 	for funcJob := range funcJobs {
 		//currentJob = funcJob
 		if funcJob.mainRouteName == "" {
-			funcJob.mainRouteName = funcJob.funcStep.GetRouteName()
+			funcJob.mainRouteName = funcJob.funcStep.FuncKey
 		}
+
+		logs.WithContext(ctx).Info(fmt.Sprint(funcJob.funcStep.Route))
 		resp, e := funcJob.funcStep.RunFuncStepInner(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.asyncMessage, funcJob.funcThread, funcJob.loopThread, funcJob.strCond)
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print RunFuncStepInner error = ", e.Error()))

@@ -209,6 +209,27 @@ func SaveRepoHandler(s store.StoreI) http.HandlerFunc {
 	}
 }
 
+func SaveRepoTokenHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveRepoTokenHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		varJson := json.NewDecoder(r.Body)
+		varJson.DisallowUnknownFields()
+		var sRepoToken repos.RepoToken
+		if err := varJson.Decode(&sRepoToken); err == nil {
+			err = s.SaveRepoToken(r.Context(), projectId, sRepoToken, s)
+			if err != nil {
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Repo Token for project ", projectId, " saved successfully.")})
+	}
+}
+
 func FetchRepoHandler(s store.StoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("FetchRepoHandler - Start")

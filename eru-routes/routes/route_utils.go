@@ -170,6 +170,7 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 
 func processTemplate(ctx context.Context, templateName string, templateString string, vars *FuncTemplateVars, outputType string, tokenHeaderKey string, jwkUrl string) (output []byte, err error) {
 	logs.WithContext(ctx).Debug("processTemplate - Start")
+
 	if strings.Contains(templateString, "{{.token") {
 		strToken := vars.Vars.Headers[tokenHeaderKey]
 		vars.Vars.Token, err = fetchClaimsFromToken(ctx, strToken.(string), jwkUrl)
@@ -193,7 +194,9 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 			return nil, err
 		}
 		output = []byte(strings.TrimSuffix(buffer.String(), "\n"))
-		if string(output) == "null" {
+		logs.WithContext(ctx).Info(fmt.Sprint("output ===== ", string(output)))
+		if string(output) == "null" || string(output) == `"null"` {
+			logs.WithContext(ctx).Info("inside string(output) == \"null\"")
 			output = []byte("")
 		}
 		return
@@ -545,6 +548,19 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 			fvars.Vars = vars
 			fvars.ResVars = resVars
 			fvars.ReqVars = reqVars
+
+			koutputStr := h.Key
+			if strings.HasPrefix(h.Key, "{{") {
+				koutput, err := processTemplate(ctx, "headerkey", h.Key, fvars, "string", tokenSecretKey, jwkUrl)
+				if err != nil {
+					return err
+				}
+				koutputStr = string(koutput)
+				if str, err := strconv.Unquote(koutputStr); err == nil {
+					koutputStr = str
+				}
+			}
+
 			output, err := processTemplate(ctx, h.Key, h.Value, fvars, "string", tokenSecretKey, jwkUrl)
 			if err != nil {
 				return err
@@ -553,7 +569,7 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 			if str, err := strconv.Unquote(outputStr); err == nil {
 				outputStr = str
 			}
-			request.Header.Set(h.Key, outputStr)
+			request.Header.Set(koutputStr, outputStr)
 		}
 	}
 	if headersToRemove != nil {

@@ -358,7 +358,6 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *rout
 			}
 		}
 		funcStep.Route = r
-
 	}
 	for ck, cv := range funcStep.FuncSteps {
 		logs.WithContext(ctx).Info("inside funcStep.FuncSteps - child iteration")
