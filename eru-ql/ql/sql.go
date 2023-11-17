@@ -63,36 +63,40 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 		//logs.WithContext(ctx).Info(fmt.Sprint("v : ", reflect.TypeOf(v)))
 		//logs.WithContext(ctx).Info(fmt.Sprint("v : ", v))
 		//logs.WithContext(ctx).Info(fmt.Sprint("k : ", k))
-		var str string
-		switch tp := v.(type) {
-		case float64:
-			str = fmt.Sprint(v.(float64))
-			break
-		case string:
-			str = v.(string)
-			//logs.WithContext(ctx).Info(fmt.Sprint(sqd.FinalVariables))
-			vBytes, err := processTemplate(ctx, "variable", str, sqd.FinalVariables, "string", "")
-			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
-				return nil, nil, err
+
+		//ignoring processing token variable
+		if k != module_model.RULEPREFIX_TOKEN {
+			var str string
+			switch tp := v.(type) {
+			case float64:
+				str = fmt.Sprint(v.(float64))
+				break
+			case string:
+				str = v.(string)
+				logs.WithContext(ctx).Info(fmt.Sprint(sqd.FinalVariables))
+				vBytes, err := processTemplate(ctx, "variable", str, sqd.FinalVariables, "string", "")
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return nil, nil, err
+				}
+				if string(vBytes) != "" {
+					str = string(vBytes)
+				}
+				break
+			case map[string]interface{}:
+				strBytes, strBytesErr := json.Marshal(v)
+				err = strBytesErr
+				str = string(strBytes)
+				break
+			default:
+				logs.WithContext(ctx).Warn(fmt.Sprint("Unhandled type for : ", tp))
+				// do noting
+				break
 			}
-			if string(vBytes) != "" {
-				str = string(vBytes)
-			}
-			break
-		case map[string]interface{}:
-			strBytes, strBytesErr := json.Marshal(v)
-			err = strBytesErr
-			str = string(strBytes)
-			break
-		default:
-			logs.WithContext(ctx).Warn(fmt.Sprint("Unhandled type for : ", tp))
-			// do noting
-			break
+			//logs.WithContext(ctx).Info(fmt.Sprint(k, " = ", str))
+			sqd.FinalVariables[k] = str
+			sqd.Query = strings.Replace(sqd.Query, fmt.Sprint("$", k), str, -1)
 		}
-		//logs.WithContext(ctx).Info(fmt.Sprint(k, " = ", str))
-		sqd.FinalVariables[k] = str
-		sqd.Query = strings.Replace(sqd.Query, fmt.Sprint("$", k), str, -1)
 	}
 	queryObj := QueryObject{}
 	queryObj.Query = sqd.Query

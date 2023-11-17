@@ -46,7 +46,9 @@ func (qld *QLData) SetQLDataCommon(ctx context.Context, mq module_model.MyQuery,
 	qld.IsPublic = isPublic
 	qld.OutputType = outputType
 	err = qld.SetFinalVars(ctx, vars)
-	qld.FinalVariables[module_model.RULEPREFIX_TOKEN] = tokenObj
+	if tokenObj != nil {
+		qld.FinalVariables[module_model.RULEPREFIX_TOKEN] = tokenObj
+	}
 	return err
 }
 func (qld *QLData) SetFinalVars(ctx context.Context, vars map[string]interface{}) (err error) {

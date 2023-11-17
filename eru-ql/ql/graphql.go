@@ -54,15 +54,18 @@ func (gqd *GraphQLData) getSqlForQuery(ctx context.Context, projectId string, da
 	//mq == nil changed to below
 	if mq.QueryName == "" {
 		err = errors.New(fmt.Sprint("Query ", query, " not found"))
-		logs.WithContext(ctx).Info(err.Error())
+		//logs.WithContext(ctx).Info(err.Error())
 		return err
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint("Query ", query, " found. Executing the same inside current GraphQL routine"))
 	qlInterface := GetQL(mq.QueryType)
 	if qlInterface == nil {
 		err = errors.New("Invalid Query Type")
 		logs.WithContext(ctx).Info(err.Error())
 		return err
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint(gqd.FinalVariables))
+
 	qlInterface.SetQLData(ctx, mq, gqd.FinalVariables, false, tokenObj, isPublic, gqd.OutputType) //passing false as we only need the query in execute function and not actual result
 	_, queryObjs, err := qlInterface.Execute(ctx, projectId, datasources, s, gqd.OutputType)
 	for i, q := range queryObjs {
@@ -155,7 +158,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				sqlObj.WithQuery = gqd.QueryObject[sqlObj.MainTableName].Query
 
 				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
+					logs.WithContext(ctx).Info(err.Error())
 				}
 
 				if sqlObj.SecurityClause == nil {
@@ -578,8 +581,9 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 	logs.WithContext(ctx).Debug("getTableSecurityRule - Start")
 	sr, err := s.GetTableSecurityRule(ctx, projectId, dbAlias, tableName)
 	if err != nil {
-		err = errors.New(fmt.Sprint("error from getTableSecurityRule = ", err.Error()))
-		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Info(err.Error())
+		err = errors.New(fmt.Sprint("TableSecurityRule not defined for ", tableName))
+		logs.WithContext(ctx).Info(err.Error())
 		return "", err
 	}
 
@@ -589,7 +593,7 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 		ruleOutput, err = processSecurityRule(ctx, sr.Insert, vars) //todo to change it as per query type
 	} else {
 		err = errors.New(fmt.Sprint("Invalid Query Type : ", op))
-		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Info(err.Error())
 	}
 
 	if err != nil {
