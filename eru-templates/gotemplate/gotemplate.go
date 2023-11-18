@@ -106,6 +106,9 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			}
 			return str
 		},
+		"doubleQuote": func(s string) string {
+			return strconv.Quote(fmt.Sprint("\"", s, "\""))
+		},
 		"generateAesKey": func(bits int) ([]byte, error) {
 			aesObj, err := eruaes.GenerateKey(ctx, bits)
 			if err != nil {
