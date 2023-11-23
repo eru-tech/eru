@@ -530,26 +530,60 @@ func (sqlObj *SQLObjectQ) processSortClause(ctx context.Context, val interface{}
 		switch reflect.TypeOf(val).Kind() {
 		case reflect.Slice:
 			s := reflect.ValueOf(val)
-			temp := make([]string, s.Len())
+			var temp []string
 			for i := 0; i < s.Len(); i++ {
 				isDesc = ""
-				si, ok := s.Index(i).Interface().(int)
-				if ok {
-					if si < 0 {
-						isDesc = " desc"
-						si = si * -1
+				switch reflect.TypeOf(s.Index(i).Interface()).Kind() {
+				case reflect.Map:
+					if sMap, ok := s.Index(i).Interface().(map[string]interface{}); ok {
+						for k, v := range sMap {
+							switch reflect.TypeOf(v).Kind() {
+							case reflect.Slice:
+								ss := reflect.ValueOf(v)
+								for ii := 0; ii < ss.Len(); ii++ {
+									isDesc = ""
+									sss := fmt.Sprintf("%s", ss.Index(ii))
+									if strings.HasPrefix(sss, "-") {
+										isDesc = " desc"
+										sss = strings.Replace(sss, "-", "", 1)
+									}
+									if strings.Contains(sss, ".") {
+										temp = append(temp, sss+isDesc)
+									} else {
+										temp = append(temp, fmt.Sprint(sqlObj.MainTableName, ".", k, "->>'", sss, "'", isDesc))
+									}
+								}
+							default:
+								//do nothing
+
+							}
+						}
 					}
-					temp[i] = fmt.Sprint(si, " ", isDesc)
-				} else {
-					ss := fmt.Sprintf("%s", s.Index(i))
-					if strings.HasPrefix(ss, "-") {
-						isDesc = " desc"
-						ss = strings.Replace(ss, "-", "", 1)
-					}
-					if strings.Contains(ss, ".") {
-						temp[i] = ss + isDesc
+				default:
+					si, ok := s.Index(i).Interface().(int)
+					if ok {
+						if si < 0 {
+							isDesc = " desc"
+							si = si * -1
+						}
+						temp = append(temp, fmt.Sprint(si, " ", isDesc))
+					} else if sf, sfOk := s.Index(i).Interface().(float64); sfOk {
+						if sf < 0 {
+							isDesc = " desc"
+							sf = sf * -1
+						}
+						temp = append(temp, fmt.Sprint(sf, " ", isDesc))
 					} else {
-						temp[i] = fmt.Sprintf("%s%s%s%s", sqlObj.MainTableName, ".", ss, isDesc)
+						ss := fmt.Sprintf("%s", s.Index(i))
+						if strings.HasPrefix(ss, "-") {
+							isDesc = " desc"
+							ss = strings.Replace(ss, "-", "", 1)
+						}
+						if strings.Contains(ss, ".") {
+							temp = append(temp, ss+isDesc)
+						} else {
+							temp = append(temp, fmt.Sprintf("%s%s%s%s", sqlObj.MainTableName, ".", ss, isDesc))
+						}
 					}
 				}
 			}
