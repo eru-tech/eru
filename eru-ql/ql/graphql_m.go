@@ -332,7 +332,7 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_model.MutationRecord, tableName string) {
 	logs.WithContext(ctx).Debug("MakeMutationQuery - Start")
 	returningStr := ""
-	strWhereClause, e := processWhereClause(ctx, sqlObj.WhereClause, "", sqlObj.MainTableName, false)
+	strWhereClause, e := processWhereClause(ctx, sqlObj.WhereClause, "", sqlObj.MainTableName, false, false)
 	if e != "" {
 		logs.WithContext(ctx).Error(e)
 		//TODO to return errors to main result

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-routes/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -22,9 +23,9 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		funcName := vars["funcname"]
-
+		funcStepName := vars["funcstepname"]
 		// Lookup a routes in a function based on host and url
-
+		logs.WithContext(r.Context()).Info(fmt.Sprint("funcStepName = ", funcStepName))
 		funcGroup, err := s.GetAndValidateFunc(r.Context(), funcName, projectId, host, url, r.Method, r.Header, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
@@ -32,12 +33,15 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		response, err := funcGroup.Execute(r.Context(), r, module_store.FuncThreads, module_store.LoopThreads)
+		response, err := funcGroup.Execute(r.Context(), r, module_store.FuncThreads, module_store.LoopThreads, funcStepName)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+		logs.WithContext(r.Context()).Info(fmt.Sprint(response))
+
+		logs.WithContext(r.Context()).Info(fmt.Sprint(response.StatusCode))
 		defer response.Body.Close()
 		if response.StatusCode >= 300 && response.StatusCode <= 399 {
 			http.Redirect(w, r, response.Header.Get("Location"), response.StatusCode)

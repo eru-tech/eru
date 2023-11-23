@@ -334,7 +334,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 	return sqlCols, err
 }
 
-func processWhereClause(ctx context.Context, val interface{}, parentKey string, mainTableName string, isJoinClause bool) (whereClause string, err string) { //, gqr *graphQLRead
+func processWhereClause(ctx context.Context, val interface{}, parentKey string, mainTableName string, isJoinClause bool, jsonOp bool) (whereClause string, err string) { //, gqr *graphQLRead
 	logs.WithContext(ctx).Debug("processWhereClause - Start")
 
 	if val != nil {
@@ -343,7 +343,12 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 		} else if strings.HasPrefix(parentKey, "FIELD_") {
 			parentKey = fmt.Sprint(strings.Replace(parentKey, "FIELD_", "", 1))
 		} else if !(strings.Contains(parentKey, ".")) {
-			parentKey = fmt.Sprint(mainTableName, ".", parentKey)
+			if jsonOp {
+				parentKey = fmt.Sprint(mainTableName, "->>'", parentKey, "'")
+			} else {
+				parentKey = fmt.Sprint(mainTableName, ".", parentKey)
+			}
+
 		}
 		switch reflect.TypeOf(val).Kind() {
 		case reflect.Map:
@@ -368,12 +373,26 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 						s := reflect.ValueOf(newVal)
 						innerTempArray := make([]string, s.Len())
 						for ii := 0; ii < s.Len(); ii++ {
-							innerTempArray[ii], err = processWhereClause(ctx, s.Index(ii).Interface(), v.String(), mainTableName, isJoinClause)
+							innerTempArray[ii], err = processWhereClause(ctx, s.Index(ii).Interface(), v.String(), mainTableName, isJoinClause, jsonOp)
 							if err != "" {
 								return "", err
 							}
 						}
 						tempArray = append(tempArray, fmt.Sprint("( ", strings.Join(innerTempArray, " or "), " )"))
+					} else if v.String() == "json" {
+						logs.WithContext(ctx).Info(fmt.Sprint("json operator found for :", parentKey))
+						logs.WithContext(ctx).Info(fmt.Sprint(newVal))
+						str := ""
+						str, err = processWhereClause(ctx, newVal, "", parentKey, isJoinClause, true)
+						if str == "" {
+							logs.WithContext(ctx).Warn(fmt.Sprint("skipping whereclause for ", newVal, " as there is no value provided by user  : ", str))
+						} else {
+							tempArray = append(tempArray, str)
+						}
+						if err != "" {
+							logs.WithContext(ctx).Error(err)
+							return "", err
+						}
 					} else {
 						op := ""
 						switch v.String() {
@@ -458,7 +477,7 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 							}
 						default:
 							str := ""
-							str, err = processWhereClause(ctx, newVal, eru_utils.ReplaceUnderscoresWithDots(v.String()), mainTableName, isJoinClause)
+							str, err = processWhereClause(ctx, newVal, eru_utils.ReplaceUnderscoresWithDots(v.String()), mainTableName, isJoinClause, jsonOp)
 							if str == "" {
 								logs.WithContext(ctx).Warn(fmt.Sprint("skipping whereclause for ", newVal, " as there is no value provided by user  : ", str))
 							} else {
@@ -589,7 +608,7 @@ func (sqlObj *SQLObjectQ) processJoins(ctx context.Context, val []*OrderedMap) (
 							logs.WithContext(ctx).Warn("valid values for joinType are LEFT RIGHT and INNER ")
 						}
 					} else if vv.String() == "on" {
-						oc, _ := processWhereClause(ctx, reflect.ValueOf(v).MapIndex(vv).Interface(), "", sqlObj.MainTableName, true)
+						oc, _ := processWhereClause(ctx, reflect.ValueOf(v).MapIndex(vv).Interface(), "", sqlObj.MainTableName, true, false)
 						onClause = oc
 					}
 				}
@@ -613,7 +632,7 @@ func (sqlObj *SQLObjectQ) MakeQuery(ctx context.Context, sqlMaker ds.SqlMakerI, 
 		strColums = strings.Join(sqlObj.Columns.ColNames, " , ")
 	}
 	strJoinClause := sqlObj.processJoins(ctx, sqlObj.JoinClause)
-	strWhereClause, e := processWhereClause(ctx, sqlObj.WhereClause, "", sqlObj.MainTableName, false)
+	strWhereClause, e := processWhereClause(ctx, sqlObj.WhereClause, "", sqlObj.MainTableName, false, false)
 	if e != "" {
 		err = errors.New(e)
 	}

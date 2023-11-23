@@ -64,7 +64,6 @@ func (gqd *GraphQLData) getSqlForQuery(ctx context.Context, projectId string, da
 		logs.WithContext(ctx).Info(err.Error())
 		return err
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(gqd.FinalVariables))
 
 	qlInterface.SetQLData(ctx, mq, gqd.FinalVariables, false, tokenObj, isPublic, gqd.OutputType) //passing false as we only need the query in execute function and not actual result
 	_, queryObjs, err := qlInterface.Execute(ctx, projectId, datasources, s, gqd.OutputType)
