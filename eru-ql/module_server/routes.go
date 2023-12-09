@@ -32,6 +32,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/{project}/myquery/save/{queryname}/{querytype}").HandlerFunc(module_handlers.ProjectMyQuerySaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/myquery/remove/{queryname}").HandlerFunc(module_handlers.ProjectMyQueryRemoveHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/myquery/list/{querytype}").HandlerFunc(module_handlers.ProjectMyQueryListHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/myquery/list").HandlerFunc(module_handlers.ProjectMyQueryListNamesHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/myquery/config/{queryname}").HandlerFunc(module_handlers.ProjectMyQueryConfigHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/myquery/execute/{queryname}").HandlerFunc(module_handlers.ProjectMyQueryExecuteHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/myquery/execute/{queryname}/{outputtype}").HandlerFunc(module_handlers.ProjectMyQueryExecuteHandler(sh.Store))

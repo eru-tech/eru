@@ -101,6 +101,24 @@ func ProjectMyQueryListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
+func ProjectMyQueryListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectMyQueryListNamesHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+
+		myqueries, err := s.GetMyQueriesNames(r.Context(), projectID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"myqueries": myqueries})
+		}
+		return
+	}
+}
+
 func ProjectMyQueryConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ProjectMyQueryConfigHandler - Start")

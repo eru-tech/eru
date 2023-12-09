@@ -51,6 +51,7 @@ type ModuleStoreI interface {
 	RemoveMyQuery(ctx context.Context, projectId string, queryName string, realStore ModuleStoreI) error
 	GetMyQuery(ctx context.Context, projectId string, queryName string) (myquery module_model.MyQuery, err error)
 	GetMyQueries(ctx context.Context, projectId string, queryType string) (myqueries map[string]module_model.MyQuery, err error)
+	GetMyQueriesNames(ctx context.Context, projectId string) (myqueries []string, err error)
 	AddSchemaJoin(ctx context.Context, projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error)
 	RemoveSchemaJoin(ctx context.Context, projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error)
 }
@@ -539,6 +540,26 @@ func (ms *ModuleStore) GetMyQueries(ctx context.Context, projectId string, query
 				}
 			}
 			return queriesToReturn, nil
+		}
+	} else {
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		return nil, err
+	}
+}
+
+func (ms *ModuleStore) GetMyQueriesNames(ctx context.Context, projectId string) (myqueries []string, err error) {
+	logs.WithContext(ctx).Debug("GetMyQueriesNames - Start")
+	if _, ok := ms.Projects[projectId]; ok {
+		if ms.Projects[projectId].MyQueries == nil {
+			return
+		} else {
+			for k, _ := range ms.Projects[projectId].MyQueries {
+				myqueries = append(myqueries, k)
+			}
+			return
 		}
 	} else {
 		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
