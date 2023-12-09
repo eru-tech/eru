@@ -21,6 +21,8 @@ import (
 	"time"
 )
 
+var blockedWords = []string{"SELECT ", "SELECT*", "OR'", "'OR"}
+
 type tablesInQuery struct {
 	name   string
 	nested bool
@@ -104,7 +106,44 @@ type SqlMakerI interface {
 	getDataTypeMapping(ctx context.Context, dataType string) string
 	GetSqlResult(ctx context.Context) map[string]interface{}
 	GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string
+	GetBlockedWords() []string
+	VerifyForBlockedWords(ctx context.Context, key string, val interface{}, realSqr SqlMakerI) (err error)
 	//CreateConn() error
+}
+
+func (sqr *SqlMaker) GetBlockedWords() []string {
+	return blockedWords
+}
+
+func (sqr *SqlMaker) VerifyForBlockedWords(ctx context.Context, key string, valI interface{}, realSqr SqlMakerI) (err error) {
+	valB, errB := json.Marshal(valI)
+	if errB != nil {
+		logs.WithContext(ctx).Error(errB.Error())
+		return errB
+	}
+	vWords := strings.Split(strings.ToUpper(string(valB)), " ")
+	for _, v := range realSqr.GetBlockedWords() {
+		for wk, w := range vWords {
+			if strings.Contains(w, v) {
+				err = errors.New(fmt.Sprint("Suspicious value found for ", key, " ", w, " ", v))
+				logs.WithContext(ctx).Error(err.Error())
+				return
+			}
+			if wk+1 < len(vWords) {
+				nw := fmt.Sprint(w, vWords[wk+1])
+				logs.WithContext(ctx).Info(nw)
+				if (strings.HasPrefix(w, v) || strings.HasSuffix(w, v)) && wk < len(vWords) {
+					logs.WithContext(ctx).Info("inside inside")
+					if strings.Contains(nw, v) {
+						err = errors.New(fmt.Sprint("Suspicious value found for ", key, " ", nw, " ", v))
+						logs.WithContext(ctx).Error(err.Error())
+						return
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (sqr *SqlMaker) GetReturnAlias(ctx context.Context) string {

@@ -130,6 +130,13 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				graphQLs[i] = ds.GetSqlMaker(datasource.DbName)
 			}
 
+			for k, v := range gqd.FinalVariables {
+				err = graphQLs[i].VerifyForBlockedWords(ctx, k, v, graphQLs[i])
+				if err != nil {
+					return
+				}
+			}
+
 			switch op.Operation {
 			case "query":
 				sqlObj := SQLObjectQ{}

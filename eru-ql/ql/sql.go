@@ -40,16 +40,31 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 		var str string
 		switch tp := v.(type) {
 		case []interface{}:
+			isMap := false
 			if iArray, ok := v.([]interface{}); ok {
+				logs.WithContext(ctx).Info(fmt.Sprint(iArray))
 				for i, strText := range iArray {
+					isMap = false
 					sep := ""
 					if i > 0 {
 						sep = " , "
 					}
-					str = fmt.Sprint(str, sep, "'", strText, "'")
+					if txt, txtOk := strText.(string); txtOk {
+						str = fmt.Sprint(str, sep, "'", txt, "'")
+					} else if _, mapVOk := strText.(map[string]interface{}); mapVOk {
+						isMap = true
+						break
+					}
+				}
+				if isMap {
+					mapJ, mapJErr := json.Marshal(iArray)
+					if mapJErr != nil {
+						logs.WithContext(ctx).Error(mapJErr.Error())
+						return nil, nil, mapJErr
+					}
+					str = string(mapJ)
 				}
 			}
-			logs.WithContext(ctx).Info(fmt.Sprint(k, " = ", str))
 			sqd.FinalVariables[k] = str
 			sqd.Query = strings.Replace(sqd.Query, fmt.Sprint("$", k), str, -1)
 			break
@@ -59,10 +74,8 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			break
 		}
 	}
+
 	for k, v := range sqd.FinalVariables {
-		//logs.WithContext(ctx).Info(fmt.Sprint("v : ", reflect.TypeOf(v)))
-		//logs.WithContext(ctx).Info(fmt.Sprint("v : ", v))
-		//logs.WithContext(ctx).Info(fmt.Sprint("k : ", k))
 
 		//ignoring processing token variable
 		if k != module_model.RULEPREFIX_TOKEN {
@@ -97,6 +110,11 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			sqd.Query = strings.Replace(sqd.Query, fmt.Sprint("$", k), str, -1)
 		}
 	}
+
+	logs.WithContext(ctx).Info("printing query after second replace")
+	logs.WithContext(ctx).Info(sqd.Query)
+	logs.WithContext(ctx).Info(fmt.Sprint(sqd.FinalVariables))
+
 	queryObj := QueryObject{}
 	queryObj.Query = sqd.Query
 	queryObj.Cols = sqd.Cols

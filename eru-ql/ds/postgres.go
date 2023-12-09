@@ -11,8 +11,14 @@ import (
 	"strings"
 )
 
+var dbBlockedWords = []string{"--"}
+
 type PostgresSqlMaker struct {
 	SqlMaker
+}
+
+func (pr *PostgresSqlMaker) GetBlockedWords() []string {
+	return append(blockedWords, dbBlockedWords...)
 }
 
 func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string {
