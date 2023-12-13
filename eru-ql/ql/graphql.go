@@ -131,9 +131,11 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 			}
 
 			for k, v := range gqd.FinalVariables {
-				err = graphQLs[i].VerifyForBlockedWords(ctx, k, v, graphQLs[i])
-				if err != nil {
-					return
+				if k != module_model.RULEPREFIX_TOKEN {
+					err = graphQLs[i].VerifyForBlockedWords(ctx, k, v, graphQLs[i])
+					if err != nil {
+						return
+					}
 				}
 			}
 

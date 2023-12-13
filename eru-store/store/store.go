@@ -7,6 +7,7 @@ import (
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	repos "github.com/eru-tech/eru/eru-repos/repos"
+	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/jmoiron/sqlx"
 	"strings"
 )
@@ -35,6 +36,8 @@ type StoreI interface {
 	SaveRepoToken(ctx context.Context, projectId string, repo repos.RepoToken, s StoreI) (err error)
 	FetchRepo(ctx context.Context, projectId string) (repo *repos.Repo, err error)
 	GetProjectConfigForRepo(ctx context.Context, projectId string, ms StoreI) (repoData map[string]map[string]interface{}, err error)
+	SaveSm(ctx context.Context, projectId string, secretManager sm.SmStoreI, s StoreI) (err error)
+	FetchSm(ctx context.Context, projectId string) (sm *sm.SmStoreI, err error)
 	//SaveProject(projectId string, realStore StoreI) error
 	//RemoveProject(projectId string, realStore StoreI) error
 	//GetProjectConfig(projectId string) (*model.ProjectI, error)
@@ -46,6 +49,7 @@ type Store struct {
 	Variables         map[string]*Variables
 	ProjectRepos      map[string]*repos.Repo
 	ProjectRepoTokens map[string]*repos.RepoToken
+	SecreManager      map[string]*sm.SmStoreI
 }
 
 type Variables struct {
@@ -306,6 +310,33 @@ func (store *Store) SaveRepoToken(ctx context.Context, projectId string, repoTok
 		store.ProjectRepoTokens[projectId] = &repos.RepoToken{}
 	}
 	store.ProjectRepoTokens[projectId] = &repoToken
+	err = s.SaveStore(ctx, "", s)
+	return
+}
+
+func (store *Store) FetchSm(ctx context.Context, projectId string) (smObj *sm.SmStoreI, err error) {
+	logs.WithContext(ctx).Debug("FetchSm - Start")
+	if store.SecreManager == nil {
+		err = errors.New("No secret manager defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	ok := false
+	if smObj, ok = store.SecreManager[projectId]; !ok {
+		err = errors.New(fmt.Sprint("Secret Manager not defined for project :", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	return
+}
+
+func (store *Store) SaveSm(ctx context.Context, projectId string, secretManager sm.SmStoreI, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveSm - Start")
+	if store.SecreManager == nil {
+		store.SecreManager = make(map[string]*sm.SmStoreI)
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(&secretManager))
+	store.SecreManager[projectId] = &secretManager
 	err = s.SaveStore(ctx, "", s)
 	return
 }

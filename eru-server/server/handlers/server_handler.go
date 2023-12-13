@@ -6,6 +6,7 @@ import (
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-repos/repos"
+	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
 	"github.com/gorilla/mux"
 	"net/http"
@@ -227,6 +228,50 @@ func SaveRepoTokenHandler(s store.StoreI) http.HandlerFunc {
 		}
 		FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Repo Token for project ", projectId, " saved successfully.")})
+	}
+}
+
+func FetchSmHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FetchSmHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		smObj, err := s.FetchSm(r.Context(), projectId)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(smObj)
+	}
+}
+
+func SaveSmHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveSmHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		smType := vars["smtype"]
+
+		smJson := json.NewDecoder(r.Body)
+		smJson.DisallowUnknownFields()
+
+		var smObj = sm.GetSm(smType)
+		if err := smJson.Decode(&smObj); err == nil {
+			err = s.SaveSm(r.Context(), projectId, smObj, s)
+			if err != nil {
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		} else {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Secret Manager for project ", projectId, " saved successfully.")})
 	}
 }
 

@@ -34,6 +34,7 @@ type ModuleStoreI interface {
 	RemoveRoute(ctx context.Context, routeName string, projectId string, realStore ModuleStoreI) error
 	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route routes.Route, err error)
 	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (funcGroup routes.FuncGroup, err error)
+	ValidateFunc(ctx context.Context, funcObj routes.FuncGroup, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (funcGroup routes.FuncGroup, err error)
 	SaveFunc(ctx context.Context, funcObj routes.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveFunc(ctx context.Context, funcName string, projectId string, realStore ModuleStoreI) error
 }
@@ -262,7 +263,14 @@ func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, 
 		if funcGroup, ok = prg.FuncGroups[funcName]; !ok {
 			return funcGroup, errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
 		}
+		return ms.ValidateFunc(ctx, funcGroup, projectId, host, url, method, headers, s)
+	}
+	return
+}
 
+func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup routes.FuncGroup, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (cloneFunc routes.FuncGroup, err error) {
+	logs.WithContext(ctx).Debug("ValidateFunc - Start")
+	if prg, ok := ms.Projects[projectId]; ok {
 		FuncI, jmErr := json.Marshal(funcGroup)
 		if jmErr != nil {
 			err = errors.New("funcGroup marshal failed")

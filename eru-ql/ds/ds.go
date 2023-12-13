@@ -10,6 +10,8 @@ import (
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/kinds"
+	"regexp"
+
 	//"github.com/graphql-go/graphql/language/ast"
 	//"github.com/graphql-go/graphql/language/kinds"
 	"github.com/jmoiron/sqlx"
@@ -21,7 +23,8 @@ import (
 	"time"
 )
 
-var blockedWords = []string{"SELECT ", "SELECT*", "OR'", "'OR"}
+var blockedWords = []string{"SELECT ", "SELECT*", "INSERT ", "UPDATE ", "DELETE FROM ", "CREATE ", "DROP ", "ALTER ", "TRUNCATE ", "RENAME ", "GRANT ", "REVOKE ", "COMMIT ", "ROLLBACK ", "SAVEPOINT "}
+var blockedRegex = []string{"OR[ ]*'", "AND[ ]*'"}
 
 type tablesInQuery struct {
 	name   string
@@ -107,12 +110,16 @@ type SqlMakerI interface {
 	GetSqlResult(ctx context.Context) map[string]interface{}
 	GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string
 	GetBlockedWords() []string
+	GetBlockedRegex() []string
 	VerifyForBlockedWords(ctx context.Context, key string, val interface{}, realSqr SqlMakerI) (err error)
 	//CreateConn() error
 }
 
 func (sqr *SqlMaker) GetBlockedWords() []string {
 	return blockedWords
+}
+func (sqr *SqlMaker) GetBlockedRegex() []string {
+	return blockedRegex
 }
 
 func (sqr *SqlMaker) VerifyForBlockedWords(ctx context.Context, key string, valI interface{}, realSqr SqlMakerI) (err error) {
@@ -121,26 +128,28 @@ func (sqr *SqlMaker) VerifyForBlockedWords(ctx context.Context, key string, valI
 		logs.WithContext(ctx).Error(errB.Error())
 		return errB
 	}
-	vWords := strings.Split(strings.ToUpper(string(valB)), " ")
+	vWords := strings.ToUpper(string(valB))
 	for _, v := range realSqr.GetBlockedWords() {
-		for wk, w := range vWords {
-			if strings.Contains(w, v) {
-				err = errors.New(fmt.Sprint("Suspicious value found for ", key, " ", w, " ", v))
-				logs.WithContext(ctx).Error(err.Error())
-				return
-			}
-			if wk+1 < len(vWords) {
-				nw := fmt.Sprint(w, vWords[wk+1])
-				logs.WithContext(ctx).Info(nw)
-				if (strings.HasPrefix(w, v) || strings.HasSuffix(w, v)) && wk < len(vWords) {
-					logs.WithContext(ctx).Info("inside inside")
-					if strings.Contains(nw, v) {
-						err = errors.New(fmt.Sprint("Suspicious value found for ", key, " ", nw, " ", v))
-						logs.WithContext(ctx).Error(err.Error())
-						return
-					}
-				}
-			}
+		if strings.Contains(vWords, v) {
+			err = errors.New(fmt.Sprint("Suspicious value found for ", key, " ", vWords, " ", v))
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+	}
+	for _, v := range realSqr.GetBlockedRegex() {
+		logs.WithContext(ctx).Info(vWords)
+		logs.WithContext(ctx).Info(v)
+		match, mErr := regexp.MatchString(v, vWords)
+		if mErr != nil {
+			err = mErr
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		logs.WithContext(ctx).Info(fmt.Sprint(match))
+		if match {
+			err = errors.New(fmt.Sprint("Suspicious value found for ", key, " ", vWords, " ", v))
+			logs.WithContext(ctx).Error(err.Error())
+			return
 		}
 	}
 	return nil

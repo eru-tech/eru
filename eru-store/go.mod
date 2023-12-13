@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-secret-manager v0.0.0-00010101000000-000000000000
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/lib/pq v1.2.0
 )
@@ -19,5 +20,6 @@ replace (
 	github.com/eru-tech/eru/eru-logs => ../eru-logs
 	github.com/eru-tech/eru/eru-repos => ../eru-repos
 	github.com/eru-tech/eru/eru-utils => ../eru-utils
+	github.com/eru-tech/eru/eru-secret-manager => ../eru-secret-manager
 )
 

@@ -254,7 +254,7 @@ func (auth *Auth) sendCode(ctx context.Context, credentialIdentifier string, rec
 				logs.WithContext(ctx).Error(err.Error())
 				return
 			}
-			_, respErr := auth.Hooks.SRCF.Execute(r.Context(), r, 1, 1)
+			_, respErr := auth.Hooks.SRCF.Execute(r.Context(), r, 1, 1, "")
 			srcHookFound = true
 			return respErr
 		}
@@ -280,7 +280,7 @@ func (auth *Auth) sendCode(ctx context.Context, credentialIdentifier string, rec
 				logs.WithContext(ctx).Error(err.Error())
 				return
 			}
-			_, respErr := auth.Hooks.SVCF.Execute(r.Context(), r, 1, 1)
+			_, respErr := auth.Hooks.SVCF.Execute(r.Context(), r, 1, 1, "")
 			srcHookFound = true
 			return respErr
 		}
@@ -337,7 +337,7 @@ func (auth *Auth) sendWelcomeEmail(ctx context.Context, credentialIdentifier str
 			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
-		_, respErr := auth.Hooks.SWEF.Execute(r.Context(), r, 1, 1)
+		_, respErr := auth.Hooks.SWEF.Execute(r.Context(), r, 1, 1, "")
 		swefHookFound = true
 		return respErr
 	}

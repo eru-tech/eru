@@ -79,6 +79,12 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 
 		//ignoring processing token variable
 		if k != module_model.RULEPREFIX_TOKEN {
+
+			err = sr.VerifyForBlockedWords(ctx, k, v, sr)
+			if err != nil {
+				return
+			}
+
 			var str string
 			switch tp := v.(type) {
 			case float64:
