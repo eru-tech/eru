@@ -204,6 +204,22 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			}
 			return d, nil
 		},
+		"getMapKeys": func(orgMap map[string]interface{}) (d []string, err error) {
+			for k, _ := range orgMap {
+				d = append(d, k)
+			}
+			return d, nil
+		},
+		"arrayLen": func(arr interface{}) (d int, err error) {
+			d = 0
+			if o, oOk := arr.([]interface{}); oOk {
+				return len(o), err
+			}
+			if o, oOk := arr.([]string); oOk {
+				return len(o), err
+			}
+			return d, errors.New("not an array")
+		},
 		"getMapPointerValue": func(orgMap map[string]*interface{}, key string) (d interface{}, err error) {
 			d = make(map[string]interface{})
 			ok := false
