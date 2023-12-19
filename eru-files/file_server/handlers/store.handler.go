@@ -8,6 +8,7 @@ import (
 	"github.com/eru-tech/eru/eru-files/storage"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
 	"net/http"
 	"os"
@@ -267,6 +268,45 @@ func AesKeyGenerateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		} else {
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"aesKey": aesKey})
+		}
+	}
+}
+
+func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectSetingsSaveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+
+		prjConfigFromReq := json.NewDecoder(r.Body)
+		prjConfigFromReq.DisallowUnknownFields()
+
+		var projectSettings file_model.ProjectSettings
+
+		if err := prjConfigFromReq.Decode(&projectSettings); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			logs.WithContext(r.Context()).Info(fmt.Sprint(projectSettings))
+			err := utils.ValidateStruct(r.Context(), projectSettings, "")
+			if err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+
+		err := s.SaveProjectSettings(r.Context(), projectId, projectSettings, s)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("project settings for ", projectId, " saved successfully")})
 		}
 	}
 }

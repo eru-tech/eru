@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	erujwt "github.com/eru-tech/eru/eru-crypto/jwt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
 	utils "github.com/eru-tech/eru/eru-utils"
@@ -23,9 +22,9 @@ import (
 	"strings"
 )
 
-func fetchClaimsFromToken(ctx context.Context, strToken string, jwkUrl string) (claims interface{}, err error) {
-	return erujwt.DecryptTokenJWK(ctx, strToken, jwkUrl)
-}
+//func fetchClaimsFromToken(ctx context.Context, strToken string, jwkUrl string) (claims interface{}, err error) {
+//	return erujwt.DecryptTokenJWK(ctx, strToken, jwkUrl)
+//}
 
 func createFormFileCopy(w *multipart.Writer, part *multipart.Part) (io.Writer, error) {
 	h := make(textproto.MIMEHeader)
@@ -168,15 +167,16 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 	return
 }
 
-func processTemplate(ctx context.Context, templateName string, templateString string, vars *FuncTemplateVars, outputType string, tokenHeaderKey string, jwkUrl string) (output []byte, err error) {
+func processTemplate(ctx context.Context, templateName string, templateString string, vars *FuncTemplateVars, outputType string, tokenHeaderKey string) (output []byte, err error) {
 	logs.WithContext(ctx).Debug("processTemplate - Start")
 
 	if strings.Contains(templateString, "{{.token") {
-		strToken := vars.Vars.Headers[tokenHeaderKey]
-		vars.Vars.Token, err = fetchClaimsFromToken(ctx, strToken.(string), jwkUrl)
-		if err != nil {
-			return
-		}
+		//strToken := vars.Vars.Headers[tokenHeaderKey]
+		//vars.Vars.Token, err = fetchClaimsFromToken(ctx, strToken.(string), jwkUrl)
+		//if err != nil {
+		//	return
+		//}
+		vars.Vars.Token = vars.Vars.Headers[tokenHeaderKey]
 	}
 	goTmpl := gotemplate.GoTemplate{templateName, templateString}
 	outputObj, err := goTmpl.Execute(ctx, vars, outputType)
@@ -202,7 +202,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		return
 	}
 }
-func makeMultipart(ctx context.Context, request *http.Request, formData []Headers, fileData []FilePart, vars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, tokenSecretKey string, jwkUrl string) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, err error) {
+func makeMultipart(ctx context.Context, request *http.Request, formData []Headers, fileData []FilePart, vars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, tokenSecretKey string) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, err error) {
 	logs.WithContext(ctx).Debug("makeMultipart - Start")
 
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
@@ -224,7 +224,7 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 				fvars.ResVars = resVars
 				fvars.ReqVars = reqVars
 
-				output, errop := processTemplate(ctx, fd.Key, fd.Value, fvars, "string", tokenSecretKey, jwkUrl)
+				output, errop := processTemplate(ctx, fd.Key, fd.Value, fvars, "string", tokenSecretKey)
 				if errop != nil {
 					err = errop
 					return
@@ -248,7 +248,7 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 		for _, fl := range fileData {
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = vars
-			filename, errop := processTemplate(ctx, "filename", fl.FileName, fvars, "string", tokenSecretKey, jwkUrl)
+			filename, errop := processTemplate(ctx, "filename", fl.FileName, fvars, "string", tokenSecretKey)
 			if errop != nil {
 				err = errop
 				return
@@ -259,7 +259,7 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 			}
 			f2vars := &FuncTemplateVars{}
 			f2vars.Vars = vars
-			filevarname, errop := processTemplate(ctx, "filevarname", fl.FileVarName, f2vars, "string", tokenSecretKey, jwkUrl)
+			filevarname, errop := processTemplate(ctx, "filevarname", fl.FileVarName, f2vars, "string", tokenSecretKey)
 			if errop != nil {
 				err = errop
 				return
@@ -270,7 +270,7 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 			}
 			f3vars := &FuncTemplateVars{}
 			f3vars.Vars = vars
-			filecontent, errop := processTemplate(ctx, "filecontent", fl.FileContent, f3vars, "string", tokenSecretKey, jwkUrl)
+			filecontent, errop := processTemplate(ctx, "filecontent", fl.FileContent, f3vars, "string", tokenSecretKey)
 			if errop != nil {
 				err = errop
 				return
@@ -498,7 +498,7 @@ func processParams(ctx context.Context, request *http.Request, queryParamsRemove
 	params := request.URL.Query()
 	for _, p := range queryParams {
 		if p.IsTemplate {
-			valueBytes, terr := processTemplate(ctx, p.Key, p.Value, pvars, "string", "", "")
+			valueBytes, terr := processTemplate(ctx, p.Key, p.Value, pvars, "string", "")
 			if terr != nil {
 				err = terr
 				return
@@ -526,7 +526,7 @@ func processParams(ctx context.Context, request *http.Request, queryParamsRemove
 	return
 }
 
-func processHeaderTemplates(ctx context.Context, request *http.Request, headersToRemove []string, headers []Headers, reqVarsLoaded bool, vars *TemplateVars, tokenSecretKey string, jwkUrl string, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (err error) {
+func processHeaderTemplates(ctx context.Context, request *http.Request, headersToRemove []string, headers []Headers, reqVarsLoaded bool, vars *TemplateVars, tokenSecretKey string, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (err error) {
 	logs.WithContext(ctx).Debug("processHeaderTemplates - Start")
 	//TODO remove reqVarsLoaded unused parameter
 	for _, h := range headers {
@@ -551,7 +551,7 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 
 			koutputStr := h.Key
 			if strings.HasPrefix(h.Key, "{{") {
-				koutput, err := processTemplate(ctx, "headerkey", h.Key, fvars, "string", tokenSecretKey, jwkUrl)
+				koutput, err := processTemplate(ctx, "headerkey", h.Key, fvars, "string", tokenSecretKey)
 				if err != nil {
 					return err
 				}
@@ -561,7 +561,7 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 				}
 			}
 
-			output, err := processTemplate(ctx, h.Key, h.Value, fvars, "string", tokenSecretKey, jwkUrl)
+			output, err := processTemplate(ctx, h.Key, h.Value, fvars, "string", tokenSecretKey)
 			if err != nil {
 				return err
 			}

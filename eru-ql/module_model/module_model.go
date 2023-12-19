@@ -55,11 +55,10 @@ type Project struct {
 	ProjectId       string                 `eru:"required"`
 	DataSources     map[string]*DataSource //DB alias is the key
 	MyQueries       map[string]*MyQuery    //queryName is key
-	ProjectSettings ProjectSettings
+	ProjectSettings ProjectSettings        `json:"project_settings"`
 }
 type ProjectSettings struct {
-	AesKey    string
-	ClaimsKey string
+	ClaimsKey string `json:"claims_key" eru:"required"`
 }
 
 /*

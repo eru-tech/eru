@@ -39,10 +39,14 @@ func StartUp() (module_store.ModuleStoreI, error) {
 		return nil, err
 	}
 	storeBytes, err := myStore.GetStoreByteArray("")
-	if err == nil {
-		module_store.UnMarshalStore(context.Background(), storeBytes, myStore)
-	} else {
+	if err != nil {
 		logs.WithContext(context.Background()).Error(err.Error())
+		return nil, err
+	}
+	err = module_store.UnMarshalStore(context.Background(), storeBytes, myStore)
+	if err != nil {
+		logs.WithContext(context.Background()).Error(err.Error())
+		return nil, err
 	}
 	//s.Store = myStore
 	return myStore, err

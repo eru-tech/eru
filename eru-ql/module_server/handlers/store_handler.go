@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -124,6 +122,7 @@ func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
+			logs.WithContext(r.Context()).Info(fmt.Sprint(projectSettings))
 			err := utils.ValidateStruct(r.Context(), projectSettings, "")
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
@@ -145,19 +144,19 @@ func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ProjectGenerateAesKeyHandler(s module_store.ModuleStoreI) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		logs.WithContext(r.Context()).Debug("ProjectGenerateAesKeyHandler - Start")
-		bytes := make([]byte, 32) //generate a random 32 byte key for AES-256
-		_, err := rand.Read(bytes)
-		if err != nil {
-			logs.WithContext(r.Context()).Error(err.Error())
-			server_handlers.FormatResponse(w, 400)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-		} else {
-			server_handlers.FormatResponse(w, 200)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"key": hex.EncodeToString(bytes)})
-		}
-		return
-	}
-}
+//func ProjectGenerateAesKeyHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+//	return func(w http.ResponseWriter, r *http.Request) {
+//		logs.WithContext(r.Context()).Debug("ProjectGenerateAesKeyHandler - Start")
+//		bytes := make([]byte, 32) //generate a random 32 byte key for AES-256
+//		_, err := rand.Read(bytes)
+//		if err != nil {
+//			logs.WithContext(r.Context()).Error(err.Error())
+//			server_handlers.FormatResponse(w, 400)
+//			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+//		} else {
+//			server_handlers.FormatResponse(w, 200)
+//			_ = json.NewEncoder(w).Encode(map[string]interface{}{"key": hex.EncodeToString(bytes)})
+//		}
+//		return
+//	}
+//}

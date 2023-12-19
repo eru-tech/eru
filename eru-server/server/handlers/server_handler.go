@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-repos/repos"
@@ -194,16 +193,24 @@ func SaveRepoHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("SaveRepoHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		repoType := vars["repotype"]
 		varJson := json.NewDecoder(r.Body)
 		varJson.DisallowUnknownFields()
-		var sRepo repos.Repo
-		if err := varJson.Decode(&sRepo); err == nil {
-			err = s.SaveRepo(r.Context(), projectId, sRepo, s)
+		sRepoI := repos.GetRepo(repoType)
+		if err := varJson.Decode(&sRepoI); err == nil {
+			err = s.SaveRepo(r.Context(), projectId, sRepoI, s, true)
 			if err != nil {
 				FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
+		} else {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
 		}
 		FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Repo for project ", projectId, " saved successfully.")})
@@ -215,6 +222,9 @@ func SaveRepoTokenHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("SaveRepoTokenHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		varJson := json.NewDecoder(r.Body)
 		varJson.DisallowUnknownFields()
 		var sRepoToken repos.RepoToken
@@ -236,7 +246,27 @@ func FetchSmHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("FetchSmHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		smObj, err := s.FetchSm(r.Context(), projectId)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(smObj)
+	}
+}
+
+func FetchSmValueHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FetchSmValueHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		smKey := vars["smkey"]
+		smObj, err := s.FetchSmValue(r.Context(), projectId, smKey)
 		if err != nil {
 			FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -259,7 +289,7 @@ func SaveSmHandler(s store.StoreI) http.HandlerFunc {
 
 		var smObj = sm.GetSm(smType)
 		if err := smJson.Decode(&smObj); err == nil {
-			err = s.SaveSm(r.Context(), projectId, smObj, s)
+			err = s.SaveSm(r.Context(), projectId, smObj, s, true)
 			if err != nil {
 				FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -280,6 +310,9 @@ func FetchRepoHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("FetchRepoHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		repo, err := s.FetchRepo(r.Context(), projectId)
 		if err != nil {
 			FormatResponse(w, 400)
@@ -291,36 +324,36 @@ func FetchRepoHandler(s store.StoreI) http.HandlerFunc {
 	}
 }
 
-func CommitRepoHandler(s store.StoreI) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		logs.WithContext(r.Context()).Debug("CommitRepoHandler - Start")
-		vars := mux.Vars(r)
-		projectId := vars["project"]
-		config, err := s.GetProjectConfigForRepo(r.Context(), projectId, s)
-		if err != nil {
-			FormatResponse(w, 400)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			return
-		}
-		repo := config[projectId]["repo"]
-		if repoMap, repoMapOk := repo.(repos.Repo); repoMapOk {
-			repoObj := repos.GetRepo(repoMap.RepoType, repoMap)
-			repoMap.AuthKey = "" // removing AuthKey from content to save in repo
-			config[projectId]["repo"] = repoMap
-			err = repoObj.Commit(r.Context(), config, RepoName)
-			if err != nil {
-				FormatResponse(w, 400)
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-				return
-			}
-		} else {
-			err = errors.New(fmt.Sprint("Repo not defined for project ", projectId))
-			FormatResponse(w, 400)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			//return
-		}
-		FormatResponse(w, 200)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Config for project ", projectId, " commited to ", repo.(repos.Repo).RepoName, " successfully.")})
-		//_ = json.NewEncoder(w).Encode(config)
-	}
-}
+//func CommitRepoHandler(s store.StoreI) http.HandlerFunc {
+//	return func(w http.ResponseWriter, r *http.Request) {
+//		logs.WithContext(r.Context()).Debug("CommitRepoHandler - Start")
+//		vars := mux.Vars(r)
+//		projectId := vars["project"]
+//		config, err := s.GetProjectConfigForRepo(r.Context(), projectId, s)
+//		if err != nil {
+//			FormatResponse(w, 400)
+//			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+//			return
+//		}
+//		repo := config[projectId]["repo"]
+//		if repoMap, repoMapOk := repo.(repos.Repo); repoMapOk {
+//			repoObj := repos.GetRepo(repoMap.RepoType, repoMap)
+//			repoMap.AuthKey = "" // removing AuthKey from content to save in repo
+//			config[projectId]["repo"] = repoMap
+//			err = repoObj.Commit(r.Context(), config, RepoName)
+//			if err != nil {
+//				FormatResponse(w, 400)
+//				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+//				return
+//			}
+//		} else {
+//			err = errors.New(fmt.Sprint("Repo not defined for project ", projectId))
+//			FormatResponse(w, 400)
+//			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+//			//return
+//		}
+//		FormatResponse(w, 200)
+//		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Config for project ", projectId, " commited to ", repo.(repos.Repo).RepoName, " successfully.")})
+//		//_ = json.NewEncoder(w).Encode(config)
+//	}
+//}

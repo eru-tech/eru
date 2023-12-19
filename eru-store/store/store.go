@@ -32,12 +32,14 @@ type StoreI interface {
 	RemoveSecret(ctx context.Context, projectId string, key string, s StoreI) (err error)
 	FetchVars(ctx context.Context, projectId string) (variables *Variables, err error)
 	ReplaceVariables(ctx context.Context, projectId string, text []byte) (returnText []byte)
-	SaveRepo(ctx context.Context, projectId string, repo repos.Repo, s StoreI) (err error)
+	SaveRepo(ctx context.Context, projectId string, repo repos.RepoI, s StoreI, persist bool) (err error)
 	SaveRepoToken(ctx context.Context, projectId string, repo repos.RepoToken, s StoreI) (err error)
-	FetchRepo(ctx context.Context, projectId string) (repo *repos.Repo, err error)
+	FetchRepo(ctx context.Context, projectId string) (repo repos.RepoI, err error)
 	GetProjectConfigForRepo(ctx context.Context, projectId string, ms StoreI) (repoData map[string]map[string]interface{}, err error)
-	SaveSm(ctx context.Context, projectId string, secretManager sm.SmStoreI, s StoreI) (err error)
-	FetchSm(ctx context.Context, projectId string) (sm *sm.SmStoreI, err error)
+	SaveSm(ctx context.Context, projectId string, secretManager sm.SmStoreI, s StoreI, persist bool) (err error)
+	FetchSm(ctx context.Context, projectId string) (sm sm.SmStoreI, err error)
+	FetchSmValue(ctx context.Context, projectId string, smKey string) (smVal interface{}, err error)
+	SetStoreFromBytes(ctx context.Context, storeBytes []byte, msi StoreI) (err error)
 	//SaveProject(projectId string, realStore StoreI) error
 	//RemoveProject(projectId string, realStore StoreI) error
 	//GetProjectConfig(projectId string) (*model.ProjectI, error)
@@ -46,10 +48,10 @@ type StoreI interface {
 
 type Store struct {
 	//Projects map[string]*model.Project //ProjectId is the key
-	Variables         map[string]*Variables
-	ProjectRepos      map[string]*repos.Repo
-	ProjectRepoTokens map[string]*repos.RepoToken
-	SecreManager      map[string]*sm.SmStoreI
+	Variables         map[string]*Variables      `json:"variables"`
+	ProjectRepos      map[string]repos.RepoI     `json:"repos"`
+	ProjectRepoTokens map[string]repos.RepoToken `json:"repo_token"`
+	SecretManager     map[string]sm.SmStoreI     `json:"secret_manager"`
 }
 
 type Variables struct {
@@ -264,65 +266,60 @@ func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text
 	return []byte(textStr)
 }
 
-func (store *Store) FetchRepo(ctx context.Context, projectId string) (repo *repos.Repo, err error) {
+func (store *Store) FetchRepo(ctx context.Context, projectId string) (repo repos.RepoI, err error) {
 	logs.WithContext(ctx).Debug("FetchRepo - Start")
 	if store.ProjectRepos == nil {
-		err = errors.New("No repo defined in store")
+		err = errors.New("no repo defined in store")
 		logs.WithContext(ctx).Error(err.Error())
-		return &repos.Repo{}, err
+		return nil, err
 	}
 	ok := false
 	if repo, ok = store.ProjectRepos[projectId]; !ok {
 		err = errors.New(fmt.Sprint("Repo not defined for project :", projectId))
 		logs.WithContext(ctx).Error(err.Error())
-		return &repos.Repo{}, err
+		return nil, err
 	}
 	return
 }
 
-func (store *Store) SaveRepo(ctx context.Context, projectId string, repo repos.Repo, s StoreI) (err error) {
+func (store *Store) SaveRepo(ctx context.Context, projectId string, repo repos.RepoI, s StoreI, persist bool) (err error) {
 	logs.WithContext(ctx).Debug("SaveRepo - Start")
 	if store.ProjectRepos == nil {
-		store.ProjectRepos = make(map[string]*repos.Repo)
+		store.ProjectRepos = make(map[string]repos.RepoI)
 	}
-	var prjRepos *repos.Repo
-	_ = prjRepos
-	ok := false
-	if prjRepos, ok = store.ProjectRepos[projectId]; !ok {
-		logs.WithContext(ctx).Info(fmt.Sprint("making new repo object for project : ", projectId))
-		store.ProjectRepos[projectId] = &repos.Repo{}
+	store.ProjectRepos[projectId] = repo
+	if persist {
+		err = s.SaveStore(ctx, "", s)
 	}
-	store.ProjectRepos[projectId] = &repo
-	err = s.SaveStore(ctx, "", s)
 	return
 }
 
 func (store *Store) SaveRepoToken(ctx context.Context, projectId string, repoToken repos.RepoToken, s StoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveRepoToken - Start")
 	if store.ProjectRepoTokens == nil {
-		store.ProjectRepoTokens = make(map[string]*repos.RepoToken)
+		store.ProjectRepoTokens = make(map[string]repos.RepoToken)
 	}
-	var prjRepoToken *repos.RepoToken
+	var prjRepoToken repos.RepoToken
 	_ = prjRepoToken
 	ok := false
 	if prjRepoToken, ok = store.ProjectRepoTokens[projectId]; !ok {
 		logs.WithContext(ctx).Info(fmt.Sprint("making new repo token object for project : ", projectId))
-		store.ProjectRepoTokens[projectId] = &repos.RepoToken{}
+		store.ProjectRepoTokens[projectId] = repos.RepoToken{}
 	}
-	store.ProjectRepoTokens[projectId] = &repoToken
+	store.ProjectRepoTokens[projectId] = repoToken
 	err = s.SaveStore(ctx, "", s)
 	return
 }
 
-func (store *Store) FetchSm(ctx context.Context, projectId string) (smObj *sm.SmStoreI, err error) {
+func (store *Store) FetchSm(ctx context.Context, projectId string) (smObj sm.SmStoreI, err error) {
 	logs.WithContext(ctx).Debug("FetchSm - Start")
-	if store.SecreManager == nil {
+	if store.SecretManager == nil {
 		err = errors.New("No secret manager defined in store")
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 	ok := false
-	if smObj, ok = store.SecreManager[projectId]; !ok {
+	if smObj, ok = store.SecretManager[projectId]; !ok {
 		err = errors.New(fmt.Sprint("Secret Manager not defined for project :", projectId))
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
@@ -330,14 +327,31 @@ func (store *Store) FetchSm(ctx context.Context, projectId string) (smObj *sm.Sm
 	return
 }
 
-func (store *Store) SaveSm(ctx context.Context, projectId string, secretManager sm.SmStoreI, s StoreI) (err error) {
-	logs.WithContext(ctx).Debug("SaveSm - Start")
-	if store.SecreManager == nil {
-		store.SecreManager = make(map[string]*sm.SmStoreI)
+func (store *Store) FetchSmValue(ctx context.Context, projectId string, smKey string) (smVal interface{}, err error) {
+	logs.WithContext(ctx).Debug("FetchSmValue - Start")
+	if store.SecretManager == nil {
+		err = errors.New("No secret manager defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(&secretManager))
-	store.SecreManager[projectId] = &secretManager
-	err = s.SaveStore(ctx, "", s)
+	if smObj, smObjOk := store.SecretManager[projectId]; !smObjOk {
+		err = errors.New(fmt.Sprint("Secret Manager not defined for project :", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	} else {
+		return smObj.FetchSmValue(ctx, smKey)
+	}
+}
+
+func (store *Store) SaveSm(ctx context.Context, projectId string, secretManager sm.SmStoreI, s StoreI, persist bool) (err error) {
+	logs.WithContext(ctx).Debug("SaveSm - Start")
+	if store.SecretManager == nil {
+		store.SecretManager = make(map[string]sm.SmStoreI)
+	}
+	store.SecretManager[projectId] = secretManager
+	if persist {
+		err = s.SaveStore(ctx, "", s)
+	}
 	return
 }
 
@@ -391,6 +405,101 @@ func (store *Store) GetProjectConfigForRepo(ctx context.Context, projectId strin
 				}
 			}
 		}
+	}
+	return
+}
+
+func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, msi StoreI) (err error) {
+	var storeMap map[string]*json.RawMessage
+	err = json.Unmarshal(storeBytes, &storeMap)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	var prjSm map[string]*json.RawMessage
+	if _, ok := storeMap["secret_manager"]; ok {
+		if storeMap["secret_manager"] != nil {
+			err = json.Unmarshal(*storeMap["secret_manager"], &prjSm)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			for prj, smJson := range prjSm {
+				var smObj map[string]*json.RawMessage
+				err = json.Unmarshal(*smJson, &smObj)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return err
+				}
+				var smType string
+				if _, stOk := smObj["sm_store_type"]; stOk {
+					err = json.Unmarshal(*smObj["sm_store_type"], &smType)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return err
+					}
+					smI := sm.GetSm(smType)
+					err = smI.MakeFromJson(ctx, smJson)
+					if err == nil {
+						err = msi.SaveSm(ctx, prj, smI, msi, false)
+						if err != nil {
+							return err
+						}
+					} else {
+						return err
+					}
+				} else {
+					logs.WithContext(ctx).Info("ignoring secret manager as sm_store_type attribute not found")
+				}
+			}
+		} else {
+			logs.WithContext(ctx).Info("secret manager attribute is nil")
+		}
+	} else {
+		logs.WithContext(ctx).Info("secret manager attribute not found in store")
+	}
+
+	var prjRepo map[string]*json.RawMessage
+	if _, ok := storeMap["repos"]; ok {
+		if storeMap["repos"] != nil {
+			err = json.Unmarshal(*storeMap["repos"], &prjRepo)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			for prj, repoJson := range prjRepo {
+				var repoObj map[string]*json.RawMessage
+				err = json.Unmarshal(*repoJson, &repoObj)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return err
+				}
+				var repoType string
+				if _, rtOk := repoObj["repo_type"]; rtOk {
+					err = json.Unmarshal(*repoObj["repo_type"], &repoType)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return err
+					}
+					repoI := repos.GetRepo(repoType)
+					err = repoI.MakeFromJson(ctx, repoJson)
+					if err == nil {
+						err = msi.SaveRepo(ctx, prj, repoI, msi, false)
+						if err != nil {
+							return err
+						}
+					} else {
+						return err
+					}
+				} else {
+					logs.WithContext(ctx).Info("ignoring repo as repo type not found")
+				}
+			}
+		} else {
+			logs.WithContext(ctx).Info("repos attribute is nil")
+		}
+	} else {
+		logs.WithContext(ctx).Info("repos attribute not found in store")
 	}
 	return
 }

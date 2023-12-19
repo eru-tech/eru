@@ -27,6 +27,7 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/rsakeypair/generate/{keypairname}").HandlerFunc(file_handlers.RsaKeyPairGenerateHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/aeskey/generate/{keyname}").HandlerFunc(file_handlers.AesKeyGenerateHandler(sh.Store))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/settings/save").HandlerFunc(file_handlers.ProjectSetingsSaveHandler(sh.Store))
 
 	// routes for file events
 	fileRouter := serverRouter.PathPrefix("/files/{project}").Subrouter()

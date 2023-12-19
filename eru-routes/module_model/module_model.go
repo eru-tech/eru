@@ -23,18 +23,22 @@ type ModuleProjectI interface {
 	CompareProject(ctx context.Context, compareProject Project) (StoreCompare, error)
 }
 
-type ProjectConfig struct {
-	//AesKey         AesKey
-	TokenSecret routes.TokenSecret
-	//ProjectGitRepo ProjectGitRepo
+//type ProjectConfig struct {
+//	//AesKey         AesKey
+//	TokenSecret routes.TokenSecret
+//	//ProjectGitRepo ProjectGitRepo
+//}
+
+type ProjectSettings struct {
+	ClaimsKey string `json:"claims_key" eru:"required"`
 }
 
 type Project struct {
-	ProjectId     string                      `eru:"required"`
-	Routes        map[string]routes.Route     `eru:"required"`
-	FuncGroups    map[string]routes.FuncGroup `eru:"required"`
-	ProjectConfig ProjectConfig
-	Authorizers   map[string]routes.Authorizer
+	ProjectId       string                      `eru:"required"`
+	Routes          map[string]routes.Route     `eru:"required"`
+	FuncGroups      map[string]routes.FuncGroup `eru:"required"`
+	ProjectSettings ProjectSettings             `json:"project_settings"`
+	//Authorizers   map[string]routes.Authorizer
 }
 
 func (prj *Project) AddRoute(ctx context.Context, routeObj routes.Route) error {

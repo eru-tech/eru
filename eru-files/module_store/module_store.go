@@ -68,6 +68,7 @@ type ModuleStoreI interface {
 	DownloadFileAsJson(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (jsonData []map[string]interface{}, err error)
 	DownloadFileB64(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, err error)
 	DownloadFileUnzip(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (files map[string]FileObj, err error)
+	SaveProjectSettings(ctx context.Context, projectId string, projectSettings file_model.ProjectSettings, realStore ModuleStoreI) error
 }
 
 type ModuleStore struct {
@@ -443,6 +444,18 @@ func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interfac
 		i++
 	}
 	return projects
+}
+
+func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string, projectSettings file_model.ProjectSettings, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+	err := ms.checkProjectExists(ctx, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	ms.Projects[projectId].ProjectSettings = projectSettings
+	logs.WithContext(ctx).Info("SaveStore called from SaveProjectSettings")
+	return realStore.SaveStore(ctx, "", realStore)
 }
 
 func readZipFile(ctx context.Context, zipFile *zip.File) ([]byte, error) {

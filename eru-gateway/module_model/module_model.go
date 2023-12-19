@@ -62,6 +62,9 @@ type TargetHost struct {
 	Scheme     string `eru:"required"`
 	Allocation int64
 }
+type ProjectSettings struct {
+	ClaimsKey string `json:"claims_key" eru:"required"`
+}
 
 func (authorizer Authorizer) VerifyToken(ctx context.Context, token string) (claims interface{}, err error) {
 	claims, err = jwt.DecryptTokenJWK(ctx, token, authorizer.JwkUrl)

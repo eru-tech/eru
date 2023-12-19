@@ -25,9 +25,9 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run").HandlerFunc(module_handlers.FuncRunHandler(sh.Store))
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save").HandlerFunc(module_handlers.ProjectSaveHandler(sh.Store))
-	storeRouter.Methods(http.MethodPost).Path("/{project}/config/save").HandlerFunc(module_handlers.ProjectConfigSaveHandler(sh.Store))
-	storeRouter.Methods(http.MethodPost).Path("/{project}/authorizer/save").HandlerFunc(module_handlers.ProjectAuthorizerSaveHandler(sh.Store))
-	storeRouter.Methods(http.MethodDelete).Path("/{project}/authorizer/remove/{authorizername}").HandlerFunc(module_handlers.ProjectAuthorizerRemoveHandler(sh.Store))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/settings/save").HandlerFunc(module_handlers.ProjectSetingsSaveHandler(sh.Store))
+	//storeRouter.Methods(http.MethodPost).Path("/{project}/authorizer/save").HandlerFunc(module_handlers.ProjectAuthorizerSaveHandler(sh.Store))
+	//storeRouter.Methods(http.MethodDelete).Path("/{project}/authorizer/remove/{authorizername}").HandlerFunc(module_handlers.ProjectAuthorizerRemoveHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove").HandlerFunc(module_handlers.ProjectRemoveHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/project/list").HandlerFunc(module_handlers.ProjectListHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/config").HandlerFunc(module_handlers.ProjectConfigHandler(sh.Store))

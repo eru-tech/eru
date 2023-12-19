@@ -23,11 +23,12 @@ type StoreHolder struct {
 type ModuleStoreI interface {
 	store.StoreI
 	SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error
-	SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error
+	//SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error
+	SaveProjectSettings(ctx context.Context, projectId string, projectConfig module_model.ProjectSettings, realStore ModuleStoreI) error
 	RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error
-	SaveProjectAuthorizer(ctx context.Context, projectId string, authorizer routes.Authorizer, realStore ModuleStoreI) error
-	RemoveProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) error
-	GetProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) (routes.Authorizer, error)
+	//SaveProjectAuthorizer(ctx context.Context, projectId string, authorizer routes.Authorizer, realStore ModuleStoreI) error
+	//RemoveProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) error
+	//GetProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) (routes.Authorizer, error)
 	GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error)
 	GetProjectList(ctx context.Context) []map[string]interface{}
 	SaveRoute(ctx context.Context, routeObj routes.Route, projectId string, realStore ModuleStoreI, persist bool) error
@@ -67,9 +68,9 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 		if project.FuncGroups == nil {
 			project.FuncGroups = make(map[string]routes.FuncGroup)
 		}
-		if project.Authorizers == nil {
-			project.Authorizers = make(map[string]routes.Authorizer)
-		}
+		//if project.Authorizers == nil {
+		//	project.Authorizers = make(map[string]routes.Authorizer)
+		//}
 		ms.Projects[projectId] = project
 		if persist == true {
 			logs.WithContext(ctx).Info("SaveStore called from SaveProject")
@@ -84,66 +85,66 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 	}
 }
 
-func (ms *ModuleStore) SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error {
-	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
-	if _, ok := ms.Projects[projectId]; ok {
-		ms.Projects[projectId].ProjectConfig = projectConfig
-		return realStore.SaveStore(ctx, "", realStore)
-	} else {
-		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
-		return err
-	}
-}
-
-func (ms *ModuleStore) SaveProjectAuthorizer(ctx context.Context, projectId string, authorizer routes.Authorizer, realStore ModuleStoreI) error {
-	logs.WithContext(ctx).Debug("SaveProjectAuthorizer - Start")
-	if _, ok := ms.Projects[projectId]; ok {
-		if ms.Projects[projectId].Authorizers == nil {
-			ms.Projects[projectId].Authorizers = make(map[string]routes.Authorizer)
-		}
-		ms.Projects[projectId].Authorizers[authorizer.AuthorizerName] = authorizer
-		return realStore.SaveStore(ctx, "", realStore)
-	} else {
-		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
-		return err
-	}
-}
-
-func (ms *ModuleStore) RemoveProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) error {
-	logs.WithContext(ctx).Debug("RemoveProjectAuthorizer - Start")
-	if _, ok := ms.Projects[projectId]; ok {
-		if _, authOk := ms.Projects[projectId].Authorizers[authorizerName]; authOk {
-			delete(ms.Projects[projectId].Authorizers, authorizerName)
-			return nil
-		} else {
-			err := errors.New(fmt.Sprint("Authorizer ", authorizerName, " not found"))
-			logs.WithContext(ctx).Error(err.Error())
-			return err
-		}
-	} else {
-		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
-		return err
-	}
-}
-func (ms *ModuleStore) GetProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) (routes.Authorizer, error) {
-	logs.WithContext(ctx).Debug("GetProjectAuthorizer - Start")
-	if _, ok := ms.Projects[projectId]; ok {
-		if _, authOk := ms.Projects[projectId].Authorizers[authorizerName]; authOk {
-			return ms.Projects[projectId].Authorizers[authorizerName], nil
-		} else {
-			err := errors.New(fmt.Sprint("Authorizer ", authorizerName, " not found"))
-			logs.WithContext(ctx).Error(err.Error())
-			return routes.Authorizer{}, err
-		}
-	} else {
-		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		logs.WithContext(ctx).Error(err.Error())
-		return routes.Authorizer{}, err
-	}
-}
+//func (ms *ModuleStore) SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error {
+//	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+//	if _, ok := ms.Projects[projectId]; ok {
+//		ms.Projects[projectId].ProjectConfig = projectConfig
+//		return realStore.SaveStore(ctx, "", realStore)
+//	} else {
+//		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
+//		logs.WithContext(ctx).Error(err.Error())
+//		return err
+//	}
+//}
+//
+//func (ms *ModuleStore) SaveProjectAuthorizer(ctx context.Context, projectId string, authorizer routes.Authorizer, realStore ModuleStoreI) error {
+//	logs.WithContext(ctx).Debug("SaveProjectAuthorizer - Start")
+//	if _, ok := ms.Projects[projectId]; ok {
+//		if ms.Projects[projectId].Authorizers == nil {
+//			ms.Projects[projectId].Authorizers = make(map[string]routes.Authorizer)
+//		}
+//		ms.Projects[projectId].Authorizers[authorizer.AuthorizerName] = authorizer
+//		return realStore.SaveStore(ctx, "", realStore)
+//	} else {
+//		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
+//		logs.WithContext(ctx).Error(err.Error())
+//		return err
+//	}
+//}
+//
+//func (ms *ModuleStore) RemoveProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) error {
+//	logs.WithContext(ctx).Debug("RemoveProjectAuthorizer - Start")
+//	if _, ok := ms.Projects[projectId]; ok {
+//		if _, authOk := ms.Projects[projectId].Authorizers[authorizerName]; authOk {
+//			delete(ms.Projects[projectId].Authorizers, authorizerName)
+//			return nil
+//		} else {
+//			err := errors.New(fmt.Sprint("Authorizer ", authorizerName, " not found"))
+//			logs.WithContext(ctx).Error(err.Error())
+//			return err
+//		}
+//	} else {
+//		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
+//		logs.WithContext(ctx).Error(err.Error())
+//		return err
+//	}
+//}
+//func (ms *ModuleStore) GetProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) (routes.Authorizer, error) {
+//	logs.WithContext(ctx).Debug("GetProjectAuthorizer - Start")
+//	if _, ok := ms.Projects[projectId]; ok {
+//		if _, authOk := ms.Projects[projectId].Authorizers[authorizerName]; authOk {
+//			return ms.Projects[projectId].Authorizers[authorizerName], nil
+//		} else {
+//			err := errors.New(fmt.Sprint("Authorizer ", authorizerName, " not found"))
+//			logs.WithContext(ctx).Error(err.Error())
+//			return routes.Authorizer{}, err
+//		}
+//	} else {
+//		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
+//		logs.WithContext(ctx).Error(err.Error())
+//		return routes.Authorizer{}, err
+//	}
+//}
 
 func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveProject - Start")
@@ -242,7 +243,7 @@ func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string
 			logs.WithContext(ctx).Error(fmt.Sprint(err.Error(), " : ", jmErr.Error()))
 			return cloneRoute, err
 		}
-		cloneRoute.TokenSecret = prg.ProjectConfig.TokenSecret
+		cloneRoute.TokenSecretKey = prg.ProjectSettings.ClaimsKey
 	} else {
 		err = errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -284,7 +285,7 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup routes.FuncGr
 			logs.WithContext(ctx).Error(fmt.Sprint(err.Error(), " : ", jmErr.Error()))
 			return cloneFunc, err
 		}
-		cloneFunc.TokenSecret = prg.ProjectConfig.TokenSecret
+		cloneFunc.TokenSecretKey = prg.ProjectSettings.ClaimsKey
 	} else {
 		return cloneFunc, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 	}
@@ -413,4 +414,27 @@ func (ms *ModuleStore) RemoveFunc(ctx context.Context, funcName string, projectI
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
+}
+
+func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+	err := ms.checkProjectExists(ctx, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	ms.Projects[projectId].ProjectSettings = projectSettings
+	logs.WithContext(ctx).Info("SaveStore called from SaveProjectSettings")
+	return realStore.SaveStore(ctx, "", realStore)
+}
+
+func (ms *ModuleStore) checkProjectExists(ctx context.Context, projectId string) error {
+	logs.WithContext(ctx).Debug("checkProjectExists - Start")
+	_, ok := ms.Projects[projectId]
+	if !ok {
+		err := errors.New(fmt.Sprint("project ", projectId, " not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	return nil
 }

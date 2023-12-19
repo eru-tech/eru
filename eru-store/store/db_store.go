@@ -84,7 +84,6 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 		storeData = mapping["config"]
 		storeUpdateTime := mapping["create_date"]
 		store.UpdateTime = storeUpdateTime.(time.Time)
-
 	}
 	if storeData == nil {
 		err = errors.New("no config data retrived from db")

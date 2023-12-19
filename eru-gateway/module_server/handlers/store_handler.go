@@ -160,3 +160,49 @@ func GetAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"Authorizers": authorizers})
 	}
 }
+
+func GetProjectSetingsHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("GetProjectSetingsHandler - Start")
+		project_settings := s.GetProjectSettings(r.Context())
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"project_settings": project_settings})
+	}
+}
+
+func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectSetingsSaveHandler - Start")
+
+		prjConfigFromReq := json.NewDecoder(r.Body)
+		prjConfigFromReq.DisallowUnknownFields()
+
+		var projectSettings module_model.ProjectSettings
+
+		if err := prjConfigFromReq.Decode(&projectSettings); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			logs.WithContext(r.Context()).Info(fmt.Sprint(projectSettings))
+			err := utils.ValidateStruct(r.Context(), projectSettings, "")
+			if err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+
+		err := s.SaveProjectSettings(r.Context(), projectSettings, s, true)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("gateway settings saved successfully")})
+		}
+	}
+}

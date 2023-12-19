@@ -27,10 +27,14 @@ type FileProjectI interface {
 }
 
 type Project struct {
-	ProjectId   string                       `json:"project_id" eru:"required"`
-	Storages    map[string]storage.StorageI  `json:"storages"`
-	RsaKeyPairs map[string]erursa.RsaKeyPair `json:"rsa_keypairs"`
-	AesKeys     map[string]eruaes.AesKey     `json:"aes_keys"`
+	ProjectId       string                       `json:"project_id" eru:"required"`
+	Storages        map[string]storage.StorageI  `json:"storages"`
+	RsaKeyPairs     map[string]erursa.RsaKeyPair `json:"rsa_keypairs"`
+	AesKeys         map[string]eruaes.AesKey     `json:"aes_keys"`
+	ProjectSettings ProjectSettings              `json:"project_settings"`
+}
+type ProjectSettings struct {
+	ClaimsKey string `json:"claims_key" eru:"required"`
 }
 
 func (prj *Project) AddStorage(ctx context.Context, storageObjI storage.StorageI) error {

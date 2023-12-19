@@ -41,6 +41,7 @@ type ModuleStoreI interface {
 	GetAuth(ctx context.Context, projectId string, authName string, s ModuleStoreI) (auth.AuthI, error)
 	SavePkceEvent(ctx context.Context, msParams auth.MsParams, s ModuleStoreI) (err error)
 	GetPkceEvent(ctx context.Context, requestId string, s ModuleStoreI) (msParams auth.MsParams, err error)
+	SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error
 }
 
 type ModuleStore struct {
@@ -421,4 +422,16 @@ func GetAuthDb(dbType string) auth.AuthDbI {
 	default:
 		return new(auth.AuthDb)
 	}
+}
+
+func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+	err := ms.checkProjectExists(ctx, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	ms.Projects[projectId].ProjectSettings = projectSettings
+	logs.WithContext(ctx).Info("SaveStore called from SaveProjectSettings")
+	return realStore.SaveStore(ctx, "", realStore)
 }

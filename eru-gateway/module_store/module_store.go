@@ -29,14 +29,17 @@ type ModuleStoreI interface {
 	GetAuthorizer(ctx context.Context, authorizerName string) (module_model.Authorizer, error)
 	GetAuthorizers(ctx context.Context) map[string]module_model.Authorizer
 	CompareListenerRules(ctx context.Context, lrs []module_model.ListenerRule) (module_model.StoreCompare, error)
+	SaveProjectSettings(ctx context.Context, projectSettings module_model.ProjectSettings, realStore ModuleStoreI, persist bool) error
+	GetProjectSettings(ctx context.Context) module_model.ProjectSettings
 }
 
 const MatchTypePrefix = "PREFIX"
 const MatchTypeExact = "EXACT"
 
 type ModuleStore struct {
-	ListenerRules []*module_model.ListenerRule `eru:"required"`
-	Authorizers   map[string]module_model.Authorizer
+	ListenerRules   []*module_model.ListenerRule `eru:"required"`
+	Authorizers     map[string]module_model.Authorizer
+	ProjectSettings module_model.ProjectSettings `json:"project_settings"`
 }
 
 type ModuleFileStore struct {
@@ -272,6 +275,11 @@ func (ms *ModuleStore) GetAuthorizers(ctx context.Context) map[string]module_mod
 	return ms.Authorizers
 }
 
+func (ms *ModuleStore) GetProjectSettings(ctx context.Context) module_model.ProjectSettings {
+	logs.WithContext(ctx).Debug("GetProjectSettings - Start")
+	return ms.ProjectSettings
+}
+
 func (ms *ModuleStore) CompareListenerRules(ctx context.Context, lrs []module_model.ListenerRule) (module_model.StoreCompare, error) {
 	storeCompare := module_model.StoreCompare{}
 	for _, mlr := range ms.ListenerRules {
@@ -309,4 +317,16 @@ func (ms *ModuleStore) CompareListenerRules(ctx context.Context, lrs []module_mo
 		}
 	}
 	return storeCompare, nil
+}
+
+func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectSettings module_model.ProjectSettings, realStore ModuleStoreI, persist bool) error {
+	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+
+	ms.ProjectSettings = projectSettings
+	if persist == true {
+		logs.WithContext(ctx).Info("SaveStore called from SaveAuthorizer")
+		return realStore.SaveStore(ctx, "", realStore)
+	} else {
+		return nil
+	}
 }

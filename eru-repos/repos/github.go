@@ -230,3 +230,13 @@ func (githubRepo *GithubRepo) UpdateRef(ctx context.Context, new_commit_sha stri
 	}
 	return res, err
 }
+
+func (githubRepo *GithubRepo) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+	logs.WithContext(ctx).Debug("MakeFromJson - Start")
+	err := json.Unmarshal(*rj, &githubRepo)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	return nil
+}

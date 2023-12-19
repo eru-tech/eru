@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/eru-tech/eru/eru-crypto/jwt"
+	//"github.com/eru-tech/eru/eru-crypto/jwt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"io"
@@ -27,23 +27,23 @@ const MatchTypeExact = "EXACT"
 const ConditionFailActionError = "ERROR"
 const ConditionFailActionIgnore = "IGNORE"
 
-type Authorizer struct {
-	AuthorizerName string
-	TokenHeaderKey string
-	SecretAlgo     string
-	JwkUrl         string
-	Audience       []string
-	Issuer         []string
-}
+//type Authorizer struct {
+//	AuthorizerName string
+//	TokenHeaderKey string
+//	SecretAlgo     string
+//	JwkUrl         string
+//	Audience       []string
+//	Issuer         []string
+//}
 
-type TokenSecret struct {
-	HeaderKey  string
-	SecretAlgo string
-	SecretKey  string
-	JwkUrl     string
-	Audience   []string
-	Issuer     []string
-}
+//	type TokenSecret struct {
+//		HeaderKey  string
+//		SecretAlgo string
+//		SecretKey  string
+//		JwkUrl     string
+//		Audience   []string
+//		Issuer     []string
+//	}
 type Route struct {
 	Condition            string
 	ConditionFailMessage string
@@ -70,9 +70,9 @@ type Route struct {
 	TransformRequest     string
 	TransformResponse    string
 	IsPublic             bool
-	Authorizer           string      `json:"-"`
-	AuthorizerException  []string    `json:"-"`
-	TokenSecret          TokenSecret `json:"-"`
+	Authorizer           string   `json:"-"`
+	AuthorizerException  []string `json:"-"`
+	TokenSecretKey       string   `json:"-"`
 	RemoveParams         RemoveParams
 	OnError              string
 	Redirect             bool
@@ -131,13 +131,13 @@ var httpClient = http.Client{
 	},
 }
 
-func (authorizer Authorizer) VerifyToken(ctx context.Context, token string) (claims interface{}, err error) {
-	claims, err = jwt.DecryptTokenJWK(ctx, token, authorizer.JwkUrl)
-	if err != nil {
-		return
-	}
-	return
-}
+//func (authorizer Authorizer) VerifyToken(ctx context.Context, token string) (claims interface{}, err error) {
+//	claims, err = jwt.DecryptTokenJWK(ctx, token, authorizer.JwkUrl)
+//	if err != nil {
+//		return
+//	}
+//	return
+//}
 
 func (route *Route) CheckPathException(path string) (bypass bool) {
 	for _, v := range route.AuthorizerException {
@@ -277,7 +277,7 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 	if route.Condition != "" {
 		avars := &FuncTemplateVars{}
 		avars.Vars = trReqVars
-		output, outputErr := processTemplate(ctx, route.RouteName, route.Condition, avars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+		output, outputErr := processTemplate(ctx, route.RouteName, route.Condition, avars, "string", route.TokenSecretKey)
 		if outputErr != nil {
 			resErr = outputErr
 			response = errorResponse(ctx, resErr.Error(), request)
@@ -295,7 +295,7 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 			if route.ConditionFailMessage != "" {
 				cfmvars := &FuncTemplateVars{}
 				cfmvars.Vars = trReqVars
-				cfmOutput, cfmOutputErr := processTemplate(ctx, route.RouteName, route.ConditionFailMessage, avars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+				cfmOutput, cfmOutputErr := processTemplate(ctx, route.RouteName, route.ConditionFailMessage, avars, "json", route.TokenSecretKey)
 				if cfmOutputErr != nil {
 					resErr = cfmOutputErr
 					response = errorResponse(ctx, resErr.Error(), request)
@@ -433,7 +433,7 @@ func (route *Route) RunRoute(ctx context.Context, req *http.Request, url string,
 			} else if route.AsyncMessage != "" {
 				avars := &FuncTemplateVars{}
 				avars.Vars = trReqVars
-				output, outputErr := processTemplate(ctx, route.RouteName, route.AsyncMessage, avars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+				output, outputErr := processTemplate(ctx, route.RouteName, route.AsyncMessage, avars, "json", route.TokenSecretKey)
 				if outputErr != nil {
 					err = outputErr
 					return
@@ -518,7 +518,7 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = vars
 		logs.WithContext(ctx).Info(fmt.Sprint("route.LoopVariable == ", route.LoopVariable))
-		output, outputErr := processTemplate(ctx, route.RouteName, route.LoopVariable, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+		output, outputErr := processTemplate(ctx, route.RouteName, route.LoopVariable, fvars, "json", route.TokenSecretKey)
 		if outputErr != nil {
 			err = outputErr
 			return
@@ -582,7 +582,7 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 
 		for _, fd := range routesFormData {
 			if fd.IsTemplate {
-				output, err := processTemplate(ctx, fd.Key, fd.Value, mpvars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+				output, err := processTemplate(ctx, fd.Key, fd.Value, mpvars, "string", route.TokenSecretKey)
 				if err != nil {
 					return err
 				}
@@ -645,7 +645,7 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 			*/
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = vars
-			output, err := processTemplate(ctx, route.RouteName, route.TransformRequest, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+			output, err := processTemplate(ctx, route.RouteName, route.TransformRequest, fvars, "json", route.TokenSecretKey)
 			if err != nil {
 				return err
 			}
@@ -680,7 +680,7 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 		}
 	}
 
-	err = processHeaderTemplates(ctx, request, route.RemoveParams.RequestHeaders, route.RequestHeaders, true, vars, route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl, nil, nil)
+	err = processHeaderTemplates(ctx, request, route.RemoveParams.RequestHeaders, route.RequestHeaders, true, vars, route.TokenSecretKey, nil, nil)
 	if err != nil {
 		return
 	}
@@ -696,7 +696,7 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 		finalRedirectUrl := route.RedirectUrl
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = trReqVars
-		redirectUrlBytes, rubErr := processTemplate(ctx, route.RouteName, route.RedirectUrl, fvars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+		redirectUrlBytes, rubErr := processTemplate(ctx, route.RouteName, route.RedirectUrl, fvars, "string", route.TokenSecretKey)
 		if rubErr != nil {
 			err = rubErr
 			return
@@ -716,7 +716,7 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 			}
 			finalParamValue := v.Value
 			if v.IsTemplate {
-				paramValue, rptErr := processTemplate(ctx, v.Key, v.Value, fvars, "string", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+				paramValue, rptErr := processTemplate(ctx, v.Key, v.Value, fvars, "string", route.TokenSecretKey)
 				if err != nil {
 					err = rptErr
 					return
@@ -785,7 +785,7 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 			logs.WithContext(ctx).Info(fmt.Sprint("inside route.TransformResponse"))
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = trResVars
-			output, err := processTemplate(ctx, route.RouteName, route.TransformResponse, fvars, "json", route.TokenSecret.HeaderKey, route.TokenSecret.JwkUrl)
+			output, err := processTemplate(ctx, route.RouteName, route.TransformResponse, fvars, "json", route.TokenSecretKey)
 			logs.WithContext(ctx).Info(fmt.Sprint(string(output)))
 			if err != nil {
 				return &TemplateVars{}, err

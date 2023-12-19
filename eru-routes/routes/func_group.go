@@ -23,7 +23,7 @@ type FuncGroup struct {
 	FuncCategoryName string
 	FuncGroupName    string
 	FuncSteps        map[string]*FuncStep //routename is the key
-	TokenSecret      TokenSecret          `json:"-"`
+	TokenSecretKey   string               `json:"-"`
 }
 
 type FuncTemplateVars struct {
@@ -167,7 +167,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			avars.Vars = reqVars[funcStep.FuncKey]
 			avars.ResVars = resVars
 			avars.ReqVars = reqVars
-			output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.Condition, avars, "string", "", "")
+			output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.Condition, avars, "string", "")
 			logs.WithContext(ctx).Info(string(output))
 			if outputErr != nil {
 				err = outputErr
@@ -187,7 +187,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 				if funcStep.ConditionFailMessage != "" {
 					cfmvars := &FuncTemplateVars{}
 					cfmvars.Vars = reqVars[funcStep.FuncKey]
-					cfmOutput, cfmOutputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.ConditionFailMessage, avars, "json", "", "")
+					cfmOutput, cfmOutputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.ConditionFailMessage, avars, "json", "")
 					logs.WithContext(ctx).Info(string(cfmOutput))
 					if cfmOutputErr != nil {
 						err = cfmOutputErr
@@ -225,7 +225,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			if funcStep.Async && funcStep.AsyncMessage != "" {
 				avars := &FuncTemplateVars{}
 				avars.Vars = reqVars[funcStep.FuncKey]
-				output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.AsyncMessage, avars, "json", "", "")
+				output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.AsyncMessage, avars, "json", "")
 				logs.WithContext(ctx).Info(string(output))
 				if outputErr != nil {
 					err = outputErr
@@ -405,7 +405,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		fvars.Vars = vars
 		fvars.ResVars = resVars
 		fvars.ReqVars = reqVars
-		output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.LoopVariable, fvars, "json", "", "")
+		output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.LoopVariable, fvars, "json", "")
 		if outputErr != nil {
 			err = outputErr
 			return
@@ -446,7 +446,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	// else if original request is multipart/form , we process the same
 	makeMultiPartCalled := false
 	if (newContentType == encodedForm || newContentType == multiPartForm) && newContentType != oldContentType {
-		vars.FormData, vars.FormDataKeyArray, err = makeMultipart(ctx, req, funcStep.FormData, funcStep.FileData, vars, reqVars, resVars, funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl)
+		vars.FormData, vars.FormDataKeyArray, err = makeMultipart(ctx, req, funcStep.FormData, funcStep.FileData, vars, reqVars, resVars, funcStep.Route.TokenSecretKey)
 		makeMultiPartCalled = true
 		if err != nil {
 			return
@@ -459,7 +459,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		mpvars.Vars = vars
 		for _, fd := range funcStep.FormData {
 			if fd.IsTemplate {
-				output, fdErr := processTemplate(ctx, fd.Key, fd.Value, mpvars, "string", "", "")
+				output, fdErr := processTemplate(ctx, fd.Key, fd.Value, mpvars, "string", "")
 				if fdErr != nil {
 					err = fdErr
 					return
@@ -517,7 +517,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		fvars.Vars = vars
 		fvars.ResVars = resVars
 		fvars.ReqVars = reqVars
-		output, err := processTemplate(ctx, funcStep.FuncKey, funcStep.TransformRequest, fvars, "json", funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl)
+		output, err := processTemplate(ctx, funcStep.FuncKey, funcStep.TransformRequest, fvars, "json", funcStep.Route.TokenSecretKey)
 		if err != nil {
 			return req, &TemplateVars{}, err
 		}
@@ -554,7 +554,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 			avars.ResVars = resVars
 			avars.ReqVars = reqVars
 
-			output, err := processTemplate(ctx, "api_host", ro.Host, avars, "string", funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl)
+			output, err := processTemplate(ctx, "api_host", ro.Host, avars, "string", funcStep.Route.TokenSecretKey)
 			if err != nil {
 				// ignore error if it is no value
 				if err.Error() != "Template returned <no value>" {
@@ -588,7 +588,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		}
 	}
 	// lastly we process and transform template based headers and set it in request
-	err = processHeaderTemplates(ctx, req, funcStep.RemoveParams.RequestHeaders, funcStep.RequestHeaders, false, vars, funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl, reqVars, resVars)
+	err = processHeaderTemplates(ctx, req, funcStep.RemoveParams.RequestHeaders, funcStep.RequestHeaders, false, vars, funcStep.Route.TokenSecretKey, reqVars, resVars)
 	if err != nil {
 		return
 	}
@@ -642,7 +642,7 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 			fvars.ResVars = resVars
 			fvars.ReqVars = reqVars
 
-			output, err := processTemplate(ctx, funcStep.FuncKey, funcStep.TransformResponse, fvars, "json", funcStep.Route.TokenSecret.HeaderKey, funcStep.Route.TokenSecret.JwkUrl)
+			output, err := processTemplate(ctx, funcStep.FuncKey, funcStep.TransformResponse, fvars, "json", funcStep.Route.TokenSecretKey)
 			if err != nil {
 				return &TemplateVars{}, err
 			}

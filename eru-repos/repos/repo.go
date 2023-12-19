@@ -2,6 +2,7 @@ package repos
 
 import (
 	"context"
+	"encoding/json"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
@@ -9,26 +10,32 @@ type RepoI interface {
 	Commit(ctx context.Context, repoData map[string]map[string]interface{}, repoFileName string) (err error)
 	GetAttribute(attrName string) (attrValue interface{})
 	GetBranch(ctx context.Context) (branch interface{}, err error)
+	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 }
 
 func (repo *Repo) Commit(ctx context.Context, repoData map[string]map[string]interface{}, repoFileName string) (err error) {
-	logs.WithContext(ctx).Info("Commit not implemented")
+	logs.WithContext(ctx).Info("Commit method not implemented")
+	return
+}
+
+func (repo *Repo) GetBranch(ctx context.Context) (branch interface{}, err error) {
+	logs.WithContext(ctx).Info("GetBranch method not implemented")
 	return
 }
 
 func (repo *Repo) GetAttribute(attrName string) (attrValue interface{}) {
 	switch attrName {
-	case "branchName":
+	case "branch_name":
 		return repo.BranchName
-	case "repoName":
+	case "repo_name":
 		return repo.RepoName
-	case "repoType":
+	case "repo_type":
 		return repo.RepoType
-	case "authKey":
+	case "auth_key":
 		return repo.AuthKey
-	case "autoCommit":
+	case "auto_commit":
 		return repo.AutoCommit
-	case "authMode":
+	case "auth_mode":
 		return repo.AuthMode
 	default:
 		return nil
@@ -36,13 +43,13 @@ func (repo *Repo) GetAttribute(attrName string) (attrValue interface{}) {
 }
 
 type Repo struct {
-	RepoType       string `json:"repoType"`
-	RepoName       string `json:"repoName"`
-	BranchName     string `json:"branchName"`
-	AuthMode       string `json:"authMode"`
-	AuthKey        string `json:"authKey"`
-	AutoCommit     bool   `json:"autoCommit"`
-	InstallationId string `json:"installationId"`
+	RepoType       string `json:"repo_type"`
+	RepoName       string `json:"repo_name"`
+	BranchName     string `json:"branch_name"`
+	AuthMode       string `json:"auth_mode"`
+	AuthKey        string `json:"auth_key"`
+	AutoCommit     bool   `json:"auto_commit"`
+	InstallationId string `json:"installation_id"`
 }
 
 type RepoToken struct {
@@ -50,19 +57,29 @@ type RepoToken struct {
 	RepoTokenExpiry string `json:"repoTokenExpiry"`
 }
 
-func GetRepo(repoType string, repo Repo) RepoI {
+func GetRepo(repoType string) RepoI {
 	switch repoType {
 	case "GITHUB":
 		gr := new(GithubRepo)
-		gr.BranchName = repo.GetAttribute("branchName").(string)
-		gr.RepoName = repo.GetAttribute("repoName").(string)
-		gr.RepoType = repo.GetAttribute("repoType").(string)
-		gr.AuthKey = repo.GetAttribute("authKey").(string)
-		gr.AuthMode = repo.GetAttribute("authMode").(string)
-		gr.AutoCommit = repo.GetAttribute("autoCommit").(bool)
+		//gr.BranchName = repo.GetAttribute("branchName").(string)
+		//gr.RepoName = repo.GetAttribute("repoName").(string)
+		//gr.RepoType = repo.GetAttribute("repoType").(string)
+		//gr.AuthKey = repo.GetAttribute("authKey").(string)
+		//gr.AuthMode = repo.GetAttribute("authMode").(string)
+		//gr.AutoCommit = repo.GetAttribute("autoCommit").(bool)
 		return gr
 	default:
-		return nil
+		return new(Repo)
+	}
+	return nil
+}
+
+func (repo *Repo) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+	logs.WithContext(ctx).Debug("MakeFromJson - Start")
+	err := json.Unmarshal(*rj, &repo)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 	return nil
 }

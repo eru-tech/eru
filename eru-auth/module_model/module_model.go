@@ -29,6 +29,10 @@ type Project struct {
 	Gateways         map[string]gateway.GatewayI
 	MessageTemplates map[string]MessageTemplate
 	Auth             map[string]auth.AuthI
+	ProjectSettings  ProjectSettings `json:"project_settings"`
+}
+type ProjectSettings struct {
+	ClaimsKey string `json:"claims_key" eru:"required"`
 }
 
 /*

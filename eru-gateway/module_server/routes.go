@@ -22,6 +22,14 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	serverRouter.Get("variables_savesecret").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.Get("variables_removesecret").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 
+	serverRouter.Get("repo_list").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("repo_save").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("repo_save_token").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+
+	serverRouter.Get("sm").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("sm_list").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("sm_value").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+
 	//store routes specific to files
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 
@@ -34,6 +42,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/authorizer/save").HandlerFunc(module_handlers.SaveAuthorizerHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/authorizer/remove/{authorizername}").HandlerFunc(module_handlers.RemoveAuthorizerHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/authorizer/list").HandlerFunc(module_handlers.GetAuthorizerHandler(sh.Store))
-
+	storeRouter.Methods(http.MethodPost).Path("/settings/save").HandlerFunc(module_handlers.ProjectSetingsSaveHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/settings").HandlerFunc(module_handlers.GetProjectSetingsHandler(sh.Store))
 	serverRouter.PathPrefix("/").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 }
