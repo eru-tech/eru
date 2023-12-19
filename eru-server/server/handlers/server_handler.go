@@ -249,6 +249,9 @@ func FetchSmHandler(s store.StoreI) http.HandlerFunc {
 		if projectId == "" {
 			projectId = "gateway"
 		}
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		smObj, err := s.FetchSm(r.Context(), projectId)
 		if err != nil {
 			FormatResponse(w, 400)
@@ -265,6 +268,9 @@ func FetchSmValueHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("FetchSmValueHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		smKey := vars["smkey"]
 		smObj, err := s.FetchSmValue(r.Context(), projectId, smKey)
 		if err != nil {
@@ -282,6 +288,9 @@ func SaveSmHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("SaveSmHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		smType := vars["smtype"]
 
 		smJson := json.NewDecoder(r.Body)
