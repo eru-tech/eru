@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/gorilla/mux"
 	"io"
 	"net/http"
+	"strconv"
 )
 
 func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
@@ -73,6 +75,7 @@ func FuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		funcStepName := vars["funcstepname"]
+
 		funcFromReq := json.NewDecoder(r.Body)
 		funcFromReq.DisallowUnknownFields()
 
@@ -85,18 +88,41 @@ func FuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		} else {
 			if funcJson, funcJsonOk := funcMap["func"]; funcJsonOk {
-				if funcObj, funcObjOk := funcJson.(routes.FuncGroup); funcObjOk {
+				funcJsonBytes, funcJsonBytesErr := json.Marshal(funcJson)
+				if funcJsonBytesErr != nil {
+					server_handlers.FormatResponse(w, http.StatusBadRequest)
+					logs.WithContext(r.Context()).Error(funcJsonBytesErr.Error())
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": "function body could not be read from json"})
+					return
+				}
+				var funcObj routes.FuncGroup
+				funcObjD := json.NewDecoder(bytes.NewReader(funcJsonBytes))
+				funcObjD.DisallowUnknownFields()
+
+				if err = funcObjD.Decode(&funcObj); err == nil {
 					err = utils.ValidateStruct(r.Context(), funcObj, "")
 					if err != nil {
 						server_handlers.FormatResponse(w, 400)
 						json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
 						return
 					}
-					//rBody := make(map[string]interface{})
-					//rBodyOk := false
-					//if rBody, rBodyOk = funcMap["body"]; rBodyOk {
-					//
-					//}
+					if rBody, rBodyOk := funcMap["body"]; rBodyOk {
+						rBodyBytes, rBodyBytesErr := json.Marshal(rBody)
+						if rBodyBytesErr != nil {
+							server_handlers.FormatResponse(w, http.StatusBadRequest)
+							logs.WithContext(r.Context()).Error(rBodyBytesErr.Error())
+							_ = json.NewEncoder(w).Encode(map[string]string{"error": "function body could not be read"})
+							return
+						}
+						r.Body = io.NopCloser(bytes.NewReader(rBodyBytes))
+						r.Header.Set("Content-Length", strconv.Itoa(len(rBodyBytes)))
+						r.ContentLength = int64(len(rBodyBytes))
+					} else {
+						err = errors.New("function body not found")
+						logs.WithContext(r.Context()).Error(err.Error())
+						w.WriteHeader(http.StatusBadRequest)
+						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+					}
 
 					funcGroup, err := s.ValidateFunc(r.Context(), funcObj, projectId, host, url, r.Method, r.Header, s)
 					if err != nil {

@@ -137,15 +137,12 @@ func (sqr *SqlMaker) VerifyForBlockedWords(ctx context.Context, key string, valI
 		}
 	}
 	for _, v := range realSqr.GetBlockedRegex() {
-		logs.WithContext(ctx).Info(vWords)
-		logs.WithContext(ctx).Info(v)
 		match, mErr := regexp.MatchString(v, vWords)
 		if mErr != nil {
 			err = mErr
 			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint(match))
 		if match {
 			err = errors.New(fmt.Sprint("Suspicious value found for ", key, " ", vWords, " ", v))
 			logs.WithContext(ctx).Error(err.Error())
