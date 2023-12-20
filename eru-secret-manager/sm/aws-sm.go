@@ -15,6 +15,7 @@ type AwsSmStore struct {
 	SmStore
 	Region         string `json:"region" eru:"required"`
 	SmName         string `json:"sm_name" eru:"required"`
+	KmsName        string `json:"kms_name" eru:"required"`
 	Authentication string `json:"authentication" eru:"required"`
 	Key            string `json:"key" eru:"required"`
 	Secret         string `json:"secret" eru:"required"`
