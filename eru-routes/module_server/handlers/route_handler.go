@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	//"bytes"
 	"encoding/json"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -39,6 +40,10 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		// Close the body of the request
 		//defer file_utils.CloseTheCloser(request.Body)  //TODO to add request body close in all handlers across projects
 		defer r.Body.Close()
+
+		ctx := context.WithValue(r.Context(), "allowed_origins", server_handlers.AllowedOrigins)
+		ctx = context.WithValue(ctx, "origin", r.Header.Get("Origin"))
+
 		// Extract the host and url from incoming request
 		host, url := extractHostUrl(r)
 		vars := mux.Vars(r)
@@ -46,7 +51,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		routeName := vars["routename"]
 
 		// Lookup a route based on host and url
-		route, err := s.GetAndValidateRoute(r.Context(), routeName, projectId, host, url, r.Method, r.Header, s)
+		route, err := s.GetAndValidateRoute(ctx, routeName, projectId, host, url, r.Method, r.Header, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -87,9 +92,9 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				}
 			}
 		*/
-		response, _, err := route.Execute(r.Context(), r, url, false, "", nil, module_store.LoopThreads)
+		response, _, err := route.Execute(ctx, r, url, false, "", nil, module_store.LoopThreads)
 		if route.Redirect {
-			logs.WithContext(r.Context()).Info(route.FinalRedirectUrl)
+			logs.WithContext(ctx).Info(route.FinalRedirectUrl)
 			http.Redirect(w, r, route.FinalRedirectUrl, http.StatusSeeOther)
 		} else {
 			if err != nil {
@@ -105,7 +110,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			w.WriteHeader(response.StatusCode)
 			_, err = io.Copy(w, response.Body)
 			if err != nil {
-				logs.WithContext(r.Context()).Error(err.Error())
+				logs.WithContext(ctx).Error(err.Error())
 			}
 		}
 	}
