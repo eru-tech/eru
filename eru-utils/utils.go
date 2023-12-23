@@ -196,7 +196,40 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	//for _, c := range req.Cookies() {
 	//	logs.WithContext(ctx).Info(c.String())
 	//}
+
 	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
+
+	allowedOriginsI := ctx.Value("allowed_origins")
+	originI := ctx.Value("origin")
+
+	allowedOrigins := ""
+	if allowedOriginsI != nil {
+		allowedOrigins = allowedOriginsI.(string)
+	}
+
+	origin := ""
+	if originI != nil {
+		origin = originI.(string)
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("allowedOrigins = ", allowedOrigins, " ", allowedOrigins != ""))
+	logs.WithContext(ctx).Info(fmt.Sprint("origin = ", origin, " ", origin != ""))
+	logs.WithContext(ctx).Info(fmt.Sprint("req.Header.Get(\"Origin\") = ", req.Header.Get("Origin"), " ", req.Header.Get("Origin") == ""))
+	if req.Header.Get("Origin") == "" && origin != "" && allowedOrigins != "" {
+		logs.WithContext(ctx).Info(fmt.Sprint("setting cors headers as origin is blank"))
+		envOrigin := strings.Split(allowedOrigins, ",")
+		for _, o := range envOrigin {
+			oo := strings.Replace(o, "*.", "", -1)
+			logs.WithContext(ctx).Info(fmt.Sprint(origin, " contains ", oo))
+			if strings.Contains(origin, oo) {
+				logs.WithContext(ctx).Info(fmt.Sprint(origin, " contains ", oo))
+				resp.Header.Set("Access-Control-Allow-Origin", origin)
+				resp.Header.Set("Access-Control-Allow-Credentials", "true")
+				resp.Header.Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+				resp.Header.Set("Access-Control-Expose-Headers", "Authorization, Content-Type")
+				break
+			}
+		}
+	}
 	return
 }
 
