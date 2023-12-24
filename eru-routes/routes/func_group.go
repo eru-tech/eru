@@ -63,6 +63,37 @@ type FuncStep struct {
 	FuncSteps            map[string]*FuncStep
 }
 
+func (funcStep *FuncStep) Clone(ctx context.Context) (cloneFuncStep *FuncStep, err error) {
+	cloneFuncStepI, cloneFuncStepIErr := cloneInterface(ctx, funcStep)
+	if cloneFuncStepIErr != nil {
+		err = cloneFuncStepIErr
+		logs.WithContext(ctx).Error(cloneFuncStepIErr.Error())
+		return
+	}
+	cloneFSk := false
+	cloneFuncStep, cloneFSk = cloneFuncStepI.(*FuncStep)
+	if !cloneFSk {
+		err = errors.New("funcStep clone failed")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	routeClone, routeCloneErr := funcStep.Route.Clone(ctx)
+	if routeCloneErr != nil {
+		return
+	}
+	cloneFuncStep.Route = *routeClone
+	cloneFuncStep.FuncKey = funcStep.FuncKey
+	for k, v := range funcStep.FuncSteps {
+		childFs, childFsErr := v.Clone(ctx)
+		if childFsErr != nil {
+			return
+		}
+		cloneFuncStep.FuncSteps[k] = childFs
+	}
+
+	return
+}
+
 func (funcGroup *FuncGroup) Execute(ctx context.Context, request *http.Request, FuncThreads int, LoopThreads int, funcStepName string) (response *http.Response, err error) {
 	logs.WithContext(ctx).Debug("FuncGroup Execute - Start")
 	reqVars := make(map[string]*TemplateVars)
@@ -153,6 +184,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 
 		//first step is to transform the request which in turn will clone the request before transforming keeping original request as is for further use.
 		request, vars, err = funcStep.transformRequest(ctx, req, reqVars, resVars, mainRouteName)
+
 		if err != nil {
 			return
 		}
@@ -221,7 +253,6 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			}
 		}
 		if strCond == "true" {
-
 			if funcStep.Async && funcStep.AsyncMessage != "" {
 				avars := &FuncTemplateVars{}
 				avars.Vars = reqVars[funcStep.FuncKey]
@@ -247,7 +278,6 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 					return
 				}
 			}
-
 		}
 	}
 	if len(loopArray) == 0 {
@@ -305,13 +335,14 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 		if strCond == "true" {
 			if funcStep.LoopVariable != "" {
 				logs.WithContext(ctx).Info("RunFuncStepInner inside funcStep.LoopVariable")
-				logs.WithContext(ctx).Info(funcStep.LoopVariable)
 				request, _, err = funcStep.transformRequest(ctx, req, reqVars, resVars, mainRouteName)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					return
 				}
 			}
+			logs.WithContext(ctx).Info(fmt.Sprint(funcStep.Route.TargetHosts))
+			logs.WithContext(ctx).Info(fmt.Sprint(reqVars))
 			routevars := &TemplateVars{}
 			_ = routevars
 
@@ -358,9 +389,8 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 				resVars[funcStep.GetRouteName()] = trVars
 				resVars[funcStep.FuncKey] = trVars
 			}
-			logs.WithContext(ctx).Info(fmt.Sprint("funcStep.Route.Redirect = ", funcStep.Route.Redirect))
 			if funcStep.Route.Redirect {
-				logs.WithContext(ctx).Info(funcStep.Route.FinalRedirectUrl)
+				logs.WithContext(ctx).Info(fmt.Sprint("Redirect URl = ", funcStep.Route.FinalRedirectUrl))
 				response.StatusCode = http.StatusSeeOther
 				response.Header.Set("Location", funcStep.Route.FinalRedirectUrl)
 				return
@@ -547,6 +577,9 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 
 	//check and transform api host if set as template
 	logs.WithContext(ctx).Info(fmt.Sprint(funcStep.Route.TargetHosts))
+	for k, v := range reqVars {
+		logs.WithContext(ctx).Info(fmt.Sprint(k, " ", v.LoopVar))
+	}
 	for rk, ro := range funcStep.Route.TargetHosts {
 		if strings.HasPrefix(ro.Host, "{{") {
 			avars := &FuncTemplateVars{}
@@ -587,6 +620,31 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 			}
 		}
 	}
+
+	if strings.HasPrefix(funcStep.ApiPath, "{{") {
+		avars := &FuncTemplateVars{}
+		avars.Vars = vars
+		avars.ResVars = resVars
+		avars.ReqVars = reqVars
+
+		output, err := processTemplate(ctx, "api_host", funcStep.ApiPath, avars, "string", funcStep.Route.TokenSecretKey)
+		if err != nil {
+			// ignore error if it is no value
+			if err.Error() != "Template returned <no value>" {
+				return req, &TemplateVars{}, err
+			}
+		}
+		logs.WithContext(ctx).Info(fmt.Sprint("string(output) = ", string(output)))
+		if string(output) != "" {
+			path, pErr := strconv.Unquote(string(output))
+			if pErr != nil {
+				logs.WithContext(ctx).Info(pErr.Error())
+				path = string(output)
+			}
+			funcStep.Route.RewriteUrl = path
+		}
+	}
+
 	// lastly we process and transform template based headers and set it in request
 	err = processHeaderTemplates(ctx, req, funcStep.RemoveParams.RequestHeaders, funcStep.RequestHeaders, false, vars, funcStep.Route.TokenSecretKey, reqVars, resVars)
 	if err != nil {

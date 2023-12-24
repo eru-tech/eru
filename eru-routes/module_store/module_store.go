@@ -351,8 +351,9 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *rout
 			r.Condition = ""
 			r.TargetHosts = append(r.TargetHosts, tg)
 		} else if funcStep.Api.Host != "" {
-			logs.WithContext(ctx).Info(fmt.Sprint("making dummy route for api ", funcStep.GetRouteName()))
+			logs.WithContext(ctx).Info(fmt.Sprint("making dummy route for api ", funcStep.GetRouteName(), " ", funcStep.FuncKey))
 			r.RouteName = strings.Replace(strings.Replace(funcStep.Api.Host, ".", "", -1), ":", "", -1)
+			r.RouteName = funcStep.GetRouteName()
 			r.Url = "/"
 			r.MatchType = "PREFIX"
 			r.RewriteUrl = funcStep.ApiPath
@@ -369,7 +370,6 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *rout
 		funcStep.Route = r
 	}
 	for ck, cv := range funcStep.FuncSteps {
-		logs.WithContext(ctx).Info("inside funcStep.FuncSteps - child iteration")
 		fs := funcStep.FuncSteps[ck]
 		err = ms.LoadRoutesForFunction(ctx, fs, cv.RouteName, projectId, host, cv.Path, method, headers, s)
 		if err != nil {

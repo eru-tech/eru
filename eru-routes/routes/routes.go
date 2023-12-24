@@ -147,7 +147,22 @@ func (route *Route) CheckPathException(path string) (bypass bool) {
 	}
 	return false
 }
-
+func (route *Route) Clone(ctx context.Context) (cloneRoute *Route, err error) {
+	cloneRouteI, cloneRouteIErr := cloneInterface(ctx, route)
+	if cloneRouteIErr != nil {
+		err = cloneRouteIErr
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	cloneRouteOk := false
+	cloneRoute, cloneRouteOk = cloneRouteI.(*Route)
+	if !cloneRouteOk {
+		err = errors.New("route cloning failed")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return
+}
 func (route *Route) GetTargetSchemeHostPortPath(ctx context.Context, url string) (scheme string, host string, port string, path string, method string, err error) {
 	logs.WithContext(ctx).Debug("GetTargetSchemeHostPortPath - Start")
 	targetHost, err := route.getTargetHost(ctx)
@@ -456,9 +471,6 @@ func (route *Route) RunRoute(ctx context.Context, req *http.Request, url string,
 
 		} else {
 			utils.PrintRequestBody(ctx, request, "printing request just before utils.ExecuteHttp")
-			logs.Logger.Info(request.URL.String())
-			logs.Logger.Info(request.Header.Get("content-type"))
-			logs.Logger.Info(request.Method)
 			response, err = utils.ExecuteHttp(ctx, request)
 			if err != nil {
 				return

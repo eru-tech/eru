@@ -109,10 +109,6 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 	for fk, fs := range funcSteps {
 		fs.FuncKey = fk
 
-		logs.WithContext(ctx).Info(fmt.Sprint(started))
-		logs.WithContext(ctx).Info(fmt.Sprint(fk))
-		logs.WithContext(ctx).Info(fmt.Sprint(funcStepName))
-
 		if started || fk == funcStepName || funcStepName == "" {
 			started = true
 		}
@@ -167,7 +163,7 @@ func workerFunc(ctx context.Context, wg *sync.WaitGroup, funcJobs chan FuncJob, 
 	wg.Done()
 }
 
-func allocateFuncInner(ctx context.Context, req *http.Request, funcStep *FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, loopArray []interface{}, asyncMessage string, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int, strCond string, funcStepName string, started bool) {
+func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, loopArray []interface{}, asyncMessage string, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int, strCond string, funcStepName string, started bool) {
 	logs.WithContext(ctx).Debug("allocateFuncInner - Start")
 	defer func() {
 		if r := recover(); r != nil {
@@ -175,10 +171,16 @@ func allocateFuncInner(ctx context.Context, req *http.Request, funcStep *FuncSte
 		}
 	}()
 	loopCounter := 0
-	logs.WithContext(ctx).Info(fmt.Sprint("len(loopArray) from = allocateFuncInner", len(loopArray)))
-	logs.WithContext(ctx).Info(fmt.Sprint(loopArray))
-	logs.WithContext(ctx).Info(fmt.Sprint(funcStep.Route))
 	for loopCounter < len(loopArray) {
+		funcStep := fs
+		var funcStepErr error
+		if len(loopArray) > 1 {
+			funcStep, funcStepErr = fs.Clone(ctx)
+			if funcStepErr != nil {
+				logs.WithContext(ctx).Error(funcStepErr.Error())
+				return
+			}
+		}
 		reqVarsI, _ := cloneInterface(ctx, reqVars)
 		reqVarsClone, _ := reqVarsI.(map[string]*TemplateVars)
 		if reqVarsClone[funcStep.GetRouteName()] == nil {
@@ -227,8 +229,8 @@ func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan Func
 		if funcJob.mainRouteName == "" {
 			funcJob.mainRouteName = funcJob.funcStep.FuncKey
 		}
-
-		logs.WithContext(ctx).Info(fmt.Sprint(funcJob.funcStep.Route))
+		//logs.WithContext(ctx).Info(fmt.Sprint("reqVarsClone[funcJob.funcStep.FuncKey].LoopVar = ", funcJob.reqVars[funcJob.funcStep.FuncKey].LoopVar))
+		//logs.WithContext(ctx).Info(fmt.Sprint("funcJob.funcStep.Route.TargetHosts = ", funcJob.funcStep.Route.TargetHosts))
 		resp, e := funcJob.funcStep.RunFuncStepInner(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.asyncMessage, funcJob.funcThread, funcJob.loopThread, funcJob.strCond, funcJob.funcStepName, funcJob.started)
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print RunFuncStepInner error = ", e.Error()))
