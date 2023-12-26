@@ -53,8 +53,8 @@ type Repo struct {
 }
 
 type RepoToken struct {
-	RepoToken       string `json:"repoToken"`
-	RepoTokenExpiry string `json:"repoTokenExpiry"`
+	RepoToken       string `json:"repo_token"`
+	RepoTokenExpiry string `json:"repo_token_expiry"`
 }
 
 func GetRepo(repoType string) RepoI {
