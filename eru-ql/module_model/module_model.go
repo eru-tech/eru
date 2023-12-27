@@ -116,28 +116,28 @@ type TableJoins struct {
 }
 
 type TableColsMetaData struct {
-	TblSchema         string `eru:"required"`
-	TblName           string `eru:"required"`
-	ColName           string `eru:"required"`
-	DataType          string
-	OwnDataType       string `eru:"required"`
-	PrimaryKey        bool   `eru:"required"`
-	IsUnique          bool   `eru:"required"`
-	PkConstraintName  string
-	UqConstraintName  string
-	IsNullable        bool `eru:"required"`
-	ColPosition       int
-	DefaultValue      string
-	AutoIncrement     bool
-	CharMaxLength     int
-	NumericPrecision  string
-	NumericScale      int
-	DatetimePrecision int
-	FkConstraintName  string
-	FkDeleteRule      string
-	FkTblSchema       string
-	FkTblName         string
-	FkColName         string
+	TblSchema         string        `json:"tbl_schema" eru:"required"`
+	TblName           string        `json:"tbl_name" eru:"required"`
+	ColName           string        `json:"col_name" eru:"required"`
+	DataType          string        `json:"data_type"`
+	OwnDataType       string        `json:"own_data_type" eru:"required"`
+	PrimaryKey        bool          `json:"primary_key" eru:"required"`
+	IsUnique          bool          `json:"is_unique" eru:"required"`
+	PkConstraintName  string        `json:"pk_constraint_name"`
+	UqConstraintName  string        `json:"uq_constraint_name"`
+	IsNullable        bool          `json:"is_nullable" eru:"required"`
+	ColPosition       int           `json:"col_position"`
+	DefaultValue      string        `json:"default_value"`
+	AutoIncrement     bool          `json:"auto_increment"`
+	CharMaxLength     int           `json:"char_max_length"`
+	NumericPrecision  string        `json:"numeric_precision"`
+	NumericScale      int           `json:"numeric_scale"`
+	DatetimePrecision int           `json:"datetime_precision"`
+	FkConstraintName  string        `json:"fk_constraint_name"`
+	FkDeleteRule      string        `json:"fk_delete_rule"`
+	FkTblSchema       string        `json:"fk_tbl_schema"`
+	FkTblName         string        `json:"fk_tbl_name"`
+	FkColName         string        `json:"fk_col_name"`
 	ColumnMasking     ColumnMasking `json:"column_masking"`
 }
 
@@ -167,14 +167,14 @@ type ColumnMasking struct {
 	}
 */
 type SecurityRules struct {
-	Create security_rule.SecurityRule
-	Drop   security_rule.SecurityRule
-	Alter  security_rule.SecurityRule
-	Insert security_rule.SecurityRule
-	Update security_rule.SecurityRule
-	Delete security_rule.SecurityRule
-	Select security_rule.SecurityRule
-	Query  security_rule.SecurityRule
+	Create security_rule.SecurityRule `json:"create"`
+	Drop   security_rule.SecurityRule `json:"drop"`
+	Alter  security_rule.SecurityRule `json:"alter"`
+	Insert security_rule.SecurityRule `json:"insert"`
+	Update security_rule.SecurityRule `json:"update"`
+	Delete security_rule.SecurityRule `json:"delete"`
+	Select security_rule.SecurityRule `json:"select"`
+	Query  security_rule.SecurityRule `json:"query"`
 }
 type TransformRules struct {
 	TransformInput  TransformRule
@@ -212,9 +212,8 @@ type DriverConfig struct {
 }
 
 type OtherDbConfig struct {
-	RowLimit       int
-	QueryTimeOut   int
-	AllowDropTable bool
+	RowLimit     int
+	QueryTimeOut int
 }
 
 type QueryResultMaker struct {
