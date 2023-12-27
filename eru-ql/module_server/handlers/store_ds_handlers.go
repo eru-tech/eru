@@ -268,11 +268,13 @@ func ProjectDataSourceSchemaSaveTableHandler(s module_store.ModuleStoreI) http.H
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			err := eru_utils.ValidateStruct(r.Context(), tableObj, "")
-			if err != nil {
-				server_handlers.FormatResponse(w, 400)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
-				return
+			for _, v := range tableObj {
+				err := eru_utils.ValidateStruct(r.Context(), v, "")
+				if err != nil {
+					server_handlers.FormatResponse(w, 400)
+					json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+					return
+				}
 			}
 		}
 		err := s.SaveSchemaTable(r.Context(), projectId, dbAlias, tableName, tableObj, s)

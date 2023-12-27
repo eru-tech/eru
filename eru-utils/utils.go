@@ -77,7 +77,7 @@ func ValidateStruct(ctx context.Context, s interface{}, parentKey string) error 
 		projectTags := f.Type().Field(i).Tag.Get("eru")
 		if strings.Contains(projectTags, "required") {
 			isRequired = true
-			if f.Field(i).IsZero() {
+			if f.Field(i).IsZero() && f.Field(i).Kind() != reflect.Bool {
 				errs = append(errs, fmt.Sprint(parentKey, f.Type().Field(i).Name))
 				isError = true
 			}
@@ -98,7 +98,6 @@ func ValidateStruct(ctx context.Context, s interface{}, parentKey string) error 
 					errs = append(errs, fmt.Sprint(parentKey, f.Type().Field(i).Name))
 				} else {
 					if ff.Len() > 0 {
-
 						if ff.Index(0).Kind().String() == "struct" || ff.Index(0).Kind().String() == "slice" {
 							for ii := 0; ii < ff.Len(); ii++ {
 								e := ValidateStruct(ctx, ff.Index(ii).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name, "[", ii, "]"))
