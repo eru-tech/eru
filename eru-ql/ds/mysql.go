@@ -19,7 +19,7 @@ func (mr *MysqlSqlMaker) GetTableMetaDataSQL(ctx context.Context) string {
 
 func (mr *MysqlSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
 	logs.WithContext(ctx).Debug("CreateConn - Start")
-	connString := fmt.Sprint(dataSource.DbConfig.User, ":", dataSource.DbConfig.Password, "@tcp(", dataSource.DbConfig.Host, ":", dataSource.DbConfig.Port, ")/", dataSource.DbConfig.DefaultSchema)
+	connString := fmt.Sprint(dataSource.DbConfig.User, ":", dataSource.DbConfig.Password, "@tcp(", dataSource.DbConfig.Host, ":", dataSource.DbConfig.Port, ")/", dataSource.DbConfig.DefaultDB)
 	db, err := sqlx.Open("mysql", connString)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())

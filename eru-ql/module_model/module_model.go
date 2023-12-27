@@ -14,16 +14,19 @@ import (
 )
 
 const (
-	RULETYPE_NONE     = "none"
-	RULETYPE_ALWAYS   = "always"
-	RULETYPE_CUSTOM   = "custom"
-	RULEPREFIX_TOKEN  = "token"
-	RULEPREFIX_DOCS   = "docs"
-	RULEPREFIX_NONE   = "none"
-	QUERY_TYPE_INSERT = "insert"
-	QUERY_TYPE_UPDATE = "update"
-	QUERY_TYPE_DELETE = "delete"
-	QUERY_TYPE_SELECT = "select"
+	RULETYPE_NONE          = "none"
+	RULETYPE_ALWAYS        = "always"
+	RULETYPE_CUSTOM        = "custom"
+	RULEPREFIX_TOKEN       = "token"
+	RULEPREFIX_DOCS        = "docs"
+	RULEPREFIX_NONE        = "none"
+	QUERY_TYPE_INSERT      = "insert"
+	QUERY_TYPE_UPDATE      = "update"
+	QUERY_TYPE_DELETE      = "delete"
+	QUERY_TYPE_SELECT      = "select"
+	COLUMN_MASKING_NONE    = "none"
+	COLUMN_MASKING_ENCRYPT = "encrypt"
+	COLUMN_MASKING_HASH    = "hash"
 )
 
 type ModuleProjectI interface {
@@ -135,13 +138,11 @@ type TableColsMetaData struct {
 	FkTblSchema       string
 	FkTblName         string
 	FkColName         string
-	ColumnMasking     ColumnMasking
+	ColumnMasking     ColumnMasking `json:"column_masking"`
 }
 
 type ColumnMasking struct {
-	MaskingType string
-	MaskingRule string
-	CustomRule  security_rule.CustomRule
+	MaskingType string `json:"masking_type"`
 }
 
 /*

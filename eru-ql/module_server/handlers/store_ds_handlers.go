@@ -329,6 +329,49 @@ func ProjectDataSourceSchemaTransformTableHandler(s module_store.ModuleStoreI) h
 	}
 }
 
+func ProjectDataSourceSchemaMasColumnHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectDataSourceSchemaMasColumnHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		dbAlias := vars["dbalias"]
+		tableName := vars["tablename"]
+		colName := vars["colname"]
+		tableName = strings.Replace(tableName, "___", ".", 1)
+
+		columnMaskingFromReq := json.NewDecoder(r.Body)
+		columnMaskingFromReq.DisallowUnknownFields()
+
+		var columnMasking module_model.ColumnMasking
+
+		if err := columnMaskingFromReq.Decode(&columnMasking); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err := eru_utils.ValidateStruct(r.Context(), columnMasking, "")
+			if err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		err := s.SaveColumnMasking(r.Context(), projectId, dbAlias, tableName, colName, columnMasking, s)
+
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("column masking for ", colName, " set successfully")})
+		}
+		return
+	}
+}
+
 func ProjectDataSourceSchemaSecureTableHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceSchemaSecureTableHandler - Start")

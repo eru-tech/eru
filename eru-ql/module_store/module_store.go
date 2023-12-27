@@ -43,6 +43,7 @@ type ModuleStoreI interface {
 	SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]module_model.TableColsMetaData, realStore ModuleStoreI) (err error)
 	SaveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, securityRules module_model.SecurityRules, realStore ModuleStoreI) (err error)
 	SaveTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error)
+	SaveColumnMasking(ctx context.Context, projectId string, dbAlias string, tableName string, colName string, columnMasking module_model.ColumnMasking, realStore ModuleStoreI) (err error)
 	GetTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error)
 	GetTableSecurityRule(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.SecurityRules, err error)
 	DropSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error)
@@ -657,7 +658,41 @@ func (ms *ModuleStore) SaveTableSecurity(ctx context.Context, projectId string, 
 	logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from SaveTableSecurity ", tableName))
 	return realStore.SaveStore(ctx, "", realStore)
 }
-
+func (ms *ModuleStore) SaveColumnMasking(ctx context.Context, projectId string, dbAlias string, tableName string, colName string, columnMasking module_model.ColumnMasking, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveColumnMasking - Start")
+	if prj, ok := ms.Projects[projectId]; ok {
+		if db, ok := prj.DataSources[dbAlias]; ok {
+			if tb, ok := db.SchemaTables[tableName]; ok {
+				if cl, ok := tb[colName]; ok {
+					cl.ColumnMasking = columnMasking
+					db.SchemaTables[tableName][colName] = cl
+				} else {
+					err = errors.New(fmt.Sprint("Column ", colName, " not found"))
+					logs.WithContext(ctx).Error(err.Error())
+					return err
+				}
+			} else {
+				err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+		} else {
+			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			return err
+		}
+	} else {
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		return err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from SaveColumnMasking ", tableName))
+	return realStore.SaveStore(ctx, "", realStore)
+}
 func (ms *ModuleStore) SaveTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveTableTransformation - Start")
 	if prj, ok := ms.Projects[projectId]; ok {
@@ -755,6 +790,7 @@ func (ms *ModuleStore) GetTableSecurityRule(ctx context.Context, projectId strin
 func (ms *ModuleStore) DropSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("DropSchemaTable - Start")
 	tableExists := false
+	//TODO - to check if drop is allowed
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if _, ok := db.SchemaTables[tableName]; ok {
