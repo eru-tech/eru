@@ -107,7 +107,7 @@ type DataSource struct {
 
 type TableJoins struct {
 	Table1Name       string                 `json:"table1_name"`
-	Table1Cols       []string               `json:"why"`
+	Table1Cols       []string               `json:"table1_cols"`
 	Table2Name       string                 `json:"table2_name"`
 	Table2Cols       []string               `json:"table2_cols"`
 	IsActive         bool                   `json:"is_active"`
