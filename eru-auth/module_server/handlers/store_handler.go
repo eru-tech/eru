@@ -210,7 +210,7 @@ func GatewaySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			//}
 		}
 		//err := storageObj.Save(s,projectId,storageName)
-		gatewayName, _ := gatewayObj.GetAttribute("GatewayName")
+		gatewayName, _ := gatewayObj.GetAttribute("Ggateway_name")
 		err := s.SaveGateway(r.Context(), gatewayObj, projectId, s, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -301,7 +301,7 @@ func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		} else {
 			s.SaveStore(r.Context(), "", s)
 			server_handlers.FormatResponse(w, 200)
-			authName, anErr := authObj.GetAttribute(r.Context(), "AuthName")
+			authName, anErr := authObj.GetAttribute(r.Context(), "auth_name")
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": anErr.Error()})

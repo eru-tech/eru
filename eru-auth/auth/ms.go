@@ -19,18 +19,18 @@ import (
 
 type MsAuth struct {
 	Auth
-	MsConfig MsConfig    `json:"msConfig" eru:"required"`
+	MsConfig MsConfig    `json:"ms_config" eru:"required"`
 	Hydra    HydraConfig `json:"hydra" eru:"required"`
 }
 
 type MsConfig struct {
-	ClientId     string      `json:"clientId" eru:"required"`
-	ClientSecret string      `json:"clientSecret" eru:"required"`
-	RedirectURI  string      `json:"redirectUri" eru:"required"`
+	ClientId     string      `json:"client_id" eru:"required"`
+	ClientSecret string      `json:"client_secret" eru:"required"`
+	RedirectURI  string      `json:"redirect_uri" eru:"required"`
 	Scope        string      `json:"scope" eru:"required"`
-	SsoBaseUrl   string      `json:"ssoBaseUrl" eru:"required"`
-	TokenUrl     string      `json:"tokenUrl" eru:"required"`
-	JwkUrl       string      `json:"jwkUrl" eru:"required"`
+	SsoBaseUrl   string      `json:"sso_base_url" eru:"required"`
+	TokenUrl     string      `json:"token_url" eru:"required"`
+	JwkUrl       string      `json:"jwk_url" eru:"required"`
 	Identifiers  Identifiers `json:"identifiers" eru:"required"`
 }
 
@@ -38,15 +38,15 @@ type MsParams struct {
 	ClientId            string `json:"client_id"`
 	Scope               string `json:"scope"`
 	RedirectURI         string `json:"redirect_uri"`
-	ClientRequestId     string `json:"client-request-id"`
+	ClientRequestId     string `json:"client_request_id"`
 	ResponseMode        string `json:"response_mode"`
 	ResponseType        string `json:"response_type"`
 	CodeChallenge       string `json:"code_challenge"`
-	CodeVerifier        string
+	CodeVerifier        string `json:"code_verifier"`
 	CodeChallengeMethod string `json:"code_challenge_method"`
 	Nonce               string `json:"nonce"`
 	State               string `json:"state"`
-	Url                 string
+	Url                 string `json:"url"`
 }
 
 func (msAuth *MsAuth) PerformPreSaveTask(ctx context.Context) (err error) {

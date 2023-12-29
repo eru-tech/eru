@@ -171,7 +171,7 @@ func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storage
 	if sErr != nil {
 		return
 	}
-	keyName, kpErr := storageObjClone.GetAttribute("KeyPair")
+	keyName, kpErr := storageObjClone.GetAttribute("key_pair")
 	if err != nil {
 		err = kpErr
 		return
@@ -186,7 +186,7 @@ func (ms *ModuleStore) UploadFileB64(ctx context.Context, projectId string, stor
 	if sErr != nil {
 		return
 	}
-	keyName, kpErr := storageObjClone.GetAttribute("KeyPair")
+	keyName, kpErr := storageObjClone.GetAttribute("key_pair")
 	if err != nil {
 		err = kpErr
 		return
@@ -309,7 +309,7 @@ func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, stora
 	if sErr != nil {
 		return
 	}
-	keyName, kpErr := storageObjClone.GetAttribute("KeyPair")
+	keyName, kpErr := storageObjClone.GetAttribute("key_pair")
 	if err != nil {
 		err = kpErr
 		return

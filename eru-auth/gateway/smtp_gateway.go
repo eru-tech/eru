@@ -10,8 +10,8 @@ import (
 
 type SmtpGateway struct {
 	Gateway
-	SmtpHost string
-	SmtpPort string
+	SmtpHost string `json:"smtp_host"`
+	SmtpPort string `json:"smtp_port"`
 }
 
 func (smtpGateway *SmtpGateway) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {

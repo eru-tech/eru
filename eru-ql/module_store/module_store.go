@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	erumd5 "github.com/eru-tech/eru/eru-crypto/md5"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
@@ -148,7 +149,6 @@ func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interfac
 func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SetDataSourceConnections - Start")
 	for _, prj := range ms.Projects {
-		logs.WithContext(ctx).Info(prj.ProjectId)
 		for _, datasource := range prj.DataSources {
 			i := ds.GetSqlMaker(datasource.DbName)
 			if i != nil {
@@ -585,6 +585,16 @@ func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, db
 			}
 			if tableExists {
 				//alter table
+				for k, v := range tableObj {
+					vStr, vStrErr := erumd5.Md5(ctx, fmt.Sprint(v.TblSchema, v.TblName, v.ColName, v.DataType, v.PrimaryKey, v.IsUnique, v.PkConstraintName, v.UqConstraintName, v.IsNullable, v.DefaultValue, v.AutoIncrement, v.CharMaxLength, v.NumericPrecision, v.NumericScale, v.DatetimePrecision, v.FkConstraintName, v.FkDeleteRule, v.FkTblSchema, v.FkTblName, v.FkColName), "hex")
+					if vStrErr != nil {
+						err = vStrErr
+						logs.WithContext(ctx).Error(err.Error())
+						return
+					}
+					logs.WithContext(ctx).Info(fmt.Sprint(k, " = ", vStr))
+					logs.WithContext(ctx).Info(fmt.Sprint(k, " = ", fmt.Sprint(v.TblSchema, v.TblName, v.ColName, v.DataType, v.PrimaryKey, v.IsUnique, v.PkConstraintName, v.UqConstraintName, v.IsNullable, v.DefaultValue, v.AutoIncrement, v.CharMaxLength, v.NumericPrecision, v.NumericScale, v.DatetimePrecision, v.FkConstraintName, v.FkDeleteRule, v.FkTblSchema, v.FkTblName, v.FkColName)))
+				}
 				err = errors.New("Alter table not implemented as yet")
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())

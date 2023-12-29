@@ -12,12 +12,12 @@ import (
 )
 
 type StoreCompare struct {
-	DeleteStorages   []string
-	NewStorages      []string
-	MismatchStorages map[string]interface{}
-	DeleteKeys       []string
-	NewKeys          []string
-	MismatchKeys     map[string]interface{}
+	DeleteStorages   []string               `json:"delete_storages"`
+	NewStorages      []string               `json:"new_storages"`
+	MismatchStorages map[string]interface{} `json:"mismatch_storages"`
+	DeleteKeys       []string               `json:"delete_keys"`
+	NewKeys          []string               `json:"new_keys"`
+	MismatchKeys     map[string]interface{} `json:"mismatch_keys"`
 }
 
 type FileProjectI interface {
@@ -39,7 +39,7 @@ type ProjectSettings struct {
 
 func (prj *Project) AddStorage(ctx context.Context, storageObjI storage.StorageI) error {
 	logs.WithContext(ctx).Debug("AddStorage - Start")
-	storageName, err := storageObjI.GetAttribute("StorageName")
+	storageName, err := storageObjI.GetAttribute("storage_name")
 	if err == nil {
 		prj.Storages[storageName.(string)] = storageObjI
 		return nil
@@ -71,12 +71,12 @@ func (prj *Project) CompareProject(ctx context.Context, compareProject Project) 
 	logs.WithContext(ctx).Debug("CompareProject - Start")
 	storeCompare := StoreCompare{}
 	for _, ms := range prj.Storages {
-		msNameI, _ := ms.GetAttribute("StorageName")
+		msNameI, _ := ms.GetAttribute("storage_name")
 		msName := msNameI.(string)
 		var diffR utils.DiffReporter
 		sFound := false
 		for _, cs := range compareProject.Storages {
-			csNameI, _ := cs.GetAttribute("StorageName")
+			csNameI, _ := cs.GetAttribute("storage_name")
 			csName := csNameI.(string)
 			if msName == csName {
 				sFound = true
@@ -95,11 +95,11 @@ func (prj *Project) CompareProject(ctx context.Context, compareProject Project) 
 	}
 
 	for _, cs := range compareProject.Storages {
-		csNameI, _ := cs.GetAttribute("StorageName")
+		csNameI, _ := cs.GetAttribute("storage_name")
 		csName := csNameI.(string)
 		sFound := false
 		for _, ms := range prj.Storages {
-			msNameI, _ := ms.GetAttribute("StorageName")
+			msNameI, _ := ms.GetAttribute("storage_name")
 			msName := msNameI.(string)
 			if msName == csName {
 				sFound = true

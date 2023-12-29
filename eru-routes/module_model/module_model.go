@@ -9,12 +9,12 @@ import (
 )
 
 type StoreCompare struct {
-	DeleteRoutes   []string
-	NewRoutes      []string
-	MismatchRoutes map[string]interface{}
-	DeleteFuncs    []string
-	NewFuncs       []string
-	MismatchFuncs  map[string]interface{}
+	DeleteRoutes   []string               `json:"delete_routes"`
+	NewRoutes      []string               `json:"new_routes"`
+	MismatchRoutes map[string]interface{} `json:"mismatch_routes"`
+	DeleteFuncs    []string               `json:"delete_funcs"`
+	NewFuncs       []string               `json:"new_funcs"`
+	MismatchFuncs  map[string]interface{} `json:"mismatch_funcs"`
 }
 
 type ModuleProjectI interface {
@@ -34,9 +34,9 @@ type ProjectSettings struct {
 }
 
 type Project struct {
-	ProjectId       string                      `eru:"required"`
-	Routes          map[string]routes.Route     `eru:"required"`
-	FuncGroups      map[string]routes.FuncGroup `eru:"required"`
+	ProjectId       string                      `json:"project_id" eru:"required"`
+	Routes          map[string]routes.Route     `json:"routes" eru:"required"`
+	FuncGroups      map[string]routes.FuncGroup `json:"func_groups" eru:"required"`
 	ProjectSettings ProjectSettings             `json:"project_settings"`
 	//Authorizers   map[string]routes.Authorizer
 }

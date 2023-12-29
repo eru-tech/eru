@@ -112,7 +112,7 @@ func FetchTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		userId := ""
 		if authName == "eru" || authName == "ms" {
 
-			tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "TokenHeaderKey")
+			tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "token_header_key")
 
 			tokenObj := make(map[string]interface{})
 			if tokenKeyErr == nil {
@@ -180,7 +180,7 @@ func VerifyTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		tokenHeaderKey, err := authObjI.GetAttribute(r.Context(), "TokenHeaderKey")
+		tokenHeaderKey, err := authObjI.GetAttribute(r.Context(), "token_header_key")
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -410,7 +410,7 @@ func CheckVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "TokenHeaderKey")
+		tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "token_header_key")
 		if tokenKeyErr != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": tokenKeyErr.Error()})
@@ -579,7 +579,7 @@ func GenerateOtpHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			gatewayName, gnerr := gatewayI.GetAttribute("GatewayName")
+			gatewayName, gnerr := gatewayI.GetAttribute("gateway_name")
 			if gnerr != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": gnerr.Error()})
@@ -710,7 +710,7 @@ func UpdateUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		identity.Attributes = userAttributes
 
-		tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "TokenHeaderKey")
+		tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "token_header_key")
 		if tokenKeyErr != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": tokenKeyErr.Error()})
@@ -775,7 +775,7 @@ func ChangePasswordHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 
 		}
-		tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "TokenHeaderKey")
+		tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "token_header_key")
 		if tokenKeyErr != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": tokenKeyErr.Error()})

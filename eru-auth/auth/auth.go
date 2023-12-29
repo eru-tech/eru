@@ -81,7 +81,7 @@ type LoginPostBody struct {
 	Username     string `json:"username"`
 	Password     string `json:"password"`
 	IdpCode      string `json:"code"`
-	IdpRequestId string `json:"requestId"`
+	IdpRequestId string `json:"request_id"`
 	CodeVerifier string `json:"-"`
 	Nonce        string `json:"-"`
 }
@@ -92,7 +92,7 @@ type RecoveryPostBody struct {
 
 type VerifyPostBody struct {
 	Username       string `json:"username"`
-	CredentialType string `json:"credentialType"`
+	CredentialType string `json:"credential_type"`
 }
 
 type RecoveryPassword struct {
@@ -129,39 +129,39 @@ type IdentityAuth struct {
 }
 
 type Auth struct {
-	AuthType       string
-	AuthName       string
-	TokenHeaderKey string
-	Hooks          AuthHooks `eru:"optional"`
+	AuthType       string    `json:"auth_type"`
+	AuthName       string    `json:"auth_name"`
+	TokenHeaderKey string    `json:"token_header_key"`
+	Hooks          AuthHooks `json:"hooks" eru:"optional"`
 	AuthDb         AuthDbI   `json:"-"`
 }
 
 type AuthHooks struct {
-	SRC  routes.Route
-	SRCF routes.FuncGroup
-	SVCF routes.FuncGroup
-	SWEF routes.FuncGroup
+	SRC  routes.Route     `json:"src"`
+	SRCF routes.FuncGroup `json:"srcf"`
+	SVCF routes.FuncGroup `json:"svcf"`
+	SWEF routes.FuncGroup `json:"swef"`
 }
 
 type IdentifierConfig struct {
 	Enable    bool   `json:"enable"`
-	IdpMapper string `json:"idpMapper"`
+	IdpMapper string `json:"idp_mapper"`
 }
 
 type Identifiers struct {
 	Email    IdentifierConfig `json:"email"`
 	Mobile   IdentifierConfig `json:"mobile"`
-	Username IdentifierConfig `json:"userName"`
+	Username IdentifierConfig `json:"username"`
 }
 
 type UserTraits struct {
-	FirstName      string `json:"firstName"`
-	LastName       string `json:"lastName"`
+	FirstName      string `json:"first_name"`
+	LastName       string `json:"last_name"`
 	Email          string `json:"email"`
 	Mobile         string `json:"mobile"`
-	Username       string `json:"userName"`
-	EmailVerified  bool   `json:"emailVerified"`
-	MobileVerified bool   `json:"mobileVerified"`
+	Username       string `json:"username"`
+	EmailVerified  bool   `json:"email_verified"`
+	MobileVerified bool   `json:"mobile_verified"`
 }
 
 type RegisterUser struct {
@@ -378,11 +378,11 @@ func (auth *Auth) PerformPreDeleteTask(ctx context.Context) (err error) {
 
 func (auth *Auth) GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error) {
 	switch attributeName {
-	case "AuthType":
+	case "auth_type":
 		return auth.AuthType, nil
-	case "AuthName":
+	case "auth_name":
 		return auth.AuthName, nil
-	case "TokenHeaderKey":
+	case "token_header_key":
 		return auth.TokenHeaderKey, nil
 	default:
 		err := errors.New("Attribute not found")

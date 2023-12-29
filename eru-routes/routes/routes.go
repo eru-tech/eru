@@ -45,68 +45,68 @@ const ConditionFailActionIgnore = "IGNORE"
 //		Issuer     []string
 //	}
 type Route struct {
-	Condition            string
-	ConditionFailMessage string
-	ConditionFailAction  string
-	Async                bool
-	AsyncMessage         string
-	LoopVariable         string
-	LoopInParallel       bool
-	RouteName            string `eru:"required"`
-	RouteCategoryName    string
-	Url                  string `eru:"required"`
-	MatchType            string `eru:"required"`
-	RewriteUrl           string
-	TargetHosts          []TargetHost `eru:"required"`
-	AllowedHosts         []string
-	AllowedMethods       []string
-	RequiredHeaders      []Headers
-	EnableCache          bool
-	RequestHeaders       []Headers
-	QueryParams          []Headers
-	FormData             []Headers
-	FileData             []FilePart
-	ResponseHeaders      []Headers
-	TransformRequest     string
-	TransformResponse    string
-	IsPublic             bool
-	Authorizer           string   `json:"-"`
-	AuthorizerException  []string `json:"-"`
-	TokenSecretKey       string   `json:"-"`
-	RemoveParams         RemoveParams
-	OnError              string
-	Redirect             bool
-	RedirectUrl          string
-	FinalRedirectUrl     string `json:"-"`
-	RedirectScheme       string
-	RedirectParams       []Headers
+	Condition            string       `json:"condition"`
+	ConditionFailMessage string       `json:"condition_fail_message"`
+	ConditionFailAction  string       `json:"condition_fail_action"`
+	Async                bool         `json:"async"`
+	AsyncMessage         string       `json:"async_message"`
+	LoopVariable         string       `json:"loop_variable"`
+	LoopInParallel       bool         `json:"loop_in_parallel"`
+	RouteName            string       `json:"route_name" eru:"required"`
+	RouteCategoryName    string       `json:"route_category_name"`
+	Url                  string       `json:"url" eru:"required"`
+	MatchType            string       `json:"match_type" eru:"required"`
+	RewriteUrl           string       `json:"rewrite_url"`
+	TargetHosts          []TargetHost `json:"target_hosts" eru:"required"`
+	AllowedHosts         []string     `json:"allowed_hosts"`
+	AllowedMethods       []string     `json:"allowed_methods"`
+	RequiredHeaders      []Headers    `json:"required_headers"`
+	//EnableCache          bool         `json:"enable_cache"`
+	RequestHeaders    []Headers  `json:"request_headers"`
+	QueryParams       []Headers  `json:"query_params"`
+	FormData          []Headers  `json:"form_data"`
+	FileData          []FilePart `json:"file_data"`
+	ResponseHeaders   []Headers  `json:"response_headers"`
+	TransformRequest  string     `json:"transform_request"`
+	TransformResponse string     `json:"transform_response"`
+	//IsPublic             bool `json:"is_public"`
+	//Authorizer           string   `json:"-"`
+	//AuthorizerException  []string `json:"-"`
+	TokenSecretKey   string       `json:"-"`
+	RemoveParams     RemoveParams `json:"remove_params"`
+	OnError          string       `json:"on_error"`
+	Redirect         bool         `json:"redirect"`
+	RedirectUrl      string       `json:"redirect_url"`
+	FinalRedirectUrl string       `json:"-"`
+	RedirectScheme   string       `json:"redirect_scheme"`
+	RedirectParams   []Headers    `json:"redirect_params"`
 }
 
 type RemoveParams struct {
-	RequestHeaders  []string
-	QueryParams     []string
-	FormData        []string
-	ResponseHeaders []string
+	RequestHeaders  []string `json:"request_headers"`
+	QueryParams     []string `json:"query_params"`
+	FormData        []string `json:"form_data"`
+	ResponseHeaders []string `json:"response_headers"`
 }
 
 type TargetHost struct {
-	Host       string
-	Port       string
-	Method     string
-	Scheme     string
-	Allocation int64
+	Host       string `json:"host"`
+	Port       string `json:"port"`
+	Method     string `json:"method"`
+	Scheme     string `json:"scheme"`
+	Allocation int64  `json:"allocation"`
 }
 
 type Headers struct {
-	Key        string `eru:"required"`
-	Value      string `eru:"required"`
-	IsTemplate bool
+	Key        string `json:"key" eru:"required"`
+	Value      string `json:"value"eru:"required"`
+	IsTemplate bool   `json:"is_template"`
 }
 
 type FilePart struct {
-	FileName    string `eru:"required"`
-	FileVarName string `eru:"required"`
-	FileContent string `eru:"required"`
+	FileName    string `json:"file_name" eru:"required"`
+	FileVarName string `json:"file_var_name" eru:"required"`
+	FileContent string `json:"file_content" eru:"required"`
 }
 
 type TemplateVars struct {
@@ -139,14 +139,14 @@ var httpClient = http.Client{
 //	return
 //}
 
-func (route *Route) CheckPathException(path string) (bypass bool) {
-	for _, v := range route.AuthorizerException {
-		if v == path {
-			return true
-		}
-	}
-	return false
-}
+//	func (route *Route) CheckPathException(path string) (bypass bool) {
+//		for _, v := range route.AuthorizerException {
+//			if v == path {
+//				return true
+//			}
+//		}
+//		return false
+//	}
 func (route *Route) Clone(ctx context.Context) (cloneRoute *Route, err error) {
 	cloneRouteI, cloneRouteIErr := cloneInterface(ctx, route)
 	if cloneRouteIErr != nil {
@@ -242,11 +242,11 @@ func (route *Route) Validate(ctx context.Context, host string, url string, metho
 		return
 	}
 
-	if strings.HasPrefix(strings.ToUpper(url), "/PUBLIC") && !route.IsPublic {
-		err = errors.New("route is not public")
-		logs.WithContext(ctx).Error(err.Error())
-		return
-	}
+	//if strings.HasPrefix(strings.ToUpper(url), "/PUBLIC") && !route.IsPublic {
+	//	err = errors.New("route is not public")
+	//	logs.WithContext(ctx).Error(err.Error())
+	//	return
+	//}
 	logs.WithContext(ctx).Info(fmt.Sprint(strings.Split(url, route.RouteName)))
 	logs.WithContext(ctx).Info(route.Url)
 	if route.MatchType == MatchTypePrefix && !strings.HasPrefix(strings.ToUpper(strings.Split(url, route.RouteName)[1]), strings.ToUpper(route.Url)) {

@@ -11,23 +11,23 @@ import (
 )
 
 type CustomRule struct {
-	AND []CustomRuleDetails `json:",omitempty"`
-	OR  []CustomRuleDetails `json:",omitempty"`
+	AND []CustomRuleDetails `json:"and,omitempty"`
+	OR  []CustomRuleDetails `json:"or,omitempty"`
 }
 
 type CustomRuleDetails struct {
-	DataType  string              `json:",omitempty"`
-	Variable1 string              `json:",omitempty"`
-	Variable2 string              `json:",omitempty"`
-	Operator  string              `json:",omitempty"`
-	ErrorMsg  string              `json:",omitempty"`
-	AND       []CustomRuleDetails `json:",omitempty"`
-	OR        []CustomRuleDetails `json:",omitempty"`
+	DataType  string              `json:"data_type,omitempty"`
+	Variable1 string              `json:"variable1,omitempty"`
+	Variable2 string              `json:"variable2,omitempty"`
+	Operator  string              `json:"operator,omitempty"`
+	ErrorMsg  string              `json:"error_msg,omitempty"`
+	AND       []CustomRuleDetails `json:"and,omitempty"`
+	OR        []CustomRuleDetails `json:"or,omitempty"`
 }
 
 type SecurityRule struct {
-	RuleType   string
-	CustomRule CustomRule
+	RuleType   string     `json:"rule_type"`
+	CustomRule CustomRule `json:"custom_rule"`
 }
 
 func (sr SecurityRule) Stringify(ctx context.Context, vars map[string]interface{}, ignoreIfNotFound bool) (str string, err error) {

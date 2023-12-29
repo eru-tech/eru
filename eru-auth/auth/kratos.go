@@ -27,8 +27,8 @@ var kratosTraits = [...]string{"email", "phone", "name", "role"}
 
 type KratosHydraAuth struct {
 	Auth
-	Kratos KratosConfig
-	Hydra  HydraConfig
+	Kratos KratosConfig `json:"kratos"`
+	Hydra  HydraConfig  `json:"hydra"`
 }
 
 type KratosLoginPostBody struct {
@@ -39,13 +39,13 @@ type KratosLoginPostBody struct {
 }
 
 type KratosConfig struct {
-	PublicHost   string
-	PublicPort   string
-	PublicScheme string
-	AdminHost    string
-	AdminPort    string
-	AdminScheme  string
-	LoginMethod  string
+	PublicHost   string `json:"public_host"`
+	PublicPort   string `json:"public_port"`
+	PublicScheme string `json:"public_scheme"`
+	AdminHost    string `json:"admin_host"`
+	AdminPort    string `json:"admin_port"`
+	AdminScheme  string `json:"admin_scheme"`
+	LoginMethod  string `json:"login_method"`
 }
 
 type KratosFlow struct {

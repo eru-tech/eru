@@ -34,30 +34,30 @@ type ModuleProjectI interface {
 }
 
 type StoreCompare struct {
-	DeleteQueries               []string
-	NewQueries                  []string
-	MismatchQueries             map[string]interface{}
-	DeleteDataSources           []string
-	NewDataSources              []string
-	MismatchDataSources         map[string]interface{}
-	DeleteTables                []string
-	NewTables                   []string
-	MismatchTables              map[string]interface{}
-	DeleteJoins                 []string
-	NewJoins                    []string
-	MismatchJoins               map[string]interface{}
-	DeleteTableSecurity         []string
-	NewTableSecurity            []string
-	MismatchTableSecurity       map[string]interface{}
-	DeleteTableTransformation   []string
-	NewTableTransformation      []string
-	MismatchTableTransformation map[string]interface{}
+	DeleteQueries               []string               `json:"delete_queries"`
+	NewQueries                  []string               `json:"new_queries"`
+	MismatchQueries             map[string]interface{} `json:"mismatch_queries"`
+	DeleteDataSources           []string               `json:"delete_data_sources"`
+	NewDataSources              []string               `json:"new_data_sources"`
+	MismatchDataSources         map[string]interface{} `json:"mismatch_data_sources"`
+	DeleteTables                []string               `json:"delete_tables"`
+	NewTables                   []string               `json:"new_tables"`
+	MismatchTables              map[string]interface{} `json:"mismatch_tables"`
+	DeleteJoins                 []string               `json:"delete_joins"`
+	NewJoins                    []string               `json:"new_joins"`
+	MismatchJoins               map[string]interface{} `json:"mismatch_joins"`
+	DeleteTableSecurity         []string               `json:"delete_table_security"`
+	NewTableSecurity            []string               `json:"new_table_security"`
+	MismatchTableSecurity       map[string]interface{} `json:"mismatch_table_security"`
+	DeleteTableTransformation   []string               `json:"delete_table_transformation"`
+	NewTableTransformation      []string               `json:"new_table_transformation"`
+	MismatchTableTransformation map[string]interface{} `json:"mismatch_table_transformation"`
 }
 
 type Project struct {
-	ProjectId       string                 `eru:"required"`
-	DataSources     map[string]*DataSource //DB alias is the key
-	MyQueries       map[string]*MyQuery    //queryName is key
+	ProjectId       string                 `json:"project_id" eru:"required"`
+	DataSources     map[string]*DataSource `json:"data_sources"` //DB alias is the key
+	MyQueries       map[string]*MyQuery    `json:"my_queries"`   //queryName is key
 	ProjectSettings ProjectSettings        `json:"project_settings"`
 }
 type ProjectSettings struct {
@@ -80,39 +80,39 @@ type ProjectSettings struct {
 	}
 */
 type MyQuery struct {
-	QueryName    string
-	Query        string
-	Vars         map[string]interface{}
-	QueryType    string
-	DBAlias      string
-	ReadWrite    string
-	Cols         string
-	SecurityRule security_rule.SecurityRule
+	QueryName    string                     `json:"query_name"`
+	Query        string                     `json:"query"`
+	Vars         map[string]interface{}     `json:"vars"`
+	QueryType    string                     `json:"query_type"`
+	DBAlias      string                     `json:"db_alias"`
+	ReadWrite    string                     `json:"read_write"`
+	Cols         string                     `json:"cols"`
+	SecurityRule security_rule.SecurityRule `json:"security_rule"`
 }
 
 type DataSource struct {
-	DbAlias                    string                                  `eru:"required"`
-	DbType                     string                                  `eru:"required"`
-	DbName                     string                                  `eru:"required"`
-	DbConfig                   DbConfig                                `eru:"required"`
-	SchemaTables               map[string]map[string]TableColsMetaData //tableName is the key
-	OtherTables                map[string]map[string]TableColsMetaData `json:"-"` //tableName is the key
-	SchemaTablesSecurity       map[string]SecurityRules
-	SchemaTablesTransformation map[string]TransformRules
-	TableJoins                 map[string]*TableJoins
-	Con                        *sqlx.DB `json:"-"`
-	ConStatus                  bool
-	DbSecurityRules            SecurityRules
+	DbAlias                    string                                  `json:"db_alias" eru:"required"`
+	DbType                     string                                  `json:"db_type" eru:"required"`
+	DbName                     string                                  `json:"db_name" eru:"required"`
+	DbConfig                   DbConfig                                `json:"db_config" eru:"required"`
+	SchemaTables               map[string]map[string]TableColsMetaData `json:"schema_tables"`         //tableName is the key
+	OtherTables                map[string]map[string]TableColsMetaData `json:"other_tables" json:"-"` //tableName is the key
+	SchemaTablesSecurity       map[string]SecurityRules                `json:"schema_tables_security"`
+	SchemaTablesTransformation map[string]TransformRules               `json:"schema_tables_transformation"`
+	TableJoins                 map[string]*TableJoins                  `json:"table_joins"`
+	Con                        *sqlx.DB                                `json:"-"`
+	ConStatus                  bool                                    `json:"con_status"`
+	DbSecurityRules            SecurityRules                           `json:"db_security_rules"`
 }
 
 type TableJoins struct {
-	Table1Name       string
-	Table1Cols       []string
-	Table2Name       string
-	Table2Cols       []string
-	IsActive         bool
-	IsCustom         bool
-	ComplexCondition map[string]interface{}
+	Table1Name       string                 `json:"table1_name"`
+	Table1Cols       []string               `json:"why"`
+	Table2Name       string                 `json:"table2_name"`
+	Table2Cols       []string               `json:"table2_cols"`
+	IsActive         bool                   `json:"is_active"`
+	IsCustom         bool                   `json:"is_custom"`
+	ComplexCondition map[string]interface{} `json:"complex_condition"`
 }
 
 type TableColsMetaData struct {
@@ -177,43 +177,43 @@ type SecurityRules struct {
 	Query  security_rule.SecurityRule `json:"query"`
 }
 type TransformRules struct {
-	TransformInput  TransformRule
-	TransformOutput TransformRule
+	TransformInput  TransformRule `json:"transform_input"`
+	TransformOutput TransformRule `json:"transform_output"`
 }
 type TransformRule struct {
-	RuleType string
-	ApplyOn  []string
-	Rules    []TransformRuleDetail
+	RuleType string                `json:"rule_type"`
+	ApplyOn  []string              `json:"apply_on"`
+	Rules    []TransformRuleDetail `json:"rules"`
 }
 
 type TransformRuleDetail struct {
-	CustomRule         security_rule.CustomRule
-	ForceColumnValues  map[string]string
-	RemoveColumnValues []string
-	ComplexScript      string
-	RuleRank           int
+	CustomRule         security_rule.CustomRule `json:"custom_rule"`
+	ForceColumnValues  map[string]string        `json:"force_column_values"`
+	RemoveColumnValues []string                 `json:"remove_column_values"`
+	ComplexScript      string                   `json:"complex_script"`
+	RuleRank           int                      `json:"rule_rank"`
 }
 
 type DbConfig struct {
-	Host          string       `eru:"required"`
-	Port          string       `eru:"required"`
-	User          string       `eru:"required"`
-	Password      string       `eru:"required"`
-	DefaultDB     string       `eru:"required"`
-	DefaultSchema string       `eru:"required"`
-	DriverConfig  DriverConfig `eru:"required"`
-	OtherDbConfig OtherDbConfig
+	Host          string        `json:"host" eru:"required"`
+	Port          string        `json:"port" eru:"required"`
+	User          string        `json:"user" eru:"required"`
+	Password      string        `json:"password" eru:"required"`
+	DefaultDB     string        `json:"default_db" eru:"required"`
+	DefaultSchema string        `json:"default_schema" eru:"required"`
+	DriverConfig  DriverConfig  `json:"driver_config" eru:"required"`
+	OtherDbConfig OtherDbConfig `json:"other_db_config"`
 }
 
 type DriverConfig struct {
-	MaxOpenConns    int           `eru:"required"`
-	MaxIdleConns    int           `eru:"required"`
-	ConnMaxLifetime time.Duration `eru:"required"`
+	MaxOpenConns    int           `json:"max_open_conns" eru:"required"`
+	MaxIdleConns    int           `json:"max_idle_conns" eru:"required"`
+	ConnMaxLifetime time.Duration `json:"conn_max_lifetime" eru:"required"`
 }
 
 type OtherDbConfig struct {
-	RowLimit     int
-	QueryTimeOut int
+	RowLimit     int `json:"row_limit"`
+	QueryTimeOut int `json:"query_time_out"`
 }
 
 type QueryResultMaker struct {

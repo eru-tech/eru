@@ -20,9 +20,9 @@ import (
 )
 
 type FuncGroup struct {
-	FuncCategoryName string
-	FuncGroupName    string
-	FuncSteps        map[string]*FuncStep //routename is the key
+	FuncCategoryName string               `json:"func_category_name"`
+	FuncGroupName    string               `json:"func_group_name"`
+	FuncSteps        map[string]*FuncStep `json:"func_steps"` //routename is the key
 	TokenSecretKey   string               `json:"-"`
 }
 
@@ -33,34 +33,34 @@ type FuncTemplateVars struct {
 }
 
 type FuncStep struct {
-	Condition            string
-	ConditionFailMessage string
-	ConditionFailAction  string
-	Async                bool
-	AsyncMessage         string
-	LoopVariable         string
-	LoopInParallel       bool
-	RouteName            string
-	FunctionName         string
-	QueryName            string
-	QueryOutput          string
-	QueryOutputEncode    bool
-	Api                  TargetHost
-	ApiPath              string
-	Path                 string
-	Route                Route     `json:"-"`
-	FuncKey              string    `json:"-"`
-	FuncGroup            FuncGroup `json:"-"`
-	RequestHeaders       []Headers
-	QueryParams          []Headers
-	FormData             []Headers
-	FileData             []FilePart
-	ResponseHeaders      []Headers
-	TransformRequest     string
-	TransformResponse    string
-	IsPublic             bool
-	RemoveParams         RemoveParams
-	FuncSteps            map[string]*FuncStep
+	Condition            string     `json:"condition"`
+	ConditionFailMessage string     `json:"condition_fail_message"`
+	ConditionFailAction  string     `json:"condition_fail_action"`
+	Async                bool       `json:"async"`
+	AsyncMessage         string     `json:"async_message"`
+	LoopVariable         string     `json:"loop_variable"`
+	LoopInParallel       bool       `json:"loop_in_parallel"`
+	RouteName            string     `json:"route_name"`
+	FunctionName         string     `json:"function_name"`
+	QueryName            string     `json:"query_name"`
+	QueryOutput          string     `json:"query_output"`
+	QueryOutputEncode    bool       `json:"query_output_encode"`
+	Api                  TargetHost `json:"api"`
+	ApiPath              string     `json:"api_path"`
+	Path                 string     `json:"path"`
+	Route                Route      `json:"-"`
+	FuncKey              string     `json:"-"`
+	FuncGroup            FuncGroup  `json:"-"`
+	RequestHeaders       []Headers  `json:"request_headers"`
+	QueryParams          []Headers  `json:"query_params"`
+	FormData             []Headers  `json:"form_data"`
+	FileData             []FilePart `json:"file_data"`
+	ResponseHeaders      []Headers  `json:"response_headers"`
+	TransformRequest     string     `json:"transform_request"`
+	TransformResponse    string     `json:"transform_response"`
+	//IsPublic             bool                 `json:"func_category_name"`
+	RemoveParams RemoveParams         `json:"remove_params"`
+	FuncSteps    map[string]*FuncStep `json:"func_steps"`
 }
 
 func (funcStep *FuncStep) Clone(ctx context.Context) (cloneFuncStep *FuncStep, err error) {

@@ -25,15 +25,15 @@ type LoginSuccess struct {
 }
 
 type HydraConfig struct {
-	PublicHost   string
-	PublicPort   string
-	PublicScheme string
-	AdminHost    string
-	AdminPort    string
-	AdminScheme  string
-	AuthURL      string
-	TokenURL     string
-	HydraClients map[string]HydraClient
+	PublicHost   string                 `json:"public_host"`
+	PublicPort   string                 `json:"public_port"`
+	PublicScheme string                 `json:"public_scheme"`
+	AdminHost    string                 `json:"admin_host"`
+	AdminPort    string                 `json:"admin_port"`
+	AdminScheme  string                 `json:"admin_scheme"`
+	AuthURL      string                 `json:"auth_url"`
+	TokenURL     string                 `json:"token_url"`
+	HydraClients map[string]HydraClient `json:"hydra_clients"`
 }
 
 type hydraAcceptLoginRequest struct {

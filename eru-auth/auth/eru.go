@@ -20,7 +20,7 @@ import (
 
 type EruAuth struct {
 	Auth
-	EruConfig EruConfig   `json:"eruConfig" eru:"required"`
+	EruConfig EruConfig   `json:"eru_config" eru:"required"`
 	Hydra     HydraConfig `json:"hydra" eru:"required"`
 }
 

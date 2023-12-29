@@ -16,9 +16,9 @@ import (
 
 type ApiGateway struct {
 	Gateway
-	GatewayUrl    string            `eru:"required"`
-	GatewayMethod string            `eru:"required"`
-	QueryParams   map[string]string `eru:"required"`
+	GatewayUrl    string            `json:"gateway_url" eru:"required"`
+	GatewayMethod string            `json:"gateway_method" eru:"required"`
+	QueryParams   map[string]string `json:"query_params" eru:"required"`
 }
 
 var httpClient = http.Client{
@@ -44,7 +44,7 @@ func (apiGateway *ApiGateway) Send(ctx context.Context, msg string, templateId s
 			if k == "msg" {
 				params.Set(v, msg)
 			}
-			if k == "templateId" {
+			if k == "template_id" {
 				params.Set(v, templateId)
 			}
 		}

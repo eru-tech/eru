@@ -99,7 +99,7 @@ func GetListenerRulesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("GetListenerRulesHandler - Start")
 		listenerRules := s.GetListenerRules(r.Context())
 		server_handlers.FormatResponse(w, 200)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ListenerRules": listenerRules})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"listener_rules": listenerRules})
 	}
 }
 
@@ -157,7 +157,7 @@ func GetAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("GetAuthorizerHandler - Start")
 		authorizers := s.GetAuthorizers(r.Context())
 		server_handlers.FormatResponse(w, 200)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"Authorizers": authorizers})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"authorizers": authorizers})
 	}
 }
 

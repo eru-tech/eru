@@ -37,9 +37,9 @@ const MatchTypePrefix = "PREFIX"
 const MatchTypeExact = "EXACT"
 
 type ModuleStore struct {
-	ListenerRules   []*module_model.ListenerRule `eru:"required"`
-	Authorizers     map[string]module_model.Authorizer
-	ProjectSettings module_model.ProjectSettings `json:"project_settings"`
+	ListenerRules   []*module_model.ListenerRule       `json:"listener_rules" eru:"required"`
+	Authorizers     map[string]module_model.Authorizer `json:"authorizers"`
+	ProjectSettings module_model.ProjectSettings       `json:"project_settings"`
 }
 
 type ModuleFileStore struct {

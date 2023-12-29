@@ -202,8 +202,8 @@ func (ms *ModuleStore) GetGatewayFromType(ctx context.Context, gatewayType strin
 		//todo to random selection of gateway based on allocation in case multiple gateway are defined
 		if prg.Gateways != nil {
 			for _, v := range prg.Gateways {
-				gt, err := v.GetAttribute("GatewayType")
-				ch, err := v.GetAttribute("Channel")
+				gt, err := v.GetAttribute("gateway_type")
+				ch, err := v.GetAttribute("channel")
 				if err != nil {
 					return nil, err
 				}
@@ -259,7 +259,7 @@ func (ms *ModuleStore) SaveAuth(ctx context.Context, authObj auth.AuthI, project
 	if err != nil {
 		return err
 	}
-	authName, err := authObjClone.GetAttribute(ctx, "AuthName")
+	authName, err := authObjClone.GetAttribute(ctx, "auth_name")
 	if err != nil {
 		return err
 	}

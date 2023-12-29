@@ -6,61 +6,61 @@ import (
 )
 
 type StoreCompare struct {
-	DeleteListenerRules   []string
-	NewListenerRules      []string
-	MismatchListenerRules map[string]interface{}
+	DeleteListenerRules   []string               `json:"delete_listener_rules"`
+	NewListenerRules      []string               `json:"new_listener_rules"`
+	MismatchListenerRules map[string]interface{} `json:"mismatch_listener_rules"`
 }
 
 type ModuleProjectI interface {
 }
 
 type Authorizer struct {
-	AuthorizerName string
-	TokenHeaderKey string
-	SecretAlgo     string
-	JwkUrl         string
-	Audience       []string
-	Issuer         []string
+	AuthorizerName string   `json:"authorizer_name"`
+	TokenHeaderKey string   `json:"token_header_key"`
+	SecretAlgo     string   `json:"secret_algo"`
+	JwkUrl         string   `json:"jwk_url"`
+	Audience       []string `json:"audience"`
+	Issuer         []string `json:"issuer"`
 }
 
 type ListenerRule struct {
-	RuleRank              int64  `eru:"required"`
-	RuleName              string `eru:"required"`
-	Hosts                 []string
-	Paths                 []PathStruct
-	Headers               []MapStruct
-	AddHeaders            []MapStructCustom
-	Params                []MapStruct
-	Methods               []string
-	SourceIP              []string
-	TargetHosts           []TargetHost `eru:"required"`
-	AuthorizerName        string
-	AuthorizerException   []PathStruct
-	AuthorizerExceptionIP []string
+	RuleRank              int64             `json:"rule_rank" eru:"required"`
+	RuleName              string            `json:"rule_name" eru:"required"`
+	Hosts                 []string          `json:"hosts"`
+	Paths                 []PathStruct      `json:"paths"`
+	Headers               []MapStruct       `json:"headers"`
+	AddHeaders            []MapStructCustom `json:"add_headers"`
+	Params                []MapStruct       `json:"params"`
+	Methods               []string          `json:"methods"`
+	SourceIP              []string          `json:"source_ip"`
+	TargetHosts           []TargetHost      `json:"target_hosts" eru:"required"`
+	AuthorizerName        string            `json:"authorizer_name"`
+	AuthorizerException   []PathStruct      `json:"authorizer_exception"`
+	AuthorizerExceptionIP []string          `json:"authorizer_exception_ip"`
 }
 
 type MapStruct struct {
-	Key   string `eru:"required"`
-	Value string `eru:"required"`
+	Key   string `json:"key" eru:"required"`
+	Value string `json:"value" eru:"required"`
 }
 
 type MapStructCustom struct {
 	MapStruct
-	IsTemplate bool
+	IsTemplate bool `json:"is_template" eru:"required"`
 }
 
 type PathStruct struct {
-	MatchType string `eru:"required"`
-	Path      string `eru:"required"`
+	MatchType string `json:"match_type" eru:"required"`
+	Path      string `json:"path" eru:"required"`
 }
 
 type TargetHost struct {
-	Name       string
-	Host       string `eru:"required"`
-	Port       string
-	Method     string
-	Scheme     string `eru:"required"`
-	Allocation int64
+	//Name       string `json:"name"`
+	Host       string `json:"host" eru:"required"`
+	Port       string `json:"port"`
+	Method     string `json:"method"`
+	Scheme     string `json:"scheme" eru:"required"`
+	Allocation int64  `json:"allocation"`
 }
 type ProjectSettings struct {
 	ClaimsKey string `json:"claims_key" eru:"required"`

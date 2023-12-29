@@ -12,9 +12,9 @@ import (
 )
 
 type StoreCompare struct {
-	DeleteAuth   []string
-	NewAuth      []string
-	MismatchAuth map[string]interface{}
+	DeleteAuth   []string               `json:"delete_auth"`
+	NewAuth      []string               `json:"new_auth"`
+	MismatchAuth map[string]interface{} `json:"mismatch_auth"`
 }
 
 type ModuleProjectI interface {
@@ -25,11 +25,11 @@ type ModuleProjectI interface {
 }
 
 type Project struct {
-	ProjectId        string `eru:"required"`
-	Gateways         map[string]gateway.GatewayI
-	MessageTemplates map[string]MessageTemplate
-	Auth             map[string]auth.AuthI
-	ProjectSettings  ProjectSettings `json:"project_settings"`
+	ProjectId        string                      `json:"project_id" eru:"required"`
+	Gateways         map[string]gateway.GatewayI `json:"gateways"`
+	MessageTemplates map[string]MessageTemplate  `json:"message_templates"`
+	Auth             map[string]auth.AuthI       `json:"auth"`
+	ProjectSettings  ProjectSettings             `json:"project_settings"`
 }
 type ProjectSettings struct {
 	ClaimsKey string `json:"claims_key" eru:"required"`
@@ -51,24 +51,24 @@ type ProjectSettings struct {
 	}
 */
 type MessageTemplate struct {
-	GatewayName  string `eru:"required"`
-	TemplateType string `eru:"required"`
-	TemplateName string
-	TemplateId   string `eru:"required"`
-	TemplateText string `eru:"required"`
+	GatewayName  string `json:"gateway_name" eru:"required"`
+	TemplateType string `json:"template_type" eru:"required"`
+	TemplateName string `json:"template_name"`
+	TemplateId   string `json:"template_id" eru:"required"`
+	TemplateText string `json:"template_text" eru:"required"`
 }
 
 func (prj *Project) AddGateway(ctx context.Context, gatewayObjI gateway.GatewayI) error {
 	logs.WithContext(ctx).Debug("AddGateway - Start")
-	gatewayName, err := gatewayObjI.GetAttribute("GatewayName")
+	gatewayName, err := gatewayObjI.GetAttribute("gateway_name")
 	if err != nil {
 		return err
 	}
-	gatewayType, err := gatewayObjI.GetAttribute("GatewayType")
+	gatewayType, err := gatewayObjI.GetAttribute("gateway_type")
 	if err != nil {
 		return err
 	}
-	channel, err := gatewayObjI.GetAttribute("Channel")
+	channel, err := gatewayObjI.GetAttribute("channel")
 	if err != nil {
 		return err
 	}
@@ -100,12 +100,12 @@ func (prj *Project) CompareProject(ctx context.Context, compareProject Project) 
 	logs.WithContext(ctx).Debug("CompareProject - Start")
 	storeCompare := StoreCompare{}
 	for _, ma := range prj.Auth {
-		maNameI, _ := ma.GetAttribute(ctx, "AuthName")
+		maNameI, _ := ma.GetAttribute(ctx, "auth_name")
 		maName := maNameI.(string)
 		var diffR utils.DiffReporter
 		aFound := false
 		for _, ca := range compareProject.Auth {
-			caNameI, _ := ca.GetAttribute(ctx, "AuthName")
+			caNameI, _ := ca.GetAttribute(ctx, "auth_name")
 			caName := caNameI.(string)
 			if maName == caName {
 				aFound = true
@@ -123,11 +123,11 @@ func (prj *Project) CompareProject(ctx context.Context, compareProject Project) 
 		}
 	}
 	for _, ca := range compareProject.Auth {
-		caNameI, _ := ca.GetAttribute(ctx, "AuthName")
+		caNameI, _ := ca.GetAttribute(ctx, "auth_name")
 		caName := caNameI.(string)
 		rFound := false
 		for _, ma := range prj.Auth {
-			maNameI, _ := ma.GetAttribute(ctx, "AuthName")
+			maNameI, _ := ma.GetAttribute(ctx, "auth_name")
 			maName := maNameI.(string)
 			if maName == caName {
 				rFound = true

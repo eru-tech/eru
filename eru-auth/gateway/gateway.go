@@ -15,10 +15,10 @@ type GatewayI interface {
 }
 
 type Gateway struct {
-	GatewayType string `eru:"required"`
-	Channel     string `eru:"required"`
-	GatewayName string `eru:"required"`
-	Allocation  int    `eru:"required"`
+	GatewayType string `json:"gateway_type" eru:"required"`
+	Channel     string `json:"channel" eru:"required"`
+	GatewayName string `json:"gateway_name" eru:"required"`
+	Allocation  int    `json:"allocation" eru:"required"`
 }
 
 func (gateway *Gateway) Send(ctx context.Context, msg string, templateId string, params url.Values) (map[string]interface{}, error) {
@@ -29,11 +29,11 @@ func (gateway *Gateway) Send(ctx context.Context, msg string, templateId string,
 
 func (gateway *Gateway) GetAttribute(attributeName string) (attributeValue interface{}, err error) {
 	switch attributeName {
-	case "GatewayName":
+	case "gateway_name":
 		return gateway.GatewayName, nil
-	case "GatewayType":
+	case "gateway_type":
 		return gateway.GatewayType, nil
-	case "Channel":
+	case "channel":
 		return gateway.Channel, nil
 	default:
 		return nil, errors.New("Attribute not found")

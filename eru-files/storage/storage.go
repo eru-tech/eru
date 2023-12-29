@@ -26,11 +26,11 @@ type Storage struct {
 
 func (storage *Storage) GetAttribute(attributeName string) (attributeValue interface{}, err error) {
 	switch attributeName {
-	case "StorageName":
+	case "storage_name":
 		return storage.StorageName, nil
-	case "StorageType":
+	case "storage_type":
 		return storage.StorageType, nil
-	case "KeyPair":
+	case "key_pair":
 		return storage.KeyPair, nil
 	default:
 		return nil, errors.New("Attribute not found")

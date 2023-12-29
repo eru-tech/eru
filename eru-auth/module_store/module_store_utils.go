@@ -156,54 +156,54 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 				return err
 			}
 			var messageTemplates map[string]module_model.MessageTemplate
-			err = json.Unmarshal(*prjObjs["MessageTemplates"], &messageTemplates)
-			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
-				return err
+			if _, ok := prjObjs["message_templates"]; ok {
+				err = json.Unmarshal(*prjObjs["message_templates"], &messageTemplates)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return err
+				}
+				p.MessageTemplates = messageTemplates
 			}
-			p.MessageTemplates = messageTemplates
-
 			var gateways map[string]*json.RawMessage
-			err = json.Unmarshal(*prjObjs["Gateways"], &gateways)
-			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
-				return err
-			}
-			for gatewayKey, gatewayJson := range gateways {
-				logs.WithContext(ctx).Info(fmt.Sprint("gatewayKey === ", gatewayKey))
-				var gatewayObj map[string]*json.RawMessage
-				err = json.Unmarshal(*gatewayJson, &gatewayObj)
+			if _, ok := prjObjs["gateways"]; ok {
+				err = json.Unmarshal(*prjObjs["gateways"], &gateways)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
-				var gatewayType string
-				err = json.Unmarshal(*gatewayObj["GatewayType"], &gatewayType)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-					return err
-				}
-				gatewayI := gateway.GetGateway(gatewayType)
-				err = gatewayI.MakeFromJson(ctx, gatewayJson)
-				if err == nil {
-					err = msi.SaveGateway(ctx, gatewayI, prj, nil, false)
+				for _, gatewayJson := range gateways {
+					var gatewayObj map[string]*json.RawMessage
+					err = json.Unmarshal(*gatewayJson, &gatewayObj)
 					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
 						return err
 					}
-				} else {
-					return err
+					var gatewayType string
+					err = json.Unmarshal(*gatewayObj["gateway_type"], &gatewayType)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return err
+					}
+					gatewayI := gateway.GetGateway(gatewayType)
+					err = gatewayI.MakeFromJson(ctx, gatewayJson)
+					if err == nil {
+						err = msi.SaveGateway(ctx, gatewayI, prj, nil, false)
+						if err != nil {
+							return err
+						}
+					} else {
+						return err
+					}
 				}
 			}
-
 			var auths map[string]*json.RawMessage
-			if _, ok = prjObjs["Auth"]; ok {
-				err = json.Unmarshal(*prjObjs["Auth"], &auths)
+			if _, ok = prjObjs["auth"]; ok {
+				err = json.Unmarshal(*prjObjs["auth"], &auths)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
-				for authKey, authJson := range auths {
-					logs.WithContext(ctx).Info(fmt.Sprint("authKey === ", authKey))
+				for _, authJson := range auths {
 					var authObj map[string]*json.RawMessage
 					err = json.Unmarshal(*authJson, &authObj)
 					if err != nil {
@@ -211,14 +211,13 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 						return err
 					}
 					var authType string
-					if at, ok := authObj["AuthType"]; ok {
+					if at, ok := authObj["auth_type"]; ok {
 						err = json.Unmarshal(*at, &authType)
 						if err != nil {
 							logs.WithContext(ctx).Error(err.Error())
 							return err
 						}
 					}
-					logs.WithContext(ctx).Info(fmt.Sprint("authType = ", authType))
 					authI := authtype.GetAuth(authType)
 					err = authI.MakeFromJson(ctx, authJson)
 					if err == nil {

@@ -55,23 +55,23 @@ type Store struct {
 }
 
 type Variables struct {
-	Vars    map[string]*Vars
-	EnvVars map[string]*EnvVars
-	Secrets map[string]*Secrets
+	Vars    map[string]*Vars    `json:"vars"`
+	EnvVars map[string]*EnvVars `json:"env_vars"`
+	Secrets map[string]*Secrets `json:"secrets"`
 }
 
 type Vars struct {
-	Key   string
-	Value string
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 type EnvVars struct {
-	Key   string
+	Key   string `json:"key"`
 	Value string `json:"-"`
 }
 
 type Secrets struct {
-	Key   string
+	Key   string `json:"key"`
 	Value string `json:"-"`
 }
 
@@ -373,7 +373,6 @@ func (store *Store) GetProjectConfigForRepo(ctx context.Context, projectId strin
 	for k, v := range storeMap {
 		logs.WithContext(ctx).Info(k)
 		if k == "projects" {
-			logs.WithContext(ctx).Info("inside projects")
 			if prjMap, prjMapOk := v.(map[string]interface{}); prjMapOk {
 				if prj, ok := prjMap[projectId]; ok {
 					repoInnerData["config"] = prj
@@ -383,13 +382,13 @@ func (store *Store) GetProjectConfigForRepo(ctx context.Context, projectId strin
 			} else {
 				logs.WithContext(ctx).Info("map failed")
 			}
-		} else if k == "Variables" {
+		} else if k == "variables" {
 			if VarsMap, VarsMapOk := v.(map[string]interface{}); VarsMapOk {
 				if vars, ok := VarsMap[projectId]; ok {
 					repoInnerData["variables"] = vars
 				}
 			}
-		} else if k == "ProjectRepos" {
+		} else if k == "repos" {
 			if ReposMap, ReposMapOk := v.(map[string]interface{}); ReposMapOk {
 				if repo, ok := ReposMap[projectId]; ok {
 					repoBytes, repoBytesErr := json.Marshal(repo)
