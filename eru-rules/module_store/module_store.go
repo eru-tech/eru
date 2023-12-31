@@ -55,7 +55,7 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 		ms.Projects[projectId] = project
 		if persist == true {
 			logs.WithContext(ctx).Info("SaveStore called from SaveProject")
-			return realStore.SaveStore(ctx, "", realStore)
+			return realStore.SaveStore(ctx, projectId, "", realStore)
 		} else {
 			return nil
 		}
@@ -71,7 +71,7 @@ func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, real
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
 		logs.WithContext(ctx).Info("SaveStore called from RemoveProject")
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	} else {
 		err := errors.New(fmt.Sprint("Project ", projectId, " already exists"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -114,7 +114,7 @@ func (ms *ModuleStore) SaveDataType(ctx context.Context, projectId string, dataT
 	ms.Projects[projectId].DataTypes[dataType.Name] = dataType
 	if persist == true {
 		logs.WithContext(ctx).Info("SaveStore called from SaveDataType")
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	} else {
 		return nil
 	}
@@ -129,7 +129,7 @@ func (ms *ModuleStore) RemoveDataType(ctx context.Context, projectId string, dat
 	if _, ok := ms.Projects[projectId].DataTypes[dataTypeName]; ok {
 		delete(ms.Projects[projectId].DataTypes, dataTypeName)
 		logs.WithContext(ctx).Info("SaveStore called from RemoveDataType")
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	} else {
 		err = errors.New(fmt.Sprint("Datatype ", dataTypeName, " does not exists"))
 		logs.WithContext(ctx).Error(err.Error())

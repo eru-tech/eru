@@ -180,7 +180,7 @@ func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 //			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 //		} else {
 //			//TODO to check if save store is required here
-//			s.SaveStore(r.Context(), "", s)
+//			s.SaveStore(r.Context(), projectId,"", s)
 //			server_handlers.FormatResponse(w, 200)
 //			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Project Authorizer ", authorizerName, " removed successfully")})
 //		}
@@ -259,7 +259,7 @@ func RouteSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore(r.Context(), "", s)
+			s.SaveStore(r.Context(), projectId, "", s)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("route config for ", routeObj.RouteName, " saved successfully")})
 		}
@@ -279,7 +279,7 @@ func RouteRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore(r.Context(), "", s)
+			s.SaveStore(r.Context(), projectId, "", s)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("route config for ", routeName, " removed successfully")})
 		}
@@ -316,7 +316,7 @@ func FuncSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore(r.Context(), "", s)
+			s.SaveStore(r.Context(), projectId, "", s)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("function config for ", funcObj.FuncGroupName, " saved successfully")})
 		}
@@ -336,7 +336,7 @@ func FuncRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore(r.Context(), "", s)
+			s.SaveStore(r.Context(), projectId, "", s)
 			server_handlers.FormatResponse(w, 200)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("function ", funcName, " removed successfully")})

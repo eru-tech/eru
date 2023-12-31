@@ -216,7 +216,7 @@ func GatewaySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore(r.Context(), "", s)
+			s.SaveStore(r.Context(), projectId, "", s)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("gateway config for ", gatewayName.(string), " saved successfully")})
 		}
@@ -237,7 +237,7 @@ func GatewayRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore(r.Context(), "", s)
+			s.SaveStore(r.Context(), projectId, "", s)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("gateway config for ", gatewayName, " removed successfully")})
 		}
@@ -299,7 +299,7 @@ func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore(r.Context(), "", s)
+			s.SaveStore(r.Context(), projectId, "", s)
 			server_handlers.FormatResponse(w, 200)
 			authName, anErr := authObj.GetAttribute(r.Context(), "auth_name")
 			if err != nil {
@@ -351,7 +351,7 @@ func AuthRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore(r.Context(), "", s)
+			s.SaveStore(r.Context(), projectId, "", s)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("auth config ", authName, " removed successfully")})
 		}

@@ -52,7 +52,7 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 		ms.Projects[projectId] = project
 		if persist == true {
 			logs.WithContext(ctx).Info("SaveStore called from SaveProject")
-			return realStore.SaveStore(ctx, "", realStore)
+			return realStore.SaveStore(ctx, projectId, "", realStore)
 		} else {
 			return nil
 		}
@@ -68,7 +68,7 @@ func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, real
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
 		logs.WithContext(ctx).Info("SaveStore called from RemoveProject")
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	} else {
 		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -110,7 +110,7 @@ func (ms *ModuleStore) SaveMessageTemplate(ctx context.Context, projectId string
 		ms.Projects[projectId].MessageTemplates = make(map[string]channel.MessageTemplate)
 	}
 	ms.Projects[projectId].MessageTemplates[messageTemplate.TemplateName] = messageTemplate
-	return realStore.SaveStore(ctx, "", realStore)
+	return realStore.SaveStore(ctx, projectId, "", realStore)
 }
 
 func (ms *ModuleStore) RemoveMessageTemplate(ctx context.Context, projectId string, templateName string, realStore ModuleStoreI) error {
@@ -121,7 +121,7 @@ func (ms *ModuleStore) RemoveMessageTemplate(ctx context.Context, projectId stri
 	}
 	if _, ok := ms.Projects[projectId].MessageTemplates[templateName]; ok {
 		delete(ms.Projects[projectId].MessageTemplates, templateName)
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	} else {
 		err := errors.New(fmt.Sprint("MessageTemplates ", templateName, " does not exists"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -152,7 +152,7 @@ func (ms *ModuleStore) SaveChannel(ctx context.Context, channelObj channel.Chann
 	}
 	err = prj.AddChannel(ctx, channelObj)
 	if persist == true {
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	}
 	return nil
 }
@@ -164,7 +164,7 @@ func (ms *ModuleStore) RemoveChannel(ctx context.Context, channelName string, pr
 		if _, ok := prg.Channels[cKey]; ok {
 			delete(prg.Channels, cKey)
 			logs.WithContext(ctx).Info(("SaveStore called from RemoveChannel"))
-			return realStore.SaveStore(ctx, "", realStore)
+			return realStore.SaveStore(ctx, projectId, "", realStore)
 		} else {
 			err := errors.New(fmt.Sprint("Channel ", cKey, " does not exists"))
 			logs.WithContext(ctx).Error(err.Error())

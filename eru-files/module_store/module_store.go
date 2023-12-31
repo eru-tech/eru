@@ -96,7 +96,7 @@ func (ms *ModuleStore) GenerateRsaKeyPair(ctx context.Context, projectId string,
 			return
 		} else {
 			rsaKeyPair, err = prj.GenerateRsaKeyPair(ctx, bits, keyPairName)
-			err = realStore.SaveStore(ctx, "", realStore)
+			err = realStore.SaveStore(ctx, projectId, "", realStore)
 		}
 	}
 	return
@@ -114,7 +114,7 @@ func (ms *ModuleStore) GenerateAesKey(ctx context.Context, projectId string, key
 			return
 		} else {
 			aesKey, err = prj.GenerateAesKey(ctx, bits, keyName)
-			err = realStore.SaveStore(ctx, "", realStore)
+			err = realStore.SaveStore(ctx, projectId, "", realStore)
 		}
 	}
 	return
@@ -128,7 +128,7 @@ func (ms *ModuleStore) SaveStorage(ctx context.Context, storageObj storage.Stora
 	}
 	err = prj.AddStorage(ctx, storageObj)
 	if persist == true {
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	}
 	return nil
 }
@@ -378,7 +378,7 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 		ms.Projects[projectId] = project
 		if persist == true {
 			logs.WithContext(ctx).Info("SaveStore called from SaveProject")
-			return realStore.SaveStore(ctx, "", realStore)
+			return realStore.SaveStore(ctx, projectId, "", realStore)
 		} else {
 			return nil
 		}
@@ -395,7 +395,7 @@ func (ms *ModuleStore) RemoveStorage(ctx context.Context, storageName string, pr
 		if _, ok := prg.Storages[storageName]; ok {
 			delete(prg.Storages, storageName)
 			logs.WithContext(ctx).Info("SaveStore called from RemoveStorage")
-			return realStore.SaveStore(ctx, "", realStore)
+			return realStore.SaveStore(ctx, projectId, "", realStore)
 		} else {
 			err := errors.New(fmt.Sprint("Storage ", storageName, " does not exists"))
 			logs.WithContext(ctx).Error(err.Error())
@@ -413,7 +413,7 @@ func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, real
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
 		logs.WithContext(ctx).Info("SaveStore called from RemoveProject")
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	} else {
 		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -455,7 +455,7 @@ func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string
 	}
 	ms.Projects[projectId].ProjectSettings = projectSettings
 	logs.WithContext(ctx).Info("SaveStore called from SaveProjectSettings")
-	return realStore.SaveStore(ctx, "", realStore)
+	return realStore.SaveStore(ctx, projectId, "", realStore)
 }
 
 func readZipFile(ctx context.Context, zipFile *zip.File) ([]byte, error) {

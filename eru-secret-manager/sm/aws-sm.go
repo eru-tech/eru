@@ -53,7 +53,7 @@ func (awsSmStore *AwsSmStore) Init(ctx context.Context) (err error) {
 	return err
 }
 
-func (awsSmStore *AwsSmStore) FetchSmValue(ctx context.Context, smKey string) (smVal interface{}, err error) {
+func (awsSmStore *AwsSmStore) FetchSmValue(ctx context.Context) (resultJson map[string]string, err error) {
 	logs.WithContext(ctx).Debug("FetchSmValue - Start")
 	if awsSmStore.client == nil {
 		err = awsSmStore.Init(ctx)
@@ -70,9 +70,15 @@ func (awsSmStore *AwsSmStore) FetchSmValue(ctx context.Context, smKey string) (s
 	result, err := awsSmStore.client.GetSecretValue(context.TODO(), input)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
+		return
 	}
-
-	return *result.SecretString, nil
+	err = json.Unmarshal([]byte(*result.SecretString), &resultJson)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		resultJson["secret"] = *result.SecretString
+		return
+	}
+	return
 }
 
 func (awsSmStore *AwsSmStore) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {

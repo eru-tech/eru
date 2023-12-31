@@ -24,6 +24,7 @@ func getStoreSaveFilePath() string {
 	logs.Logger.Info(fmt.Sprint("filePath = ", filePath))
 	return fmt.Sprint(wd, filePath)
 }
+
 func (store *FileStore) GetStoreByteArray(fp string) (b []byte, err error) {
 	logs.Logger.Debug("GetStoreByteArray - Start")
 	if fp == "" {
@@ -32,14 +33,15 @@ func (store *FileStore) GetStoreByteArray(fp string) (b []byte, err error) {
 	storeData, err := ioutil.ReadFile(fp)
 	if err != nil {
 		logs.Logger.Error(err.Error())
-		err = store.SaveStore(context.Background(), fp, store)
-		if err == nil {
-			storeData, err = json.Marshal(store)
-			if err != nil {
-				logs.Logger.Error(err.Error())
-				return nil, err
-			}
-		}
+		//err = store.SaveStore(context.Background(), fp, store)
+		//if err == nil {
+		//	storeData, err = json.Marshal(store)
+		//	if err != nil {
+		//		logs.Logger.Error(err.Error())
+		//		return nil, err
+		//	}
+		//}
+		return
 	}
 	return storeData, err
 }
@@ -51,7 +53,7 @@ func (store *FileStore) LoadStore(fp string, ms StoreI) (err error) {
 	storeData, err := ioutil.ReadFile(fp)
 	if err != nil {
 		logs.Logger.Error(err.Error())
-		store.SaveStore(context.Background(), fp, nil)
+		//store.SaveStore(context.Background(), projectId, fp, nil)
 		return err
 	}
 	err = json.Unmarshal(storeData, ms)
@@ -62,7 +64,7 @@ func (store *FileStore) LoadStore(fp string, ms StoreI) (err error) {
 	return nil
 }
 
-func (store *FileStore) SaveStore(ctx context.Context, fp string, ms StoreI) error {
+func (store *FileStore) SaveStore(ctx context.Context, projectId string, fp string, ms StoreI) error {
 	logs.WithContext(ctx).Debug("SaveStore - Start")
 	if fp == "" {
 		fp = getStoreSaveFilePath()

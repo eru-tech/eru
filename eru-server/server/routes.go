@@ -20,7 +20,7 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Name("variables_removesecret").Methods(http.MethodDelete).Path("/store/{project}/variables/removesecret/{key}").HandlerFunc(handlers.RemoveSecretHandler(s.Store))
 	router.Name("repo_list").Methods(http.MethodGet).Path("/store/{project}/repo/list").HandlerFunc(handlers.FetchRepoHandler(s.Store))
 	router.Name("repo_save").Methods(http.MethodPost).Path("/store/{project}/repo/save/{repotype}").HandlerFunc(handlers.SaveRepoHandler(s.Store))
-	//router.Name("repo_commit").Methods(http.MethodPost).Path("/store/{project}/repo/commit").HandlerFunc(handlers.CommitRepoHandler(s.Store))
+	router.Name("repo_commit").Methods(http.MethodPost).Path("/store/{project}/repo/commit").HandlerFunc(handlers.CommitRepoHandler(s.Store))
 	router.Name("repo_save_token").Methods(http.MethodPost).Path("/store/{project}/repo/savetoken").HandlerFunc(handlers.SaveRepoTokenHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/grepo/list").HandlerFunc(handlers.FetchRepoHandler(s.Store))
 	router.Methods(http.MethodPost).Path("/store/grepo/save/{repotype}").HandlerFunc(handlers.SaveRepoHandler(s.Store))
@@ -29,10 +29,10 @@ func (s *Server) GetRouter() *mux.Router {
 
 	router.Name("sm").Methods(http.MethodPost).Path("/store/{project}/sm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))
 	router.Name("sm_list").Methods(http.MethodGet).Path("/store/{project}/sm/list").HandlerFunc(handlers.FetchSmHandler(s.Store))
-	router.Name("sm_value").Methods(http.MethodGet).Path("/store/{project}/sm/fetch/{smkey}").HandlerFunc(handlers.FetchSmValueHandler(s.Store))
+	router.Name("sm_value").Methods(http.MethodGet).Path("/store/{project}/sm/load").HandlerFunc(handlers.LoadSmValueHandler(s.Store))
 	router.Methods(http.MethodPost).Path("/store/gsm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/gsm/list").HandlerFunc(handlers.FetchSmHandler(s.Store))
-	router.Methods(http.MethodGet).Path("/store/gsm/fetch/{smkey}").HandlerFunc(handlers.FetchSmValueHandler(s.Store))
+	router.Methods(http.MethodGet).Path("/store/gsm/load").HandlerFunc(handlers.LoadSmValueHandler(s.Store))
 
 	//router.Methods(http.MethodPost).Path("/store/project/save/{project}").HandlerFunc(handlers.ProjectSaveHandler(s.Store))
 	//router.Methods(http.MethodDelete).Path("/store/project/remove/{project}").HandlerFunc(handlers.ProjectRemoveHandler(s.Store))

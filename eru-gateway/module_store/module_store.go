@@ -210,7 +210,7 @@ func (ms *ModuleStore) SaveListenerRule(ctx context.Context, listenerRule *modul
 	}
 	if persist == true {
 		logs.WithContext(ctx).Info("SaveStore called from SaveListenerRule")
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, "gateway", "", realStore)
 	} else {
 		return nil
 	}
@@ -221,7 +221,7 @@ func (ms *ModuleStore) RemoveListenerRule(ctx context.Context, listenerRuleName 
 		for i, v := range ms.ListenerRules {
 			if v.RuleName == listenerRuleName {
 				ms.ListenerRules = append(ms.ListenerRules[:i], ms.ListenerRules[i+1:]...)
-				return realStore.SaveStore(ctx, "", realStore)
+				return realStore.SaveStore(ctx, "gateway", "", realStore)
 			}
 		}
 	}
@@ -243,7 +243,7 @@ func (ms *ModuleStore) SaveAuthorizer(ctx context.Context, authorizer module_mod
 	ms.Authorizers[authorizer.AuthorizerName] = authorizer
 	if persist == true {
 		logs.WithContext(ctx).Info("SaveStore called from SaveAuthorizer")
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, "gateway", "", realStore)
 	} else {
 		return nil
 	}
@@ -254,7 +254,7 @@ func (ms *ModuleStore) RemoveAuthorizer(ctx context.Context, authorizerName stri
 	logs.WithContext(ctx).Debug("RemoveAuthorizer - Start")
 	if _, authOk := ms.Authorizers[authorizerName]; authOk {
 		delete(ms.Authorizers, authorizerName)
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, "gateway", "", realStore)
 	} else {
 		return errors.New(fmt.Sprint("Authorizer ", authorizerName, " not found"))
 	}
@@ -325,7 +325,7 @@ func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectSettings 
 	ms.ProjectSettings = projectSettings
 	if persist == true {
 		logs.WithContext(ctx).Info("SaveStore called from SaveAuthorizer")
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, "gateway", "", realStore)
 	} else {
 		return nil
 	}

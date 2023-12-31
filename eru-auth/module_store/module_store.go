@@ -85,7 +85,7 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 		ms.Projects[projectId] = project
 		if persist == true {
 			logs.WithContext(ctx).Info("SaveStore called from SaveProject")
-			return realStore.SaveStore(ctx, "", realStore)
+			return realStore.SaveStore(ctx, projectId, "", realStore)
 		} else {
 			return nil
 		}
@@ -101,7 +101,7 @@ func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, real
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
 		logs.WithContext(ctx).Info("SaveStore called from RemoveProject")
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	} else {
 		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 		logs.WithContext(ctx).Info(err.Error())
@@ -144,7 +144,7 @@ func (ms *ModuleStore) SaveMessageTemplate(ctx context.Context, projectId string
 	}
 	templateName := fmt.Sprint(messageTemplate.GatewayName, "_", messageTemplate.TemplateType)
 	ms.Projects[projectId].MessageTemplates[templateName] = messageTemplate
-	return realStore.SaveStore(ctx, "", realStore)
+	return realStore.SaveStore(ctx, projectId, "", realStore)
 }
 
 func (ms *ModuleStore) RemoveMessageTemplate(ctx context.Context, projectId string, templateName string, realStore ModuleStoreI) error {
@@ -155,7 +155,7 @@ func (ms *ModuleStore) RemoveMessageTemplate(ctx context.Context, projectId stri
 	}
 	if _, ok := ms.Projects[projectId].MessageTemplates[templateName]; ok {
 		delete(ms.Projects[projectId].MessageTemplates, templateName)
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	} else {
 		err = errors.New(fmt.Sprint("MessageTemplates ", templateName, " does not exists"))
 		logs.WithContext(ctx).Info(err.Error())
@@ -171,7 +171,7 @@ func (ms *ModuleStore) SaveGateway(ctx context.Context, gatewayObj gateway.Gatew
 	}
 	err = prj.AddGateway(ctx, gatewayObj)
 	if persist == true {
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	}
 	return nil
 }
@@ -183,7 +183,7 @@ func (ms *ModuleStore) RemoveGateway(ctx context.Context, gatewayName string, ga
 		if _, ok := prg.Gateways[gKey]; ok {
 			delete(prg.Gateways, gKey)
 			logs.WithContext(ctx).Info("SaveStore called from RemoveGateway")
-			return realStore.SaveStore(ctx, "", realStore)
+			return realStore.SaveStore(ctx, projectId, "", realStore)
 		} else {
 			err := errors.New(fmt.Sprint("Gateway ", gKey, " does not exists"))
 			logs.WithContext(ctx).Info(err.Error())
@@ -276,7 +276,7 @@ func (ms *ModuleStore) SaveAuth(ctx context.Context, authObj auth.AuthI, project
 	}
 
 	if persist == true {
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	}
 	return nil
 }
@@ -302,7 +302,7 @@ func (ms *ModuleStore) RemoveAuth(ctx context.Context, authName string, projectI
 		logs.WithContext(ctx).Info(err.Error())
 		return err
 	}
-	return realStore.SaveStore(ctx, "", realStore)
+	return realStore.SaveStore(ctx, projectId, "", realStore)
 }
 
 func (ms *ModuleStore) GetAuthClone(ctx context.Context, projectId string, authName string, s ModuleStoreI) (authObjClone auth.AuthI, err error) {
@@ -433,5 +433,5 @@ func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string
 	}
 	ms.Projects[projectId].ProjectSettings = projectSettings
 	logs.WithContext(ctx).Info("SaveStore called from SaveProjectSettings")
-	return realStore.SaveStore(ctx, "", realStore)
+	return realStore.SaveStore(ctx, projectId, "", realStore)
 }

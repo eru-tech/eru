@@ -7,19 +7,25 @@ import (
 )
 
 type RepoI interface {
-	Commit(ctx context.Context, repoData map[string]map[string]interface{}, repoFileName string) (err error)
+	Commit(ctx context.Context, repoBytes []byte, repoFileName string) (err error)
 	GetAttribute(attrName string) (attrValue interface{})
 	GetBranch(ctx context.Context) (branch interface{}, err error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
+	SetAuthKey(ctx context.Context, authKey string)
 }
 
-func (repo *Repo) Commit(ctx context.Context, repoData map[string]map[string]interface{}, repoFileName string) (err error) {
-	logs.WithContext(ctx).Info("Commit method not implemented")
+func (repo *Repo) SetAuthKey(ctx context.Context, authKey string) {
+	repo.AuthKey = authKey
+	return
+}
+
+func (repo *Repo) Commit(ctx context.Context, repoBytes []byte, repoFileName string) (err error) {
+	logs.WithContext(ctx).Info("commit method not implemented")
 	return
 }
 
 func (repo *Repo) GetBranch(ctx context.Context) (branch interface{}, err error) {
-	logs.WithContext(ctx).Info("GetBranch method not implemented")
+	logs.WithContext(ctx).Info("get_branch method not implemented")
 	return
 }
 

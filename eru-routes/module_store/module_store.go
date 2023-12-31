@@ -74,7 +74,7 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 		ms.Projects[projectId] = project
 		if persist == true {
 			logs.WithContext(ctx).Info("SaveStore called from SaveProject")
-			return realStore.SaveStore(ctx, "", realStore)
+			return realStore.SaveStore(ctx, projectId, "", realStore)
 		} else {
 			return nil
 		}
@@ -89,7 +89,7 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 //	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
 //	if _, ok := ms.Projects[projectId]; ok {
 //		ms.Projects[projectId].ProjectConfig = projectConfig
-//		return realStore.SaveStore(ctx, "", realStore)
+//		return realStore.SaveStore(ctx, projectId,"", realStore)
 //	} else {
 //		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
 //		logs.WithContext(ctx).Error(err.Error())
@@ -104,7 +104,7 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 //			ms.Projects[projectId].Authorizers = make(map[string]routes.Authorizer)
 //		}
 //		ms.Projects[projectId].Authorizers[authorizer.AuthorizerName] = authorizer
-//		return realStore.SaveStore(ctx, "", realStore)
+//		return realStore.SaveStore(ctx, projectId,"", realStore)
 //	} else {
 //		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
 //		logs.WithContext(ctx).Error(err.Error())
@@ -151,7 +151,7 @@ func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, real
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
 		logs.WithContext(ctx).Info("SaveStore called from RemoveProject")
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	} else {
 		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -197,7 +197,7 @@ func (ms *ModuleStore) SaveRoute(ctx context.Context, routeObj routes.Route, pro
 		return err
 	}
 	if persist == true {
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	}
 	return nil
 }
@@ -208,7 +208,7 @@ func (ms *ModuleStore) RemoveRoute(ctx context.Context, routeName string, projec
 		if _, ok := prg.Routes[routeName]; ok {
 			delete(prg.Routes, routeName)
 			logs.WithContext(ctx).Info("SaveStore called from RemoveRoute")
-			return realStore.SaveStore(ctx, "", realStore)
+			return realStore.SaveStore(ctx, projectId, "", realStore)
 		} else {
 			err := errors.New(fmt.Sprint("Route ", routeName, " does not exists"))
 			logs.WithContext(ctx).Error(err.Error())
@@ -392,7 +392,7 @@ func (ms *ModuleStore) SaveFunc(ctx context.Context, funcObj routes.FuncGroup, p
 	}
 	err = prj.AddFunc(ctx, funcObj)
 	if persist == true {
-		return realStore.SaveStore(ctx, "", realStore)
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	}
 	return nil
 }
@@ -403,7 +403,7 @@ func (ms *ModuleStore) RemoveFunc(ctx context.Context, funcName string, projectI
 		if _, ok := prg.FuncGroups[funcName]; ok {
 			delete(prg.FuncGroups, funcName)
 			logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from RemoveFunc"))
-			return realStore.SaveStore(ctx, "", realStore)
+			return realStore.SaveStore(ctx, projectId, "", realStore)
 		} else {
 			err := errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
 			logs.WithContext(ctx).Error(err.Error())
@@ -425,7 +425,7 @@ func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string
 	}
 	ms.Projects[projectId].ProjectSettings = projectSettings
 	logs.WithContext(ctx).Info("SaveStore called from SaveProjectSettings")
-	return realStore.SaveStore(ctx, "", realStore)
+	return realStore.SaveStore(ctx, projectId, "", realStore)
 }
 
 func (ms *ModuleStore) checkProjectExists(ctx context.Context, projectId string) error {

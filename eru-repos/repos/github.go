@@ -8,7 +8,6 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"net/http"
-	"reflect"
 )
 
 const baseUrl = "https://api.github.com"
@@ -17,10 +16,8 @@ type GithubRepo struct {
 	Repo
 }
 
-func (githubRepo *GithubRepo) Commit(ctx context.Context, repoData map[string]map[string]interface{}, repoFileName string) (err error) {
+func (githubRepo *GithubRepo) Commit(ctx context.Context, repoBytes []byte, repoFileName string) (err error) {
 	logs.WithContext(ctx).Info("Commit called from GithubRepo")
-	logs.WithContext(ctx).Info(fmt.Sprint(githubRepo))
-	logs.WithContext(ctx).Info(repoFileName)
 	res, err := githubRepo.GetBranch(ctx)
 	if err != nil {
 		return
@@ -57,8 +54,6 @@ func (githubRepo *GithubRepo) Commit(ctx context.Context, repoData map[string]ma
 	} else {
 		err = errors.New("GetBranch response body is not a map")
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("branch_sha = ", branch_sha))
-	logs.WithContext(ctx).Info(fmt.Sprint("branch_commit_sha = ", branch_commit_sha))
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return
@@ -68,10 +63,9 @@ func (githubRepo *GithubRepo) Commit(ctx context.Context, repoData map[string]ma
 		return
 	}
 	file_sha := ""
+	_ = file_sha
 	if resMap, resMapOk := res.(map[string]interface{}); resMapOk {
 		if treeObj, treeObjOk := resMap["tree"]; treeObjOk {
-			logs.WithContext(ctx).Info(fmt.Sprint(treeObj))
-			logs.WithContext(ctx).Info(reflect.TypeOf(treeObj).String())
 			if treeMap, treeMapOk := treeObj.([]interface{}); treeMapOk {
 				for _, v := range treeMap {
 					if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
@@ -92,19 +86,12 @@ func (githubRepo *GithubRepo) Commit(ctx context.Context, repoData map[string]ma
 	} else {
 		err = errors.New("GetTree response body is not a map")
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("file_sha = ", file_sha))
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 
-	contentBytes, contentBytesErr := json.Marshal(repoData)
-	if contentBytesErr != nil {
-		logs.WithContext(ctx).Error(contentBytesErr.Error())
-		return
-	}
-
-	res, err = githubRepo.CreateTree(ctx, branch_commit_sha, repoFileName, string(contentBytes))
+	res, err = githubRepo.CreateTree(ctx, branch_commit_sha, repoFileName, string(repoBytes))
 	if err != nil {
 		return
 	}
@@ -114,7 +101,6 @@ func (githubRepo *GithubRepo) Commit(ctx context.Context, repoData map[string]ma
 	} else {
 		err = errors.New("GetCommit response body is not a map")
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("new_tree_sha = ", new_tree_sha))
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return
@@ -130,7 +116,6 @@ func (githubRepo *GithubRepo) Commit(ctx context.Context, repoData map[string]ma
 	} else {
 		err = errors.New("CreateCommit response body is not a map")
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("new_commit_sha = ", new_commit_sha))
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return

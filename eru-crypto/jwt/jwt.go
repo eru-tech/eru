@@ -109,11 +109,13 @@ func DecryptTokenJWK(ctx context.Context, strToken string, jwkurl string) (objTo
 	return nil, err
 }
 func CreateJWT(ctx context.Context, privateKeyStr string, claimsMap map[string]interface{}) (tokenString string, err error) {
+	logs.WithContext(ctx).Info(privateKeyStr)
 	token := jwt.New(jwt.SigningMethodRS256)
 
 	var privateKey *rsa.PrivateKey
 
 	if privateKey, err = jwt.ParseRSAPrivateKeyFromPEM([]byte(privateKeyStr)); err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 
@@ -122,5 +124,8 @@ func CreateJWT(ctx context.Context, privateKeyStr string, claimsMap map[string]i
 		claims[k] = v
 	}
 	tokenString, err = token.SignedString(privateKey)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+	}
 	return
 }

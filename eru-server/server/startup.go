@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -27,6 +28,9 @@ func Launch(serverRouter *mux.Router, port string) {
 	logs.Logger.Error(fmt.Sprint("printing error of ListenAndServe = ", err.Error()))
 }
 func Init(store store.StoreI) (*mux.Router, *Server, error) {
+	_ = store.LoadSmValue(context.Background(), "")
+	_ = store.LoadEnvValue(context.Background(), "")
+	//ignore error from LoadSmValue and LoadEnvValue as server has to start even if load has failed.
 	s := new(Server)
 	s.Store = store
 	serverRouter := s.GetRouter()
