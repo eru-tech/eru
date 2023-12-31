@@ -34,7 +34,7 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 		return err
 	}
 
-	var vars map[string]*store.Variables
+	var vars map[string]store.Variables
 	if _, ok := storeMap["variables"]; ok {
 		if storeMap["variables"] != nil {
 			err = json.Unmarshal(*storeMap["variables"], &vars)
