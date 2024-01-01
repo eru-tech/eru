@@ -262,9 +262,9 @@ func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			if at, ok := authObjTmp["AuthType"]; !ok {
+			if at, ok := authObjTmp["auth_type"]; !ok {
 				server_handlers.FormatResponse(w, 400)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : AuthType")})
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : auth_type")})
 				return
 			} else {
 				authType = at.(string)
