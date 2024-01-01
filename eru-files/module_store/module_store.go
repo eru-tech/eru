@@ -86,6 +86,8 @@ type ModuleDbStore struct {
 
 func (ms *ModuleStore) GenerateRsaKeyPair(ctx context.Context, projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (rsaKeyPair erursa.RsaKeyPair, err error) {
 	logs.WithContext(ctx).Debug("GenerateRsaKeyPair - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
 		return
@@ -104,6 +106,8 @@ func (ms *ModuleStore) GenerateRsaKeyPair(ctx context.Context, projectId string,
 
 func (ms *ModuleStore) GenerateAesKey(ctx context.Context, projectId string, keyName string, bits int, overwrite bool, realStore ModuleStoreI) (aesKey eruaes.AesKey, err error) {
 	logs.WithContext(ctx).Debug("GenerateAesKey - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
 		return
@@ -122,6 +126,10 @@ func (ms *ModuleStore) GenerateAesKey(ctx context.Context, projectId string, key
 
 func (ms *ModuleStore) SaveStorage(ctx context.Context, storageObj storage.StorageI, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveStorage - Start")
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
 	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
 		return err
@@ -359,6 +367,10 @@ func (ms *ModuleStore) DownloadFileAsJson(ctx context.Context, projectId string,
 
 func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveProject - Start")
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
 	//TODO to handle edit project once new project attributes are finalized
 	if _, ok := ms.Projects[projectId]; !ok {
 		project := new(file_model.Project)
@@ -391,6 +403,8 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 
 func (ms *ModuleStore) RemoveStorage(ctx context.Context, storageName string, projectId string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveStorage - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if prg, ok := ms.Projects[projectId]; ok {
 		if _, ok := prg.Storages[storageName]; ok {
 			delete(prg.Storages, storageName)
@@ -410,6 +424,8 @@ func (ms *ModuleStore) RemoveStorage(ctx context.Context, storageName string, pr
 
 func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveProject - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
 		logs.WithContext(ctx).Info("SaveStore called from RemoveProject")
@@ -448,6 +464,8 @@ func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interfac
 
 func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string, projectSettings file_model.ProjectSettings, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())

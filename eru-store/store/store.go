@@ -11,6 +11,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -45,6 +46,7 @@ type StoreI interface {
 	LoadSmValue(ctx context.Context, projectId string) (err error)
 	LoadEnvValue(ctx context.Context, projectId string) (err error)
 	SetStoreFromBytes(ctx context.Context, storeBytes []byte, msi StoreI) (err error)
+	GetMutex() *sync.RWMutex
 	//SaveProject(projectId string, realStore StoreI) error
 	//RemoveProject(projectId string, realStore StoreI) error
 	//GetProjectConfig(projectId string) (*model.ProjectI, error)
@@ -53,10 +55,15 @@ type StoreI interface {
 
 type Store struct {
 	//Projects map[string]*model.Project //ProjectId is the key
+	mu                sync.RWMutex
 	Variables         map[string]Variables       `json:"variables"`
 	ProjectRepos      map[string]repos.RepoI     `json:"repos"`
 	ProjectRepoTokens map[string]repos.RepoToken `json:"repo_token"`
 	SecretManager     map[string]sm.SmStoreI     `json:"secret_manager"`
+}
+
+func (store *Store) GetMutex() *sync.RWMutex {
+	return &store.mu
 }
 
 func (store *Store) LoadStore(fp string, ms StoreI) (err error) {
@@ -103,6 +110,8 @@ func (store *Store) GetDbType() string {
 }
 
 func (store *Store) SetVars(ctx context.Context, variables map[string]Variables) {
+	store.GetMutex().Lock()
+	defer store.GetMutex().Unlock()
 	store.Variables = variables
 }
 
@@ -124,6 +133,8 @@ func (store *Store) FetchVars(ctx context.Context, projectId string) (variables 
 
 func (store *Store) SaveVar(ctx context.Context, projectId string, newVar Vars, s StoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveVar - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
 	if store.Variables == nil {
 		store.Variables = make(map[string]Variables)
 	}
@@ -145,6 +156,8 @@ func (store *Store) SaveVar(ctx context.Context, projectId string, newVar Vars, 
 
 func (store *Store) RemoveVar(ctx context.Context, projectId string, key string, s StoreI) (err error) {
 	logs.WithContext(ctx).Debug("RemoveVar - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
 	if store.Variables == nil {
 		err = errors.New("No variables defined in store")
 		logs.WithContext(ctx).Error(err.Error())
@@ -167,6 +180,8 @@ func (store *Store) RemoveVar(ctx context.Context, projectId string, key string,
 
 func (store *Store) SaveEnvVar(ctx context.Context, projectId string, newEnvVar EnvVars, s StoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveEnvVar - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
 	if store.Variables == nil {
 		store.Variables = make(map[string]Variables)
 	}
@@ -188,6 +203,8 @@ func (store *Store) SaveEnvVar(ctx context.Context, projectId string, newEnvVar 
 
 func (store *Store) RemoveEnvVar(ctx context.Context, projectId string, key string, s StoreI) (err error) {
 	logs.WithContext(ctx).Debug("RemoveEnvVar - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
 	if store.Variables == nil {
 		err = errors.New("No variables defined in store")
 		logs.WithContext(ctx).Error(err.Error())
@@ -210,6 +227,8 @@ func (store *Store) RemoveEnvVar(ctx context.Context, projectId string, key stri
 
 func (store *Store) SaveSecret(ctx context.Context, projectId string, newSecret Secrets, s StoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveSecret - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
 	if store.Variables == nil {
 		store.Variables = make(map[string]Variables)
 	}
@@ -231,6 +250,8 @@ func (store *Store) SaveSecret(ctx context.Context, projectId string, newSecret 
 
 func (store *Store) RemoveSecret(ctx context.Context, projectId string, key string, s StoreI) (err error) {
 	logs.WithContext(ctx).Debug("RemoveSecret - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
 	if store.Variables == nil {
 		err = errors.New("No variables defined in store")
 		logs.WithContext(ctx).Error(err.Error())
@@ -355,6 +376,10 @@ func (store *Store) CommitRepo(ctx context.Context, projectId string, s StoreI) 
 
 func (store *Store) SaveRepo(ctx context.Context, projectId string, repo repos.RepoI, s StoreI, persist bool) (err error) {
 	logs.WithContext(ctx).Debug("SaveRepo - Start")
+	if persist {
+		s.GetMutex().Lock()
+		defer s.GetMutex().Unlock()
+	}
 	if store.ProjectRepos == nil {
 		store.ProjectRepos = make(map[string]repos.RepoI)
 	}
@@ -367,6 +392,8 @@ func (store *Store) SaveRepo(ctx context.Context, projectId string, repo repos.R
 
 func (store *Store) SaveRepoToken(ctx context.Context, projectId string, repoToken repos.RepoToken, s StoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveRepoToken - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
 	if store.ProjectRepoTokens == nil {
 		store.ProjectRepoTokens = make(map[string]repos.RepoToken)
 	}
@@ -441,16 +468,18 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 							logs.WithContext(ctx).Error(err.Error())
 							return err
 						} else {
-							result, resultErr := smObj.FetchSmValue(ctx)
-							if resultErr != nil {
-								return
-							}
-							for k, v := range store.Variables[prjId].Secrets {
-								if _, seretOk := result[k]; seretOk {
-									v.Value = result[k]
-									store.Variables[prjId].Secrets[k] = v
-								} else {
-									logs.WithContext(ctx).Warn(fmt.Sprint("secret manager does not have any secret value for ", k))
+							if smObj != nil {
+								result, resultErr := smObj.FetchSmValue(ctx)
+								if resultErr != nil {
+									return
+								}
+								for k, v := range store.Variables[prjId].Secrets {
+									if _, seretOk := result[k]; seretOk {
+										v.Value = result[k]
+										store.Variables[prjId].Secrets[k] = v
+									} else {
+										logs.WithContext(ctx).Warn(fmt.Sprint("secret manager does not have any secret value for ", k))
+									}
 								}
 							}
 						}
@@ -468,6 +497,10 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 
 func (store *Store) SaveSm(ctx context.Context, projectId string, secretManager sm.SmStoreI, s StoreI, persist bool) (err error) {
 	logs.WithContext(ctx).Debug("SaveSm - Start")
+	if persist {
+		s.GetMutex().Lock()
+		defer s.GetMutex().Unlock()
+	}
 	if store.SecretManager == nil {
 		store.SecretManager = make(map[string]sm.SmStoreI)
 	}
@@ -479,6 +512,7 @@ func (store *Store) SaveSm(ctx context.Context, projectId string, secretManager 
 }
 
 func (store *Store) GetProjectConfigForRepo(ctx context.Context, projectId string, ms StoreI) (repoData map[string]map[string]interface{}, accessToken string, err error) {
+	logs.WithContext(ctx).Debug("GetProjectConfigForRepo - Start")
 	repoData = make(map[string]map[string]interface{})
 	repoInnerData := make(map[string]interface{})
 	repoData[projectId] = repoInnerData
@@ -566,6 +600,10 @@ func (store *Store) GetProjectConfigForRepo(ctx context.Context, projectId strin
 }
 
 func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, msi StoreI) (err error) {
+	logs.WithContext(ctx).Debug("SetStoreFromBytes - Start")
+	msi.GetMutex().Lock()
+	defer msi.GetMutex().Unlock()
+
 	var storeMap map[string]*json.RawMessage
 	err = json.Unmarshal(storeBytes, &storeMap)
 	if err != nil {
@@ -581,31 +619,35 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 				return err
 			}
 			for prj, smJson := range prjSm {
-				var smObj map[string]*json.RawMessage
-				err = json.Unmarshal(*smJson, &smObj)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-					return err
-				}
-				var smType string
-				if _, stOk := smObj["sm_store_type"]; stOk {
-					err = json.Unmarshal(*smObj["sm_store_type"], &smType)
+				if smJson != nil {
+					var smObj map[string]*json.RawMessage
+					err = json.Unmarshal(*smJson, &smObj)
 					if err != nil {
 						logs.WithContext(ctx).Error(err.Error())
 						return err
 					}
-					smI := sm.GetSm(smType)
-					err = smI.MakeFromJson(ctx, smJson)
-					if err == nil {
-						err = msi.SaveSm(ctx, prj, smI, msi, false)
+					var smType string
+					if _, stOk := smObj["sm_store_type"]; stOk {
+						err = json.Unmarshal(*smObj["sm_store_type"], &smType)
 						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
 							return err
 						}
+						smI := sm.GetSm(smType)
+						if smI != nil {
+							err = smI.MakeFromJson(ctx, smJson)
+							if err == nil {
+								err = msi.SaveSm(ctx, prj, smI, msi, false)
+								if err != nil {
+									return err
+								}
+							} else {
+								return err
+							}
+						}
 					} else {
-						return err
+						logs.WithContext(ctx).Info("ignoring secret manager as sm_store_type attribute not found")
 					}
-				} else {
-					logs.WithContext(ctx).Info("ignoring secret manager as sm_store_type attribute not found")
 				}
 			}
 		} else {
@@ -657,7 +699,7 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 	} else {
 		logs.WithContext(ctx).Info("repos attribute not found in store")
 	}
-
+	logs.WithContext(ctx).Error("SetStoreFromBytes before return")
 	return
 }
 

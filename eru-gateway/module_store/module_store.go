@@ -203,6 +203,10 @@ func (ms *ModuleStore) ReplaceListenerRule(ctx context.Context, listenerRule *mo
 
 func (ms *ModuleStore) SaveListenerRule(ctx context.Context, listenerRule *module_model.ListenerRule, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveListenerRule - Start")
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
 	//TODO to check for duplicate rank
 	err := ms.ReplaceListenerRule(ctx, listenerRule)
 	if err != nil {
@@ -217,6 +221,8 @@ func (ms *ModuleStore) SaveListenerRule(ctx context.Context, listenerRule *modul
 }
 func (ms *ModuleStore) RemoveListenerRule(ctx context.Context, listenerRuleName string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveListenerRule - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if ms.ListenerRules != nil {
 		for i, v := range ms.ListenerRules {
 			if v.RuleName == listenerRuleName {
@@ -237,6 +243,10 @@ func (ms *ModuleStore) GetListenerRules(ctx context.Context) []*module_model.Lis
 
 func (ms *ModuleStore) SaveAuthorizer(ctx context.Context, authorizer module_model.Authorizer, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveAuthorizer - Start")
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
 	if ms.Authorizers == nil {
 		ms.Authorizers = make(map[string]module_model.Authorizer)
 	}
@@ -252,6 +262,8 @@ func (ms *ModuleStore) SaveAuthorizer(ctx context.Context, authorizer module_mod
 
 func (ms *ModuleStore) RemoveAuthorizer(ctx context.Context, authorizerName string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveAuthorizer - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if _, authOk := ms.Authorizers[authorizerName]; authOk {
 		delete(ms.Authorizers, authorizerName)
 		return realStore.SaveStore(ctx, "gateway", "", realStore)
@@ -321,6 +333,10 @@ func (ms *ModuleStore) CompareListenerRules(ctx context.Context, lrs []module_mo
 
 func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectSettings module_model.ProjectSettings, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
 
 	ms.ProjectSettings = projectSettings
 	if persist == true {

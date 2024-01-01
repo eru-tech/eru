@@ -74,6 +74,10 @@ type ModuleDbStore struct {
 func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveProject - Start")
 	//TODO to handle edit project once new project attributes are finalized
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
 	if _, ok := ms.Projects[projectId]; !ok {
 		project := new(module_model.Project)
 		project.ProjectId = projectId
@@ -97,6 +101,8 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 
 func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveProject - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
 		logs.WithContext(ctx).Info("SaveStore called from RemoveProject")
@@ -148,6 +154,8 @@ func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interfac
 
 func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SetDataSourceConnections - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	for _, prj := range ms.Projects {
 		for _, datasource := range prj.DataSources {
 			i := ds.GetSqlMaker(datasource.DbName)
@@ -176,6 +184,8 @@ func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore M
 
 func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -210,6 +220,8 @@ func (ms *ModuleStore) GetDatasourceCloneObject(ctx context.Context, projectId s
 
 func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, datasource *module_model.DataSource, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("SaveDataSource - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -250,6 +262,8 @@ func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, dat
 
 func (ms *ModuleStore) RemoveDataSource(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveDataSource - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	err := ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
 		return err
@@ -280,6 +294,8 @@ func (ms *ModuleStore) GetDataSources(ctx context.Context, projectId string) (da
 
 func (ms *ModuleStore) UpdateSchemaTables(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error) {
 	logs.WithContext(ctx).Debug("UpdateSchemaTables - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	var tmpList []string
 	err = ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
@@ -309,6 +325,8 @@ func (ms *ModuleStore) UpdateSchemaTables(ctx context.Context, projectId string,
 }
 func (ms *ModuleStore) AddSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("AddSchemaTable - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	err = ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -375,6 +393,8 @@ func (ms *ModuleStore) AddSchemaTable(ctx context.Context, projectId string, dbA
 }
 func (ms *ModuleStore) RemoveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("RemoveSchemaTable - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	err = ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
 		return nil, err
@@ -413,6 +433,8 @@ func (ms *ModuleStore) RemoveSchemaTable(ctx context.Context, projectId string, 
 
 func (ms *ModuleStore) AddSchemaJoin(ctx context.Context, projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("AddSchemaJoin - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	err = ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
 		return nil, err
@@ -430,6 +452,8 @@ func (ms *ModuleStore) AddSchemaJoin(ctx context.Context, projectId string, dbAl
 }
 func (ms *ModuleStore) RemoveSchemaJoin(ctx context.Context, projectId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("RemoveSchemaJoin - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	err = ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
 	if err != nil {
 		return nil, err
@@ -448,6 +472,9 @@ func (ms *ModuleStore) RemoveSchemaJoin(ctx context.Context, projectId string, d
 
 func (ms *ModuleStore) SaveMyQuery(ctx context.Context, projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule) error {
 	logs.WithContext(ctx).Debug("SaveMyQuery - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
+
 	if _, ok := ms.Projects[projectId]; ok {
 		readWrite := ""
 		queryFirstWord := strings.ToUpper(strings.Split(query, " ")[0])
@@ -466,7 +493,6 @@ func (ms *ModuleStore) SaveMyQuery(ctx context.Context, projectId string, queryN
 		}
 		ms.Projects[projectId].MyQueries[queryName] = &myquery
 		logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from SaveMyQuery ", queryName))
-		logs.WithContext(ctx).Info(query)
 		return realStore.SaveStore(ctx, projectId, "", realStore)
 	} else {
 		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
@@ -479,6 +505,8 @@ func (ms *ModuleStore) SaveMyQuery(ctx context.Context, projectId string, queryN
 
 func (ms *ModuleStore) RemoveMyQuery(ctx context.Context, projectId string, queryName string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveMyQuery - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if _, ok := ms.Projects[projectId]; ok {
 		if ms.Projects[projectId].MyQueries == nil {
 			return errors.New(fmt.Sprint("Query ", queryName, " not found"))
@@ -573,6 +601,8 @@ func (ms *ModuleStore) GetMyQueriesNames(ctx context.Context, projectId string) 
 
 func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]module_model.TableColsMetaData, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveSchemaTable - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	tableExists := false
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
@@ -633,6 +663,8 @@ func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, db
 
 func (ms *ModuleStore) SaveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, securityRules module_model.SecurityRules, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveTableSecurity - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if _, ok := db.SchemaTables[tableName]; ok {
@@ -670,6 +702,8 @@ func (ms *ModuleStore) SaveTableSecurity(ctx context.Context, projectId string, 
 }
 func (ms *ModuleStore) SaveColumnMasking(ctx context.Context, projectId string, dbAlias string, tableName string, colName string, columnMasking module_model.ColumnMasking, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveColumnMasking - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if tb, ok := db.SchemaTables[tableName]; ok {
@@ -705,6 +739,8 @@ func (ms *ModuleStore) SaveColumnMasking(ctx context.Context, projectId string, 
 }
 func (ms *ModuleStore) SaveTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveTableTransformation - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if _, ok := db.SchemaTables[tableName]; ok {
@@ -799,6 +835,8 @@ func (ms *ModuleStore) GetTableSecurityRule(ctx context.Context, projectId strin
 
 func (ms *ModuleStore) DropSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("DropSchemaTable - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	tableExists := false
 	//TODO - to check if drop is allowed
 	if prj, ok := ms.Projects[projectId]; ok {

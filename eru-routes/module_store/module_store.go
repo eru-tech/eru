@@ -55,6 +55,11 @@ type ModuleDbStore struct {
 
 func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveProject - Start")
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
+
 	//TODO to handle edit project once new project attributes are finalized
 	if _, ok := ms.Projects[projectId]; !ok {
 		project := new(module_model.Project)
@@ -148,6 +153,8 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 
 func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveProject - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
 		logs.WithContext(ctx).Info("SaveStore called from RemoveProject")
@@ -186,6 +193,10 @@ func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interfac
 
 func (ms *ModuleStore) SaveRoute(ctx context.Context, routeObj routes.Route, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveRoute - Start")
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
 	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -204,6 +215,8 @@ func (ms *ModuleStore) SaveRoute(ctx context.Context, routeObj routes.Route, pro
 
 func (ms *ModuleStore) RemoveRoute(ctx context.Context, routeName string, projectId string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveRoute - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if prg, ok := ms.Projects[projectId]; ok {
 		if _, ok := prg.Routes[routeName]; ok {
 			delete(prg.Routes, routeName)
@@ -385,6 +398,10 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *rout
 
 func (ms *ModuleStore) SaveFunc(ctx context.Context, funcObj routes.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug(fmt.Sprint("SaveFunc - Start"))
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
 	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -399,6 +416,8 @@ func (ms *ModuleStore) SaveFunc(ctx context.Context, funcObj routes.FuncGroup, p
 
 func (ms *ModuleStore) RemoveFunc(ctx context.Context, funcName string, projectId string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug(fmt.Sprint("RemoveFunc - Start"))
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if prg, ok := ms.Projects[projectId]; ok {
 		if _, ok := prg.FuncGroups[funcName]; ok {
 			delete(prg.FuncGroups, funcName)
@@ -418,6 +437,8 @@ func (ms *ModuleStore) RemoveFunc(ctx context.Context, funcName string, projectI
 
 func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())

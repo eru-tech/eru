@@ -41,10 +41,11 @@ func StartUp() (module_store.ModuleStoreI, error) {
 		return nil, err
 	}
 	storeBytes, err := myStore.GetStoreByteArray("")
+	logs.WithContext(context.Background()).Info("trying to unmarshal")
 	if err == nil {
 		err = json.Unmarshal(storeBytes, myStore)
 		if err != nil {
-			logs.WithContext(context.Background()).Error(err.Error())
+			logs.WithContext(context.Background()).Warn(err.Error())
 		}
 		err = myStore.SetStoreFromBytes(context.Background(), storeBytes, myStore)
 		if err != nil {
@@ -56,6 +57,7 @@ func StartUp() (module_store.ModuleStoreI, error) {
 		logs.WithContext(context.Background()).Error(err.Error())
 		return nil, err
 	}
+	logs.WithContext(context.Background()).Info("calling SetDataSourceConnections")
 	err = myStore.SetDataSourceConnections(context.Background(), myStore)
 	if err != nil {
 		logs.WithContext(context.Background()).Error(err.Error())

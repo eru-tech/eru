@@ -24,7 +24,7 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Name("repo_save_token").Methods(http.MethodPost).Path("/store/{project}/repo/savetoken").HandlerFunc(handlers.SaveRepoTokenHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/grepo/list").HandlerFunc(handlers.FetchRepoHandler(s.Store))
 	router.Methods(http.MethodPost).Path("/store/grepo/save/{repotype}").HandlerFunc(handlers.SaveRepoHandler(s.Store))
-	//router.Methods(http.MethodPost).Path("/store/grepo/commit").HandlerFunc(handlers.CommitRepoHandler(s.Store))
+	router.Methods(http.MethodPost).Path("/store/grepo/commit").HandlerFunc(handlers.CommitRepoHandler(s.Store))
 	router.Methods(http.MethodPost).Path("/store/grepo/savetoken").HandlerFunc(handlers.SaveRepoTokenHandler(s.Store))
 
 	router.Name("sm").Methods(http.MethodPost).Path("/store/{project}/sm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))

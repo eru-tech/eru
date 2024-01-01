@@ -60,6 +60,10 @@ type ModuleDbStore struct {
 func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error {
 	//TODO to handle edit project once new project attributes are finalized
 	logs.WithContext(ctx).Debug("SaveProject - Start")
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
 	if _, ok := ms.Projects[projectId]; !ok {
 		project := new(module_model.Project)
 		project.ProjectId = projectId
@@ -98,6 +102,8 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 
 func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveProject - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if _, ok := ms.Projects[projectId]; ok {
 		delete(ms.Projects, projectId)
 		logs.WithContext(ctx).Info("SaveStore called from RemoveProject")
@@ -135,6 +141,8 @@ func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interfac
 
 func (ms *ModuleStore) SaveMessageTemplate(ctx context.Context, projectId string, messageTemplate module_model.MessageTemplate, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("SaveMessageTemplate - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		return err
@@ -149,6 +157,8 @@ func (ms *ModuleStore) SaveMessageTemplate(ctx context.Context, projectId string
 
 func (ms *ModuleStore) RemoveMessageTemplate(ctx context.Context, projectId string, templateName string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveMessageTemplate - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		return err
@@ -165,6 +175,10 @@ func (ms *ModuleStore) RemoveMessageTemplate(ctx context.Context, projectId stri
 
 func (ms *ModuleStore) SaveGateway(ctx context.Context, gatewayObj gateway.GatewayI, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveGateway - Start")
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
 	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
 		return err
@@ -178,6 +192,8 @@ func (ms *ModuleStore) SaveGateway(ctx context.Context, gatewayObj gateway.Gatew
 
 func (ms *ModuleStore) RemoveGateway(ctx context.Context, gatewayName string, gatewayType string, channel string, projectId string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveGateway - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if prg, ok := ms.Projects[projectId]; ok {
 		gKey := fmt.Sprint(gatewayName, "_", gatewayType, "_", channel)
 		if _, ok := prg.Gateways[gKey]; ok {
@@ -252,6 +268,10 @@ func (ms *ModuleStore) GetMessageTemplate(ctx context.Context, gatewayName strin
 }
 func (ms *ModuleStore) SaveAuth(ctx context.Context, authObj auth.AuthI, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveAuth - Start")
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
 
 	//cloning authObj to replace variables and execute PerformPreSaveTask with actual values
 	authObjClone, err := ms.GetAuthCloneObject(ctx, projectId, authObj, realStore)
@@ -282,6 +302,8 @@ func (ms *ModuleStore) SaveAuth(ctx context.Context, authObj auth.AuthI, project
 }
 func (ms *ModuleStore) RemoveAuth(ctx context.Context, authName string, projectId string, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("RemoveAuth - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	if prg, ok := ms.Projects[projectId]; ok {
 		if authObj, ok := prg.Auth[authName]; ok {
 			err = authObj.PerformPreDeleteTask(ctx)
@@ -377,6 +399,8 @@ func (ms *ModuleStore) GetAuth(ctx context.Context, projectId string, authName s
 
 func (ms *ModuleStore) SavePkceEvent(ctx context.Context, msParams auth.MsParams, s ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SavePkceEvent - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
 	var queries []store.Queries
 	query := store.Queries{}
 	query.Query = INSERT_PKCE_EVENT
@@ -426,6 +450,8 @@ func GetAuthDb(dbType string) auth.AuthDbI {
 
 func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
