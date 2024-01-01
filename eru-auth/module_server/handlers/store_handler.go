@@ -251,7 +251,7 @@ func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authType := ""
-
+		logs.WithContext(r.Context()).Info("one")
 		authFromReq := json.NewDecoder(r.Body)
 		authFromReq.DisallowUnknownFields()
 
@@ -271,7 +271,7 @@ func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 		authObj := auth.GetAuth(authType)
-
+		logs.WithContext(r.Context()).Info("two")
 		authJson, err := json.Marshal(authObjTmp)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -295,6 +295,7 @@ func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		err = s.SaveAuth(r.Context(), authObj, projectId, s, true)
+		logs.WithContext(r.Context()).Info("three")
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -308,6 +309,7 @@ func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("auth config ", authName, " saved successfully")})
 		}
+		logs.WithContext(r.Context()).Info("four")
 		return
 	}
 }
