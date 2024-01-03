@@ -408,6 +408,9 @@ func (ms *ModuleStore) SavePkceEvent(ctx context.Context, msParams auth.MsParams
 	vals = append(vals, uuid.New().String(), msParams.CodeVerifier, msParams.CodeChallenge, msParams.ClientRequestId, msParams.Nonce, msParams.Url)
 	query.Vals = vals
 	queries = append(queries, query)
+
+	logs.WithContext(ctx).Info(fmt.Sprint(vals))
+
 	output, err := s.ExecuteDbSave(ctx, queries)
 	logs.WithContext(ctx).Info(fmt.Sprint(output))
 	if err != nil {

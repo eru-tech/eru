@@ -79,7 +79,7 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 	}
 	if eruAuth.EruConfig.Identifiers.Username.Enable {
 		userTraits.Username = registerUser.Username
-		identity.Attributes["userName"] = userTraits.Username
+		identity.Attributes["username"] = userTraits.Username
 		if registerUser.Username != "" {
 			identifierFound = true
 			insertQueryIcUsername := models.Queries{}
@@ -99,10 +99,10 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 	}
 
 	userTraits.FirstName = registerUser.FirstName
-	identity.Attributes["firstName"] = userTraits.FirstName
+	identity.Attributes["first_name"] = userTraits.FirstName
 
 	userTraits.LastName = registerUser.LastName
-	identity.Attributes["lastName"] = userTraits.LastName
+	identity.Attributes["last_name"] = userTraits.LastName
 
 	userTraitsBytes, userTraitsBytesErr := json.Marshal(userTraits)
 	if userTraitsBytesErr != nil {
@@ -115,13 +115,13 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 	identity.AuthDetails = IdentityAuth{}
 	identity.Attributes["sub"] = identity.Id
 	identity.Attributes["idp"] = eruAuth.AuthName
-	identity.Attributes["idpSub"] = identity.Id
-	identity.Attributes["emailVerified"] = false
-	identity.Attributes["mobileVerified"] = false
+	identity.Attributes["idp_sub"] = identity.Id
+	identity.Attributes["email_verified"] = false
+	identity.Attributes["mobile_verified"] = false
 
 	userAttrs["sub"] = identity.Id
 	userAttrs["idp"] = eruAuth.AuthName
-	userAttrs["idpSub"] = identity.Id
+	userAttrs["idp_sub"] = identity.Id
 
 	userAttrsBytes, userAttrsBytesErr := json.Marshal(userAttrs)
 	if userAttrsBytesErr != nil {
@@ -290,10 +290,10 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 			}
 		}
 
-		if k == "userName" {
+		if k == "username" {
 			userTraitsFound = true
 			userTraitsArray = append(userTraitsArray, k)
-			if userNameAttr, userNameAttrOk := identity.Attributes["userName"]; userNameAttrOk {
+			if userNameAttr, userNameAttrOk := identity.Attributes["username"]; userNameAttrOk {
 				if v != userNameAttr {
 					if v != "" {
 						delQuery := models.Queries{}
@@ -317,37 +317,37 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 				userTraits.Username = v.(string)
 			}
 		}
-		if k == "firstName" {
+		if k == "first_name" {
 			userTraitsFound = true
 			userTraitsArray = append(userTraitsArray, k)
-			if firstNameAttr, firstNameAttrOk := identity.Attributes["firstName"]; firstNameAttrOk {
+			if firstNameAttr, firstNameAttrOk := identity.Attributes["first_name"]; firstNameAttrOk {
 				userTraits.FirstName = firstNameAttr.(string)
 			} else {
 				userTraits.FirstName = v.(string)
 			}
 		}
-		if k == "lastName" {
+		if k == "last_name" {
 			userTraitsFound = true
 			userTraitsArray = append(userTraitsArray, k)
-			if lastNameAttr, lastNameAttrOk := identity.Attributes["lastName"]; lastNameAttrOk {
+			if lastNameAttr, lastNameAttrOk := identity.Attributes["last_name"]; lastNameAttrOk {
 				userTraits.LastName = lastNameAttr.(string)
 			} else {
 				userTraits.LastName = v.(string)
 			}
 		}
-		if k == "emailVerified" {
+		if k == "email_verified" {
 			userTraitsFound = true
 			userTraitsArray = append(userTraitsArray, k)
-			if emailVerifiedAttr, emailVerifiedAttrOk := identity.Attributes["emailVerified"]; emailVerifiedAttrOk {
+			if emailVerifiedAttr, emailVerifiedAttrOk := identity.Attributes["email_verified"]; emailVerifiedAttrOk {
 				userTraits.EmailVerified = emailVerifiedAttr.(bool)
 			} else {
 				userTraits.EmailVerified = v.(bool)
 			}
 		}
-		if k == "mobileVerified" {
+		if k == "mobile_verified" {
 			userTraitsFound = true
 			userTraitsArray = append(userTraitsArray, k)
-			if mobileVerifiedAttr, mobileVerifiedAttrOk := identity.Attributes["mobileVerified"]; mobileVerifiedAttrOk {
+			if mobileVerifiedAttr, mobileVerifiedAttrOk := identity.Attributes["mobile_verified"]; mobileVerifiedAttrOk {
 				userTraits.MobileVerified = mobileVerifiedAttr.(bool)
 			} else {
 				userTraits.MobileVerified = v.(bool)
@@ -562,6 +562,7 @@ func (eruAuth *EruAuth) GenerateVerifyCode(ctx context.Context, verifyIdentifier
 		return "", err
 	}
 	name := " "
+	logs.WithContext(ctx).Info(fmt.Sprint(verifyOutput))
 	if fn, fnOk := verifyOutput[0]["first_name"]; fnOk {
 		name = fn.(string)
 	}
@@ -613,10 +614,10 @@ func (eruAuth *EruAuth) VerifyCode(ctx context.Context, verifyCode VerifyCode, t
 	identity.Id = verifyCode.UserId
 	identity.Attributes = make(map[string]interface{})
 	if credentialType == "email" {
-		identity.Attributes["emailVerified"] = true
+		identity.Attributes["email_verified"] = true
 	}
 	if credentialType == "mobile" {
-		identity.Attributes["mobileVerified"] = true
+		identity.Attributes["mobile_verified"] = true
 	}
 	err = eruAuth.UpdateUser(ctx, identity, verifyCode.UserId, tokenObj)
 

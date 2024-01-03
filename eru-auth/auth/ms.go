@@ -131,14 +131,11 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 		}
 	}
 
-	logs.WithContext(ctx).Info(idToken)
-
 	tokens, tokensErr := jwt.DecryptTokenJWK(ctx, idToken, msAuth.MsConfig.JwkUrl)
 	if tokensErr != nil {
 		logs.WithContext(ctx).Error(tokensErr.Error())
 		return Identity{}, LoginSuccess{}, tokensErr
 	}
-	logs.WithContext(ctx).Info(reflect.TypeOf(tokens).String())
 
 	nonce := ""
 	sub := ""
@@ -171,23 +168,64 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 		}
 		//creating Just-In-Time user if not found in eru database
 		if len(output) == 0 {
+
+			var insertQueries []*models.Queries
+			identity.Id = uuid.New().String()
+			identifierFound := false
+			var requiredIdentifiers []string
+
 			if msAuth.MsConfig.Identifiers.Email.Enable {
 				if tokenEmail, tokenEmailOk := tokenMap[msAuth.MsConfig.Identifiers.Email.IdpMapper]; tokenEmailOk {
 					userTraits.Email = tokenEmail.(string)
+					userTraits.EmailVerified = true
 					identity.Attributes["email"] = userTraits.Email
+					identity.Attributes["email_verified"] = userTraits.EmailVerified // for sso email is considered as verified
+
+					identifierFound = true
+					insertQueryIcEmail := models.Queries{}
+					insertQueryIcEmail.Query = msAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY_CREDENTIALS)
+					insertQueryIcEmail.Vals = append(insertQueryIcEmail.Vals, uuid.New().String(), identity.Id, userTraits.Email, "email")
+					insertQueryIcEmail.Rank = 2
+
+					insertQueries = append(insertQueries, &insertQueryIcEmail)
+				} else {
+					requiredIdentifiers = append(requiredIdentifiers, "email")
 				}
 			}
 			if msAuth.MsConfig.Identifiers.Mobile.Enable {
 				if tokenMobile, tokenMobileOk := tokenMap[msAuth.MsConfig.Identifiers.Mobile.IdpMapper]; tokenMobileOk {
 					userTraits.Mobile = tokenMobile.(string)
 					identity.Attributes["mobile"] = userTraits.Mobile
+
+					identifierFound = true
+					insertQueryIcMobile := models.Queries{}
+					insertQueryIcMobile.Query = msAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY_CREDENTIALS)
+					insertQueryIcMobile.Vals = append(insertQueryIcMobile.Vals, uuid.New().String(), identity.Id, userTraits.Mobile, "mobile")
+					insertQueryIcMobile.Rank = 3
+					insertQueries = append(insertQueries, &insertQueryIcMobile)
+				} else {
+					requiredIdentifiers = append(requiredIdentifiers, "mobile")
 				}
 			}
 			if msAuth.MsConfig.Identifiers.Username.Enable {
 				if tokenUsername, tokenUsernameOk := tokenMap[msAuth.MsConfig.Identifiers.Username.IdpMapper]; tokenUsernameOk {
 					userTraits.Username = tokenUsername.(string)
-					identity.Attributes["userName"] = userTraits.Username
+					identity.Attributes["username"] = userTraits.Username
+					identifierFound = true
+					insertQueryIcUsername := models.Queries{}
+					insertQueryIcUsername.Query = msAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY_CREDENTIALS)
+					insertQueryIcUsername.Vals = append(insertQueryIcUsername.Vals, uuid.New().String(), identity.Id, userTraits.Username, "userName")
+					insertQueryIcUsername.Rank = 4
+					insertQueries = append(insertQueries, &insertQueryIcUsername)
+				} else {
+					requiredIdentifiers = append(requiredIdentifiers, "username")
 				}
+			}
+
+			if !identifierFound {
+				err = errors.New(fmt.Sprint("missing mandatory indentifiers : ", strings.Join(requiredIdentifiers, " , ")))
+				logs.WithContext(ctx).Error(err.Error())
+				return Identity{}, LoginSuccess{}, err
 			}
 
 			name := ""
@@ -196,10 +234,10 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 			}
 			nameArray := strings.Split(name, " ")
 			userTraits.FirstName = nameArray[0]
-			identity.Attributes["firstName"] = userTraits.FirstName
+			identity.Attributes["first_name"] = userTraits.FirstName
 			if len(nameArray) > 1 {
 				userTraits.LastName = nameArray[len(nameArray)-1]
-				identity.Attributes["lastName"] = userTraits.LastName
+				identity.Attributes["last_name"] = userTraits.LastName
 			}
 
 			userTraitsBytes, userTraitsBytesErr := json.Marshal(userTraits)
@@ -209,16 +247,15 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 				return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 			}
 
-			identity.Id = uuid.New().String()
 			identity.Status = "ACTIVE"
 			identity.AuthDetails = IdentityAuth{}
 			identity.Attributes["sub"] = identity.Id
 			identity.Attributes["idp"] = msAuth.AuthName
-			identity.Attributes["idpSub"] = sub
+			identity.Attributes["idp_sub"] = sub
 
 			userAttrs["sub"] = identity.Id
 			userAttrs["idp"] = msAuth.AuthName
-			userAttrs["idpSub"] = sub
+			userAttrs["idp_sub"] = sub
 
 			userAttrsBytes, userAttrsBytesErr := json.Marshal(userAttrs)
 			if userAttrsBytesErr != nil {
@@ -227,13 +264,13 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 				return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 			}
 
-			var insertQueries []*models.Queries
 			insertQuery := models.Queries{}
 			insertQuery.Query = msAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY)
 			insertQuery.Vals = append(insertQuery.Vals, identity.Id, msAuth.AuthName, sub, string(userTraitsBytes), string(userAttrsBytes))
 			insertQueries = append(insertQueries, &insertQuery)
+
 			insertOutput, err := utils.ExecuteDbSave(ctx, msAuth.AuthDb.GetConn(), insertQueries)
-			logs.WithContext(ctx).Info(fmt.Sprint(insertOutput))
+			_ = insertOutput
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
 				return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
