@@ -886,20 +886,20 @@ func (kratosHydraAuth *KratosHydraAuth) getKratosUser(ctx context.Context, userI
 	}
 }
 
-func (kratosHydraAuth *KratosHydraAuth) UpdateUser(ctx context.Context, identityToUpdate Identity, userId string, token map[string]interface{}) (err error) {
+func (kratosHydraAuth *KratosHydraAuth) UpdateUser(ctx context.Context, identityToUpdate Identity, userId string, token map[string]interface{}) (tokens interface{}, err error) {
 	logs.WithContext(ctx).Debug("UpdateUser - Start")
 	//userId := identityToUpdate.Attributes["sub"].(string)
 	kratosIdentity, err := kratosHydraAuth.getKratosUser(ctx, userId)
 	err = convertFromIdentity(ctx, identityToUpdate, &kratosIdentity)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	dummyMap := make(map[string]string)
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
 	_, _, _, _, err = utils.CallHttp(ctx, "PUT", fmt.Sprint(kratosHydraAuth.Kratos.getAdminUrl(), "/admin/identities/", userId), headers, dummyMap, nil, dummyMap, kratosIdentity)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	return
 }

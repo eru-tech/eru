@@ -36,7 +36,7 @@ type AuthI interface {
 	PerformPreSaveTask(ctx context.Context) (err error)
 	PerformPreDeleteTask(ctx context.Context) (err error)
 	GetUser(ctx context.Context, userId string) (identity Identity, err error)
-	UpdateUser(ctx context.Context, identityToUpdate Identity, userId string, token map[string]interface{}) (err error)
+	UpdateUser(ctx context.Context, identityToUpdate Identity, userId string, token map[string]interface{}) (tokens interface{}, err error)
 	ChangePassword(ctx context.Context, tokenObj map[string]interface{}, userId string, changePasswordObj ChangePassword) (err error)
 	GenerateRecoveryCode(ctx context.Context, recoveryIdentifier RecoveryPostBody, projectId string, silentFlag bool) (msg string, err error)
 	GenerateVerifyCode(ctx context.Context, verifyIdentifier VerifyPostBody, projectId string, silentFlag bool) (msg string, err error)
@@ -403,10 +403,10 @@ func (auth *Auth) GetUser(ctx context.Context, userId string) (identity Identity
 	return Identity{}, err
 }
 
-func (auth *Auth) UpdateUser(ctx context.Context, identityToUpdate Identity, userId string, token map[string]interface{}) (err error) {
+func (auth *Auth) UpdateUser(ctx context.Context, identityToUpdate Identity, userId string, token map[string]interface{}) (tokens interface{}, err error) {
 	err = errors.New("UpdateUser Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
-	return err
+	return nil, err
 }
 
 func (auth *Auth) FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error) {

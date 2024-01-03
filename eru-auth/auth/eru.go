@@ -28,7 +28,7 @@ type EruConfig struct {
 	Identifiers Identifiers `json:"identifiers" eru:"required"`
 }
 
-func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser, projectId string) (identity Identity, loginSuccess LoginSuccess, err error) {
+func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser, projectId string) (identity Identity, tokens LoginSuccess, err error) {
 	logs.WithContext(ctx).Debug("Register - Start")
 
 	if registerUser.Password == "" {
@@ -161,24 +161,27 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 		logs.WithContext(ctx).Error(err.Error())
 		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 	}
-	loginChallenge, loginChallengeCookies, loginChallengeErr := eruAuth.Hydra.GetLoginChallenge(ctx)
-	if loginChallengeErr != nil {
-		err = loginChallengeErr
-		return
-	}
 
-	consentChallenge, loginAcceptRequestCookies, loginAcceptErr := eruAuth.Hydra.AcceptLoginRequest(ctx, identity.Id, loginChallenge, loginChallengeCookies)
-	if loginAcceptErr != nil {
-		err = loginAcceptErr
-		return
-	}
-	identityHolder := make(map[string]interface{})
-	identityHolder["identity"] = identity
-	eruTokens, cosentAcceptErr := eruAuth.Hydra.AcceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
-	if cosentAcceptErr != nil {
-		err = cosentAcceptErr
-		return
-	}
+	tokens, err = eruAuth.makeTokens(ctx, identity)
+
+	//loginChallenge, loginChallengeCookies, loginChallengeErr := eruAuth.Hydra.GetLoginChallenge(ctx)
+	//if loginChallengeErr != nil {
+	//	err = loginChallengeErr
+	//	return
+	//}
+	//
+	//consentChallenge, loginAcceptRequestCookies, loginAcceptErr := eruAuth.Hydra.AcceptLoginRequest(ctx, identity.Id, loginChallenge, loginChallengeCookies)
+	//if loginAcceptErr != nil {
+	//	err = loginAcceptErr
+	//	return
+	//}
+	//identityHolder := make(map[string]interface{})
+	//identityHolder["identity"] = identity
+	//eruTokens, cosentAcceptErr := eruAuth.Hydra.AcceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
+	//if cosentAcceptErr != nil {
+	//	err = cosentAcceptErr
+	//	return
+	//}
 
 	if eruAuth.Hooks.SWEF.FuncGroupName != "" {
 		eruAuth.sendWelcomeEmail(ctx, userTraits.Email, userTraits.FirstName, projectId, "email")
@@ -186,7 +189,7 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 		logs.WithContext(ctx).Info("SWEF hook not defined")
 	}
 
-	return identity, eruTokens, nil
+	return identity, tokens, nil
 }
 
 func (eruAuth *EruAuth) GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error) {
@@ -216,7 +219,7 @@ func (eruAuth *EruAuth) MakeFromJson(ctx context.Context, rj *json.RawMessage) e
 	return nil
 }
 
-func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userId string, token map[string]interface{}) (err error) {
+func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userId string, token map[string]interface{}) (tokens interface{}, err error) {
 	logs.WithContext(ctx).Debug("UpdateUser - Start")
 	userTraits := UserTraits{}
 	var userTraitsArray []string
@@ -225,7 +228,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 	tokenAttributes, tokenErr := getTokenAttributes(ctx, token)
 
 	if tokenErr {
-		return errors.New("User not found")
+		return LoginSuccess{}, errors.New("User not found")
 	}
 
 	logs.WithContext(ctx).Info(fmt.Sprint(tokenAttributes))
@@ -374,14 +377,14 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 	if userTraitsBytesErr != nil {
 		err = userTraitsBytesErr
 		logs.WithContext(ctx).Error(err.Error())
-		return errors.New("something went wrong - please try again")
+		return LoginSuccess{}, errors.New("something went wrong - please try again")
 	}
 
 	userAttrsBytes, userAttrsBytesErr := json.Marshal(userAttrs)
 	if userAttrsBytesErr != nil {
 		err = userAttrsBytesErr
 		logs.WithContext(ctx).Error(err.Error())
-		return errors.New("something went wrong - please try again")
+		return LoginSuccess{}, errors.New("something went wrong - please try again")
 	}
 
 	updateQuery := models.Queries{}
@@ -398,11 +401,12 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 	logs.WithContext(ctx).Info(fmt.Sprint(insertOutput))
 	if err != nil {
 		if strings.Contains(err.Error(), "unique_identity_credential") {
-			return errors.New("user with same credentials already exists")
+			return LoginSuccess{}, errors.New("user with same credentials already exists")
 		}
 		logs.WithContext(ctx).Error(err.Error())
-		return errors.New("something went wrong - please try again")
+		return LoginSuccess{}, errors.New("something went wrong - please try again")
 	}
+	tokens, err = eruAuth.FetchTokens(ctx, "", identity.Id)
 	return
 }
 
@@ -619,12 +623,11 @@ func (eruAuth *EruAuth) VerifyCode(ctx context.Context, verifyCode VerifyCode, t
 	if credentialType == "mobile" {
 		identity.Attributes["mobile_verified"] = true
 	}
-	err = eruAuth.UpdateUser(ctx, identity, verifyCode.UserId, tokenObj)
-
+	res, err = eruAuth.UpdateUser(ctx, identity, verifyCode.UserId, tokenObj)
 	if withToken {
-		return eruAuth.FetchTokens(ctx, "", verifyCode.UserId)
+		return res, err
 	}
-	return
+	return nil, err
 }
 
 func (eruAuth *EruAuth) ChangePassword(ctx context.Context, tokenObj map[string]interface{}, userId string, changePasswordObj ChangePassword) (err error) {

@@ -730,14 +730,15 @@ func UpdateUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		identity.Id = userId
-		err = authObjI.UpdateUser(r.Context(), identity, userId, tokenObj)
+		var tokens interface{}
+		tokens, err = authObjI.UpdateUser(r.Context(), identity, userId, tokenObj)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		server_handlers.FormatResponse(w, http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": "user updated successfully"})
+		_ = json.NewEncoder(w).Encode(tokens)
 		return
 	}
 }
