@@ -267,6 +267,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 			insertQuery := models.Queries{}
 			insertQuery.Query = msAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY)
 			insertQuery.Vals = append(insertQuery.Vals, identity.Id, msAuth.AuthName, sub, string(userTraitsBytes), string(userAttrsBytes))
+			insertQuery.Rank = 1
 			insertQueries = append(insertQueries, &insertQuery)
 
 			insertOutput, err := utils.ExecuteDbSave(ctx, msAuth.AuthDb.GetConn(), insertQueries)
