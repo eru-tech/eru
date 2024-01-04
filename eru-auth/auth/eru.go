@@ -407,6 +407,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 		return LoginSuccess{}, errors.New("something went wrong - please try again")
 	}
 	tokens, err = eruAuth.FetchTokens(ctx, "", identity.Id)
+
 	return
 }
 
