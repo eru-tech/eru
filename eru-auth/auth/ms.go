@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -269,6 +270,8 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 			insertQuery.Vals = append(insertQuery.Vals, identity.Id, msAuth.AuthName, sub, string(userTraitsBytes), string(userAttrsBytes))
 			insertQuery.Rank = 1
 			insertQueries = append(insertQueries, &insertQuery)
+
+			sort.Sort(models.QueriesSorter(insertQueries))
 
 			insertOutput, err := utils.ExecuteDbSave(ctx, msAuth.AuthDb.GetConn(), insertQueries)
 			_ = insertOutput
