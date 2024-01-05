@@ -34,7 +34,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 
 	storeRouter.Methods(http.MethodPost).Path("/compare").HandlerFunc(module_handlers.StoreCompareHandler(sh.Store))
-	storeRouter.Methods(http.MethodPost).Path("/config").HandlerFunc(module_handlers.GetConfigHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/config").HandlerFunc(module_handlers.GetConfigHandler(sh.Store))
 
 	storeRouter.Methods(http.MethodPost).Path("/listenerrule/save").HandlerFunc(module_handlers.SaveListenerRuleHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/listenerrule/remove/{listenerrulename}").HandlerFunc(module_handlers.RemoveListenerRuleHandler(sh.Store))
