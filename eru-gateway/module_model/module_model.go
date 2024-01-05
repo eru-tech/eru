@@ -9,6 +9,10 @@ type StoreCompare struct {
 	DeleteListenerRules   []string               `json:"delete_listener_rules"`
 	NewListenerRules      []string               `json:"new_listener_rules"`
 	MismatchListenerRules map[string]interface{} `json:"mismatch_listener_rules"`
+	DeleteAuthorizer      []string               `json:"delete_authorizer"`
+	NewAuthorizer         []string               `json:"new_authorizer"`
+	MismatchAuthorizer    map[string]interface{} `json:"mismatch_authorizer"`
+	MismatchSettings      map[string]interface{} `json:"mismatch_settings"`
 }
 
 type ModuleProjectI interface {

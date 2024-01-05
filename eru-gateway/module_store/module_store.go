@@ -28,9 +28,10 @@ type ModuleStoreI interface {
 	RemoveAuthorizer(ctx context.Context, authorizerName string, realStore ModuleStoreI) error
 	GetAuthorizer(ctx context.Context, authorizerName string) (module_model.Authorizer, error)
 	GetAuthorizers(ctx context.Context) map[string]module_model.Authorizer
-	CompareListenerRules(ctx context.Context, lrs []module_model.ListenerRule) (module_model.StoreCompare, error)
+	CompareModuleStore(ctx context.Context, ms ModuleStore) (module_model.StoreCompare, error)
 	SaveProjectSettings(ctx context.Context, projectSettings module_model.ProjectSettings, realStore ModuleStoreI, persist bool) error
 	GetProjectSettings(ctx context.Context) module_model.ProjectSettings
+	GetGatewayConfig(ctx context.Context) ModuleStore
 }
 
 const MatchTypePrefix = "PREFIX"
@@ -241,6 +242,11 @@ func (ms *ModuleStore) GetListenerRules(ctx context.Context) []*module_model.Lis
 	return ms.ListenerRules
 }
 
+func (ms *ModuleStore) GetGatewayConfig(ctx context.Context) ModuleStore {
+	logs.WithContext(ctx).Debug("GetGatewayConfig - Start")
+	return *ms
+}
+
 func (ms *ModuleStore) SaveAuthorizer(ctx context.Context, authorizer module_model.Authorizer, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveAuthorizer - Start")
 	if persist {
@@ -292,12 +298,12 @@ func (ms *ModuleStore) GetProjectSettings(ctx context.Context) module_model.Proj
 	return ms.ProjectSettings
 }
 
-func (ms *ModuleStore) CompareListenerRules(ctx context.Context, lrs []module_model.ListenerRule) (module_model.StoreCompare, error) {
+func (ms *ModuleStore) CompareModuleStore(ctx context.Context, cms ModuleStore) (module_model.StoreCompare, error) {
 	storeCompare := module_model.StoreCompare{}
 	for _, mlr := range ms.ListenerRules {
 		var diffR utils.DiffReporter
 		lrFound := false
-		for _, clr := range lrs {
+		for _, clr := range cms.ListenerRules {
 			if mlr.RuleName == clr.RuleName {
 				lrFound = true
 				logs.Logger.Info(fmt.Sprint(mlr))
@@ -316,7 +322,7 @@ func (ms *ModuleStore) CompareListenerRules(ctx context.Context, lrs []module_mo
 		}
 	}
 
-	for _, clr := range lrs {
+	for _, clr := range cms.ListenerRules {
 		lrFound := false
 		for _, mlr := range ms.ListenerRules {
 			if mlr.RuleName == clr.RuleName {
@@ -328,6 +334,50 @@ func (ms *ModuleStore) CompareListenerRules(ctx context.Context, lrs []module_mo
 			storeCompare.NewListenerRules = append(storeCompare.NewListenerRules, clr.RuleName)
 		}
 	}
+
+	//compare authorizer
+	for _, mlr := range ms.Authorizers {
+		var diffR utils.DiffReporter
+		authFound := false
+		for _, auth := range cms.Authorizers {
+			if mlr.AuthorizerName == auth.AuthorizerName {
+				authFound = true
+				if !cmp.Equal(mlr, auth, cmp.Reporter(&diffR)) {
+					if storeCompare.MismatchAuthorizer == nil {
+						storeCompare.MismatchAuthorizer = make(map[string]interface{})
+					}
+					storeCompare.MismatchAuthorizer[mlr.AuthorizerName] = diffR.Output()
+				}
+				break
+			}
+		}
+		if !authFound {
+			storeCompare.DeleteAuthorizer = append(storeCompare.DeleteAuthorizer, mlr.AuthorizerName)
+		}
+	}
+
+	for _, auth := range cms.Authorizers {
+		authFound := false
+		for _, mlr := range ms.Authorizers {
+			if mlr.AuthorizerName == auth.AuthorizerName {
+				authFound = true
+				break
+			}
+		}
+		if !authFound {
+			storeCompare.NewAuthorizer = append(storeCompare.NewAuthorizer, auth.AuthorizerName)
+		}
+	}
+
+	//settings
+	var diffR utils.DiffReporter
+	if !cmp.Equal(ms.ProjectSettings, cms.ProjectSettings, cmp.Reporter(&diffR)) {
+		if storeCompare.MismatchSettings == nil {
+			storeCompare.MismatchSettings = make(map[string]interface{})
+		}
+		storeCompare.MismatchSettings["gateway"] = diffR.Output()
+	}
+
 	return storeCompare, nil
 }
 
