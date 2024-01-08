@@ -18,29 +18,40 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 
-		projectJson := json.NewDecoder(r.Body)
-		projectJson.DisallowUnknownFields()
-		var compareProject module_model.Project
+		comparePrjFromReq := json.NewDecoder(r.Body)
+		comparePrjFromReq.DisallowUnknownFields()
+
+		var compareProject module_model.ExtendedProject
+
+		if err := comparePrjFromReq.Decode(&compareProject); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
 		storeCompare := module_model.StoreCompare{}
-
-		if err := projectJson.Decode(&compareProject); err == nil {
-			myPrj, err := s.GetProjectConfig(r.Context(), projectID)
-			if err != nil {
-				server_handlers.FormatResponse(w, 400)
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-				return
-			}
-
-			storeCompare, err = myPrj.CompareProject(r.Context(), compareProject)
-
-		} else {
+		myPrj, err := s.GetProjectConfig(r.Context(), projectID, s)
+		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
+		storeCompare, err = myPrj.CompareProject(r.Context(), compareProject)
+
+		//projectJson := json.NewDecoder(r.Body)
+		//projectJson.DisallowUnknownFields()
+
+		//if err := projectJson.Decode(&compareProject); err == nil {
+		//
+		//} else {
+		//	logs.WithContext(r.Context()).Error("err from unmarshal")
+		//	server_handlers.FormatResponse(w, 400)
+		//	_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		//	return
+		//}
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(storeCompare)
-
 	}
 }
 
@@ -93,7 +104,7 @@ func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("ProjectConfigHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		project, err := s.GetProjectConfig(r.Context(), projectID)
+		project, err := s.GetProjectConfig(r.Context(), projectID, s)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)

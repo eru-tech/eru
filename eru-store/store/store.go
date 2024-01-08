@@ -8,6 +8,8 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	repos "github.com/eru-tech/eru/eru-repos/repos"
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/go-cmp/cmp"
 	"github.com/jmoiron/sqlx"
 	"os"
 	"strings"
@@ -60,6 +62,111 @@ type Store struct {
 	ProjectRepos      map[string]repos.RepoI     `json:"repos"`
 	ProjectRepoTokens map[string]repos.RepoToken `json:"repo_token"`
 	SecretManager     map[string]sm.SmStoreI     `json:"secret_manager"`
+}
+
+type StoreCompare struct {
+	DeleteVariables       []string               `json:"delete_variables"`
+	NewVariables          []string               `json:"new_variables"`
+	DeleteEnvVariables    []string               `json:"delete_env_variables"`
+	NewEnvVariables       []string               `json:"new_env_variables"`
+	DeleteSecrets         []string               `json:"delete_secrets"`
+	NewSecrets            []string               `json:"new_secrets"`
+	MismatchSettings      map[string]interface{} `json:"mismatch_settings"`
+	MismatchSecretManager map[string]interface{} `json:"mismatch_secret_manager"`
+}
+
+func (storeCompare *StoreCompare) CompareSecretManager(ctx context.Context, orgSm sm.SmStoreI, compareSm sm.SmStoreI) {
+	var diffR utils.DiffReporter
+	if !cmp.Equal(orgSm, compareSm, cmp.Reporter(&diffR)) {
+		if storeCompare.MismatchSecretManager == nil {
+			storeCompare.MismatchSecretManager = make(map[string]interface{})
+		}
+		storeCompare.MismatchSecretManager["sm"] = diffR.Output()
+	}
+}
+
+func (storeCompare *StoreCompare) CompareVariables(ctx context.Context, orgVars Variables, compareVars Variables) {
+	//variables
+	for k, _ := range orgVars.Vars {
+		varFound := false
+		for ck, _ := range compareVars.Vars {
+			if k == ck {
+				varFound = true
+				break
+			}
+		}
+		if !varFound {
+			storeCompare.DeleteVariables = append(storeCompare.DeleteVariables, k)
+		}
+	}
+
+	for ck, _ := range compareVars.Vars {
+		varFound := false
+		for k, _ := range orgVars.Vars {
+			if k == ck {
+				varFound = true
+				break
+			}
+		}
+		if !varFound {
+			storeCompare.NewVariables = append(storeCompare.NewVariables, ck)
+		}
+	}
+
+	// env variables
+	for k, _ := range orgVars.EnvVars {
+		varFound := false
+		for ck, _ := range compareVars.EnvVars {
+			if k == ck {
+				varFound = true
+				break
+			}
+		}
+		if !varFound {
+			storeCompare.DeleteEnvVariables = append(storeCompare.DeleteEnvVariables, k)
+		}
+	}
+
+	for ck, _ := range compareVars.EnvVars {
+		varFound := false
+		for k, _ := range orgVars.EnvVars {
+			if k == ck {
+				varFound = true
+				break
+			}
+		}
+		if !varFound {
+			storeCompare.NewEnvVariables = append(storeCompare.NewEnvVariables, ck)
+		}
+	}
+
+	// secrets
+	for k, _ := range orgVars.Secrets {
+		varFound := false
+		for ck, _ := range compareVars.Secrets {
+			if k == ck {
+				varFound = true
+				break
+			}
+		}
+		if !varFound {
+			storeCompare.DeleteSecrets = append(storeCompare.DeleteSecrets, k)
+		}
+	}
+
+	for ck, _ := range compareVars.Secrets {
+		varFound := false
+		for k, _ := range orgVars.Secrets {
+			if k == ck {
+				varFound = true
+				break
+			}
+		}
+		if !varFound {
+			storeCompare.NewSecrets = append(storeCompare.NewSecrets, ck)
+		}
+	}
+	return
 }
 
 func (store *Store) GetMutex() *sync.RWMutex {
