@@ -10,6 +10,7 @@ import (
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jmoiron/sqlx"
 	"os"
 	"strings"
@@ -77,7 +78,7 @@ type StoreCompare struct {
 
 func (storeCompare *StoreCompare) CompareSecretManager(ctx context.Context, orgSm sm.SmStoreI, compareSm sm.SmStoreI) {
 	var diffR utils.DiffReporter
-	if !cmp.Equal(orgSm, compareSm, cmp.Reporter(&diffR)) {
+	if !cmp.Equal(orgSm, compareSm, cmpopts.IgnoreUnexported(sm.AwsSmStore{}, cmp.Reporter(&diffR))) {
 		if storeCompare.MismatchSecretManager == nil {
 			storeCompare.MismatchSecretManager = make(map[string]interface{})
 		}
