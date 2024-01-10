@@ -174,7 +174,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 			identity.Id = uuid.New().String()
 			identifierFound := false
 			var requiredIdentifiers []string
-
+			logs.WithContext(ctx).Info(fmt.Sprint(msAuth.MsConfig.Identifiers))
 			if msAuth.MsConfig.Identifiers.Email.Enable {
 				if tokenEmail, tokenEmailOk := tokenMap[msAuth.MsConfig.Identifiers.Email.IdpMapper]; tokenEmailOk {
 					userTraits.Email = tokenEmail.(string)
@@ -191,6 +191,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 					insertQueries = append(insertQueries, &insertQueryIcEmail)
 				} else {
 					userTraits.Email = ""
+					identity.Attributes["email"] = ""
 					requiredIdentifiers = append(requiredIdentifiers, "email")
 				}
 			}
@@ -207,6 +208,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 					insertQueries = append(insertQueries, &insertQueryIcMobile)
 				} else {
 					userTraits.Mobile = ""
+					identity.Attributes["mobile"] = ""
 					requiredIdentifiers = append(requiredIdentifiers, "mobile")
 				}
 			}
@@ -222,6 +224,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 					insertQueries = append(insertQueries, &insertQueryIcUsername)
 				} else {
 					userTraits.Username = ""
+					identity.Attributes["username"] = ""
 					requiredIdentifiers = append(requiredIdentifiers, "username")
 				}
 			}
