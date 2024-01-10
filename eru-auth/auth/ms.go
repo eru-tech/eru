@@ -190,6 +190,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 
 					insertQueries = append(insertQueries, &insertQueryIcEmail)
 				} else {
+					userTraits.Email = ""
 					requiredIdentifiers = append(requiredIdentifiers, "email")
 				}
 			}
@@ -205,6 +206,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 					insertQueryIcMobile.Rank = 3
 					insertQueries = append(insertQueries, &insertQueryIcMobile)
 				} else {
+					userTraits.Mobile = ""
 					requiredIdentifiers = append(requiredIdentifiers, "mobile")
 				}
 			}
@@ -219,6 +221,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 					insertQueryIcUsername.Rank = 4
 					insertQueries = append(insertQueries, &insertQueryIcUsername)
 				} else {
+					userTraits.Username = ""
 					requiredIdentifiers = append(requiredIdentifiers, "username")
 				}
 			}
@@ -240,14 +243,14 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 				userTraits.LastName = nameArray[len(nameArray)-1]
 				identity.Attributes["last_name"] = userTraits.LastName
 			}
-
+			logs.WithContext(ctx).Info(fmt.Sprint(userTraits))
 			userTraitsBytes, userTraitsBytesErr := json.Marshal(userTraits)
 			if userTraitsBytesErr != nil {
 				err = userTraitsBytesErr
 				logs.WithContext(ctx).Error(err.Error())
 				return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 			}
-
+			logs.WithContext(ctx).Info(fmt.Sprint(string(userTraitsBytes)))
 			identity.Status = "ACTIVE"
 			identity.AuthDetails = IdentityAuth{}
 			identity.Attributes["sub"] = identity.Id
