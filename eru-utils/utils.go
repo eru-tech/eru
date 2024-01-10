@@ -380,9 +380,9 @@ func CsvToMap(ctx context.Context, csvData [][]string, lowerCaseHeader bool) (js
 }
 
 type DiffOutput struct {
-	Path   string
-	AddStr string
-	DelStr string
+	Path   string `json:"path"`
+	AddStr string `json:"add_str"`
+	DelStr string `json:"del_str"`
 }
 
 type DiffReporter struct {

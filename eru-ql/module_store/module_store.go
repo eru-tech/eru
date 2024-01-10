@@ -30,7 +30,8 @@ type ModuleStoreI interface {
 	store.StoreI
 	SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error
-	GetProjectConfig(ctx context.Context, projectId string, realStore ModuleStoreI) (module_model.ExtendedProject, error)
+	GetExtendedProjectConfig(ctx context.Context, projectId string, realStore ModuleStoreI) (module_model.ExtendedProject, error)
+	GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error)
 	GetProjectSettingsObject(ctx context.Context, projectId string) (pc module_model.ProjectSettings, err error)
 	GetProjectList(ctx context.Context) []map[string]interface{}
 	SetDataSourceConnections(ctx context.Context, realStore ModuleStoreI) (err error)
@@ -112,8 +113,8 @@ func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, real
 	}
 }
 
-func (ms *ModuleStore) GetProjectConfig(ctx context.Context, projectId string, realStore ModuleStoreI) (ePrj module_model.ExtendedProject, err error) {
-	logs.WithContext(ctx).Debug("GetProjectConfig - Start")
+func (ms *ModuleStore) GetExtendedProjectConfig(ctx context.Context, projectId string, realStore ModuleStoreI) (ePrj module_model.ExtendedProject, err error) {
+	logs.WithContext(ctx).Debug("GetExtendedProjectConfig - Start")
 	ePrj = module_model.ExtendedProject{}
 	if prj, ok := ms.Projects[projectId]; ok {
 		ePrj.Variables, err = realStore.FetchVars(ctx, projectId)
@@ -129,6 +130,19 @@ func (ms *ModuleStore) GetProjectConfig(ctx context.Context, projectId string, r
 			logs.WithContext(ctx).Error(err.Error())
 		}
 		return module_model.ExtendedProject{}, err
+	}
+}
+
+func (ms *ModuleStore) GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error) {
+	logs.WithContext(ctx).Debug("GetProjectConfig - Start")
+	if _, ok := ms.Projects[projectId]; ok {
+		return ms.Projects[projectId], nil
+	} else {
+		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		return nil, err
 	}
 }
 

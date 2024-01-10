@@ -29,11 +29,10 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		projectJson := json.NewDecoder(r.Body)
 		projectJson.DisallowUnknownFields()
-		var moduleStore module_store.ModuleStore
+		var moduleStore module_store.ExendedModuleStore
 		storeCompare := module_model.StoreCompare{}
-
 		if err := projectJson.Decode(&moduleStore); err == nil {
-			storeCompare, err = s.CompareModuleStore(r.Context(), moduleStore)
+			storeCompare, err = s.CompareModuleStore(r.Context(), moduleStore, s)
 
 		} else {
 			server_handlers.FormatResponse(w, 400)
@@ -106,7 +105,7 @@ func GetListenerRulesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 func GetConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("GetConfigHandler - Start")
-		ms := s.GetGatewayConfig(r.Context())
+		ms := s.GetExtendedGatewayConfig(r.Context(), s)
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(ms)
 	}

@@ -27,8 +27,8 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 	}
 
 	var vars map[string]store.Variables
-	if _, ok := storeMap["Variables"]; ok {
-		err = json.Unmarshal(*storeMap["Variables"], &vars)
+	if _, ok := storeMap["variables"]; ok {
+		err = json.Unmarshal(*storeMap["variables"], &vars)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return err

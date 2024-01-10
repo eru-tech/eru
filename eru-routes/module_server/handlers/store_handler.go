@@ -17,15 +17,15 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("StoreCompareHandler - Start")
 		vars := mux.Vars(r)
-		projectID := vars["project"]
+		projectId := vars["project"]
 
 		projectJson := json.NewDecoder(r.Body)
 		projectJson.DisallowUnknownFields()
-		var compareProject module_model.Project
+		var compareProject module_model.ExtendedProject
 		storeCompare := module_model.StoreCompare{}
 
 		if err := projectJson.Decode(&compareProject); err == nil {
-			myPrj, err := s.GetProjectConfig(r.Context(), projectID)
+			myPrj, err := s.GetExtendedProjectConfig(r.Context(), projectId, s)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -218,8 +218,8 @@ func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ProjectConfigHandler - Start")
 		vars := mux.Vars(r)
-		projectID := vars["project"]
-		project, err := s.GetProjectConfig(r.Context(), projectID)
+		projectId := vars["project"]
+		project, err := s.GetExtendedProjectConfig(r.Context(), projectId, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

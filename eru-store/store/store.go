@@ -78,7 +78,7 @@ type StoreCompare struct {
 
 func (storeCompare *StoreCompare) CompareSecretManager(ctx context.Context, orgSm sm.SmStoreI, compareSm sm.SmStoreI) {
 	var diffR utils.DiffReporter
-	if !cmp.Equal(orgSm, compareSm, cmpopts.IgnoreUnexported(sm.AwsSmStore{}, cmp.Reporter(&diffR))) {
+	if !cmp.Equal(orgSm, compareSm, cmpopts.IgnoreUnexported(sm.AwsSmStore{}), cmp.Reporter(&diffR)) {
 		if storeCompare.MismatchSecretManager == nil {
 			storeCompare.MismatchSecretManager = make(map[string]interface{})
 		}

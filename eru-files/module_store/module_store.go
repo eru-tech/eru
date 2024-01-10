@@ -42,7 +42,7 @@ type FileDownloadRequest struct {
 	ExcelAsJson     bool                                         `json:"excel_as_json"`
 	ExcelSheets     map[string]map[string]eru_reads.FileReadData `json:"excel_sheets"`
 	LowerCaseHeader bool                                         `json:"lower_case_header"`
-	Mime_Limit      uint32                                       `json:"mime_limit"`
+	MimeLimit       uint32                                       `json:"mime_limit"`
 }
 
 const (
@@ -56,6 +56,7 @@ type ModuleStoreI interface {
 	SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error
 	GetProjectConfig(ctx context.Context, projectId string) (*file_model.Project, error)
+	GetExtendedProjectConfig(ctx context.Context, projectId string, realStore ModuleStoreI) (file_model.ExtendedProject, error)
 	GetProjectList(ctx context.Context) []map[string]interface{}
 	SaveStorage(ctx context.Context, storageObj storage.StorageI, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveStorage(ctx context.Context, storageName string, projectId string, realStore ModuleStoreI) error
@@ -264,13 +265,13 @@ func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, 
 				err = ziperr
 			}
 			mimetype.SetLimit(2000)
-			if fileDownloadRequest.Mime_Limit > 0 {
-				mimetype.SetLimit(fileDownloadRequest.Mime_Limit)
+			if fileDownloadRequest.MimeLimit > 0 {
+				mimetype.SetLimit(fileDownloadRequest.MimeLimit)
 			}
 			fMime := mimetype.Detect(unzippedFileBytes)
 			logs.WithContext(ctx).Info(fmt.Sprint("fileDownloadRequest.CsvAsJson = ", fileDownloadRequest.CsvAsJson))
 			logs.WithContext(ctx).Info(fmt.Sprint("fMime = ", fMime))
-			logs.WithContext(ctx).Info(fmt.Sprint("fileDownloadRequest.Mime_Limit = ", fileDownloadRequest.Mime_Limit))
+			logs.WithContext(ctx).Info(fmt.Sprint("fileDownloadRequest.Mime_Limit = ", fileDownloadRequest.MimeLimit))
 
 			if fileDownloadRequest.CsvAsJson && fMime.Is(MIME_CSV) {
 				jsonData, jsonErr := csvToJson(ctx, unzippedFileBytes, fileDownloadRequest)
@@ -436,7 +437,26 @@ func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, real
 		return err
 	}
 }
-
+func (ms *ModuleStore) GetExtendedProjectConfig(ctx context.Context, projectId string, realStore ModuleStoreI) (ePrj file_model.ExtendedProject, err error) {
+	logs.WithContext(ctx).Debug("GetExtendedProjectConfig - Start")
+	ePrj = file_model.ExtendedProject{}
+	if prj, ok := ms.Projects[projectId]; ok {
+		ePrj.Variables, err = realStore.FetchVars(ctx, projectId)
+		ePrj.SecretManager, err = realStore.FetchSm(ctx, projectId)
+		ePrj.ProjectId = prj.ProjectId
+		ePrj.Storages = prj.Storages
+		ePrj.ProjectSettings = prj.ProjectSettings
+		ePrj.AesKeys = prj.AesKeys
+		ePrj.RsaKeyPairs = prj.RsaKeyPairs
+		return ePrj, nil
+	} else {
+		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		return file_model.ExtendedProject{}, err
+	}
+}
 func (ms *ModuleStore) GetProjectConfig(ctx context.Context, projectId string) (*file_model.Project, error) {
 	logs.WithContext(ctx).Debug("GetProjectConfig - Start")
 	if _, ok := ms.Projects[projectId]; ok {

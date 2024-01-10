@@ -63,6 +63,9 @@ func SaveVarHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("SaveVarHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		varJson := json.NewDecoder(r.Body)
 		varJson.DisallowUnknownFields()
 		var sVar store.Vars
@@ -84,6 +87,9 @@ func RemoveVarHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("RemoveVarHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		varKey := vars["key"]
 		err := s.RemoveVar(r.Context(), projectId, varKey, s)
 		if err != nil {
@@ -101,6 +107,9 @@ func SaveEnvVarHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("SaveEnvVarHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		varJson := json.NewDecoder(r.Body)
 		varJson.DisallowUnknownFields()
 		var sVar store.EnvVars
@@ -122,6 +131,9 @@ func RemoveEnvVarHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("RemoveSecretHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		varKey := vars["key"]
 		err := s.RemoveEnvVar(r.Context(), projectId, varKey, s)
 		if err != nil {
@@ -139,6 +151,9 @@ func SaveSecretHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("SaveSecretHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		varJson := json.NewDecoder(r.Body)
 		varJson.DisallowUnknownFields()
 		var sVar store.Secrets
@@ -160,6 +175,9 @@ func RemoveSecretHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("RemoveSecretHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		varKey := vars["key"]
 		err := s.RemoveSecret(r.Context(), projectId, varKey, s)
 		if err != nil {
@@ -177,6 +195,9 @@ func FetchVarsHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("FetchVarsHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		variables, err := s.FetchVars(r.Context(), projectId)
 		if err != nil {
 			FormatResponse(w, 400)
@@ -246,9 +267,6 @@ func FetchSmHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("FetchSmHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
-		if projectId == "" {
-			projectId = "gateway"
-		}
 		if projectId == "" {
 			projectId = "gateway"
 		}
@@ -337,6 +355,9 @@ func CommitRepoHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("CommitRepoHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
 		err := s.CommitRepo(r.Context(), projectId, s)
 		if err != nil {
 			FormatResponse(w, 400)

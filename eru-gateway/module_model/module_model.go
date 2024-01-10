@@ -3,9 +3,11 @@ package module_model
 import (
 	"context"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
+	"github.com/eru-tech/eru/eru-store/store"
 )
 
 type StoreCompare struct {
+	store.StoreCompare
 	DeleteListenerRules   []string               `json:"delete_listener_rules"`
 	NewListenerRules      []string               `json:"new_listener_rules"`
 	MismatchListenerRules map[string]interface{} `json:"mismatch_listener_rules"`

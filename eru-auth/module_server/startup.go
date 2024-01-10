@@ -37,7 +37,6 @@ func StartUp() (module_store.ModuleStoreI, error) {
 	}
 	storeBytes, err := myStore.GetStoreByteArray("")
 	if err == nil {
-		//err = json.Unmarshal(storeBytes, myStore)
 		module_store.UnMarshalStore(context.Background(), storeBytes, myStore)
 	} else {
 		logs.WithContext(context.Background()).Error(err.Error())

@@ -31,7 +31,7 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		storeCompare := module_model.StoreCompare{}
-		myPrj, err := s.GetProjectConfig(r.Context(), projectID, s)
+		myPrj, err := s.GetExtendedProjectConfig(r.Context(), projectID, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -104,7 +104,7 @@ func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("ProjectConfigHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		project, err := s.GetProjectConfig(r.Context(), projectID, s)
+		project, err := s.GetExtendedProjectConfig(r.Context(), projectID, s)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)

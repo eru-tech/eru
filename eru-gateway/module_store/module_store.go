@@ -2,10 +2,12 @@ package module_store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-gateway/module_model"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/go-cmp/cmp"
@@ -28,14 +30,21 @@ type ModuleStoreI interface {
 	RemoveAuthorizer(ctx context.Context, authorizerName string, realStore ModuleStoreI) error
 	GetAuthorizer(ctx context.Context, authorizerName string) (module_model.Authorizer, error)
 	GetAuthorizers(ctx context.Context) map[string]module_model.Authorizer
-	CompareModuleStore(ctx context.Context, ms ModuleStore) (module_model.StoreCompare, error)
+	CompareModuleStore(ctx context.Context, ms ExendedModuleStore, realStore ModuleStoreI) (module_model.StoreCompare, error)
 	SaveProjectSettings(ctx context.Context, projectSettings module_model.ProjectSettings, realStore ModuleStoreI, persist bool) error
 	GetProjectSettings(ctx context.Context) module_model.ProjectSettings
 	GetGatewayConfig(ctx context.Context) ModuleStore
+	GetExtendedGatewayConfig(ctx context.Context, realStore ModuleStoreI) ExendedModuleStore
 }
 
 const MatchTypePrefix = "PREFIX"
 const MatchTypeExact = "EXACT"
+
+type ExendedModuleStore struct {
+	ModuleStore
+	Variables     store.Variables `json:"variables"`
+	SecretManager sm.SmStoreI     `json:"secret_manager"`
+}
 
 type ModuleStore struct {
 	ListenerRules   []*module_model.ListenerRule       `json:"listener_rules" eru:"required"`
@@ -247,6 +256,23 @@ func (ms *ModuleStore) GetGatewayConfig(ctx context.Context) ModuleStore {
 	return *ms
 }
 
+func (ms *ModuleStore) GetExtendedGatewayConfig(ctx context.Context, realStore ModuleStoreI) (ems ExendedModuleStore) {
+	logs.WithContext(ctx).Debug("GetExtendedGatewayConfig - Start")
+	var err error
+	ems.Variables, err = realStore.FetchVars(ctx, "gateway")
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+	}
+	ems.SecretManager, err = realStore.FetchSm(ctx, "gateway")
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+	}
+	ems.Authorizers = ms.Authorizers
+	ems.ListenerRules = ms.ListenerRules
+	ems.ProjectSettings = ms.ProjectSettings
+	return ems
+}
+
 func (ms *ModuleStore) SaveAuthorizer(ctx context.Context, authorizer module_model.Authorizer, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveAuthorizer - Start")
 	if persist {
@@ -298,8 +324,28 @@ func (ms *ModuleStore) GetProjectSettings(ctx context.Context) module_model.Proj
 	return ms.ProjectSettings
 }
 
-func (ms *ModuleStore) CompareModuleStore(ctx context.Context, cms ModuleStore) (module_model.StoreCompare, error) {
+func (ms *ModuleStore) CompareModuleStore(ctx context.Context, cms ExendedModuleStore, realStore ModuleStoreI) (module_model.StoreCompare, error) {
 	storeCompare := module_model.StoreCompare{}
+	vars, err := realStore.FetchVars(ctx, "gateway")
+	if err != nil {
+		logs.WithContext(ctx).Warn(fmt.Sprint("ignoring variables to compare : ", err.Error()))
+	}
+	storeCompare.CompareVariables(ctx, vars, cms.Variables)
+
+	sm, smerr := realStore.FetchSm(ctx, "gateway")
+	if smerr != nil {
+		logs.WithContext(ctx).Warn(fmt.Sprint("ignoring secret manager to compare : ", smerr.Error()))
+	}
+	storeCompare.CompareSecretManager(ctx, sm, cms.SecretManager)
+
+	var oDiffR utils.DiffReporter
+	if !cmp.Equal(ms.ProjectSettings, cms.ProjectSettings, cmp.Reporter(&oDiffR)) {
+		if storeCompare.MismatchSettings == nil {
+			storeCompare.MismatchSettings = make(map[string]interface{})
+		}
+		storeCompare.MismatchSettings["settings"] = oDiffR.Output()
+	}
+
 	for _, mlr := range ms.ListenerRules {
 		var diffR utils.DiffReporter
 		lrFound := false
@@ -308,7 +354,7 @@ func (ms *ModuleStore) CompareModuleStore(ctx context.Context, cms ModuleStore) 
 				lrFound = true
 				logs.Logger.Info(fmt.Sprint(mlr))
 				logs.Logger.Info(fmt.Sprint(clr))
-				if !cmp.Equal(*mlr, clr, cmp.Reporter(&diffR)) {
+				if !cmp.Equal(*mlr, *clr, cmp.Reporter(&diffR)) {
 					if storeCompare.MismatchListenerRules == nil {
 						storeCompare.MismatchListenerRules = make(map[string]interface{})
 					}
@@ -368,16 +414,6 @@ func (ms *ModuleStore) CompareModuleStore(ctx context.Context, cms ModuleStore) 
 			storeCompare.NewAuthorizer = append(storeCompare.NewAuthorizer, auth.AuthorizerName)
 		}
 	}
-
-	//settings
-	var diffR utils.DiffReporter
-	if !cmp.Equal(ms.ProjectSettings, cms.ProjectSettings, cmp.Reporter(&diffR)) {
-		if storeCompare.MismatchSettings == nil {
-			storeCompare.MismatchSettings = make(map[string]interface{})
-		}
-		storeCompare.MismatchSettings["gateway"] = diffR.Output()
-	}
-
 	return storeCompare, nil
 }
 
@@ -395,4 +431,107 @@ func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectSettings 
 	} else {
 		return nil
 	}
+}
+
+func (eMs *ExendedModuleStore) UnmarshalJSON(b []byte) error {
+	logs.Logger.Info("UnMarshal ExendedModuleStore - Start")
+	ctx := context.Background()
+	var ePrjMap map[string]*json.RawMessage
+	err := json.Unmarshal(b, &ePrjMap)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+
+	var ps module_model.ProjectSettings
+	if _, ok := ePrjMap["project_settings"]; ok {
+		if ePrjMap["project_settings"] != nil {
+			err = json.Unmarshal(*ePrjMap["project_settings"], &ps)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			eMs.ProjectSettings = ps
+		}
+	}
+
+	var vars store.Variables
+	if _, ok := ePrjMap["variables"]; ok {
+		if ePrjMap["variables"] != nil {
+			err = json.Unmarshal(*ePrjMap["variables"], &vars)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			eMs.Variables = vars
+		}
+	}
+
+	//ListenerRules   []*module_model.ListenerRule       `json:"listener_rules" eru:"required"`
+	//Authorizers     map[string]module_model.Authorizer `json:"authorizers"`
+
+	var ak map[string]module_model.Authorizer
+	if _, ok := ePrjMap["authorizers"]; ok {
+		if ePrjMap["authorizers"] != nil {
+			err = json.Unmarshal(*ePrjMap["authorizers"], &ak)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			eMs.Authorizers = ak
+		}
+	}
+
+	var lr []*module_model.ListenerRule
+	if _, ok := ePrjMap["listener_rules"]; ok {
+		if ePrjMap["listener_rules"] != nil {
+			err = json.Unmarshal(*ePrjMap["listener_rules"], &lr)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			eMs.ListenerRules = lr
+		}
+	}
+
+	var smObj map[string]*json.RawMessage
+	var smJson *json.RawMessage
+	if _, ok := ePrjMap["secret_manager"]; ok {
+		if ePrjMap["secret_manager"] != nil {
+			err = json.Unmarshal(*ePrjMap["secret_manager"], &smObj)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			err = json.Unmarshal(*ePrjMap["secret_manager"], &smJson)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+
+			var smType string
+			if _, stOk := smObj["sm_store_type"]; stOk {
+				err = json.Unmarshal(*smObj["sm_store_type"], &smType)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return err
+				}
+				smI := sm.GetSm(smType)
+				err = smI.MakeFromJson(ctx, smJson)
+				if err == nil {
+					eMs.SecretManager = smI
+				} else {
+					return err
+				}
+			} else {
+				logs.WithContext(ctx).Info("ignoring secret manager as sm_store_type attribute not found")
+			}
+		} else {
+			logs.WithContext(ctx).Info("secret manager attribute is nil")
+		}
+	} else {
+		logs.WithContext(ctx).Info("secret manager attribute not found in store")
+	}
+
+	return nil
 }

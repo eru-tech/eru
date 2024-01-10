@@ -30,6 +30,7 @@ type ModuleStoreI interface {
 	//RemoveProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) error
 	//GetProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) (routes.Authorizer, error)
 	GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error)
+	GetExtendedProjectConfig(ctx context.Context, projectId string, realStore ModuleStoreI) (module_model.ExtendedProject, error)
 	GetProjectList(ctx context.Context) []map[string]interface{}
 	SaveRoute(ctx context.Context, routeObj routes.Route, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveRoute(ctx context.Context, routeName string, projectId string, realStore ModuleStoreI) error
@@ -163,6 +164,25 @@ func (ms *ModuleStore) RemoveProject(ctx context.Context, projectId string, real
 		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 		logs.WithContext(ctx).Error(err.Error())
 		return err
+	}
+}
+func (ms *ModuleStore) GetExtendedProjectConfig(ctx context.Context, projectId string, realStore ModuleStoreI) (ePrj module_model.ExtendedProject, err error) {
+	logs.WithContext(ctx).Debug("GetExtendedProjectConfig - Start")
+	ePrj = module_model.ExtendedProject{}
+	if prj, ok := ms.Projects[projectId]; ok {
+		ePrj.Variables, err = realStore.FetchVars(ctx, projectId)
+		ePrj.SecretManager, err = realStore.FetchSm(ctx, projectId)
+		ePrj.ProjectId = prj.ProjectId
+		ePrj.ProjectSettings = prj.ProjectSettings
+		ePrj.Routes = prj.Routes
+		ePrj.FuncGroups = prj.FuncGroups
+		return ePrj, nil
+	} else {
+		err = errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		return module_model.ExtendedProject{}, err
 	}
 }
 
