@@ -189,7 +189,7 @@ func GatewaySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			//}
 		}
 		//err := storageObj.Save(s,projectId,storageName)
-		gatewayName, _ := gatewayObj.GetAttribute("Ggateway_name")
+		gatewayName, _ := gatewayObj.GetAttribute("gateway_name")
 		err := s.SaveGateway(r.Context(), gatewayObj, projectId, s, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)

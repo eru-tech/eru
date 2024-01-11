@@ -197,8 +197,9 @@ func (store *DbStore) SaveStore(ctx context.Context, projectId string, dbString 
 				err = ms.CommitRepo(ctx, projectId, ms)
 				if err != nil {
 					logs.WithContext(ctx).Warn(fmt.Sprint("auto commit failed : ", err.Error()))
+				} else {
+					logs.WithContext(ctx).Info(fmt.Sprint("store changes successfully committed to repo for project : ", projectId))
 				}
-				logs.WithContext(ctx).Info(fmt.Sprint("store changes successfully committed to repo for project : ", projectId))
 			}
 		}
 	}
