@@ -856,9 +856,13 @@ func (kratosHydraAuth *KratosHydraAuth) GetUser(ctx context.Context, userId stri
 	return convertToIdentity(ctx, kIdentity)
 
 }
-func (kratosHydraAuth *KratosHydraAuth) FetchTokens(ctx context.Context, userId string) (res interface{}, err error) {
+func (kratosHydraAuth *KratosHydraAuth) FetchTokens(ctx context.Context, refreshToken string, userId string) (res interface{}, err error) {
 	logs.WithContext(ctx).Debug("FetchTokens - Start")
 
+	_, err = kratosHydraAuth.Hydra.fetchTokens(ctx, refreshToken)
+	if err != nil {
+		return
+	}
 	identity, err := kratosHydraAuth.getKratosUser(ctx, userId)
 
 	loginChallenge, loginChallengeCookies, loginChallengeErr := kratosHydraAuth.getLoginChallenge(ctx)

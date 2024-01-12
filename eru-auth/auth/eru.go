@@ -447,9 +447,14 @@ func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, 
 	return identity, LoginSuccess{}, nil
 }
 
-func (eruAuth *EruAuth) FetchTokens(ctx context.Context, userId string) (res interface{}, err error) {
+func (eruAuth *EruAuth) FetchTokens(ctx context.Context, refreshToken string, userId string) (res interface{}, err error) {
 	logs.WithContext(ctx).Debug("FetchTokens - Start")
 	logs.WithContext(ctx).Info(userId)
+
+	_, err = eruAuth.Hydra.fetchTokens(ctx, refreshToken)
+	if err != nil {
+		return
+	}
 
 	loginQuery := models.Queries{}
 	loginQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY)
@@ -621,7 +626,7 @@ func (eruAuth *EruAuth) VerifyCode(ctx context.Context, verifyCode VerifyCode, t
 	err = eruAuth.UpdateUser(ctx, identity, verifyCode.UserId, tokenObj)
 
 	if withToken {
-		return eruAuth.FetchTokens(ctx, verifyCode.UserId)
+		return eruAuth.FetchTokens(ctx, "", verifyCode.UserId)
 	}
 	return
 }
