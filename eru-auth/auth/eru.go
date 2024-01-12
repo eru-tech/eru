@@ -447,7 +447,7 @@ func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, 
 	return identity, LoginSuccess{}, nil
 }
 
-func (eruAuth *EruAuth) FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error) {
+func (eruAuth *EruAuth) FetchTokens(ctx context.Context, userId string) (res interface{}, err error) {
 	logs.WithContext(ctx).Debug("FetchTokens - Start")
 	logs.WithContext(ctx).Info(userId)
 
@@ -621,7 +621,7 @@ func (eruAuth *EruAuth) VerifyCode(ctx context.Context, verifyCode VerifyCode, t
 	err = eruAuth.UpdateUser(ctx, identity, verifyCode.UserId, tokenObj)
 
 	if withToken {
-		return eruAuth.FetchTokens(ctx, "", verifyCode.UserId)
+		return eruAuth.FetchTokens(ctx, verifyCode.UserId)
 	}
 	return
 }

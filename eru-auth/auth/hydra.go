@@ -155,58 +155,6 @@ func (hydraConfig HydraConfig) GetUserInfo(ctx context.Context, access_token str
 	}
 }
 
-func (kratosHydraAuth *KratosHydraAuth) FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error) {
-	logs.WithContext(ctx).Debug("FetchTokens - Start")
-	return kratosHydraAuth.Hydra.fetchTokens(ctx, refresh_token)
-}
-
-func (hydraConfig HydraConfig) fetchTokens(ctx context.Context, refresh_token string) (res interface{}, err error) {
-	dummyMap := make(map[string]string)
-	headers := http.Header{}
-	headers.Add("content-type", "application/x-www-form-urlencoded")
-	formData := make(map[string]string)
-	formData["refresh_token"] = refresh_token
-	formData["grant_type"] = "refresh_token"
-	for _, v := range hydraConfig.HydraClients {
-		formData["client_id"] = v.ClientId
-		break
-	}
-	res, _, _, _, err = utils.CallHttp(ctx, "POST", fmt.Sprint(hydraConfig.GetPublicUrl(), "/oauth2/token"), headers, formData, nil, dummyMap, dummyMap)
-	if err != nil {
-		return nil, err
-	}
-	loginSuccess := LoginSuccess{}
-	ok := false
-	if resMap, resOk := res.(map[string]interface{}); !resOk {
-		err = errors.New("Response is not map[string]string")
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
-	} else {
-		if loginSuccess.AccessToken, ok = resMap["access_token"].(string); !ok {
-			err = errors.New("access_token attribute missing from response")
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
-		}
-		if loginSuccess.IdToken, ok = resMap["id_token"].(string); !ok {
-			err = errors.New("id_token attribute missing from response")
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
-		}
-		if loginSuccess.RefreshToken, ok = resMap["refresh_token"].(string); !ok {
-			err = errors.New("refresh_token attribute missing from response")
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
-		}
-		if loginSuccess.ExpiresIn, ok = resMap["expires_in"].(float64); !ok {
-			err = errors.New("expires_in attribute missing from response")
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
-		}
-	}
-	logs.WithContext(ctx).Error(fmt.Sprint("before returning loginSuccess : ", loginSuccess))
-	return loginSuccess, nil
-}
-
 func (kratosHydraAuth *KratosHydraAuth) VerifyToken(ctx context.Context, tokenType string, token string) (res interface{}, err error) {
 	logs.WithContext(ctx).Debug("VerifyToken - Start")
 	switch tokenType {
@@ -497,7 +445,6 @@ func (hydraConfig HydraConfig) AcceptConsentRequest(ctx context.Context, identit
 					return
 				}
 				idt := token.Extra("id_token")
-				logs.WithContext(ctx).Info(idt.(string))
 				loginSuccess := LoginSuccess{}
 				loginSuccess.AccessToken = token.AccessToken
 				loginSuccess.RefreshToken = token.RefreshToken

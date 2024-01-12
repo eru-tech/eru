@@ -31,7 +31,7 @@ type AuthI interface {
 	VerifyToken(ctx context.Context, tokenType string, token string) (res interface{}, err error)
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
 	GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error)
-	FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error)
+	FetchTokens(ctx context.Context, userId string) (res interface{}, err error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) (err error)
 	PerformPreSaveTask(ctx context.Context) (err error)
 	PerformPreDeleteTask(ctx context.Context) (err error)
@@ -409,7 +409,7 @@ func (auth *Auth) UpdateUser(ctx context.Context, identityToUpdate Identity, use
 	return err
 }
 
-func (auth *Auth) FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error) {
+func (auth *Auth) FetchTokens(ctx context.Context, userId string) (res interface{}, err error) {
 	err = errors.New("FetchTokens Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err

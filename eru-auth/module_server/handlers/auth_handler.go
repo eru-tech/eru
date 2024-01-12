@@ -75,33 +75,35 @@ func FetchTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		fetchTokenFromReq := json.NewDecoder(r.Body)
-		fetchTokenFromReq.DisallowUnknownFields()
-		fetchTokenObj := make(map[string]interface{})
-		//storageObj := new(storage.Storage)
-		if err := fetchTokenFromReq.Decode(&fetchTokenObj); err != nil {
-			logs.WithContext(r.Context()).Error(err.Error())
-			server_handlers.FormatResponse(w, 400)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			return
-		}
-		refreshTokenStr := ""
-		if refreshToken, ok := fetchTokenObj["refresh_token"]; !ok {
-			rtErr := errors.New("refresh_token attribute missing in request body")
-			logs.WithContext(r.Context()).Error(rtErr.Error())
-			server_handlers.FormatResponse(w, 400)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
-			return
-		} else {
-			if refreshTokenStr, ok = refreshToken.(string); !ok {
-				rtErr := errors.New("Incorrect refresh_token recevied in request body")
+		/*
+			fetchTokenFromReq := json.NewDecoder(r.Body)
+
+			fetchTokenFromReq.DisallowUnknownFields()
+			fetchTokenObj := make(map[string]interface{})
+			//storageObj := new(storage.Storage)
+			if err := fetchTokenFromReq.Decode(&fetchTokenObj); err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+			refreshTokenStr := ""
+			if refreshToken, ok := fetchTokenObj["refresh_token"]; !ok {
+				rtErr := errors.New("refresh_token attribute missing in request body")
 				logs.WithContext(r.Context()).Error(rtErr.Error())
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
 				return
+			} else {
+				if refreshTokenStr, ok = refreshToken.(string); !ok {
+					rtErr := errors.New("Incorrect refresh_token recevied in request body")
+					logs.WithContext(r.Context()).Error(rtErr.Error())
+					server_handlers.FormatResponse(w, 400)
+					json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
+					return
+				}
 			}
-		}
-
+		*/
 		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -110,51 +112,52 @@ func FetchTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		userId := ""
-		if authName == "eru" || authName == "ms" {
+		//if authName == "eru" || authName == "ms" {
 
-			tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "TokenHeaderKey")
+		tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "TokenHeaderKey")
 
-			tokenObj := make(map[string]interface{})
-			if tokenKeyErr == nil {
+		tokenObj := make(map[string]interface{})
+		if tokenKeyErr == nil {
 
-				tokenStr := r.Header.Get(tokenKey.(string))
+			tokenStr := r.Header.Get(tokenKey.(string))
 
-				if tokenStr != "" {
-					err = json.Unmarshal([]byte(tokenStr), &tokenObj)
-					if err != nil {
-						logs.WithContext(r.Context()).Error(fmt.Sprint("error while unmarshalling token claim : ", err.Error()))
-						server_handlers.FormatResponse(w, 400)
-						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-						return
-					}
-					logs.WithContext(r.Context()).Info(fmt.Sprint(tokenObj))
-					if iObj, iObjOk := tokenObj["identity"]; iObjOk {
-						if iObjMap, iObjMapOk := iObj.(map[string]interface{}); iObjMapOk {
-							if uid, userIdOk := iObjMap["id"]; userIdOk {
-								userId = uid.(string)
-							}
+			if tokenStr != "" {
+				err = json.Unmarshal([]byte(tokenStr), &tokenObj)
+				if err != nil {
+					logs.WithContext(r.Context()).Error(fmt.Sprint("error while unmarshalling token claim : ", err.Error()))
+					server_handlers.FormatResponse(w, 400)
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					return
+				}
+				logs.WithContext(r.Context()).Info(fmt.Sprint(tokenObj))
+				if iObj, iObjOk := tokenObj["identity"]; iObjOk {
+					if iObjMap, iObjMapOk := iObj.(map[string]interface{}); iObjMapOk {
+						if uid, userIdOk := iObjMap["id"]; userIdOk {
+							userId = uid.(string)
 						}
 					}
 				}
 			}
-			if userId == "" {
-				err = errors.New("userid not found")
-				logs.WithContext(r.Context()).Error(err.Error())
-				server_handlers.FormatResponse(w, 400)
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-				return
-			}
-
-			if authObjI.GetAuthDb() != nil {
-				authObjI.GetAuthDb().SetConn(s.GetConn())
-			} else {
-				logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
-				server_handlers.FormatResponse(w, 400)
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
-				return
-			}
 		}
-		loginSuccess, err := authObjI.FetchTokens(r.Context(), refreshTokenStr, userId)
+		if userId == "" {
+			err = errors.New("userid not found")
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+		}
+		//}
+		logs.WithContext(r.Context()).Info(fmt.Sprint("userId = ", userId))
+		loginSuccess, err := authObjI.FetchTokens(r.Context(), userId)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
