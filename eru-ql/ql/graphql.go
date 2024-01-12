@@ -495,6 +495,13 @@ func processMapVariable(ctx context.Context, m map[string]interface{}, vars map[
 					switch reflect.TypeOf(sv).Kind() {
 					case reflect.Map:
 						s[ii], err = processMapVariable(ctx, sv.(map[string]interface{}), vars)
+					case reflect.String:
+						if strings.HasPrefix(sv.(string), "$") {
+							s[ii], err = replaceVariableValue(ctx, strings.Replace(sv.(string), "$", "", 1), vars)
+							if err != nil {
+								logs.WithContext(ctx).Error(err.Error())
+							}
+						}
 					default:
 						// do nothing
 					}
