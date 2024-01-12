@@ -587,7 +587,11 @@ func (sqlObj *SQLObjectQ) processSortClause(ctx context.Context, val interface{}
 					}
 				}
 			}
-			return fmt.Sprint(" order by ", strings.Join(temp, " , "))
+			sortStr := ""
+			if len(temp) > 0 {
+				sortStr = fmt.Sprint(" order by ", strings.Join(temp, " , "))
+			}
+			return sortStr
 		case reflect.String:
 			s := fmt.Sprintf("%s", reflect.ValueOf(val))
 			if strings.HasPrefix(s, "-") {
