@@ -863,8 +863,14 @@ func (kratosHydraAuth *KratosHydraAuth) FetchTokens(ctx context.Context, refresh
 	if err != nil {
 		return
 	}
-	identity, err := kratosHydraAuth.getKratosUser(ctx, userId)
-
+	kratosIdentity, err := kratosHydraAuth.getKratosUser(ctx, userId)
+	if err != nil {
+		return
+	}
+	identity, err := convertToIdentity(ctx, kratosIdentity)
+	if err != nil {
+		return
+	}
 	loginChallenge, loginChallengeCookies, loginChallengeErr := kratosHydraAuth.getLoginChallenge(ctx)
 	if loginChallengeErr != nil {
 		err = loginChallengeErr
