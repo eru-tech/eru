@@ -9,6 +9,7 @@ import (
 	"github.com/eru-tech/eru/eru-store/store"
 	"github.com/gorilla/mux"
 	"net/http"
+	"os"
 )
 
 var ServerName = "unkown"
@@ -27,6 +28,17 @@ func HelloHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Fprintf(w, fmt.Sprint("Hello ", ServerName))
+}
+
+func EnvHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("EnvHandler - Start")
+		vars := mux.Vars(r)
+		env := vars["env"]
+		env_value := os.Getenv(env)
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{env: env_value})
+	}
 }
 
 func EchoHandler(w http.ResponseWriter, r *http.Request) {

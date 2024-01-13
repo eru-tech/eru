@@ -9,6 +9,7 @@ import (
 func (s *Server) GetRouter() *mux.Router {
 	router := mux.NewRouter()
 	router.Methods(http.MethodGet).Path("/hello").HandlerFunc(handlers.HelloHandler)
+	router.Methods(http.MethodGet).Path("/env/{env}").HandlerFunc(handlers.EnvHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/echo").HandlerFunc(handlers.EchoHandler)
 
 	router.Name("variables_list").Methods(http.MethodGet).Path("/store/{project}/variables/list").HandlerFunc(handlers.FetchVarsHandler(s.Store))
