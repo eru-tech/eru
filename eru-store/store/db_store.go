@@ -33,9 +33,6 @@ type Queries struct {
 
 func getStoreDbPath() string {
 	dbString := os.Getenv("STORE_DB_PATH")
-	dbUser := os.Getenv("STORE_DB_USER")
-	dbPassword := os.Getenv("STORE_DB_PASSWORD")
-	dbString = strings.Replace(strings.Replace(dbString, "ENV_STORE_DB_USER", dbUser, -1), "ENV_STORE_DB_PASSWORD", dbPassword, -1)
 	return dbString
 }
 func (store *DbStore) SetDbType(dbtype string) {
