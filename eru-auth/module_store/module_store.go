@@ -154,7 +154,7 @@ func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interfac
 	i := 0
 	for k := range ms.Projects {
 		project := make(map[string]interface{})
-		project["projectName"] = k
+		project["project_name"] = k
 		projects[i] = project
 		i++
 	}
