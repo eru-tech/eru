@@ -1,6 +1,6 @@
-package routes
+package functions
 
-/// this is in eru-routes redesign branch
+/// this is in eru-functions redesign branch
 import (
 	"bytes"
 	"context"
@@ -770,7 +770,7 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 		tmplBodyFromRes := json.NewDecoder(response.Body)
 		tmplBodyFromRes.DisallowUnknownFields()
 		if err = tmplBodyFromRes.Decode(&res); err != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("tmplBodyFromRes.Decode error from routes : ", err.Error()))
+			logs.WithContext(ctx).Error(fmt.Sprint("tmplBodyFromRes.Decode error from functions : ", err.Error()))
 			body, readErr := io.ReadAll(response.Body)
 			if readErr != nil {
 				err = readErr

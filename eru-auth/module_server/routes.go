@@ -13,7 +13,7 @@ func SetServiceName() {
 }
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
-	//store routes specific to files
+	//store functions specific to files
 	//serverRouter.Path("/auth/google/login").HandlerFunc(module_handlers.OauthGoogleLogin())
 	//serverRouter.Path("/auth/google/callback").HandlerFunc(module_handlers.OauthGoogleCallback())
 	//serverRouter.Path("/auth/openid/login").HandlerFunc(module_handlers.OpenIdLoginHandler(sh.Store))
@@ -39,7 +39,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/testemail").HandlerFunc(module_handlers.TestEmail(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/settings/save").HandlerFunc(module_handlers.ProjectSetingsSaveHandler(sh.Store))
 
-	// routes for file events
+	// functions for file events
 	authRouter := serverRouter.PathPrefix("/{project}").Subrouter()
 	authRouter.Methods(http.MethodGet).PathPrefix("/generateotp/{gatewaytype}/{channel}/{messagetype}").HandlerFunc(module_handlers.GenerateOtpHandler(sh.Store))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/getrecoverycode").HandlerFunc(module_handlers.GetRecoveryCodeHandler(sh.Store))

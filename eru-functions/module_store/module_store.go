@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/eru-tech/eru/eru-functions/functions"
+	"github.com/eru-tech/eru/eru-functions/module_model"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"github.com/eru-tech/eru/eru-routes/module_model"
-	"github.com/eru-tech/eru/eru-routes/routes"
 	"github.com/eru-tech/eru/eru-store/store"
 	"net/http"
 	"strings"
@@ -26,18 +26,18 @@ type ModuleStoreI interface {
 	//SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error
 	SaveProjectSettings(ctx context.Context, projectId string, projectConfig module_model.ProjectSettings, realStore ModuleStoreI) error
 	RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error
-	//SaveProjectAuthorizer(ctx context.Context, projectId string, authorizer routes.Authorizer, realStore ModuleStoreI) error
+	//SaveProjectAuthorizer(ctx context.Context, projectId string, authorizer functions.Authorizer, realStore ModuleStoreI) error
 	//RemoveProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) error
-	//GetProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) (routes.Authorizer, error)
+	//GetProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) (functions.Authorizer, error)
 	GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error)
 	GetExtendedProjectConfig(ctx context.Context, projectId string, realStore ModuleStoreI) (module_model.ExtendedProject, error)
 	GetProjectList(ctx context.Context) []map[string]interface{}
-	SaveRoute(ctx context.Context, routeObj routes.Route, projectId string, realStore ModuleStoreI, persist bool) error
+	SaveRoute(ctx context.Context, routeObj functions.Route, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveRoute(ctx context.Context, routeName string, projectId string, realStore ModuleStoreI) error
-	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route routes.Route, err error)
-	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (funcGroup routes.FuncGroup, err error)
-	ValidateFunc(ctx context.Context, funcObj routes.FuncGroup, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (funcGroup routes.FuncGroup, err error)
-	SaveFunc(ctx context.Context, funcObj routes.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
+	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route functions.Route, err error)
+	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
+	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
+	SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveFunc(ctx context.Context, funcName string, projectId string, realStore ModuleStoreI) error
 }
 
@@ -69,13 +69,13 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 			ms.Projects = make(map[string]*module_model.Project)
 		}
 		if project.Routes == nil {
-			project.Routes = make(map[string]routes.Route)
+			project.Routes = make(map[string]functions.Route)
 		}
 		if project.FuncGroups == nil {
-			project.FuncGroups = make(map[string]routes.FuncGroup)
+			project.FuncGroups = make(map[string]functions.FuncGroup)
 		}
 		//if project.Authorizers == nil {
-		//	project.Authorizers = make(map[string]routes.Authorizer)
+		//	project.Authorizers = make(map[string]functions.Authorizer)
 		//}
 		ms.Projects[projectId] = project
 		if persist == true {
@@ -103,11 +103,11 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 //	}
 //}
 //
-//func (ms *ModuleStore) SaveProjectAuthorizer(ctx context.Context, projectId string, authorizer routes.Authorizer, realStore ModuleStoreI) error {
+//func (ms *ModuleStore) SaveProjectAuthorizer(ctx context.Context, projectId string, authorizer functions.Authorizer, realStore ModuleStoreI) error {
 //	logs.WithContext(ctx).Debug("SaveProjectAuthorizer - Start")
 //	if _, ok := ms.Projects[projectId]; ok {
 //		if ms.Projects[projectId].Authorizers == nil {
-//			ms.Projects[projectId].Authorizers = make(map[string]routes.Authorizer)
+//			ms.Projects[projectId].Authorizers = make(map[string]functions.Authorizer)
 //		}
 //		ms.Projects[projectId].Authorizers[authorizer.AuthorizerName] = authorizer
 //		return realStore.SaveStore(ctx, projectId,"", realStore)
@@ -135,7 +135,7 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 //		return err
 //	}
 //}
-//func (ms *ModuleStore) GetProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) (routes.Authorizer, error) {
+//func (ms *ModuleStore) GetProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) (functions.Authorizer, error) {
 //	logs.WithContext(ctx).Debug("GetProjectAuthorizer - Start")
 //	if _, ok := ms.Projects[projectId]; ok {
 //		if _, authOk := ms.Projects[projectId].Authorizers[authorizerName]; authOk {
@@ -143,12 +143,12 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 //		} else {
 //			err := errors.New(fmt.Sprint("Authorizer ", authorizerName, " not found"))
 //			logs.WithContext(ctx).Error(err.Error())
-//			return routes.Authorizer{}, err
+//			return functions.Authorizer{}, err
 //		}
 //	} else {
 //		err := errors.New(fmt.Sprint("Project ", projectId, " not found"))
 //		logs.WithContext(ctx).Error(err.Error())
-//		return routes.Authorizer{}, err
+//		return functions.Authorizer{}, err
 //	}
 //}
 
@@ -211,7 +211,7 @@ func (ms *ModuleStore) GetProjectList(ctx context.Context) []map[string]interfac
 	return projects
 }
 
-func (ms *ModuleStore) SaveRoute(ctx context.Context, routeObj routes.Route, projectId string, realStore ModuleStoreI, persist bool) error {
+func (ms *ModuleStore) SaveRoute(ctx context.Context, routeObj functions.Route, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveRoute - Start")
 	if persist {
 		realStore.GetMutex().Lock()
@@ -254,9 +254,9 @@ func (ms *ModuleStore) RemoveRoute(ctx context.Context, routeName string, projec
 	}
 }
 
-func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route routes.Route, err error) {
+func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route functions.Route, err error) {
 	logs.WithContext(ctx).Debug("GetAndValidateRoute - Start")
-	cloneRoute := routes.Route{}
+	cloneRoute := functions.Route{}
 	if prg, ok := ms.Projects[projectId]; ok {
 		if route, ok = prg.Routes[routeName]; !ok {
 			err = errors.New(fmt.Sprint("Route ", routeName, " does not exists"))
@@ -290,9 +290,9 @@ func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string
 	return cloneRoute, nil
 }
 
-func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (cloneFunc routes.FuncGroup, err error) {
+func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (cloneFunc functions.FuncGroup, err error) {
 	logs.WithContext(ctx).Debug("GetAndValidateFunc - Start")
-	funcGroup := routes.FuncGroup{}
+	funcGroup := functions.FuncGroup{}
 	if prg, ok := ms.Projects[projectId]; ok {
 		if funcGroup, ok = prg.FuncGroups[funcName]; !ok {
 			return funcGroup, errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
@@ -302,7 +302,7 @@ func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, 
 	return
 }
 
-func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup routes.FuncGroup, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (cloneFunc routes.FuncGroup, err error) {
+func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (cloneFunc functions.FuncGroup, err error) {
 	logs.WithContext(ctx).Debug("ValidateFunc - Start")
 	if prg, ok := ms.Projects[projectId]; ok {
 		FuncI, jmErr := json.Marshal(funcGroup)
@@ -340,10 +340,10 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup routes.FuncGr
 	return
 }
 
-func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *routes.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (err error) {
+func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *functions.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug(fmt.Sprint("loadRoutesForFunction - Start : ", funcStep.GetRouteName()))
 	var errArray []string
-	r := routes.Route{}
+	r := functions.Route{}
 	if funcStep.FunctionName != "" {
 		funcGroup, fgErr := ms.GetAndValidateFunc(ctx, funcStep.FunctionName, projectId, host, url, method, headers, s)
 		if fgErr != nil {
@@ -370,7 +370,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *rout
 			}
 
 			r.RewriteUrl = fmt.Sprint("/store/", projectId, "/myquery/execute/", funcStep.QueryName, output, encode)
-			tg := routes.TargetHost{}
+			tg := functions.TargetHost{}
 			tg.Method = "POST"
 			tmpSplit := strings.Split(Eruqlbaseurl, "://")
 			tg.Host = Eruqlbaseurl
@@ -416,7 +416,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *rout
 	return
 }
 
-func (ms *ModuleStore) SaveFunc(ctx context.Context, funcObj routes.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error {
+func (ms *ModuleStore) SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug(fmt.Sprint("SaveFunc - Start"))
 	if persist {
 		realStore.GetMutex().Lock()

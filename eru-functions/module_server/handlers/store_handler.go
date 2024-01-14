@@ -3,10 +3,10 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/eru-tech/eru/eru-functions/functions"
+	"github.com/eru-tech/eru/eru-functions/module_model"
+	"github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"github.com/eru-tech/eru/eru-routes/module_model"
-	"github.com/eru-tech/eru/eru-routes/module_store"
-	"github.com/eru-tech/eru/eru-routes/routes"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
@@ -140,7 +140,7 @@ func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 //		prjAuthorizerFromReq := json.NewDecoder(r.Body)
 //		prjAuthorizerFromReq.DisallowUnknownFields()
 //
-//		var prjAuthorizer routes.Authorizer
+//		var prjAuthorizer functions.Authorizer
 //
 //		if err := prjAuthorizerFromReq.Decode(&prjAuthorizer); err != nil {
 //			logs.WithContext(r.Context()).Error(err.Error())
@@ -239,7 +239,7 @@ func RouteSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		routeFromReq := json.NewDecoder(r.Body)
 		routeFromReq.DisallowUnknownFields()
 
-		var routeObj routes.Route
+		var routeObj functions.Route
 		if err := routeFromReq.Decode(&routeObj); err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -296,7 +296,7 @@ func FuncSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		funcFromReq := json.NewDecoder(r.Body)
 		funcFromReq.DisallowUnknownFields()
 
-		var funcObj routes.FuncGroup
+		var funcObj functions.FuncGroup
 		if err := funcFromReq.Decode(&funcObj); err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)

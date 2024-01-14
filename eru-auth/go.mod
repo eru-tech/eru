@@ -6,7 +6,7 @@ require (
 	github.com/eru-tech/eru/eru-crypto v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000
-	github.com/eru-tech/eru/eru-routes v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-functions v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-server v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-store v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
@@ -98,7 +98,7 @@ replace (
 	github.com/eru-tech/eru/eru-logs => ../eru-logs
 	github.com/eru-tech/eru/eru-models => ../eru-models
 	github.com/eru-tech/eru/eru-repos => ../eru-repos
-	github.com/eru-tech/eru/eru-routes => ../eru-routes
+	github.com/eru-tech/eru/eru-functions => ../eru-functions
 	github.com/eru-tech/eru/eru-secret-manager => ../eru-secret-manager
 	github.com/eru-tech/eru/eru-server => ../eru-server
 	github.com/eru-tech/eru/eru-store => ../eru-store

@@ -13,7 +13,7 @@ func SetServiceName() {
 }
 func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
-	//store routes specific to files
+	//store functions specific to files
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 	storeRouter.Methods(http.MethodPost).Path("/{project}/compare").HandlerFunc(file_handlers.StoreCompareHandler(sh.Store))
 
@@ -29,7 +29,7 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/{project}/aeskey/generate/{keyname}").HandlerFunc(file_handlers.AesKeyGenerateHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/settings/save").HandlerFunc(file_handlers.ProjectSetingsSaveHandler(sh.Store))
 
-	// routes for file events
+	// functions for file events
 	fileRouter := serverRouter.PathPrefix("/files/{project}").Subrouter()
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/upload").HandlerFunc(file_handlers.FileUploadHandler(sh.Store))
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/uploadb64").HandlerFunc(file_handlers.FileUploadHandlerB64(sh.Store))

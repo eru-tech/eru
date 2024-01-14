@@ -1,4 +1,4 @@
-module github.com/eru-tech/eru/eru-routes
+module github.com/eru-tech/eru/eru-functions
 
 go 1.20
 

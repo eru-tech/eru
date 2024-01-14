@@ -30,7 +30,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	serverRouter.Get("sm_list").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.Get("sm_value").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 
-	//store routes specific to files
+	//store functions specific to files
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 
 	storeRouter.Methods(http.MethodPost).Path("/compare").HandlerFunc(module_handlers.StoreCompareHandler(sh.Store))

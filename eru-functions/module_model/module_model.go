@@ -3,8 +3,8 @@ package module_model
 import (
 	"context"
 	"encoding/json"
+	"github.com/eru-tech/eru/eru-functions/functions"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"github.com/eru-tech/eru/eru-routes/routes"
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
@@ -22,14 +22,14 @@ type StoreCompare struct {
 }
 
 type ModuleProjectI interface {
-	AddFunc(ctx context.Context, funcObj routes.FuncGroup) error
-	AddRoute(ctx context.Context, routeObj routes.Route) error
+	AddFunc(ctx context.Context, funcObj functions.FuncGroup) error
+	AddRoute(ctx context.Context, routeObj functions.Route) error
 	CompareProject(ctx context.Context, compareProject Project) (StoreCompare, error)
 }
 
 //type ProjectConfig struct {
 //	//AesKey         AesKey
-//	TokenSecret routes.TokenSecret
+//	TokenSecret functions.TokenSecret
 //	//ProjectGitRepo ProjectGitRepo
 //}
 
@@ -43,26 +43,26 @@ type ExtendedProject struct {
 }
 
 type Project struct {
-	ProjectId       string                      `json:"project_id" eru:"required"`
-	Routes          map[string]routes.Route     `json:"routes" eru:"required"`
-	FuncGroups      map[string]routes.FuncGroup `json:"func_groups" eru:"required"`
-	ProjectSettings ProjectSettings             `json:"project_settings"`
-	//Authorizers   map[string]routes.Authorizer
+	ProjectId       string                         `json:"project_id" eru:"required"`
+	Routes          map[string]functions.Route     `json:"functions" eru:"required"`
+	FuncGroups      map[string]functions.FuncGroup `json:"func_groups" eru:"required"`
+	ProjectSettings ProjectSettings                `json:"project_settings"`
+	//Authorizers   map[string]functions.Authorizer
 }
 
-func (prj *Project) AddRoute(ctx context.Context, routeObj routes.Route) error {
+func (prj *Project) AddRoute(ctx context.Context, routeObj functions.Route) error {
 	logs.WithContext(ctx).Debug("AddRoute - Start")
 	if prj.Routes == nil {
-		prj.Routes = make(map[string]routes.Route)
+		prj.Routes = make(map[string]functions.Route)
 	}
 	prj.Routes[routeObj.RouteName] = routeObj
 	return nil
 }
 
-func (prj *Project) AddFunc(ctx context.Context, funcObj routes.FuncGroup) error {
+func (prj *Project) AddFunc(ctx context.Context, funcObj functions.FuncGroup) error {
 	logs.WithContext(ctx).Debug("AddFunc - Start")
 	if prj.FuncGroups == nil {
-		prj.FuncGroups = make(map[string]routes.FuncGroup)
+		prj.FuncGroups = make(map[string]functions.FuncGroup)
 	}
 	prj.FuncGroups[funcObj.FuncGroupName] = funcObj
 	return nil
@@ -198,10 +198,10 @@ func (ePrj *ExtendedProject) UnmarshalJSON(b []byte) error {
 		}
 	}
 
-	var rt map[string]routes.Route
-	if _, ok := ePrjMap["routes"]; ok {
-		if ePrjMap["routes"] != nil {
-			err = json.Unmarshal(*ePrjMap["routes"], &rt)
+	var rt map[string]functions.Route
+	if _, ok := ePrjMap["functions"]; ok {
+		if ePrjMap["functions"] != nil {
+			err = json.Unmarshal(*ePrjMap["functions"], &rt)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
 				return err
@@ -210,7 +210,7 @@ func (ePrj *ExtendedProject) UnmarshalJSON(b []byte) error {
 		}
 	}
 
-	var fn map[string]routes.FuncGroup
+	var fn map[string]functions.FuncGroup
 	if _, ok := ePrjMap["func_groups"]; ok {
 		if ePrjMap["func_groups"] != nil {
 			err = json.Unmarshal(*ePrjMap["func_groups"], &fn)

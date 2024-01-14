@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/eru-tech/eru/eru-functions/functions"
+	func_store "github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
-	routes_store "github.com/eru-tech/eru/eru-routes/module_store"
-	"github.com/eru-tech/eru/eru-routes/routes"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 	"io"
@@ -137,10 +137,10 @@ type Auth struct {
 }
 
 type AuthHooks struct {
-	SRC  routes.Route     `json:"src"`
-	SRCF routes.FuncGroup `json:"srcf"`
-	SVCF routes.FuncGroup `json:"svcf"`
-	SWEF routes.FuncGroup `json:"swef"`
+	SRC  functions.Route     `json:"src"`
+	SRCF functions.FuncGroup `json:"srcf"`
+	SVCF functions.FuncGroup `json:"svcf"`
+	SWEF functions.FuncGroup `json:"swef"`
 }
 
 type IdentifierConfig struct {
@@ -201,7 +201,7 @@ func (auth *Auth) GenerateRecoveryCode(ctx context.Context, recoveryIdentifier R
 
 func (auth *Auth) sendCode(ctx context.Context, credentialIdentifier string, recovery_code string, recovery_time string, name string, projectId string, purpose string, credentialType string) (err error) {
 	logs.WithContext(ctx).Debug("sendRecoveryCode - Start")
-	trReqVars := &routes.TemplateVars{}
+	trReqVars := &functions.TemplateVars{}
 	if trReqVars.Vars == nil {
 		trReqVars.Vars = make(map[string]interface{})
 	}
@@ -240,7 +240,7 @@ func (auth *Auth) sendCode(ctx context.Context, credentialIdentifier string, rec
 		logs.WithContext(ctx).Info(auth.Hooks.SRCF.FuncGroupName)
 		if auth.Hooks.SRCF.FuncGroupName != "" {
 			var errArray []string
-			rs := routes_store.ModuleStore{}
+			rs := func_store.ModuleStore{}
 			for k, v := range auth.Hooks.SRCF.FuncSteps {
 				fs := auth.Hooks.SRCF.FuncSteps[k]
 				err = rs.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, "", v.Path, "", nil, nil)
@@ -266,7 +266,7 @@ func (auth *Auth) sendCode(ctx context.Context, credentialIdentifier string, rec
 		logs.WithContext(ctx).Info(auth.Hooks.SVCF.FuncGroupName)
 		if auth.Hooks.SVCF.FuncGroupName != "" {
 			var errArray []string
-			rs := routes_store.ModuleStore{}
+			rs := func_store.ModuleStore{}
 			for k, v := range auth.Hooks.SVCF.FuncSteps {
 				fs := auth.Hooks.SVCF.FuncSteps[k]
 				err = rs.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, "", v.Path, "", nil, nil)
@@ -293,7 +293,7 @@ func (auth *Auth) sendCode(ctx context.Context, credentialIdentifier string, rec
 
 func (auth *Auth) sendWelcomeEmail(ctx context.Context, credentialIdentifier string, name string, projectId string, credentialType string) (err error) {
 	logs.WithContext(ctx).Debug("sendWelcomeEmail - Start")
-	trReqVars := &routes.TemplateVars{}
+	trReqVars := &functions.TemplateVars{}
 	if trReqVars.Vars == nil {
 		trReqVars.Vars = make(map[string]interface{})
 	}
@@ -323,7 +323,7 @@ func (auth *Auth) sendWelcomeEmail(ctx context.Context, credentialIdentifier str
 	logs.WithContext(ctx).Info(auth.Hooks.SWEF.FuncGroupName)
 	if auth.Hooks.SWEF.FuncGroupName != "" {
 		var errArray []string
-		rs := routes_store.ModuleStore{}
+		rs := func_store.ModuleStore{}
 		for k, v := range auth.Hooks.SWEF.FuncSteps {
 			fs := auth.Hooks.SWEF.FuncSteps[k]
 			err = rs.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, "", v.Path, "", nil, nil)

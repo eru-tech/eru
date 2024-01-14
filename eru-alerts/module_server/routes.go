@@ -12,7 +12,7 @@ func SetServiceName() {
 	server_handlers.ServerName = "eru-alerts"
 }
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
-	//store routes specific to files
+	//store functions specific to files
 
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 
@@ -25,7 +25,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save/channel/{channeltype}").HandlerFunc(module_handlers.ChannelSaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove/channel/{channelname}").HandlerFunc(module_handlers.ChannelRemoveHandler(sh.Store))
 
-	// routes for alert events
+	// functions for alert events
 	apiRouter := serverRouter.PathPrefix("/alerts/{project}").Subrouter()
 	apiRouter.Path("/{channelname}/{messagetemplate}").HandlerFunc(module_handlers.ExecuteAlertHandler(sh.Store))
 

@@ -1,19 +1,19 @@
 package module_server
 
 import (
-	module_handlers "github.com/eru-tech/eru/eru-routes/module_server/handlers"
-	"github.com/eru-tech/eru/eru-routes/module_store"
+	module_handlers "github.com/eru-tech/eru/eru-functions/module_server/handlers"
+	"github.com/eru-tech/eru/eru-functions/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 	"net/http"
 )
 
 func SetServiceName() {
-	server_handlers.ServerName = "eru-routes"
+	server_handlers.ServerName = "eru-functions"
 }
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
-	//store routes specific to files
+	//store functions specific to files
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/compare").HandlerFunc(module_handlers.StoreCompareHandler(sh.Store))

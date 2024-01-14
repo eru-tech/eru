@@ -13,7 +13,7 @@ func SetServiceName() {
 }
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
-	//store routes specific to files
+	//store functions specific to files
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save").HandlerFunc(module_handlers.ProjectSaveHandler(sh.Store))
@@ -25,7 +25,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/datatype/remove/{datatypename}").HandlerFunc(module_handlers.DataTypeRemoveHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/datatype/list").HandlerFunc(module_handlers.DataTypeListHandler(sh.Store))
 
-	// routes for file events
+	// functions for file events
 	rulesRouter := serverRouter.PathPrefix("/rules/{project}").Subrouter()
 	_ = rulesRouter
 	//apiRouter.Methods(http.MethodPost).Path("/{storagename}/upload").HandlerFunc(file_handlers.FileUploadHandler(sh.Store))

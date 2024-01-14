@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/eru-tech/eru/eru-functions/functions"
+	"github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"github.com/eru-tech/eru/eru-routes/module_store"
-	"github.com/eru-tech/eru/eru-routes/routes"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
@@ -31,7 +31,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		funcName := vars["funcname"]
 		funcStepName := vars["funcstepname"]
-		// Lookup a routes in a function based on host and url
+		// Lookup a functions in a function based on host and url
 		funcGroup, err := s.GetAndValidateFunc(ctx, funcName, projectId, host, url, r.Method, r.Header, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
@@ -97,7 +97,7 @@ func FuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 					_ = json.NewEncoder(w).Encode(map[string]string{"error": "function body could not be read from json"})
 					return
 				}
-				var funcObj routes.FuncGroup
+				var funcObj functions.FuncGroup
 				funcObjD := json.NewDecoder(bytes.NewReader(funcJsonBytes))
 				funcObjD.DisallowUnknownFields()
 

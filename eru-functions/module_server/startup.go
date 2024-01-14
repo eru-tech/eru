@@ -5,14 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"github.com/eru-tech/eru/eru-routes/module_store"
 	"os"
 	"strconv"
 	"strings"
 )
 
-const StoreTableName = "eruroutes_config"
+const StoreTableName = "erufunctions_config"
 
 func StartUp() (module_store.ModuleStoreI, error) {
 	var err error
