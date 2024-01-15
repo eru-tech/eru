@@ -504,7 +504,7 @@ func (eruAuth *EruAuth) makeTokens(ctx context.Context, identity Identity) (eruT
 	}
 	identityHolder := make(map[string]interface{})
 	identityHolder["identity"] = identity
-	logs.WithContext(ctx).Info(fmt.Sprint(identity.Attributes))
+	eruTokens.Id = identity.Id
 	eruTokens, err = eruAuth.Hydra.AcceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
 	return
 }

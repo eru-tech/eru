@@ -17,11 +17,12 @@ import (
 )
 
 type LoginSuccess struct {
-	AccessToken  string
-	RefreshToken string
-	IdToken      string
-	Expiry       time.Time
-	ExpiresIn    float64
+	AccessToken  string    `json:"access_token"`
+	RefreshToken string    `json:"refresh_token"`
+	IdToken      string    `json:"id_token"`
+	Expiry       time.Time `json:"expiry"`
+	ExpiresIn    float64   `json:"expires_in"`
+	Id           string    `json:"id"`
 }
 
 type HydraConfig struct {
