@@ -44,7 +44,7 @@ type ExtendedProject struct {
 
 type Project struct {
 	ProjectId       string                         `json:"project_id" eru:"required"`
-	Routes          map[string]functions.Route     `json:"functions" eru:"required"`
+	Routes          map[string]functions.Route     `json:"routes" eru:"required"`
 	FuncGroups      map[string]functions.FuncGroup `json:"func_groups" eru:"required"`
 	ProjectSettings ProjectSettings                `json:"project_settings"`
 	//Authorizers   map[string]functions.Authorizer

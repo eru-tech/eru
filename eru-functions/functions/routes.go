@@ -1,6 +1,5 @@
 package functions
 
-/// this is in eru-functions redesign branch
 import (
 	"bytes"
 	"context"
