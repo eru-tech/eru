@@ -32,7 +32,7 @@ func main() {
 			}
 		}()
 	}
-	envPort := os.Getenv("ERUROUTESPORT")
+	envPort := os.Getenv("ERUFUNCTIONSPORT")
 	if envPort != "" {
 		port = envPort
 	}
