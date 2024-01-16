@@ -193,6 +193,9 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 		reqVars[funcStep.FuncKey] = vars
 
 		var strCondErr error
+
+		logs.WithContext(ctx).Info(funcStep.FuncKey)
+		logs.WithContext(ctx).Info(fmt.Sprint("funcStep.Condition = ", funcStep.Condition))
 		if funcStep.Condition != "" {
 			logs.WithContext(ctx).Info(fmt.Sprint("funcStep.Condition = ", funcStep.Condition))
 			avars := &FuncTemplateVars{}

@@ -18,6 +18,27 @@ import (
 	"time"
 )
 
+const (
+	SELECT_IDENTITY_SUB            = "select * from eruauth_identities where identity_provider_id = ???"
+	INSERT_IDENTITY                = "insert into eruauth_identities (identity_id,identity_provider,identity_provider_id,traits,attributes) values (???,???,???,???,???)"
+	UPDATE_IDENTITY                = "update eruauth_identities set traits = ??? , attributes = ??? where identity_id = ???"
+	INSERT_IDENTITY_CREDENTIALS    = "insert into eruauth_identity_credentials (identity_credential_id , identity_id, identity_credential, identity_credential_type) values (???,???,???,???)"
+	DELETE_IDENTITY_CREDENTIALS    = "delete from eruauth_identity_credentials where identity_id = ??? and identity_credential_type = ??? and identity_credential = ??? "
+	INSERT_IDENTITY_PASSWORD       = "insert into eruauth_identity_passwords (identity_password_id,identity_id,identity_password) values (??? , ??? , ???)"
+	SELECT_LOGIN                   = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a inner join eruauth_identity_credentials b on a.identity_id=b.identity_id and b.identity_credential= ??? inner join eruauth_identity_passwords c on a.identity_id=c.identity_id and c.identity_password= ???"
+	SELECT_LOGIN_ID                = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a inner join eruauth_identity_passwords c on a.identity_id=c.identity_id and c.identity_password= ??? where a.identity_id= ???"
+	SELECT_IDENTITY                = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a  where a.identity_id = ???"
+	SELECT_IDENTITY_CREDENTIAL     = "select b.traits->>'first_name' first_name , a.* from eruauth_identity_credentials a left join eruauth_identities b on a.identity_id=b.identity_id where a.identity_credential = ???"
+	INSERT_OTP                     = "insert into eruauth_otp (otp_id, otp, identity_credential,identity_credential_type,otp_purpose) values (??? , ??? , ???,??? , ???)"
+	VERIFY_OTP                     = "select b.identity_id, a.* from eruauth_otp a left join eruauth_identity_credentials b on a.identity_credential=b.identity_credential where identity_id = ??? and otp = ??? and a.identity_credential = ??? and a.created_date + (5 * interval '1 minute') >= LOCALTIMESTAMP and otp_purpose = ???"
+	VERIFY_RECOVERY_OTP            = "select b.identity_id, a.* from eruauth_otp a left join eruauth_identity_credentials b on a.identity_credential=b.identity_credential where otp = ??? and a.identity_credential = ??? and a.created_date + (5 * interval '1 minute') >= LOCALTIMESTAMP and otp_purpose = ???"
+	CHANGE_PASSWORD                = "update eruauth_identity_passwords set updated_date=LOCALTIMESTAMP, identity_password= ??? where identity_id= ???"
+	INSERT_DELETED_IDENTITY        = "insert into eruauth_deleted_identities (identity_id,identity_provider,identity_provider_id,traits,attributes,is_active,identity_password) select a.identity_id,identity_provider,identity_provider_id,traits,attributes,is_active, b.identity_password  from eruauth_identities a left join eruauth_identity_passwords b on a.identity_id=b.identity_id where a.identity_id= ???"
+	DELETE_IDENTITY_PASSWORD       = "delete from eruauth_identity_passwords where identity_id= ???"
+	DELETE_IDENTITY_CREDENTIALS_ID = "delete from eruauth_identity_credentials where identity_id= ???"
+	DELETE_IDENTITY                = "delete from eruauth_identities where identity_id= ???"
+)
+
 type EruAuth struct {
 	Auth
 	EruConfig EruConfig   `json:"eru_config" eru:"required"`
@@ -506,6 +527,10 @@ func (eruAuth *EruAuth) makeTokens(ctx context.Context, identity Identity) (eruT
 	identityHolder["identity"] = identity
 	eruTokens.Id = identity.Id
 	eruTokens, err = eruAuth.Hydra.AcceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
+	if err != nil {
+		return
+	}
+	eruTokens.Id = identity.Id
 	return
 }
 

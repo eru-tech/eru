@@ -15,7 +15,7 @@ import (
 
 type SQLData struct {
 	QLData
-	DBAlias string `json:"dbalias"`
+	DBAlias string `json:"db_alias"`
 	Cols    string `json:"cols"`
 }
 
@@ -116,10 +116,6 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			sqd.Query = strings.Replace(sqd.Query, fmt.Sprint("$", k), str, -1)
 		}
 	}
-
-	logs.WithContext(ctx).Info("printing query after second replace")
-	logs.WithContext(ctx).Info(sqd.Query)
-	logs.WithContext(ctx).Info(fmt.Sprint(sqd.FinalVariables))
 
 	queryObj := QueryObject{}
 	queryObj.Query = sqd.Query
