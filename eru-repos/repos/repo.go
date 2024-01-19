@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"time"
 )
 
 type RepoI interface {
@@ -12,6 +13,11 @@ type RepoI interface {
 	GetBranch(ctx context.Context) (branch interface{}, err error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	SetAuthKey(ctx context.Context, authKey string)
+	SetLastCommitAt()
+}
+
+func (repo *Repo) SetLastCommitAt() {
+	repo.LastCommitAt = time.Now().Format(time.RFC1123)
 }
 
 func (repo *Repo) SetAuthKey(ctx context.Context, authKey string) {
@@ -56,6 +62,7 @@ type Repo struct {
 	AuthKey        string `json:"auth_key"`
 	AutoCommit     bool   `json:"auto_commit"`
 	InstallationId string `json:"installation_id"`
+	LastCommitAt   string `json:"last_commit_at"`
 }
 
 type RepoToken struct {

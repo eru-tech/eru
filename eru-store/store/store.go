@@ -479,7 +479,12 @@ func (store *Store) CommitRepo(ctx context.Context, projectId string, s StoreI) 
 	if token != "" {
 		cloneRepo.SetAuthKey(ctx, token)
 	}
-	return cloneRepo.Commit(ctx, repoBytes, fmt.Sprint(s.GetStoreTableName(), ".json"))
+	err = cloneRepo.Commit(ctx, repoBytes, fmt.Sprint(s.GetStoreTableName(), ".json"))
+	if err != nil {
+		return
+	}
+	repo.SetLastCommitAt()
+	return
 }
 
 func (store *Store) SaveRepo(ctx context.Context, projectId string, repo repos.RepoI, s StoreI, persist bool) (err error) {
