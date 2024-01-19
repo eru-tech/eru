@@ -378,3 +378,23 @@ func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
+
+func ProjectFunctionListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectFunctionListHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+
+		reqHeader := http.Header{}
+		res, _, _, _, err := utils.CallHttp(r.Context(), http.MethodGet, fmt.Sprint(module_store.Erufuncbaseurl, "/store/", projectID, "/func/list"), reqHeader, nil, nil, nil, nil)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(res)
+		}
+
+		return
+	}
+}

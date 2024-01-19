@@ -39,6 +39,7 @@ type ModuleStoreI interface {
 	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
 	SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveFunc(ctx context.Context, funcName string, projectId string, realStore ModuleStoreI) error
+	GetFunctionNames(ctx context.Context, projectId string) (functions []string, err error)
 }
 
 type ModuleStore struct {
@@ -478,4 +479,24 @@ func (ms *ModuleStore) checkProjectExists(ctx context.Context, projectId string)
 		return err
 	}
 	return nil
+}
+
+func (ms *ModuleStore) GetFunctionNames(ctx context.Context, projectId string) (functions []string, err error) {
+	logs.WithContext(ctx).Debug("GetFunctionNames - Start")
+	if _, ok := ms.Projects[projectId]; ok {
+		if ms.Projects[projectId].FuncGroups == nil {
+			return
+		} else {
+			for k, _ := range ms.Projects[projectId].FuncGroups {
+				functions = append(functions, k)
+			}
+			return
+		}
+	} else {
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		return nil, err
+	}
 }

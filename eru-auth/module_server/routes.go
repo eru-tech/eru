@@ -38,6 +38,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove/auth/{authname}").HandlerFunc(module_handlers.AuthRemoveHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/testemail").HandlerFunc(module_handlers.TestEmail(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/settings/save").HandlerFunc(module_handlers.ProjectSetingsSaveHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/func/list").HandlerFunc(module_handlers.ProjectFunctionListHandler(sh.Store))
 
 	// functions for file events
 	authRouter := serverRouter.PathPrefix("/{project}").Subrouter()
