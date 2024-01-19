@@ -204,7 +204,7 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 	//	return
 	//}
 
-	if eruAuth.Hooks.SWEF.FuncGroupName != "" {
+	if eruAuth.Hooks.SWEF != "" {
 		eruAuth.sendWelcomeEmail(ctx, userTraits.Email, userTraits.FirstName, projectId, "email")
 	} else {
 		logs.WithContext(ctx).Info("SWEF hook not defined")
@@ -772,4 +772,34 @@ func (eruAuth *EruAuth) RemoveUser(ctx context.Context, removeUser RemoveUser) (
 		return errors.New("something went wrong - please try again")
 	}
 	return
+}
+
+func (eruAuth *EruAuth) Logout(ctx context.Context, req *http.Request) (res interface{}, resStatusCode int, err error) {
+	logs.WithContext(ctx).Debug("Logout - Start")
+
+	refreshTokenFromReq := json.NewDecoder(req.Body)
+	refreshTokenFromReq.DisallowUnknownFields()
+	refreshTokenObj := make(map[string]string)
+	if rtErr := refreshTokenFromReq.Decode(&refreshTokenObj); rtErr != nil {
+		err = rtErr
+		logs.WithContext(ctx).Error(err.Error())
+		resStatusCode = 400
+		return
+	}
+	refreshToken := ""
+	if rt, ok := refreshTokenObj["refresh_token"]; ok {
+		refreshToken = rt
+	}
+	if refreshToken == "" {
+		err = errors.New("refresh token not found")
+		logs.WithContext(ctx).Error(err.Error())
+		resStatusCode = 400
+		return
+	}
+
+	resStatusCode, err = eruAuth.Hydra.revokeToken(ctx, refreshToken)
+	if res == nil {
+		res = make(map[string]interface{})
+	}
+	return res, resStatusCode, err
 }

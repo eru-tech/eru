@@ -284,6 +284,7 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("GetRecoveryCodeHandler - Start")
+		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authName := vars["authname"]
@@ -319,7 +320,7 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		res, err := authObjI.GenerateRecoveryCode(r.Context(), recoveryPostBody, projectId, silentFlag)
+		res, err := authObjI.GenerateRecoveryCode(ctx, recoveryPostBody, projectId, silentFlag)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

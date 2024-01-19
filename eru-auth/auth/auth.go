@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-functions/functions"
-	func_store "github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
 	utils "github.com/eru-tech/eru/eru-utils"
@@ -116,10 +115,10 @@ type Auth struct {
 }
 
 type AuthHooks struct {
-	SRC  functions.Route     `json:"src"`
-	SRCF functions.FuncGroup `json:"srcf"`
-	SVCF functions.FuncGroup `json:"svcf"`
-	SWEF functions.FuncGroup `json:"swef"`
+	SRC  functions.Route `json:"src"`
+	SRCF string          `json:"srcf"`
+	SVCF string          `json:"svcf"`
+	SWEF string          `json:"swef"`
 }
 
 type IdentifierConfig struct {
@@ -191,12 +190,12 @@ func (auth *Auth) sendCode(ctx context.Context, credentialIdentifier string, rec
 	trReqVars.Vars["name"] = name
 
 	r := &http.Request{}
-	url := url.URL{
+	rurl := url.URL{
 		Scheme: "",
 		Host:   "",
 		Path:   "/",
 	}
-	r.URL = &url
+	r.URL = &rurl
 	rBytes, rBytesErr := json.Marshal(trReqVars.Vars)
 	if rBytesErr != nil {
 		return rBytesErr
@@ -216,57 +215,50 @@ func (auth *Auth) sendCode(ctx context.Context, credentialIdentifier string, rec
 		return respErr
 	}
 	if purpose == OTP_PURPOSE_RECOVERY {
-		logs.WithContext(ctx).Info(auth.Hooks.SRCF.FuncGroupName)
-		if auth.Hooks.SRCF.FuncGroupName != "" {
-			var errArray []string
-			rs := func_store.ModuleStore{}
-			for k, v := range auth.Hooks.SRCF.FuncSteps {
-				fs := auth.Hooks.SRCF.FuncSteps[k]
-				err = rs.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, "", v.Path, "", nil, nil)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-					errArray = append(errArray, err.Error())
-				}
-			}
-			if len(errArray) > 0 {
-				err = errors.New(strings.Join(errArray, " , "))
-				logs.WithContext(ctx).Error(err.Error())
-				return
-			}
-			_, respErr := auth.Hooks.SRCF.Execute(r.Context(), r, 1, 1, "")
+		logs.WithContext(ctx).Info(auth.Hooks.SRCF)
+		if auth.Hooks.SRCF != "" {
+			err = triggerHook(ctx, auth.Hooks.SRCF, projectId, trReqVars.Vars)
 			srcHookFound = true
-			return respErr
 		}
 		if !srcHookFound {
-			logs.WithContext(ctx).Warn("SRC hook not defined for auth. Thus no email was triggered.")
+			logs.WithContext(ctx).Warn("SRCF hook not defined for auth. Thus no email was triggered.")
 		}
 	}
 	if purpose == OTP_PURPOSE_VERIFY {
-		logs.WithContext(ctx).Info(auth.Hooks.SVCF.FuncGroupName)
-		if auth.Hooks.SVCF.FuncGroupName != "" {
-			var errArray []string
-			rs := func_store.ModuleStore{}
-			for k, v := range auth.Hooks.SVCF.FuncSteps {
-				fs := auth.Hooks.SVCF.FuncSteps[k]
-				err = rs.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, "", v.Path, "", nil, nil)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-					errArray = append(errArray, err.Error())
-				}
-			}
-			if len(errArray) > 0 {
-				err = errors.New(strings.Join(errArray, " , "))
-				logs.WithContext(ctx).Error(err.Error())
-				return
-			}
-			_, respErr := auth.Hooks.SVCF.Execute(r.Context(), r, 1, 1, "")
+		logs.WithContext(ctx).Info(auth.Hooks.SVCF)
+		if auth.Hooks.SVCF != "" {
+			err = triggerHook(ctx, auth.Hooks.SVCF, projectId, trReqVars.Vars)
 			srcHookFound = true
-			return respErr
 		}
 		if !srcHookFound {
-			logs.WithContext(ctx).Warn("SRC hook not defined for auth. Thus no email was triggered.")
+			logs.WithContext(ctx).Warn("SVCF hook not defined for auth. Thus no email was triggered.")
 		}
 	}
+	return
+}
+
+func triggerHook(ctx context.Context, functionName string, projectId string, funcBody map[string]interface{}) (err error) {
+	urlArray := strings.Split(ctx.Value("Erufuncbaseurl").(string), "://")
+	if len(urlArray) < 2 {
+		err = errors.New("incorrect eru-functions url")
+		return
+	}
+	srcfUrl := url.URL{
+		Scheme: urlArray[0],
+		Host:   urlArray[1],
+		Path:   fmt.Sprint("/", projectId, "/func/", functionName),
+	}
+
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Content-Length", strconv.Itoa(0))
+
+	hookRes, _, _, _, hookErr := utils.CallHttp(ctx, http.MethodPost, srcfUrl.String(), headers, nil, nil, nil, funcBody)
+	if hookErr != nil {
+		err = hookErr
+		return
+	}
+	logs.WithContext(ctx).Debug(fmt.Sprint(hookRes))
 	return
 }
 
@@ -280,47 +272,10 @@ func (auth *Auth) sendWelcomeEmail(ctx context.Context, credentialIdentifier str
 	trReqVars.Vars[credentialType] = credentialIdentifier
 	trReqVars.Vars["name"] = name
 
-	r := &http.Request{}
-	url := url.URL{
-		Scheme: "",
-		Host:   "",
-		Path:   "/",
-	}
-	r.URL = &url
-	rBytes, rBytesErr := json.Marshal(trReqVars.Vars)
-	if rBytesErr != nil {
-		return rBytesErr
-	}
-	r.Body = io.NopCloser(strings.NewReader(string(rBytes)))
-	h := http.Header{}
-	h.Set("content-type", "application/json")
-	r.Header = h
-	r.Header.Set("Content-Length", strconv.Itoa(len(rBytes)))
-	r.ContentLength = int64(len(rBytes))
-
-	swefHookFound := false
-	logs.WithContext(ctx).Info(auth.Hooks.SWEF.FuncGroupName)
-	if auth.Hooks.SWEF.FuncGroupName != "" {
-		var errArray []string
-		rs := func_store.ModuleStore{}
-		for k, v := range auth.Hooks.SWEF.FuncSteps {
-			fs := auth.Hooks.SWEF.FuncSteps[k]
-			err = rs.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, "", v.Path, "", nil, nil)
-			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
-				errArray = append(errArray, err.Error())
-			}
-		}
-		if len(errArray) > 0 {
-			err = errors.New(strings.Join(errArray, " , "))
-			logs.WithContext(ctx).Error(err.Error())
-			return
-		}
-		_, respErr := auth.Hooks.SWEF.Execute(r.Context(), r, 1, 1, "")
-		swefHookFound = true
-		return respErr
-	}
-	if !swefHookFound {
+	logs.WithContext(ctx).Info(auth.Hooks.SWEF)
+	if auth.Hooks.SWEF != "" {
+		err = triggerHook(ctx, auth.Hooks.SWEF, projectId, trReqVars.Vars)
+	} else {
 		logs.WithContext(ctx).Warn("SWEF hook not defined for auth")
 	}
 	return

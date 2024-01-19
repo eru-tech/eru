@@ -286,7 +286,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 				return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 			}
 
-			if msAuth.Hooks.SWEF.FuncGroupName != "" {
+			if msAuth.Hooks.SWEF != "" {
 				msAuth.sendWelcomeEmail(ctx, userTraits.Email, userTraits.FirstName, "", "email")
 			} else {
 				logs.WithContext(ctx).Info("SWEF hook not defined")

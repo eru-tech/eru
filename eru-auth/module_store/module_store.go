@@ -21,6 +21,8 @@ const (
 	SELECT_IDENTITY_SUB = "select * from eruauth_identities where identity_provider_id = $1"
 )
 
+var Erufuncbaseurl = "http://localhost:8083"
+
 type StoreHolder struct {
 	Store ModuleStoreI
 }

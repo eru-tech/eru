@@ -13,6 +13,13 @@ import (
 const StoreTableName = "eruauth_config"
 
 func StartUp() (module_store.ModuleStoreI, error) {
+	erufuncbaseurl := os.Getenv("ERUFUNCTIONS_BASEURL")
+	if erufuncbaseurl == "" {
+		erufuncbaseurl = "http://localhost:8083"
+		logs.WithContext(context.Background()).Info("'ERUFUNCTIONS_BASEURL' environment variable not found - setting default value as http://localhost:8083")
+	}
+	module_store.Erufuncbaseurl = erufuncbaseurl
+
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
 	if storeType == "" {
 		storeType = "STANDALONE"

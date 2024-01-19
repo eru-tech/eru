@@ -67,6 +67,9 @@ func (gqd *GraphQLData) getSqlForQuery(ctx context.Context, projectId string, da
 
 	qlInterface.SetQLData(ctx, mq, gqd.FinalVariables, false, tokenObj, isPublic, gqd.OutputType) //passing false as we only need the query in execute function and not actual result
 	_, queryObjs, err := qlInterface.Execute(ctx, projectId, datasources, s, gqd.OutputType)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+	}
 	for i, q := range queryObjs {
 		queryObjs[i].Type = strings.ToUpper(strings.Split(q.Query, " ")[0])
 	}
