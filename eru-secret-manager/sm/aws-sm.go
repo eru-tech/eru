@@ -36,7 +36,7 @@ func (awsSmStore *AwsSmStore) Init(ctx context.Context) (err error) {
 
 	if awsSmStore.Authentication == AuthTypeIAM {
 		appCreds := aws.NewCredentialsCache(ec2rolecreds.New())
-		logs.WithContext(ctx).Error(fmt.Sprint(appCreds))
+		logs.WithContext(ctx).Error(fmt.Sprint(appCreds.Retrieve(ctx)))
 	} else if awsSmStore.Authentication == AuthTypeSecret {
 		awsConf.Credentials = credentials.NewStaticCredentialsProvider(
 			awsSmStore.Key,

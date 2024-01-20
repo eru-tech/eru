@@ -52,13 +52,23 @@ type MsParams struct {
 
 func (msAuth *MsAuth) PerformPreSaveTask(ctx context.Context) (err error) {
 	logs.WithContext(ctx).Debug("PerformPreSaveTask - Start")
-	// Do Nothing
+	for _, v := range msAuth.Hydra.HydraClients {
+		err = msAuth.Hydra.SaveHydraClient(ctx, v)
+		if err != nil {
+			return err
+		}
+	}
 	return
 }
 
 func (msAuth *MsAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
-	logs.WithContext(ctx).Debug("PerformPreSaveTask - Start")
-	// Do Nothing
+	logs.WithContext(ctx).Debug("PerformPreDeleteTask - Start")
+	for _, v := range msAuth.Hydra.HydraClients {
+		err = msAuth.Hydra.RemoveHydraClient(ctx, v.ClientId)
+		if err != nil {
+			return err
+		}
+	}
 	return
 }
 
