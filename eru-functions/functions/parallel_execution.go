@@ -5,6 +5,7 @@ import (
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"net/http"
+	"runtime/debug"
 	"sync"
 )
 
@@ -48,7 +49,7 @@ func worker(ctx context.Context, route *Route, wg *sync.WaitGroup, jobs chan Job
 	logs.WithContext(ctx).Debug("worker - Start")
 	defer func() {
 		if r := recover(); r != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in worker: ", r))
+			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in worker: ", r, " : ", string(debug.Stack())))
 			//output := Result{currentJob, nil, nil, errors.New(fmt.Sprint(r))}
 			//results <- output
 			wg.Done()
@@ -67,7 +68,7 @@ func createWorkerPool(ctx context.Context, route *Route, noOfWorkers int, jobs c
 	logs.WithContext(ctx).Debug("createWorkerPool - Start")
 	defer func() {
 		if r := recover(); r != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in createWorkerPool: ", r))
+			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in createWorkerPool: ", r, " : ", string(debug.Stack())))
 			return
 		}
 	}()
@@ -84,7 +85,7 @@ func allocate(ctx context.Context, req *http.Request, u string, vars *TemplateVa
 	logs.WithContext(ctx).Debug("allocate - Start")
 	defer func() {
 		if r := recover(); r != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in allocate: ", r))
+			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in allocate: ", r, " : ", string(debug.Stack())))
 		}
 	}()
 	loopCounter := 0
@@ -102,7 +103,7 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 	logs.WithContext(ctx).Debug("allocateFunc - Start")
 	defer func() {
 		if r := recover(); r != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in allocateFunc: ", r))
+			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in allocateFunc: ", r, " : ", string(debug.Stack())))
 		}
 	}()
 	loopCounter := 0
@@ -127,7 +128,7 @@ func createWorkerPoolFunc(ctx context.Context, noOfWorkers int, funcJobs chan Fu
 	logs.WithContext(ctx).Debug("createWorkerPoolFunc - Start")
 	defer func() {
 		if r := recover(); r != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in createWorkerPoolFunc: ", r))
+			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in createWorkerPoolFunc: ", r, " : ", string(debug.Stack())))
 		}
 	}()
 	var wg sync.WaitGroup
@@ -142,7 +143,7 @@ func workerFunc(ctx context.Context, wg *sync.WaitGroup, funcJobs chan FuncJob, 
 	logs.WithContext(ctx).Debug("workerFunc - Start")
 	defer func() {
 		if r := recover(); r != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in workerFunc: ", r))
+			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in workerFunc: ", r, " : ", string(debug.Stack())))
 			//output := FuncResult{currentJob, nil, nil, errors.New(fmt.Sprint(r))}
 			//funcResults <- output
 			wg.Done()
@@ -167,7 +168,7 @@ func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, req
 	logs.WithContext(ctx).Debug("allocateFuncInner - Start")
 	defer func() {
 		if r := recover(); r != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in allocateFuncInner: ", r))
+			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in allocateFuncInner: ", r, " : ", string(debug.Stack())))
 		}
 	}()
 	loopCounter := 0
@@ -203,7 +204,7 @@ func createWorkerPoolFuncInner(ctx context.Context, noOfWorkers int, funcJobs ch
 	logs.WithContext(ctx).Debug("createWorkerPoolFuncInner - Start")
 	defer func() {
 		if r := recover(); r != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in createWorkerPoolFuncInner: ", r))
+			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in createWorkerPoolFuncInner: ", r, " : ", string(debug.Stack())))
 		}
 	}()
 	var wg sync.WaitGroup
@@ -218,7 +219,7 @@ func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan Func
 	logs.WithContext(ctx).Debug("workerFuncInner - Start")
 	defer func() {
 		if r := recover(); r != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in workerFuncInner: ", r))
+			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in workerFuncInner: ", r, " : ", string(debug.Stack())))
 			//output := FuncResult{currentJob, nil, nil, errors.New(fmt.Sprint(r))}
 			//funcResults <- output
 			wg.Done()

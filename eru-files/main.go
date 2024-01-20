@@ -11,11 +11,18 @@ import (
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"log"
 	"os"
+	"runtime/debug"
 )
 
 var port = "8082"
 
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			logs.Logger.Error(fmt.Sprint("Panic: ", r, " : ", string(debug.Stack())))
+			os.Exit(1)
+		}
+	}()
 	file_server.SetServiceName()
 	logs.LogInit(server_handlers.ServerName)
 	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
