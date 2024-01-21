@@ -57,6 +57,7 @@ type hydraAcceptConsentRequestSession struct {
 
 type HydraClient struct {
 	ClientId                string   `json:"client_id"`
+	ClientName              string   `json:"client_name"`
 	ClientSecret            string   `json:"client_secret"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
 	RedirectURIs            []string `json:"redirect_uris"`
@@ -243,7 +244,7 @@ func (hydraConfig HydraConfig) verifyAccessToken(ctx context.Context, token stri
 	formData["token"] = token
 	headers := http.Header{}
 	headers.Add("content-type", "application/x-www-form-urlencoded")
-	res, _, _, _, err = utils.CallHttp(ctx, "POST", fmt.Sprint(hydraConfig.GetAminUrl(), "/oauth2/introspect"), headers, formData, nil, dummyMap, dummyMap)
+	res, _, _, _, err = utils.CallHttp(ctx, "POST", fmt.Sprint(hydraConfig.GetAminUrl(), "/admin/oauth2/introspect"), headers, formData, nil, dummyMap, dummyMap)
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +289,7 @@ func (hydraConfig HydraConfig) GetOauthConfig(ctx context.Context, clientId stri
 			},
 		}, nil
 	} else {
-		err = errors.New(fmt.Sprint(clientId, "not found"))
+		err = errors.New(fmt.Sprint(clientId, " not found"))
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
@@ -324,7 +325,8 @@ func (hydraConfig HydraConfig) SaveHydraClient(ctx context.Context, hydraClient 
 func (hydraConfig HydraConfig) GetHydraClient(ctx context.Context, clientId string) (resp interface{}, headers map[string][]string, statusCode int, err error) {
 	logs.WithContext(ctx).Debug("getHydraClient - Start")
 	dummyMap := make(map[string]string)
-	resp, headers, _, statusCode, err = utils.CallHttp(ctx, "GET", fmt.Sprint(hydraConfig.GetAminUrl(), "/clients/", clientId), nil, nil, nil, dummyMap, dummyMap)
+	logs.WithContext(ctx).Info(fmt.Sprint(hydraConfig.GetAminUrl(), "/admin/clients/", clientId))
+	resp, headers, _, statusCode, err = utils.CallHttp(ctx, "GET", fmt.Sprint(hydraConfig.GetAminUrl(), "/admin/clients/", clientId), nil, nil, nil, dummyMap, dummyMap)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -335,10 +337,11 @@ func (hydraConfig HydraConfig) CreateHydraClient(ctx context.Context, hydraClien
 	dummyMap := make(map[string]string)
 	headers = http.Header{}
 	headers.Add("Content-Type", "application/json")
-	resp, headers, _, statusCode, err = utils.CallHttp(ctx, "POST", fmt.Sprint(hydraConfig.GetAminUrl(), "/clients"), headers, dummyMap, nil, dummyMap, hydraClient)
+	resp, headers, _, statusCode, err = utils.CallHttp(ctx, "POST", fmt.Sprint(hydraConfig.GetAminUrl(), "/admin/clients"), headers, dummyMap, nil, dummyMap, hydraClient)
 	if err != nil {
 		return nil, nil, 0, err
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint(resp))
 	return resp, headers, statusCode, checkResponseError(ctx, resp)
 }
 func (hydraConfig HydraConfig) UpdateHydraClient(ctx context.Context, clientId string, hydraClient HydraClient) (resp interface{}, headers http.Header, statusCode int, err error) {
@@ -346,7 +349,7 @@ func (hydraConfig HydraConfig) UpdateHydraClient(ctx context.Context, clientId s
 	dummyMap := make(map[string]string)
 	headers = http.Header{}
 	headers.Add("Content-Type", "application/json")
-	resp, headers, _, statusCode, err = utils.CallHttp(ctx, "PUT", fmt.Sprint(hydraConfig.GetAminUrl(), "/clients/", clientId), headers, dummyMap, nil, dummyMap, hydraClient)
+	resp, headers, _, statusCode, err = utils.CallHttp(ctx, "PUT", fmt.Sprint(hydraConfig.GetAminUrl(), "/admin/clients/", clientId), headers, dummyMap, nil, dummyMap, hydraClient)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -357,7 +360,7 @@ func (hydraConfig HydraConfig) DeleteHydraClient(ctx context.Context, clientId s
 	dummyMap := make(map[string]string)
 	headers = http.Header{}
 	headers.Add("Content-Type", "application/json")
-	resp, headers, _, statusCode, err = utils.CallHttp(ctx, "DELETE", fmt.Sprint(hydraConfig.GetAminUrl(), "/clients/", clientId), headers, dummyMap, nil, dummyMap, dummyMap)
+	resp, headers, _, statusCode, err = utils.CallHttp(ctx, "DELETE", fmt.Sprint(hydraConfig.GetAminUrl(), "/admin/clients/", clientId), headers, dummyMap, nil, dummyMap, dummyMap)
 	if err != nil {
 		return nil, nil, 0, err
 	}
