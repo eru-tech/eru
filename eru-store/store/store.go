@@ -587,9 +587,11 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 								if resultErr != nil {
 									smFound = false
 								}
+								logs.WithContext(ctx).Info(fmt.Sprint(result))
 								if smFound {
 									for k, v := range store.Variables[prjId].Secrets {
 										if _, seretOk := result[k]; seretOk {
+											logs.WithContext(ctx).Info(fmt.Sprint(k, " : ", v))
 											v.Value = result[k]
 											store.Variables[prjId].Secrets[k] = v
 										} else {
