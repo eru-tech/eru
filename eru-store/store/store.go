@@ -417,12 +417,15 @@ func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text
 	textStr := string(text)
 	if _, prjVarsOk := store.Variables[projectId]; prjVarsOk {
 		for k, v := range store.Variables[projectId].Vars {
+			logs.WithContext(ctx).Info(fmt.Sprint(k, " : ", v))
 			textStr = strings.Replace(textStr, fmt.Sprint("$VAR_", k), v.Value, -1)
 		}
 		for k, v := range store.Variables[projectId].EnvVars {
+			logs.WithContext(ctx).Info(fmt.Sprint(k, " : ", v))
 			textStr = strings.Replace(textStr, fmt.Sprint("$ENV_", k), v.Value, -1)
 		}
 		for k, v := range store.Variables[projectId].Secrets {
+			logs.WithContext(ctx).Info(fmt.Sprint(k, " : ", v))
 			textStr = strings.Replace(textStr, fmt.Sprint("$SECRET_", k), v.Value, -1)
 		}
 	}
@@ -587,13 +590,13 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 								if resultErr != nil {
 									smFound = false
 								}
-								logs.WithContext(ctx).Info(fmt.Sprint(result))
+
 								if smFound {
 									for k, v := range store.Variables[prjId].Secrets {
 										if _, seretOk := result[k]; seretOk {
-											logs.WithContext(ctx).Info(fmt.Sprint(k, " : ", v))
 											v.Value = result[k]
 											store.Variables[prjId].Secrets[k] = v
+											logs.WithContext(ctx).Info(fmt.Sprint(v.Key, " : ", v.Value))
 										} else {
 											logs.WithContext(ctx).Warn(fmt.Sprint("secret manager does not have any secret value for ", k, ", trying to load from environment variables"))
 											v.Value = os.Getenv(k)
