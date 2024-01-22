@@ -486,11 +486,11 @@ func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, 
 func (eruAuth *EruAuth) FetchTokens(ctx context.Context, refreshToken string, userId string) (res interface{}, err error) {
 	logs.WithContext(ctx).Debug("FetchTokens - Start")
 	logs.WithContext(ctx).Info(userId)
-
-	_, err = eruAuth.Hydra.fetchTokens(ctx, refreshToken)
-	if err != nil {
-		return
-	}
+	//logs.WithContext(ctx).Info(refreshToken)
+	//_, err = eruAuth.Hydra.fetchTokens(ctx, refreshToken)
+	//if err != nil {
+	//	return
+	//}
 
 	loginQuery := models.Queries{}
 	loginQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY)
