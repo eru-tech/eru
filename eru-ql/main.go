@@ -53,6 +53,13 @@ func main() {
 	sh := new(module_store.StoreHolder)
 	sh.Store = store
 	sr, _, e := server.Init(sh.Store)
+
+	logs.WithContext(context.Background()).Info("calling SetDataSourceConnections")
+	err := sh.Store.SetDataSourceConnections(context.Background(), sh.Store)
+	if err != nil {
+		logs.WithContext(context.Background()).Error(err.Error())
+	}
+
 	module_server.AddModuleRoutes(sr, sh)
 	if e != nil {
 		logs.Logger.Error(e.Error())

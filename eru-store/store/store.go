@@ -566,6 +566,8 @@ func (store *Store) LoadEnvValue(ctx context.Context, projectId string) (err err
 }
 func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err error) {
 	logs.WithContext(ctx).Info("LoadSmValue - Start")
+	smFound := true
+
 	if store.Variables != nil {
 		for prjId, _ := range store.Variables {
 			if projectId == prjId || projectId == "" {
@@ -573,38 +575,54 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 					if store.Variables[prjId].Secrets != nil {
 						if store.SecretManager == nil {
 							err = errors.New("No secret manager defined in store")
+							smFound = false
 							logs.WithContext(ctx).Error(err.Error())
-							return err
-						}
-						if smObj, smObjOk := store.SecretManager[prjId]; !smObjOk {
+						} else if smObj, smObjOk := store.SecretManager[prjId]; !smObjOk {
 							err = errors.New(fmt.Sprint("Secret Manager not defined for project :", prjId))
+							smFound = false
 							logs.WithContext(ctx).Error(err.Error())
-							return err
 						} else {
 							if smObj != nil {
 								result, resultErr := smObj.FetchSmValue(ctx)
 								if resultErr != nil {
-									return
+									smFound = false
 								}
-								for k, v := range store.Variables[prjId].Secrets {
-									if _, seretOk := result[k]; seretOk {
-										v.Value = result[k]
-										store.Variables[prjId].Secrets[k] = v
-									} else {
-										logs.WithContext(ctx).Warn(fmt.Sprint("secret manager does not have any secret value for ", k))
+								if smFound {
+									for k, v := range store.Variables[prjId].Secrets {
+										if _, seretOk := result[k]; seretOk {
+											v.Value = result[k]
+											store.Variables[prjId].Secrets[k] = v
+										} else {
+											logs.WithContext(ctx).Warn(fmt.Sprint("secret manager does not have any secret value for ", k, ", trying to load from environment variables"))
+											v.Value = os.Getenv(k)
+											store.Variables[prjId].Secrets[k] = v
+										}
 									}
 								}
 							}
 						}
 					} else {
 						err = errors.New(fmt.Sprint("secret not defined for project : ", prjId))
+						smFound = false
 						logs.WithContext(ctx).Error(err.Error())
-						return
+					}
+				} else {
+					err = errors.New(fmt.Sprint("variables not defined for project : ", prjId))
+					smFound = false
+					logs.WithContext(ctx).Error(err.Error())
+				}
+				if !smFound {
+					logs.WithContext(ctx).Warn(fmt.Sprint("no secret manager found, trying to load from environment variables"))
+					for k, v := range store.Variables[prjId].Secrets {
+						v.Value = os.Getenv(k)
+						logs.WithContext(ctx).Info(fmt.Sprint(v))
+						store.Variables[prjId].Secrets[k] = v
 					}
 				}
 			}
 		}
 	}
+
 	return
 }
 

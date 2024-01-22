@@ -221,11 +221,12 @@ func VerifyTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("LoginHandler - Start")
+		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -234,7 +235,7 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		if authObjI.GetAuthDb() != nil {
 			authObjI.GetAuthDb().SetConn(s.GetConn())
 		} else {
-			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			logs.WithContext(ctx).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
 			return
@@ -254,7 +255,7 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		msParams := auth.MsParams{}
 		if authName == "ms" {
-			msParams, err = s.GetPkceEvent(r.Context(), loginPostBody.IdpRequestId, s)
+			msParams, err = s.GetPkceEvent(ctx, loginPostBody.IdpRequestId, s)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -264,7 +265,7 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		loginPostBody.CodeVerifier = msParams.CodeVerifier
 		loginPostBody.Nonce = msParams.Nonce
-		res, tokens, err := authObjI.Login(r.Context(), loginPostBody, true)
+		res, tokens, err := authObjI.Login(ctx, loginPostBody, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -294,7 +295,7 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		silentFlag := false
 		silentFlag, _ = strconv.ParseBool(isSilentStr)
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -303,7 +304,7 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		if authObjI.GetAuthDb() != nil {
 			authObjI.GetAuthDb().SetConn(s.GetConn())
 		} else {
-			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			logs.WithContext(ctx).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
 			return
@@ -340,6 +341,7 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 func GetVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("GetVerifyCodeHandler - Start")
+		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authName := vars["authname"]
@@ -349,9 +351,9 @@ func GetVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		silentFlag := false
 		var silentFlagErr error
 		silentFlag, silentFlagErr = strconv.ParseBool(isSilentStr)
-		logs.WithContext(r.Context()).Info(fmt.Sprint("silentFlag = ", silentFlag))
+		logs.WithContext(ctx).Info(fmt.Sprint("silentFlag = ", silentFlag))
 		if silentFlagErr != nil {
-			logs.WithContext(r.Context()).Info(silentFlagErr.Error())
+			logs.WithContext(ctx).Info(silentFlagErr.Error())
 		}
 
 		verifyPostBodyFromReq := json.NewDecoder(r.Body)
@@ -365,7 +367,7 @@ func GetVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -374,14 +376,14 @@ func GetVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		if authObjI.GetAuthDb() != nil {
 			authObjI.GetAuthDb().SetConn(s.GetConn())
 		} else {
-			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			logs.WithContext(ctx).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
 			return
 
 		}
 
-		_, err = authObjI.GenerateVerifyCode(r.Context(), verifyPostBody, projectId, silentFlag)
+		_, err = authObjI.GenerateVerifyCode(ctx, verifyPostBody, projectId, silentFlag)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -867,11 +869,12 @@ func GetSsoUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 func RegisterHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("RegisterHandler - Start")
+		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -880,7 +883,7 @@ func RegisterHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		if authObjI.GetAuthDb() != nil {
 			authObjI.GetAuthDb().SetConn(s.GetConn())
 		} else {
-			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			logs.WithContext(ctx).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
 			return
@@ -898,7 +901,7 @@ func RegisterHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		res, tokens, err := authObjI.Register(r.Context(), registerPostBody, projectId)
+		res, tokens, err := authObjI.Register(ctx, registerPostBody, projectId)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
