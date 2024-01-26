@@ -574,7 +574,7 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 	if store.Variables != nil {
 		for prjId, _ := range store.Variables {
 			if projectId == prjId || projectId == "" {
-				logs.WithContext(ctx).Info(fmt.Sprint("loading decrets for :", prjId))
+				logs.WithContext(ctx).Info(fmt.Sprint("loading secrets for :", prjId))
 				if _, prjVarsOk := store.Variables[prjId]; prjVarsOk {
 					if store.Variables[prjId].Secrets != nil {
 						if store.SecretManager == nil {
