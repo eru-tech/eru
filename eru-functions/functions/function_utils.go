@@ -9,7 +9,6 @@ import (
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
-	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 	"io"
 	"io/ioutil"
@@ -40,23 +39,26 @@ func createFormFile(w *multipart.Writer, contentType string, fieldName string, f
 	return w.CreatePart(h)
 }
 
-func loadRequestVars(ctx context.Context, vars *TemplateVars, request *http.Request) (err error) {
+func loadRequestVars(ctx context.Context, vars *TemplateVars, request *http.Request, tokenHeaderKey string) (err error) {
 	logs.WithContext(ctx).Debug("loadRequestVars - Start")
 	vars.Headers = make(map[string]interface{})
 	for k, v := range request.Header {
 		vars.Headers[k] = v
 	}
-
-	utils.PrintRequestBody(ctx, request, "printing request from loadRequestVars")
-
+	tokenStr := request.Header.Get(tokenHeaderKey)
+	if tokenStr != "" {
+		err = json.Unmarshal([]byte(tokenStr), &vars.Token)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+	}
 	vars.Params = make(map[string]interface{})
 	for k, v := range request.URL.Query() {
 		vars.Params[k] = v
 	}
 
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
-	logs.WithContext(ctx).Info(fmt.Sprint("reqContentType = ", reqContentType))
-	logs.WithContext(ctx).Info(fmt.Sprint("request.ContentLength = ", request.ContentLength))
 	if reqContentType == applicationjson && request.ContentLength > 0 {
 
 		tmplBodyFromReq := json.NewDecoder(request.Body)
@@ -169,15 +171,6 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 
 func processTemplate(ctx context.Context, templateName string, templateString string, vars *FuncTemplateVars, outputType string, tokenHeaderKey string) (output []byte, err error) {
 	logs.WithContext(ctx).Debug("processTemplate - Start")
-
-	if strings.Contains(templateString, "{{.token") {
-		//strToken := vars.Vars.Headers[tokenHeaderKey]
-		//vars.Vars.Token, err = fetchClaimsFromToken(ctx, strToken.(string), jwkUrl)
-		//if err != nil {
-		//	return
-		//}
-		vars.Vars.Token = vars.Vars.Headers[tokenHeaderKey]
-	}
 	goTmpl := gotemplate.GoTemplate{templateName, templateString}
 	outputObj, err := goTmpl.Execute(ctx, vars, outputType)
 	if err != nil {
@@ -489,7 +482,7 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 	return
 }
 
-func processParams(ctx context.Context, request *http.Request, queryParamsRemove []string, queryParams []Headers, vars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (err error) {
+func processParams(ctx context.Context, request *http.Request, queryParamsRemove []string, queryParams []Headers, vars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, tokenHeaderKey string) (err error) {
 	logs.WithContext(ctx).Debug("processParams - Start")
 	pvars := &FuncTemplateVars{}
 	pvars.Vars = vars
@@ -498,7 +491,7 @@ func processParams(ctx context.Context, request *http.Request, queryParamsRemove
 	params := request.URL.Query()
 	for _, p := range queryParams {
 		if p.IsTemplate {
-			valueBytes, terr := processTemplate(ctx, p.Key, p.Value, pvars, "string", "")
+			valueBytes, terr := processTemplate(ctx, p.Key, p.Value, pvars, "string", tokenHeaderKey)
 			if terr != nil {
 				err = terr
 				return

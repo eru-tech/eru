@@ -120,6 +120,7 @@ type TemplateVars struct {
 	FormDataKeyArray []string
 	LoopVars         interface{}
 	LoopVar          interface{}
+	Cookies          []*http.Cookie
 	//ReqVars map[string]*TemplateVars
 	//ResVars map[string]*TemplateVars
 }
@@ -508,7 +509,7 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 		vars.Body = make(map[string]interface{})
 		vars.OrgBody = make(map[string]interface{})
 
-		err = loadRequestVars(ctx, vars, request)
+		err = loadRequestVars(ctx, vars, request, route.TokenSecretKey)
 		if err != nil {
 			return
 		}
@@ -637,7 +638,7 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 		}
 	}
 
-	err = processParams(ctx, request, route.RemoveParams.QueryParams, route.QueryParams, vars, nil, nil)
+	err = processParams(ctx, request, route.RemoveParams.QueryParams, route.QueryParams, vars, nil, nil, route.TokenSecretKey)
 	if err != nil {
 		return
 	}

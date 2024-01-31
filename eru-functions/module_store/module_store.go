@@ -401,6 +401,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 				return
 			}
 		}
+		r.TokenSecretKey = ms.Projects[projectId].ProjectSettings.ClaimsKey
 		funcStep.Route = r
 	}
 	for ck, cv := range funcStep.FuncSteps {

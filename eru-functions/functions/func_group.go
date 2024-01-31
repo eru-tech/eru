@@ -202,7 +202,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			avars.Vars = reqVars[funcStep.FuncKey]
 			avars.ResVars = resVars
 			avars.ReqVars = reqVars
-			output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.Condition, avars, "string", "")
+			output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.Condition, avars, "string", funcStep.Route.TokenSecretKey)
 			logs.WithContext(ctx).Info(string(output))
 			if outputErr != nil {
 				err = outputErr
@@ -222,7 +222,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 				if funcStep.ConditionFailMessage != "" {
 					cfmvars := &FuncTemplateVars{}
 					cfmvars.Vars = reqVars[funcStep.FuncKey]
-					cfmOutput, cfmOutputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.ConditionFailMessage, avars, "json", "")
+					cfmOutput, cfmOutputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.ConditionFailMessage, avars, "json", funcStep.Route.TokenSecretKey)
 					logs.WithContext(ctx).Info(string(cfmOutput))
 					if cfmOutputErr != nil {
 						err = cfmOutputErr
@@ -259,7 +259,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			if funcStep.Async && funcStep.AsyncMessage != "" {
 				avars := &FuncTemplateVars{}
 				avars.Vars = reqVars[funcStep.FuncKey]
-				output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.AsyncMessage, avars, "json", "")
+				output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.AsyncMessage, avars, "json", funcStep.Route.TokenSecretKey)
 				logs.WithContext(ctx).Info(string(output))
 				if outputErr != nil {
 					err = outputErr
@@ -422,7 +422,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	vars.OrgBody = make(map[string]interface{})
 	vars.Params = make(map[string]interface{})
 	if reqVars[mainRouteName] == nil {
-		err = loadRequestVars(ctx, vars, req)
+		err = loadRequestVars(ctx, vars, req, funcStep.Route.TokenSecretKey)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return
@@ -438,7 +438,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		fvars.Vars = vars
 		fvars.ResVars = resVars
 		fvars.ReqVars = reqVars
-		output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.LoopVariable, fvars, "json", "")
+		output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.LoopVariable, fvars, "json", funcStep.Route.TokenSecretKey)
 		if outputErr != nil {
 			err = outputErr
 			return
@@ -492,7 +492,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		mpvars.Vars = vars
 		for _, fd := range funcStep.FormData {
 			if fd.IsTemplate {
-				output, fdErr := processTemplate(ctx, fd.Key, fd.Value, mpvars, "string", "")
+				output, fdErr := processTemplate(ctx, fd.Key, fd.Value, mpvars, "string", funcStep.Route.TokenSecretKey)
 				if fdErr != nil {
 					err = fdErr
 					return
@@ -538,7 +538,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	}
 
 	//next we process and transform query params and set it in request
-	err = processParams(ctx, req, funcStep.RemoveParams.QueryParams, funcStep.QueryParams, vars, reqVars, resVars)
+	err = processParams(ctx, req, funcStep.RemoveParams.QueryParams, funcStep.QueryParams, vars, reqVars, resVars, funcStep.Route.TokenSecretKey)
 	if err != nil {
 		return
 	}
@@ -579,10 +579,6 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	//utils.PrintRequestBody(req, "printing request in transformRequest after body process")
 
 	//check and transform api host if set as template
-	logs.WithContext(ctx).Info(fmt.Sprint(funcStep.Route.TargetHosts))
-	for k, v := range reqVars {
-		logs.WithContext(ctx).Info(fmt.Sprint(k, " ", v.LoopVar))
-	}
 	for rk, ro := range funcStep.Route.TargetHosts {
 		if strings.HasPrefix(ro.Host, "{{") {
 			avars := &FuncTemplateVars{}
@@ -629,7 +625,6 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		avars.Vars = vars
 		avars.ResVars = resVars
 		avars.ReqVars = reqVars
-
 		output, err := processTemplate(ctx, "api_host", funcStep.ApiPath, avars, "string", funcStep.Route.TokenSecretKey)
 		if err != nil {
 			// ignore error if it is no value
@@ -652,6 +647,13 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	err = processHeaderTemplates(ctx, req, funcStep.RemoveParams.RequestHeaders, funcStep.RequestHeaders, false, vars, funcStep.Route.TokenSecretKey, reqVars, resVars)
 	if err != nil {
 		return
+	}
+
+	//set cookies from previous steps
+	for _, v := range resVars {
+		for _, c := range v.Cookies {
+			req.AddCookie(c)
+		}
 	}
 
 	return req, vars, err
@@ -732,5 +734,6 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 			response.Header.Del(v)
 		}
 	}
+	vars.Cookies = response.Cookies()
 	return
 }
