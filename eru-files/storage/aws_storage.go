@@ -171,21 +171,11 @@ func (awsStorage *AwsStorage) Init(ctx context.Context) (err error) {
 			"", // a token will be created when the session is used.
 		)
 	} else if awsStorage.Authentication == AuthTypeIAM {
+		logs.WithContext(ctx).Info("connecting AWS S3 with IAM role")
 		// do nothing - no new attributes to set in config
 	}
 	awsStorage.session = s3.NewFromConfig(awsConf)
-	//awsConf := &aws.Config{
-	//	Region: aws.String(awsStorage.Region),
-	//	Credentials: credentials.NewStaticCredentials(
-	//		awsStorage.Key,
-	//		awsStorage.Secret,
-	//		"", // a token will be created when the session it's used. //TODO to check this
-	//	),
-	//	//TODO to check if below 2 attributes are required
-	//	//DisableSSL: &disableSSL,
-	//	//S3ForcePathStyle: &forcePathStyle,
-	//}
-	//awsStorage.session, err = session.NewSession(awsConf)
+
 	return err
 }
 

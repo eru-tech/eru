@@ -417,15 +417,12 @@ func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text
 	textStr := string(text)
 	if _, prjVarsOk := store.Variables[projectId]; prjVarsOk {
 		for k, v := range store.Variables[projectId].Vars {
-			logs.WithContext(ctx).Info(fmt.Sprint(k, " : ", v))
 			textStr = strings.Replace(textStr, fmt.Sprint("$VAR_", k), v.Value, -1)
 		}
 		for k, v := range store.Variables[projectId].EnvVars {
-			logs.WithContext(ctx).Info(fmt.Sprint(k, " : ", v))
 			textStr = strings.Replace(textStr, fmt.Sprint("$ENV_", k), v.Value, -1)
 		}
 		for k, v := range store.Variables[projectId].Secrets {
-			logs.WithContext(ctx).Info(fmt.Sprint(k, " : ", v))
 			textStr = strings.Replace(textStr, fmt.Sprint("$SECRET_", k), v.Value, -1)
 		}
 	}
