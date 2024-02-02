@@ -71,7 +71,7 @@ func (awsSmStore *AwsSmStore) FetchSmValue(ctx context.Context) (resultJson map[
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(result.SecretString))
+	logs.WithContext(ctx).Info(fmt.Sprint(*result.SecretString))
 	err = json.Unmarshal([]byte(*result.SecretString), &resultJson)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
