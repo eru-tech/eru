@@ -32,13 +32,6 @@ type GoTemplate struct {
 func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFormat string) (output interface{}, err error) {
 	logs.WithContext(ctx).Debug("Execute - Start")
 	var funcs = template.FuncMap{
-		"repeat": func(n int) []int {
-			var res []int
-			for i := 0; i < n; i++ {
-				res = append(res, i+1)
-			}
-			return res
-		},
 		"inc": func(n int) int {
 			return n + 1
 		},
@@ -320,11 +313,11 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			datePart = vDate.Format(newLayout)
 			return
 		},
-		"concat": func(sep string, inStr ...string) (str string, err error) {
+		"str_concat": func(sep string, inStr ...string) (str string, err error) {
 			str = strings.Join(inStr, sep)
 			return
 		},
-		"replace": func(txt string, oldStr string, newStr string, num int) (str string, err error) {
+		"str_replace": func(txt string, oldStr string, newStr string, num int) (str string, err error) {
 			str = strings.Replace(txt, oldStr, newStr, num)
 			return
 		},
@@ -333,7 +326,7 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			str = strings.Replace(str, "\\u0000", "", -1)
 			return
 		},
-		"add": func(args ...interface{}) (result float64, err error) {
+		"math_add": func(args ...interface{}) (result float64, err error) {
 			num := 0.0
 			for _, a := range args {
 				switch v := a.(type) {
@@ -352,7 +345,7 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			}
 			return result, nil
 		},
-		"sub": func(a interface{}, b interface{}) (result float64, err error) {
+		"math_sub": func(a interface{}, b interface{}) (result float64, err error) {
 			var n1, n2 float64
 			switch v := a.(type) {
 			case int, float64:
@@ -381,7 +374,7 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			result = n1 - n2
 			return result, nil
 		},
-		"div": func(a interface{}, b interface{}) (result float64, err error) {
+		"math_div": func(a interface{}, b interface{}) (result float64, err error) {
 			var n1, n2 float64
 			switch v := a.(type) {
 			case int, float64:
@@ -410,10 +403,10 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			result = n1 / n2
 			return result, nil
 		},
-		"mul": func(a float64, b float64) (result float64) {
+		"math_mul": func(a float64, b float64) (result float64) {
 			return a * b
 		},
-		"round": func(a interface{}, r float64) (result float64, err error) {
+		"math_round": func(a interface{}, r float64) (result float64, err error) {
 			var n1 float64
 			m := 1.0
 			switch v := a.(type) {

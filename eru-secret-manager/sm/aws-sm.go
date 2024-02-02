@@ -3,11 +3,9 @@ package sm
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/credentials/ec2rolecreds"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
@@ -34,10 +32,10 @@ func (awsSmStore *AwsSmStore) Init(ctx context.Context) (err error) {
 		return
 	}
 
-	if awsSmStore.Authentication == AuthTypeIAM {
-		appCreds := aws.NewCredentialsCache(ec2rolecreds.New())
-		logs.WithContext(ctx).Error(fmt.Sprint(appCreds.Retrieve(ctx)))
-	} else if awsSmStore.Authentication == AuthTypeSecret {
+	//if awsSmStore.Authentication == AuthTypeIAM {
+	//	appCreds := aws.NewCredentialsCache(ec2rolecreds.New())
+	//} else
+	if awsSmStore.Authentication == AuthTypeSecret {
 		awsConf.Credentials = credentials.NewStaticCredentialsProvider(
 			awsSmStore.Key,
 			awsSmStore.Secret,

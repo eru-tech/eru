@@ -5,18 +5,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/segmentio/ksuid"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
-	"os"
+)
+
+const (
+	AuthTypeSecret = "SECRET"
+	AuthTypeIAM    = "IAM"
 )
 
 type AwsStorage struct {
@@ -26,7 +28,7 @@ type AwsStorage struct {
 	Authentication string `json:"authentication" eru:"required"`
 	Key            string `json:"key" eru:"required"`
 	Secret         string `json:"secret" eru:"required"`
-	session        *session.Session
+	session        *s3.Client
 }
 
 func (awsStorage *AwsStorage) DownloadFile(ctx context.Context, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error) {
@@ -38,33 +40,21 @@ func (awsStorage *AwsStorage) DownloadFile(ctx context.Context, folderPath strin
 		}
 	}
 
-	tmpfile, err := ioutil.TempFile("", fileName)
-	if err != nil {
-		return nil, err
-	}
-
-	downloader := s3manager.NewDownloader(awsStorage.session)
-	_, err = downloader.Download(tmpfile, &s3.GetObjectInput{
+	result, err := awsStorage.session.GetObject(context.TODO(), &s3.GetObjectInput{
 		Bucket: aws.String(awsStorage.BucketName),
 		Key:    aws.String(fmt.Sprint(folderPath, "/", fileName)),
 	})
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		_ = tmpfile.Close()
-		_ = os.Remove(tmpfile.Name())
 		return nil, err
 	}
-	byteContainer, err := io.ReadAll(tmpfile)
+	defer result.Body.Close()
+
+	byteContainer, err := io.ReadAll(result.Body)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		_ = tmpfile.Close()
-		_ = os.Remove(tmpfile.Name())
-		return
+		return nil, err
 	}
-	defer func() {
-		_ = tmpfile.Close()
-		_ = os.Remove(tmpfile.Name())
-	}()
 
 	if awsStorage.EncryptFiles {
 		byteContainer, err = eruaes.DecryptCBC(ctx, byteContainer, keyName.Key, keyName.Vector)
@@ -110,12 +100,15 @@ func (awsStorage *AwsStorage) UploadFile(ctx context.Context, file multipart.Fil
 		docType = fmt.Sprint(docType, "_")
 	}
 	finalFileName := fmt.Sprint(docType, docId, "_", header.Filename, enc)
-	uploader := s3manager.NewUploader(awsStorage.session)
-	_, err = uploader.Upload(&s3manager.UploadInput{
+	_, err = awsStorage.session.PutObject(context.TODO(), &s3.PutObjectInput{
 		Bucket: aws.String(awsStorage.BucketName),
 		Key:    aws.String(fmt.Sprint(folderPath, "/", finalFileName)),
 		Body:   bytes.NewReader(byteContainer),
 	})
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
 	return
 }
 
@@ -147,8 +140,7 @@ func (awsStorage *AwsStorage) UploadFileB64(ctx context.Context, file []byte, fi
 	logs.WithContext(ctx).Info(fmt.Sprint("awsStorage.BucketName = ", awsStorage.BucketName))
 	logs.WithContext(ctx).Info(fmt.Sprint("fmt.Sprint(folderPath, \"/\", finalFileName) = ", fmt.Sprint(folderPath, "/", finalFileName)))
 
-	uploader := s3manager.NewUploader(awsStorage.session)
-	_, err = uploader.Upload(&s3manager.UploadInput{
+	_, err = awsStorage.session.PutObject(context.TODO(), &s3.PutObjectInput{
 		Bucket: aws.String(awsStorage.BucketName),
 		Key:    aws.String(fmt.Sprint(folderPath, "/", finalFileName)),
 		Body:   bytes.NewReader(file),
@@ -158,24 +150,42 @@ func (awsStorage *AwsStorage) UploadFileB64(ctx context.Context, file []byte, fi
 		return
 	}
 	logs.WithContext(ctx).Info("file upload completed")
-
 	return
 }
 
 func (awsStorage *AwsStorage) Init(ctx context.Context) (err error) {
 	logs.WithContext(ctx).Debug("Init - Start")
-	awsConf := &aws.Config{
-		Region: aws.String(awsStorage.Region),
-		Credentials: credentials.NewStaticCredentials(
+	awsConf, awsConfErr := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(awsStorage.Region),
+	)
+	if awsConfErr != nil {
+		err = awsConfErr
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+
+	if awsStorage.Authentication == AuthTypeSecret {
+		awsConf.Credentials = credentials.NewStaticCredentialsProvider(
 			awsStorage.Key,
 			awsStorage.Secret,
-			"", // a token will be created when the session it's used. //TODO to check this
-		),
-		//TODO to check if below 2 attributes are required
-		//DisableSSL: &disableSSL,
-		//S3ForcePathStyle: &forcePathStyle,
+			"", // a token will be created when the session is used.
+		)
+	} else if awsStorage.Authentication == AuthTypeIAM {
+		// do nothing - no new attributes to set in config
 	}
-	awsStorage.session, err = session.NewSession(awsConf)
+	awsStorage.session = s3.NewFromConfig(awsConf)
+	//awsConf := &aws.Config{
+	//	Region: aws.String(awsStorage.Region),
+	//	Credentials: credentials.NewStaticCredentials(
+	//		awsStorage.Key,
+	//		awsStorage.Secret,
+	//		"", // a token will be created when the session it's used. //TODO to check this
+	//	),
+	//	//TODO to check if below 2 attributes are required
+	//	//DisableSSL: &disableSSL,
+	//	//S3ForcePathStyle: &forcePathStyle,
+	//}
+	//awsStorage.session, err = session.NewSession(awsConf)
 	return err
 }
 
