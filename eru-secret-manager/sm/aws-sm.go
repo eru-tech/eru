@@ -3,11 +3,9 @@ package sm
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/credentials/ec2rolecreds"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
@@ -34,14 +32,15 @@ func (awsSmStore *AwsSmStore) Init(ctx context.Context) (err error) {
 		return
 	}
 
-	if awsSmStore.Authentication == AuthTypeIAM {
-		appCreds := aws.NewCredentialsCache(ec2rolecreds.New())
-		cred, err := appCreds.Retrieve(ctx)
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-		}
-		logs.WithContext(ctx).Error(fmt.Sprint(cred))
-	} else if awsSmStore.Authentication == AuthTypeSecret {
+	//if awsSmStore.Authentication == AuthTypeIAM {
+	//	appCreds := aws.NewCredentialsCache(ec2rolecreds.New())
+	//	cred, err := appCreds.Retrieve(ctx)
+	//	if err != nil {
+	//		logs.WithContext(ctx).Error(err.Error())
+	//	}
+	//	logs.WithContext(ctx).Error(fmt.Sprint(cred))
+	//} else
+	if awsSmStore.Authentication == AuthTypeSecret {
 		awsConf.Credentials = credentials.NewStaticCredentialsProvider(
 			awsSmStore.Key,
 			awsSmStore.Secret,
@@ -71,7 +70,6 @@ func (awsSmStore *AwsSmStore) FetchSmValue(ctx context.Context) (resultJson map[
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(*result.SecretString))
 	err = json.Unmarshal([]byte(*result.SecretString), &resultJson)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())

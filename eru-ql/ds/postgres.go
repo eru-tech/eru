@@ -121,7 +121,6 @@ func (pr *PostgresSqlMaker) MakeDropTableSQL(ctx context.Context, tableName stri
 func (pr *PostgresSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
 	logs.WithContext(ctx).Debug("CreateConn - Start")
 	connString := fmt.Sprint("postgres://", dataSource.DbConfig.User, ":", dataSource.DbConfig.Password, "@", dataSource.DbConfig.Host, ":", dataSource.DbConfig.Port, "/", dataSource.DbConfig.DefaultDB, "?sslmode=disable")
-	logs.WithContext(ctx).Info(connString)
 	db, err := sqlx.Open("postgres", connString)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
