@@ -36,7 +36,11 @@ func (awsSmStore *AwsSmStore) Init(ctx context.Context) (err error) {
 
 	if awsSmStore.Authentication == AuthTypeIAM {
 		appCreds := aws.NewCredentialsCache(ec2rolecreds.New())
-		logs.WithContext(ctx).Error(fmt.Sprint(appCreds.Retrieve(ctx)))
+		cred, err := appCreds.Retrieve(ctx)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		logs.WithContext(ctx).Error(fmt.Sprint(cred))
 	} else if awsSmStore.Authentication == AuthTypeSecret {
 		awsConf.Credentials = credentials.NewStaticCredentialsProvider(
 			awsSmStore.Key,
@@ -67,6 +71,7 @@ func (awsSmStore *AwsSmStore) FetchSmValue(ctx context.Context) (resultJson map[
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint(result.SecretString))
 	err = json.Unmarshal([]byte(*result.SecretString), &resultJson)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
