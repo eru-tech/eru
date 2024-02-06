@@ -205,7 +205,6 @@ func (hydraConfig HydraConfig) fetchTokens(ctx context.Context, refresh_token st
 			return nil, err
 		}
 	}
-	logs.WithContext(ctx).Error(fmt.Sprint("before returning loginSuccess : ", loginSuccess))
 	return loginSuccess, nil
 }
 

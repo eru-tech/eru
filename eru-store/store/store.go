@@ -594,7 +594,6 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 										if _, seretOk := result[k]; seretOk {
 											v.Value = result[k]
 											store.Variables[prjId].Secrets[k] = v
-											logs.WithContext(ctx).Info(fmt.Sprint(v.Key, " : ", v.Value))
 										} else {
 											logs.WithContext(ctx).Warn(fmt.Sprint("secret manager does not have any secret value for ", k, ", trying to load from environment variables"))
 											v.Value = os.Getenv(k)
@@ -618,14 +617,12 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 					logs.WithContext(ctx).Warn(fmt.Sprint("no secret manager found, trying to load from environment variables"))
 					for k, v := range store.Variables[prjId].Secrets {
 						v.Value = os.Getenv(k)
-						logs.WithContext(ctx).Info(fmt.Sprint(v))
 						store.Variables[prjId].Secrets[k] = v
 					}
 				}
 			}
 		}
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(store.Variables))
 	return
 }
 
