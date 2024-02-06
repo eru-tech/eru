@@ -856,6 +856,42 @@ func (kratosHydraAuth *KratosHydraAuth) GetUser(ctx context.Context, userId stri
 	return convertToIdentity(ctx, kIdentity)
 }
 
+func (kratosHydraAuth *KratosHydraAuth) FetchTokens(ctx context.Context, refreshToken string, userId string) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("FetchTokens - Start")
+
+	_, err = kratosHydraAuth.Hydra.fetchTokens(ctx, refreshToken)
+	if err != nil {
+		return
+	}
+	kratosIdentity, err := kratosHydraAuth.getKratosUser(ctx, userId)
+	if err != nil {
+		return
+	}
+	identity, err := convertToIdentity(ctx, kratosIdentity)
+	if err != nil {
+		return
+	}
+	loginChallenge, loginChallengeCookies, loginChallengeErr := kratosHydraAuth.getLoginChallenge(ctx)
+	if loginChallengeErr != nil {
+		err = loginChallengeErr
+		return
+	}
+
+	consentChallenge, loginAcceptRequestCookies, loginAcceptErr := kratosHydraAuth.Hydra.AcceptLoginRequest(ctx, identity.Id, loginChallenge, loginChallengeCookies)
+	if loginAcceptErr != nil {
+		err = loginAcceptErr
+		return
+	}
+	identityHolder := make(map[string]interface{})
+	identityHolder["identity"] = identity
+	tokens, cosentAcceptErr := kratosHydraAuth.Hydra.AcceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
+	if cosentAcceptErr != nil {
+		err = cosentAcceptErr
+		return
+	}
+	return tokens, nil
+}
+
 func (kratosHydraAuth *KratosHydraAuth) getKratosUser(ctx context.Context, userId string) (identity KratosIdentity, err error) {
 	logs.WithContext(ctx).Debug("getKratosUser - Start")
 	dummyMap := make(map[string]string)

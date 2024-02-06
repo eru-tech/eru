@@ -157,11 +157,6 @@ func (hydraConfig HydraConfig) GetUserInfo(ctx context.Context, access_token str
 	}
 }
 
-func (kratosHydraAuth *KratosHydraAuth) FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error) {
-	logs.WithContext(ctx).Debug("FetchTokens - Start")
-	return kratosHydraAuth.Hydra.fetchTokens(ctx, refresh_token)
-}
-
 func (hydraConfig HydraConfig) fetchTokens(ctx context.Context, refresh_token string) (res interface{}, err error) {
 	dummyMap := make(map[string]string)
 	headers := http.Header{}
