@@ -680,6 +680,7 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 	var errMsgs []string
 	var finalValues []interface{}
 	query := ""
+	logs.WithContext(ctx).Info(fmt.Sprint("sqr.IsNested = ", sqr.IsNested))
 	if !sqr.IsNested {
 		if sqr.QueryType == "insertselect" || sqr.QueryType == "delete" || sqr.PreparedQuery {
 			query = sqr.DBQuery
@@ -702,6 +703,7 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 			return res, errors.New(strings.Join(errMsgs, " , "))
 		}
 	} else {
+
 		for i, v := range docs {
 			query = strings.Replace(v.DBQuery, "$ColsPlaceholder", myself.GetPreparedQueryPlaceholder(ctx, 1, len(v.Values), false), 1)
 			resDocs, err := sqr.executeMutationQueriesinDB(ctx, query, tableName, datasource, myself, isNested, docNo, i, v.Values)
@@ -752,6 +754,7 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 						//cv[iii].values = append(cv[iii].values, values...)
 						*/
 					}
+
 					resDoc[ck], err = sqr.iterateDocsForMutation(ctx, cv, ck, datasource, myself, true, docNo)
 					if err != nil {
 						childError = true

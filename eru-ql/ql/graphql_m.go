@@ -155,7 +155,7 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Se
 		}
 	}
 	if docsFound {
-		sqlObj.MutationRecords, err = sqlObj.processMutationDoc(ctx, docs, datasource, sqlObj.MainTableName, sqlObj.NestedDoc, nil)
+		sqlObj.MutationRecords, err = sqlObj.processMutationDoc(ctx, docs, datasource, sqlObj.MainTableName, sqlObj.NestedDoc, nil, sqlObj.OverwriteDoc[sqlObj.MainTableName])
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			//TODO to pass this error as query result
@@ -173,7 +173,7 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Se
 	return nil
 }
 
-func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{}, datasource *module_model.DataSource, parentTableName string, nested bool, jc []string) (mr []module_model.MutationRecord, e error) {
+func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{}, datasource *module_model.DataSource, parentTableName string, nested bool, jc []string, owDoc map[string]interface{}) (mr []module_model.MutationRecord, e error) {
 	logs.WithContext(ctx).Debug(fmt.Sprint("ProcessMutationGraphQL - Start : ", parentTableName, " ", nested))
 
 	sqlObj.NestedDoc = nested // updating if recursive call is made
@@ -194,8 +194,9 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 		if !err {
 			return nil, errors.New(fmt.Sprintf("error while parsing document at index ", i))
 		}
-
-		for k, v := range sqlObj.OverwriteDoc[parentTableName] {
+		logs.WithContext(ctx).Info(fmt.Sprint("parentTableName = ", parentTableName))
+		logs.WithContext(ctx).Info(fmt.Sprint(owDoc))
+		for k, v := range owDoc {
 			insertDoc[k] = v
 		}
 		var jsonFields []string
@@ -248,7 +249,14 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 				if e != nil {
 					return nil, e
 				}
-				childRecords, e = sqlObj.processMutationDoc(ctx, a1, datasource, childTableName, true, joinCols)
+				cowDoc := owDoc[childTableName]
+				cowDocFinal := make(map[string]interface{})
+				if cowDocMap, cowDocMapOk := cowDoc.(map[string]interface{}); cowDocMapOk {
+					cowDocFinal = cowDocMap
+				}
+				logs.WithContext(ctx).Info(fmt.Sprint("childTableName = ", childTableName))
+				logs.WithContext(ctx).Info(fmt.Sprint(cowDocFinal))
+				childRecords, e = sqlObj.processMutationDoc(ctx, a1, datasource, childTableName, true, joinCols, cowDocFinal)
 				if e != nil {
 					logs.WithContext(ctx).Error(e.Error())
 					return nil, e

@@ -159,7 +159,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
 				}
 
-				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, module_model.QUERY_TYPE_SELECT)
+				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, module_model.QUERY_TYPE_SELECT, nil)
 				if err != nil {
 					errMsg = err.Error()
 					errFound = true
@@ -220,15 +220,29 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				tempStr := strings.SplitN(field.Name.Value, "_", 2)
 				sqlObj.QueryType = tempStr[0]
 				sqlObj.MainTableName = strings.Replace(tempStr[1], "___", ".", -1)
-				if sqlObj.OverwriteDoc == nil {
-					sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
+				for _, ff := range field.Arguments {
+					switch ff.Name.Value {
+					case "docs":
+						if sqlObj.OverwriteDoc == nil {
+							sqlObj.OverwriteDoc = make(map[string]map[string]interface{})
+						}
+						docKeyword := ""
+						switch ff.Value.GetKind() {
+						case kinds.Variable:
+							t := ff.Value.(*ast.Variable)
+							docKeyword = strings.Replace(t.Name.Value, "$", "", -1)
+						}
+						sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, sqlObj.QueryType, gqd.FinalVariables[docKeyword])
+						if err != nil {
+							errMsg = err.Error()
+							logs.WithContext(ctx).Error(err.Error())
+							errFound = true
+						}
+					default:
+						//do nothing
+					}
 				}
-				sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, sqlObj.QueryType)
-				if err != nil {
-					errMsg = err.Error()
-					logs.WithContext(ctx).Error(err.Error())
-					errFound = true
-				}
+
 				err = gqd.getSqlForQuery(ctx, projectId, datasources, sqlObj.MainTableName, s, nil, gqd.IsPublic)
 				if err == nil {
 					sqlObj.PreparedQuery = true
@@ -378,7 +392,7 @@ func ParseAstValue(ctx context.Context, value ast.Value, vars map[string]interfa
 				v = strings.ReplaceAll(v, fmt.Sprint("$", varsK), str)
 			}
 		}
-		vBytes, err := processTemplate(ctx, "variable", v, vars, "string", "")
+		vBytes, err := processTemplate(ctx, "variable", v, vars, "string", "", "")
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
@@ -530,7 +544,7 @@ func processMapVariable(ctx context.Context, m map[string]interface{}, vars map[
 					}
 					//logs.WithContext(ctx).Info(fmt.Sprint("variable ", v.(string), " replace with ", m[mapKey]))
 				} else {
-					vBytes, err := processTemplate(ctx, "variable", v.(string), vars, "string", "")
+					vBytes, err := processTemplate(ctx, "variable", v.(string), vars, "string", "", "")
 					if err != nil {
 						logs.WithContext(ctx).Error(err.Error())
 						return nil, err
@@ -554,13 +568,12 @@ func adjustObjectKey(key string) string {
 	if strings.HasPrefix(key, "_") && key != "_id" {
 		key = "$" + key[1:]
 	}
-
 	key = strings.ReplaceAll(key, "__", ".")
 
 	return key
 }
 
-func (gqd *GraphQLData) setOverwriteDoc(ctx context.Context, projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, queryType string) (overwriteDoc map[string]interface{}, err error) {
+func (gqd *GraphQLData) setOverwriteDoc(ctx context.Context, projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, queryType string, docs interface{}) (overwriteDoc map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("setOverwriteDoc - Start")
 	tr, err := s.GetTableTransformation(ctx, projectId, dbAlias, tableName)
 	if err != nil {
@@ -570,7 +583,7 @@ func (gqd *GraphQLData) setOverwriteDoc(ctx context.Context, projectId string, d
 	}
 	overwriteDoc = make(map[string]interface{})
 	if op == "query" {
-		overwriteDoc, err = gqd.ProcessTransformRule(ctx, tr.TransformOutput)
+		overwriteDoc, err = gqd.ProcessTransformRule(ctx, tr.TransformOutput, docs)
 	} else if op == "mutation" {
 		processTransformRule := false
 		for _, v := range tr.TransformInput.ApplyOn {
@@ -579,9 +592,42 @@ func (gqd *GraphQLData) setOverwriteDoc(ctx context.Context, projectId string, d
 				break
 			}
 		}
-		if processTransformRule {
-			overwriteDoc, err = gqd.ProcessTransformRule(ctx, tr.TransformInput)
+
+		var docArray []interface{}
+		isArray := false
+		docArray, isArray = docs.([]interface{})
+		if !isArray {
+			dd, er := docs.(map[string]interface{}) // checking if docs is a single document without array
+			if !er {
+				return nil, errors.New("error while parsing value of 'docs'")
+			}
+			docArray = append(docArray, dd)
 		}
+		childOverwriteDoc := make(map[string]map[string]interface{})
+
+		for _, doc := range docArray {
+			dd, er := doc.(map[string]interface{})
+			if !er {
+				return nil, errors.New("error while parsing value of 'docs'")
+			}
+
+			for k, v := range dd {
+				if strings.Contains(k, "___") {
+					tn := strings.Replace(k, "___", ".", -1)
+					childOverwriteDoc[tn], err = gqd.setOverwriteDoc(ctx, projectId, dbAlias, tn, s, op, queryType, v)
+				}
+			}
+		}
+		if processTransformRule {
+			overwriteDoc, err = gqd.ProcessTransformRule(ctx, tr.TransformInput, docs)
+			if docMap, docMapOk := docs.(map[string]interface{}); docMapOk {
+				overwriteDoc = docMap
+			}
+		}
+		for k, v := range childOverwriteDoc {
+			overwriteDoc[k] = v
+		}
+
 	} else {
 		err = errors.New(fmt.Sprint("Invalid Operation : ", op))
 		logs.WithContext(ctx).Error(err.Error())

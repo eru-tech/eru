@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
@@ -31,7 +32,7 @@ type QueryObject struct {
 type QL interface {
 	Execute(ctx context.Context, projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error)
 	SetQLData(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string)
-	ProcessTransformRule(ctx context.Context, tr module_model.TransformRule) (outputObj map[string]interface{}, err error)
+	ProcessTransformRule(ctx context.Context, tr module_model.TransformRule, docs interface{}) (outputObj map[string]interface{}, err error)
 }
 
 func (qld *QLData) SetQLDataCommon(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) (err error) {
@@ -73,7 +74,7 @@ func (qld *QLData) SetFinalVars(ctx context.Context, vars map[string]interface{}
 	qld.FinalVariables = finalVars
 	return nil
 }
-func (qld *QLData) ProcessTransformRule(ctx context.Context, tr module_model.TransformRule) (outputObj map[string]interface{}, err error) {
+func (qld *QLData) ProcessTransformRule(ctx context.Context, tr module_model.TransformRule, docs interface{}) (outputObj map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ProcessTransformRule - Start")
 	if tr.RuleType == module_model.RULETYPE_NONE {
 		outputObj = make(map[string]interface{})
@@ -82,8 +83,9 @@ func (qld *QLData) ProcessTransformRule(ctx context.Context, tr module_model.Tra
 	if tr.RuleType == module_model.RULETYPE_ALWAYS {
 		outputObj = make(map[string]interface{})
 		if len(tr.Rules) > 0 {
-			for k, v := range tr.Rules[0].ForceColumnValues { //todo to remove array and make it single object
-				outputBytes, err := processTemplate(ctx, "xxx", v, qld.FinalVariables, "string", k)
+			for k, v := range tr.Rules[0].ForceColumnValues {
+				//todo to remove array and make it single object
+				outputBytes, err := processTemplate(ctx, "xxx", v, qld.FinalVariables, "string", k, docs)
 				if err != nil {
 					return nil, err
 				}
@@ -91,6 +93,7 @@ func (qld *QLData) ProcessTransformRule(ctx context.Context, tr module_model.Tra
 					outputObj[k] = string(outputBytes)
 					//skipping to write to overwriteobj if there is no output
 				}
+				logs.WithContext(ctx).Info(fmt.Sprint(outputObj[k]))
 			}
 		}
 	}
@@ -113,7 +116,7 @@ func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, var
 	return
 }
 
-func processTemplate(ctx context.Context, templateName string, templateString string, vars map[string]interface{}, outputType string, key string) (output []byte, err error) {
+func processTemplate(ctx context.Context, templateName string, templateString string, vars map[string]interface{}, outputType string, key string, d interface{}) (output []byte, err error) {
 	logs.WithContext(ctx).Debug("processTemplate - Start")
 	ruleValue := strings.SplitN(templateString, ".", 2)
 	templateStr := ""
@@ -127,18 +130,16 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 	} else if ruleValue[0] == module_model.RULEPREFIX_DOCS {
 		var docs []interface{}
 		isArray := false
-		if d, ok := vars["docs"]; ok {
-			docs, isArray = d.([]interface{})
-			if !isArray {
-				dd, er := d.(map[string]interface{}) // checking if docs is a single document without array
-				if !er {
-					return nil, errors.New("error while parsing value of 'docs'")
-				}
-				docs = append(docs, dd)
+
+		docs, isArray = d.([]interface{})
+		if !isArray {
+			dd, er := d.(map[string]interface{}) // checking if docs is a single document without array
+			if !er {
+				return nil, errors.New("error while parsing value of 'docs'")
 			}
-		} else {
-			err = errors.New("docs keyword not found while transforming the doc")
+			docs = append(docs, dd)
 		}
+
 		for i, doc := range docs {
 			dd, er := doc.(map[string]interface{}) // checking if docs is a single document without array
 			if !er {

@@ -92,7 +92,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 				break
 			case string:
 				str = v.(string)
-				vBytes, err := processTemplate(ctx, "variable", str, sqd.FinalVariables, "string", "")
+				vBytes, err := processTemplate(ctx, "variable", str, sqd.FinalVariables, "string", "", nil)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					return nil, nil, err
