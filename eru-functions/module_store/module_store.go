@@ -327,7 +327,7 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.Fun
 	var errArray []string
 	for k, v := range cloneFunc.FuncSteps {
 		fs := cloneFunc.FuncSteps[k]
-		err = ms.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, host, v.Path, method, headers, s)
+		err = ms.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, host, v.Path, method, headers, s, cloneFunc.TokenSecretKey)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			errArray = append(errArray, err.Error())
@@ -341,7 +341,7 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.Fun
 	return
 }
 
-func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *functions.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (err error) {
+func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *functions.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI, tokenHeaderKey string) (err error) {
 	logs.WithContext(ctx).Debug(fmt.Sprint("loadRoutesForFunction - Start : ", funcStep.GetRouteName()))
 	var errArray []string
 	r := functions.Route{}
@@ -355,6 +355,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	} else {
 		if funcStep.QueryName != "" {
 			logs.WithContext(ctx).Info(fmt.Sprint("making dummy route for query name ", funcStep.QueryName))
+			r.RequestHeaders = append(r.RequestHeaders, functions.Headers{tokenHeaderKey, headers.Get(tokenHeaderKey), false})
 			r.RouteName = funcStep.QueryName
 			r.Url = "/"
 			r.MatchType = "PREFIX"
@@ -406,7 +407,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	}
 	for ck, cv := range funcStep.FuncSteps {
 		fs := funcStep.FuncSteps[ck]
-		err = ms.LoadRoutesForFunction(ctx, fs, cv.RouteName, projectId, host, cv.Path, method, headers, s)
+		err = ms.LoadRoutesForFunction(ctx, fs, cv.RouteName, projectId, host, cv.Path, method, headers, s, tokenHeaderKey)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			errArray = append(errArray, err.Error())
