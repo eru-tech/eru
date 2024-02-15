@@ -345,6 +345,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 			err = cosentAcceptErr
 			return
 		}
+		eruTokens.Id = identity.Id
 		return identity, eruTokens, nil
 	}
 	return identity, LoginSuccess{}, nil

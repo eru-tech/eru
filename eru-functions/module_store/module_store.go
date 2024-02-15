@@ -355,7 +355,6 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	} else {
 		if funcStep.QueryName != "" {
 			logs.WithContext(ctx).Info(fmt.Sprint("making dummy route for query name ", funcStep.QueryName))
-			r.RequestHeaders = append(r.RequestHeaders, functions.Headers{tokenHeaderKey, headers.Get(tokenHeaderKey), false})
 			r.RouteName = funcStep.QueryName
 			r.Url = "/"
 			r.MatchType = "PREFIX"
