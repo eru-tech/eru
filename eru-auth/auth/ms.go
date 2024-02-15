@@ -303,6 +303,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 			}
 
 		} else {
+			logs.WithContext(ctx).Info(fmt.Sprint(output))
 			identity.Id = output[0]["identity_id"].(string)
 			if output[0]["is_active"].(bool) {
 				identity.Status = "ACTIVE"
@@ -346,6 +347,8 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 			return
 		}
 		eruTokens.Id = identity.Id
+		logs.WithContext(ctx).Info(fmt.Sprint(identity))
+		logs.WithContext(ctx).Info(fmt.Sprint(eruTokens))
 		return identity, eruTokens, nil
 	}
 	return identity, LoginSuccess{}, nil
