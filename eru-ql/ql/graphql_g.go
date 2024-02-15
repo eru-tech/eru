@@ -414,6 +414,10 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 							op = " in "
 						case "$nin":
 							op = " not in "
+						case "$jin":
+							op = fmt.Sprint(" <@ ", module_model.MAKE_JSON_ARRAY_FN)
+						case "$jnin":
+							op = fmt.Sprint(" <@ ", module_model.MAKE_JSON_ARRAY_FN)
 						case "$like":
 							op = " like "
 						default:
@@ -453,7 +457,7 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 							} else {
 								tempArray = append(tempArray, fmt.Sprint(parentKey, " IS NOT NULL "))
 							}
-						case "$in", "$nin": //TODO to pass json variable aaray and check if the replaced array is passed as single string or string of values to sql
+						case "$in", "$nin", "$jin", "$jnin": //TODO to pass json variable aaray and check if the replaced array is passed as single string or string of values to sql
 							switch reflect.TypeOf(newVal).Kind() {
 							case reflect.String:
 								s := reflect.ValueOf(newVal)
@@ -471,9 +475,18 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 										temp[i] = fmt.Sprint(ss)
 									}
 								}
-								tempArray = append(tempArray, fmt.Sprint(parentKey, op, "(", strings.Join(temp, " , "), ")"))
+								if v.String() == "$jnin" || v.String() == "$jin" {
+									parentKey = strings.Replace(parentKey, "->>", "->", -1)
+								}
+
+								str := fmt.Sprint(parentKey, op, "(", strings.Join(temp, " , "), ")")
+
+								if v.String() == "$jnin" {
+									str = fmt.Sprint(" not (", str, ") ")
+								}
+								tempArray = append(tempArray, str)
 							default:
-								logs.WithContext(ctx).Warn(fmt.Sprint("skipping $in and $nin clause as it needs array as a value but recevied ", newVal))
+								logs.WithContext(ctx).Warn(fmt.Sprint("skipping $in, $nin, $jin and $jnin clause as it needs array as a value but received ", newVal))
 							}
 						default:
 							str := ""
@@ -710,5 +723,10 @@ func (sqlObj *SQLObjectQ) MakeQuery(ctx context.Context, sqlMaker ds.SqlMakerI, 
 	sqlObj.DBQuery = fmt.Sprint(withClause, "select ", strDistinct, strColums, " from ", fromTable, " ", strJoinClause, " ", strWhereClause, " ", strGroupClause, strSortClause)
 
 	sqlObj.DBQuery = sqlMaker.AddLimitSkipClause(ctx, sqlObj.DBQuery, sqlObj.Limit, sqlObj.Skip, 1000)
+	makeJsonArrayFnKeyWord, err := sqlMaker.GetMakeJsonArrayFn()
+	if err != nil {
+		makeJsonArrayFnKeyWord = ""
+	}
+	sqlObj.DBQuery = strings.Replace(sqlObj.DBQuery, module_model.MAKE_JSON_ARRAY_FN, makeJsonArrayFnKeyWord, -1)
 	return err
 }

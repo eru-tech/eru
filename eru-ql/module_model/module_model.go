@@ -30,6 +30,7 @@ const (
 	COLUMN_MASKING_NONE    = "none"
 	COLUMN_MASKING_ENCRYPT = "encrypt"
 	COLUMN_MASKING_HASH    = "hash"
+	MAKE_JSON_ARRAY_FN     = "$make_json_array_fn"
 )
 
 type ModuleProjectI interface {
