@@ -603,7 +603,7 @@ func (gqd *GraphQLData) setOverwriteDoc(ctx context.Context, projectId string, d
 			}
 			docArray = append(docArray, dd)
 		}
-		childOverwriteDoc := make(map[string]map[string]interface{})
+		childOverwriteDoc := make(map[string]interface{})
 
 		for _, doc := range docArray {
 			dd, er := doc.(map[string]interface{})
@@ -615,6 +615,7 @@ func (gqd *GraphQLData) setOverwriteDoc(ctx context.Context, projectId string, d
 				if strings.Contains(k, "___") {
 					tn := strings.Replace(k, "___", ".", -1)
 					childOverwriteDoc[tn], err = gqd.setOverwriteDoc(ctx, projectId, dbAlias, tn, s, op, queryType, v)
+					childOverwriteDoc[tn] = v
 				}
 			}
 		}
@@ -627,7 +628,6 @@ func (gqd *GraphQLData) setOverwriteDoc(ctx context.Context, projectId string, d
 		for k, v := range childOverwriteDoc {
 			overwriteDoc[k] = v
 		}
-
 	} else {
 		err = errors.New(fmt.Sprint("Invalid Operation : ", op))
 		logs.WithContext(ctx).Error(err.Error())
