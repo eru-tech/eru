@@ -6,6 +6,8 @@ require (
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/eru-tech/eru/eru-crypto v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000
 	github.com/google/uuid v1.3.0
 	github.com/xuri/excelize/v2 v2.7.0
 )
@@ -36,4 +38,6 @@ require (
 replace (
 	github.com/eru-tech/eru/eru-crypto => ../eru-crypto
 	github.com/eru-tech/eru/eru-logs => ../eru-logs
+	github.com/eru-tech/eru/eru-utils => ../eru-utils
+	github.com/eru-tech/eru/eru-models => ../eru-models
 )

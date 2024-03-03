@@ -15,9 +15,12 @@ import (
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eruutils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
 	"math"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
@@ -27,6 +30,23 @@ import (
 type GoTemplate struct {
 	Name     string
 	Template string
+}
+
+type OrderedMap struct {
+	Rank float64
+	Obj  map[string]interface{}
+}
+
+type sorter []*OrderedMap
+
+func (a sorter) Len() int {
+	return len(a)
+}
+func (a sorter) Swap(i, j int) {
+	a[i], a[j] = a[j], a[i]
+}
+func (a sorter) Less(i, j int) bool {
+	return a[i].Rank < a[j].Rank
 }
 
 func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFormat string) (output interface{}, err error) {
@@ -236,6 +256,32 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			d = orgArray[index]
 			return d
 		},
+		"sortMapArray": func(mapArray []interface{}, sortKey string) (mapArraySorted []interface{}, err error) {
+			var tmpArray []*OrderedMap
+			for _, v := range mapArray {
+				if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
+					logs.WithContext(ctx).Error(fmt.Sprint(reflect.TypeOf(vMap[sortKey])))
+					if r, rOk := vMap[sortKey].(float64); !rOk {
+						err = errors.New("sortKey is not an int")
+						return
+					} else {
+						o := OrderedMap{
+							Rank: r,
+							Obj:  vMap,
+						}
+						tmpArray = append(tmpArray, &o)
+					}
+				} else {
+					err = errors.New("not a map array")
+					return
+				}
+			}
+			sort.Sort(sorter(tmpArray))
+			for _, nv := range tmpArray {
+				mapArraySorted = append(mapArraySorted, nv.Obj)
+			}
+			return
+		},
 		"logobject": func(v interface{}) (err error) {
 			vobj, err := json.Marshal(v)
 			if err != nil {
@@ -436,6 +482,10 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 		"new_jwt": func(privateKeyStr string, claimsMap map[string]interface{}) (tokenString string, err error) {
 			return jwt.CreateJWT(ctx, privateKeyStr, claimsMap)
 		},
+		"evalFilter": func(filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
+			logs.WithContext(ctx).Info("----------------------------------- evalFilter starting --------------------------------")
+			return evalFilter(ctx, filter, record)
+		},
 	}
 
 	buf := &bytes.Buffer{}
@@ -470,7 +520,193 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err
 }
-
+func evalFilter(ctx context.Context, filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
+	for k, v := range filter {
+		kk := fetchKey(k)
+		logs.WithContext(ctx).Info(fmt.Sprint(kk, " : ", v))
+		if kk == "$or" {
+			logs.WithContext(ctx).Info(fmt.Sprint(reflect.TypeOf(v)))
+			if vArray, vArrayOk := v.([]interface{}); vArrayOk {
+				result, err = evalOrFilter(ctx, vArray, record)
+				logs.WithContext(ctx).Info(fmt.Sprint(result))
+				if !result {
+					return false, nil
+				}
+			} else {
+				err = errors.New("$or needs an array")
+				return false, err
+			}
+		} else {
+			if recordValue, recordValueOk := record[kk]; recordValueOk {
+				logs.WithContext(ctx).Info(fmt.Sprint(kk, " : ", recordValue))
+				if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
+					result, err = evalCondition(ctx, vMap, recordValue)
+					logs.WithContext(ctx).Info(fmt.Sprint(result))
+					if !result {
+						return false, err
+					}
+				} else {
+					result = eruutils.ImplCompare(recordValue, v)
+					logs.WithContext(ctx).Info(fmt.Sprint(result))
+					if !result {
+						return false, err
+					}
+				}
+			} else {
+				err = errors.New(fmt.Sprint("key : ", kk, " not found in data"))
+				logs.WithContext(ctx).Info(err.Error())
+				return false, err
+			}
+		}
+	}
+	return true, nil
+}
+func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue interface{}) (result bool, err error) {
+	for ck, cv := range cond {
+		switch ck {
+		case "$in":
+			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
+				return eruutils.ImplContains(cvArray, recordValue), nil
+			} else {
+				err = errors.New("$in operator requires an array")
+				logs.WithContext(ctx).Error(err.Error())
+				return false, err
+			}
+		case "$nin":
+			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
+				return !(eruutils.ImplContains(cvArray, recordValue)), nil
+			} else {
+				err = errors.New("$nin operator requires an array")
+				logs.WithContext(ctx).Error(err.Error())
+				return false, err
+			}
+		case "$like":
+			if rvStr, rvStrOk := recordValue.(string); rvStrOk {
+				if cvStr, cvStrOk := cv.(string); cvStrOk {
+					return strings.Contains(rvStr, cvStr), nil
+				} else {
+					err = errors.New("$like operator requires a string")
+					logs.WithContext(ctx).Error(err.Error())
+					return false, err
+				}
+			} else {
+				err = errors.New("$like operator requires a string to compare")
+				logs.WithContext(ctx).Error(err.Error())
+				return false, err
+			}
+		case "$nlike":
+			if rvStr, rvStrOk := recordValue.(string); rvStrOk {
+				if cvStr, cvStrOk := cv.(string); cvStrOk {
+					return !(strings.Contains(rvStr, cvStr)), nil
+				} else {
+					err = errors.New("$nlike operator requires a string")
+					logs.WithContext(ctx).Error(err.Error())
+					return false, err
+				}
+			} else {
+				err = errors.New("$nlike operator requires a string to compare")
+				logs.WithContext(ctx).Error(err.Error())
+				return false, err
+			}
+		case "$gt":
+			if rvF, rvFOk := recordValue.(float64); rvFOk {
+				if cvF, cvFOk := cv.(float64); cvFOk {
+					return (rvF > cvF), nil
+				} else {
+					err = errors.New("$gt operator requires a number")
+					logs.WithContext(ctx).Error(err.Error())
+					return false, err
+				}
+			} else {
+				err = errors.New("$gt operator requires a number to compare")
+				logs.WithContext(ctx).Error(err.Error())
+				return false, err
+			}
+		case "$gte":
+			if rvF, rvFOk := recordValue.(float64); rvFOk {
+				if cvF, cvFOk := cv.(float64); cvFOk {
+					return (rvF >= cvF), nil
+				} else {
+					err = errors.New("$gte operator requires a number")
+					logs.WithContext(ctx).Error(err.Error())
+					return false, err
+				}
+			} else {
+				err = errors.New("$gte operator requires a number to compare")
+				logs.WithContext(ctx).Error(err.Error())
+				return false, err
+			}
+		case "$lt":
+			if rvF, rvFOk := recordValue.(float64); rvFOk {
+				if cvF, cvFOk := cv.(float64); cvFOk {
+					return (rvF < cvF), nil
+				} else {
+					err = errors.New("$lt operator requires a number")
+					logs.WithContext(ctx).Error(err.Error())
+					return false, err
+				}
+			} else {
+				err = errors.New("$lt operator requires a number to compare")
+				logs.WithContext(ctx).Error(err.Error())
+				return false, err
+			}
+		case "$lte":
+			if rvF, rvFOk := recordValue.(float64); rvFOk {
+				if cvF, cvFOk := cv.(float64); cvFOk {
+					return (rvF <= cvF), nil
+				} else {
+					err = errors.New("$lte operator requires a number")
+					logs.WithContext(ctx).Error(err.Error())
+					return false, err
+				}
+			} else {
+				err = errors.New("$lte operator requires a number to compare")
+				logs.WithContext(ctx).Error(err.Error())
+				return false, err
+			}
+		case "$ne":
+			return !(eruutils.ImplCompare(cv, recordValue)), nil
+		case "$eq":
+			return eruutils.ImplCompare(cv, recordValue), nil
+		case "$jin":
+			//todo implement jin and jnin
+			err = errors.New("$jin not implemented")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		case "$jnin":
+			err = errors.New("jnin not implemented")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		default:
+			logs.WithContext(ctx).Info("operator not found")
+			return false, nil
+		}
+	}
+	return
+}
+func fetchKey(k string) (key string) {
+	key = k
+	kArray := strings.Split(k, "___")
+	if len(kArray) > 1 {
+		key = kArray[1]
+	}
+	return
+}
+func evalOrFilter(ctx context.Context, filter []interface{}, record map[string]interface{}) (result bool, err error) {
+	for i, v := range filter {
+		if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
+			result, err = evalFilter(ctx, vMap, record)
+		} else {
+			err = errors.New("$or needs array of objects")
+		}
+		logs.WithContext(ctx).Info(fmt.Sprint("result of OR element no ", i))
+		logs.WithContext(ctx).Info(fmt.Sprint(result))
+		if result {
+			return true, nil
+		}
+	}
+	return
+}
 func excelToJson(ctx context.Context, fData string, sheetNames string, firstRowHeader string, headers string, mapKeys string) (fJson interface{}, err error) {
 	sheetNameArray := strings.Split(sheetNames, ",")
 	sheetHeadersArray := strings.Split(headers, ",")

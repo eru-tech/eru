@@ -528,3 +528,16 @@ func ExecuteDbSave(ctx context.Context, db *sqlx.DB, queries []*models.Queries) 
 	}
 	return
 }
+
+func ImplContains[T comparable](s []T, e T) bool {
+	for _, v := range s {
+		if v == e {
+			return true
+		}
+	}
+	return false
+}
+
+func ImplCompare[T comparable](s T, e T) bool {
+	return s == e
+}
