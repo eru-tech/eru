@@ -130,6 +130,8 @@ type KratosIdentity struct {
 	MetaDataAdmin       map[string]interface{}  `json:"metadata_admin"`
 	CreatedAt           time.Time               `json:"created_at"`
 	UpdatedAt           time.Time               `json:"updated_at"`
+	OrgId               string                  `json:"organization_id"`
+	Credentials         interface{}             `json:"credentials"`
 }
 type KratosIdentityAddress struct {
 	Id        string    `json:"id"`
@@ -750,13 +752,14 @@ func (kratosHydraAuth *KratosHydraAuth) Login(ctx context.Context, loginPostBody
 		}
 		loginResBytes = loginResJson
 	}
-
+	logs.WithContext(ctx).Info(string(loginResBytes))
 	loginBodyFromRes := json.NewDecoder(bytes.NewReader(loginResBytes))
 	loginBodyFromRes.DisallowUnknownFields()
 	var kratosSession KratosSession
 	var kratosLoginFlow KratosFlow
 	kratosLoginSucceed := true
 	if loginBodyFromResDecodeErr := loginBodyFromRes.Decode(&kratosSession); loginBodyFromResDecodeErr != nil {
+		logs.WithContext(ctx).Error(loginBodyFromResDecodeErr.Error())
 		kratosLoginSucceed = false
 		loginBodyFromRes = json.NewDecoder(bytes.NewReader(loginResBytes))
 		loginBodyFromRes.DisallowUnknownFields()
