@@ -134,13 +134,14 @@ type KratosIdentity struct {
 	Credentials         interface{}             `json:"credentials"`
 }
 type KratosIdentityAddress struct {
-	Id        string    `json:"id"`
-	Value     string    `json:"value"`
-	Verified  bool      `json:"verified"`
-	Via       string    `json:"via"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Id         string    `json:"id"`
+	Value      string    `json:"value"`
+	Verified   bool      `json:"verified"`
+	Via        string    `json:"via"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	VerifiedAt time.Time `json:"verified_at""`
 }
 
 func (kratosHydraAuth *KratosHydraAuth) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
