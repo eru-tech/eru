@@ -163,7 +163,7 @@ func PrintRequestBody(ctx context.Context, request *http.Request, msg string) {
 	logs.WithContext(ctx).Info(fmt.Sprint(request.URL))
 	cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
 	if cl > 1000 && len(string(body)) > 1000 {
-		logs.WithContext(ctx).Info(string(body)[1:1000])
+		logs.WithContext(ctx).Info(string(body)[0:1000])
 	} else {
 		logs.WithContext(ctx).Info(string(body))
 	}

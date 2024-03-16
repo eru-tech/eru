@@ -15,6 +15,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"os"
 	"reflect"
 	"strconv"
@@ -91,8 +92,8 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 
 	reqContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
 	logs.WithContext(ctx).Info(fmt.Sprint("reqContentType = ", reqContentType))
-	if reqContentType == encodedForm || reqContentType == multiPartForm {
-		logs.WithContext(ctx).Info("inside encodedForm || multiPartForm")
+	if reqContentType == multiPartForm {
+		logs.WithContext(ctx).Info("inside multiPartForm")
 		var reqBody bytes.Buffer
 		var reqOldBody bytes.Buffer
 		multipartWriter := multipart.NewWriter(&reqBody)
@@ -128,6 +129,7 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 					}
 
 				} else {
+					logs.WithContext(ctx).Info(part.FormName())
 					buf := new(bytes.Buffer)
 					buf.ReadFrom(part)
 					fieldWriter, err3 := multipartWriter.CreateFormField(part.FormName())
@@ -155,6 +157,24 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 		request.Header.Set("Content-Length", strconv.Itoa(reqOldBody.Len()))
 		request.ContentLength = int64(reqOldBody.Len())
 
+	} else if reqContentType == encodedForm {
+		formData := url.Values{}
+		rpfErr := request.ParseForm()
+		if rpfErr != nil {
+			err = rpfErr
+			logs.WithContext(ctx).Info(fmt.Sprint("error from request.ParseForm() = ", err.Error()))
+			return
+		}
+		if request.Form != nil {
+			for k, v := range request.Form {
+				formData.Set(k, strings.Join(v, ","))
+			}
+		}
+		req.Body = io.NopCloser(strings.NewReader(formData.Encode()))
+		req.Header.Add("Content-Length", strconv.Itoa(len(formData.Encode())))
+
+		request.Body = io.NopCloser(strings.NewReader(formData.Encode()))
+		request.Header.Add("Content-Length", strconv.Itoa(len(formData.Encode())))
 	} else {
 		body, err3 := io.ReadAll(req.Body)
 		if err3 != nil {

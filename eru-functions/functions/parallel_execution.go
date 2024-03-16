@@ -113,7 +113,6 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 		if started || fk == funcStepName || funcStepName == "" {
 			started = true
 		}
-
 		r, rErr := CloneRequest(ctx, req)
 		if rErr != nil {
 			logs.WithContext(ctx).Error(rErr.Error())

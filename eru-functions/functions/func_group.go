@@ -522,14 +522,14 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 			//changing it back to new content type once process multipart has read the request body and loaded vars.formdata
 			req.Header.Set("Content-type", newContentTypeFull)
 		} else if oldContentType == encodedForm {
-			rpfErr := req.ParseForm()
+			rpfErr := request.ParseForm()
 			if rpfErr != nil {
 				err = rpfErr
 				logs.WithContext(ctx).Info(fmt.Sprint("error from request.ParseForm() = ", err.Error()))
 				return
 			}
-			if req.PostForm != nil {
-				for k, v := range req.PostForm {
+			if request.PostForm != nil {
+				for k, v := range request.PostForm {
 					vars.FormData[k] = strings.Join(v, ",")
 					vars.FormDataKeyArray = append(vars.FormDataKeyArray, k)
 				}
