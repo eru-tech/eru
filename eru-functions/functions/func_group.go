@@ -684,21 +684,29 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 	}
 	reqContentType := strings.Split(response.Header.Get("Content-type"), ";")[0]
 	if reqContentType == "application/json" {
-		tmplBodyFromRes := json.NewDecoder(response.Body)
+
+		body, readErr := io.ReadAll(response.Body)
+		if readErr != nil {
+			err = readErr
+			logs.WithContext(ctx).Error(fmt.Sprint("io.ReadAll(response.Body) error : ", err.Error()))
+			return
+		}
+
+		tmplBodyFromRes := json.NewDecoder(bytes.NewReader(body))
 		tmplBodyFromRes.DisallowUnknownFields()
+
+		//if err = json.Unmarshal(body, &vars.Body); err != nil {
+
 		if err = tmplBodyFromRes.Decode(&vars.Body); err != nil {
-			body, readErr := io.ReadAll(tmplBodyFromRes.Buffered())
-			if readErr != nil {
-				err = readErr
-				logs.WithContext(ctx).Error(fmt.Sprint("io.ReadAll(response.Body) error : ", err.Error()))
-				return
-			}
+
 			err = nil
 			tempBody := make(map[string]string)
-			tempBody["data"] = string(body)
+
+			tempBody["data"] = strings.TrimSpace(string(body))
 			vars.Body = tempBody
 		}
 		vars.OrgBody = vars.Body
+		logs.WithContext(ctx).Info(fmt.Sprint(vars))
 		if funcStep.TransformResponse != "" {
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = vars

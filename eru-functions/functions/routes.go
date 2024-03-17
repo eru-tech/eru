@@ -701,6 +701,7 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 
 func (route *Route) transformResponse(ctx context.Context, response *http.Response, trReqVars *TemplateVars) (trResVars *TemplateVars, err error) {
 	logs.WithContext(ctx).Debug("transformResponse - Start : ")
+
 	trResVars = &TemplateVars{}
 
 	logs.WithContext(ctx).Info(fmt.Sprint("route.Redirect for route ", route.RouteName, " is ", route.Redirect))
@@ -765,22 +766,27 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 
 	trResVars.Vars = trReqVars.Vars
 	reqContentType := strings.Split(response.Header.Get("Content-type"), ";")[0]
+
 	if reqContentType == applicationjson {
 		var res interface{}
-		tmplBodyFromRes := json.NewDecoder(response.Body)
+
+		body, readErr := io.ReadAll(response.Body)
+
+		if readErr != nil {
+			err = readErr
+			logs.WithContext(ctx).Error(fmt.Sprint("io.ReadAll(response.Body) error : ", err.Error()))
+			return
+		}
+		tmplBodyFromRes := json.NewDecoder(bytes.NewReader(body))
 		tmplBodyFromRes.DisallowUnknownFields()
+
 		if err = tmplBodyFromRes.Decode(&res); err != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("tmplBodyFromRes.Decode error from functions : ", err.Error()))
-			body, readErr := io.ReadAll(response.Body)
-			if readErr != nil {
-				err = readErr
-				logs.WithContext(ctx).Error(fmt.Sprint("io.ReadAll(response.Body) error : ", err.Error()))
-				return
-			}
+			err = nil
 			tempBody := make(map[string]string)
-			tempBody["data"] = string(body)
+			tempBody["data"] = strings.TrimSpace(string(body))
 			res = tempBody
-
+			logs.WithContext(ctx).Info(fmt.Sprint(res))
 		}
 		rb, err := json.Marshal(res)
 		if err != nil {

@@ -144,9 +144,9 @@ func PrintResponseBody(ctx context.Context, response *http.Response, msg string)
 	logs.WithContext(ctx).Info(fmt.Sprint(response.Request.URL))
 	cl, _ := strconv.Atoi(response.Header.Get("Content-Length"))
 	if cl > 1000 {
-		logs.WithContext(ctx).Info(string(body)[1:1000])
+		logs.WithContext(ctx).Info(string(body)[0:1000])
 	} else if len(string(body)) > 1000 {
-		logs.WithContext(ctx).Info(string(body)[1:1000])
+		logs.WithContext(ctx).Info(string(body)[0:1000])
 	} else {
 		logs.WithContext(ctx).Info(string(body))
 	}
