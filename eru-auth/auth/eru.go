@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	SELECT_IDENTITY_SUB            = "select * from eruauth_identities where identity_provider_id = ???"
+	SELECT_IDENTITY_SUB            = "select * from eruauth_identities where identity_provider_id = ??? or traits->>'email'= ???"
 	INSERT_IDENTITY                = "insert into eruauth_identities (identity_id,identity_provider,identity_provider_id,traits,attributes) values (???,???,???,???,???)"
 	UPDATE_IDENTITY                = "update eruauth_identities set traits = ??? , attributes = ??? where identity_id = ???"
 	INSERT_IDENTITY_CREDENTIALS    = "insert into eruauth_identity_credentials (identity_credential_id , identity_id, identity_credential, identity_credential_type) values (???,???,???,???)"

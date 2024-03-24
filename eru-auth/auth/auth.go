@@ -42,13 +42,39 @@ type AuthI interface {
 	CompleteRecovery(ctx context.Context, recoveryPassword RecoveryPassword, cookies []*http.Cookie) (msg string, err error)
 	VerifyRecovery(ctx context.Context, recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error)
 	VerifyCode(ctx context.Context, verifyCode VerifyCode, tokenObj map[string]interface{}, withToken bool) (res interface{}, err error)
-	GetUrl(ctx context.Context, state string) (url string, msParams MsParams, err error)
+	GetUrl(ctx context.Context, state string) (url string, oAuthParams OAuthParams, err error)
 }
 
 const (
 	OTP_PURPOSE_RECOVERY = "RECOVERY"
 	OTP_PURPOSE_VERIFY   = "VERIFY"
 )
+
+type AuthConfig struct {
+	ClientId     string      `json:"client_id" eru:"required"`
+	ClientSecret string      `json:"client_secret" eru:"required"`
+	RedirectURI  string      `json:"redirect_uri" eru:"required"`
+	Scope        string      `json:"scope" eru:"required"`
+	SsoBaseUrl   string      `json:"sso_base_url" eru:"required"`
+	TokenUrl     string      `json:"token_url" eru:"required"`
+	JwkUrl       string      `json:"jwk_url" eru:"required"`
+	Identifiers  Identifiers `json:"identifiers" eru:"required"`
+}
+type OAuthParams struct {
+	ClientId            string `json:"client_id"`
+	Scope               string `json:"scope"`
+	RedirectURI         string `json:"redirect_uri"`
+	ClientRequestId     string `json:"client-request-id"`
+	ResponseMode        string `json:"response_mode"`
+	ResponseType        string `json:"response_type"`
+	CodeChallenge       string `json:"code_challenge"`
+	CodeVerifier        string
+	CodeChallengeMethod string `json:"code_challenge_method"`
+	Nonce               string `json:"nonce"`
+	State               string `json:"state"`
+	Url                 string
+	Prompt              string `json:"prompt"`
+}
 
 type ChangePassword struct {
 	OldPassword string `json:"old_password"`
@@ -159,8 +185,14 @@ func (auth *Auth) GetAuthDb() (authDbI AuthDbI) {
 	return auth.AuthDb
 }
 
-func (auth *Auth) GetUrl(ctx context.Context, state string) (url string, msParams MsParams, err error) {
+func (auth *Auth) GetUrl(ctx context.Context, state string) (url string, oAuthParams OAuthParams, err error) {
 	err = errors.New("GetUrl Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
+func (auth *Auth) GetOAuthUrl(ctx context.Context, state string) (url string, oAuthParams OAuthParams, err error) {
+	err = errors.New("GetOAuthUrl Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
 }
@@ -381,6 +413,8 @@ func GetAuth(authType string) AuthI {
 		return new(MsAuth)
 	case "ERU":
 		return new(EruAuth)
+	case "GOOGLE":
+		return new(GlAuth)
 	default:
 		return new(Auth)
 	}

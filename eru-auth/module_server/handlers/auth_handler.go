@@ -253,7 +253,7 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		msParams := auth.MsParams{}
+		msParams := auth.OAuthParams{}
 		if authName == "ms" {
 			msParams, err = s.GetPkceEvent(ctx, loginPostBody.IdpRequestId, s)
 			if err != nil {
@@ -839,7 +839,8 @@ func GetSsoUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		params := r.URL.Query()
 		state := params.Get("state")
-
+		requestId := ""
+		ssoUrl := ""
 		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -859,9 +860,11 @@ func GetSsoUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
+		ssoUrl = url
+		requestId = msParams.ClientRequestId
 
 		server_handlers.FormatResponse(w, http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"url": url, "request_id": msParams.ClientRequestId})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"url": ssoUrl, "request_id": requestId})
 		return
 	}
 }

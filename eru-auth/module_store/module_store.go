@@ -42,8 +42,8 @@ type ModuleStoreI interface {
 	SaveAuth(ctx context.Context, authObj auth.AuthI, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveAuth(ctx context.Context, authType string, projectId string, realStore ModuleStoreI) error
 	GetAuth(ctx context.Context, projectId string, authName string, s ModuleStoreI) (auth.AuthI, error)
-	SavePkceEvent(ctx context.Context, msParams auth.MsParams, s ModuleStoreI) (err error)
-	GetPkceEvent(ctx context.Context, requestId string, s ModuleStoreI) (msParams auth.MsParams, err error)
+	SavePkceEvent(ctx context.Context, msParams auth.OAuthParams, s ModuleStoreI) (err error)
+	GetPkceEvent(ctx context.Context, requestId string, s ModuleStoreI) (msParams auth.OAuthParams, err error)
 	SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error
 }
 
@@ -421,7 +421,7 @@ func (ms *ModuleStore) GetAuth(ctx context.Context, projectId string, authName s
 	*/
 }
 
-func (ms *ModuleStore) SavePkceEvent(ctx context.Context, msParams auth.MsParams, s ModuleStoreI) (err error) {
+func (ms *ModuleStore) SavePkceEvent(ctx context.Context, msParams auth.OAuthParams, s ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SavePkceEvent - Start")
 	s.GetMutex().Lock()
 	defer s.GetMutex().Unlock()
@@ -443,7 +443,7 @@ func (ms *ModuleStore) SavePkceEvent(ctx context.Context, msParams auth.MsParams
 	return
 }
 
-func (ms *ModuleStore) GetPkceEvent(ctx context.Context, requestId string, s ModuleStoreI) (msParams auth.MsParams, err error) {
+func (ms *ModuleStore) GetPkceEvent(ctx context.Context, requestId string, s ModuleStoreI) (msParams auth.OAuthParams, err error) {
 	logs.WithContext(ctx).Debug("GetPkceEvent - Start")
 	query := store.Queries{}
 	query.Query = SELECT_PKCE_EVENT
