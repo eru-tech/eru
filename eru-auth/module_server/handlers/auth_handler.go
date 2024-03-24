@@ -839,32 +839,34 @@ func GetSsoUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		params := r.URL.Query()
 		state := params.Get("state")
-		requestId := ""
-		ssoUrl := ""
 		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-
+		responseBody := make(map[string]string)
 		url, msParams, err := authObjI.GetUrl(r.Context(), state)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		err = s.SavePkceEvent(r.Context(), msParams, s)
-		if err != nil {
-			server_handlers.FormatResponse(w, 400)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			return
+		responseBody["url"] = url
+
+		pkceRequired, err := authObjI.GetAttribute(r.Context(), "pkce")
+		if pkceRequired.(bool) {
+			err = s.SavePkceEvent(r.Context(), msParams, s)
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+			responseBody["request_id"] = msParams.ClientRequestId
 		}
-		ssoUrl = url
-		requestId = msParams.ClientRequestId
 
 		server_handlers.FormatResponse(w, http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"url": ssoUrl, "request_id": requestId})
+		_ = json.NewEncoder(w).Encode(responseBody)
 		return
 	}
 }

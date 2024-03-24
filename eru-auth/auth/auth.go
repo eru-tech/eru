@@ -138,6 +138,7 @@ type Auth struct {
 	TokenHeaderKey string    `json:"token_header_key"`
 	Hooks          AuthHooks `json:"hooks" eru:"optional"`
 	AuthDb         AuthDbI   `json:"-"`
+	PKCE           bool      `json:"pkce"`
 }
 
 type AuthHooks struct {
@@ -350,6 +351,8 @@ func (auth *Auth) GetAttribute(ctx context.Context, attributeName string) (attri
 		return auth.AuthName, nil
 	case "token_header_key":
 		return auth.TokenHeaderKey, nil
+	case "pkce":
+		return auth.PKCE, nil
 	default:
 		err := errors.New("Attribute not found")
 		logs.WithContext(ctx).Error(err.Error())
