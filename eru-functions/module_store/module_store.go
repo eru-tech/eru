@@ -342,16 +342,19 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.Fun
 }
 
 func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *functions.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI, tokenHeaderKey string) (err error) {
-	logs.WithContext(ctx).Debug(fmt.Sprint("loadRoutesForFunction - Start : ", funcStep.GetRouteName()))
+	logs.WithContext(ctx).Info(fmt.Sprint("loadRoutesForFunction - Start : ", funcStep.GetRouteName()))
 	var errArray []string
 	r := functions.Route{}
+
 	if funcStep.FunctionName != "" {
+		logs.WithContext(ctx).Info(fmt.Sprint("funcStep.FunctionName called for ", funcStep.FunctionName))
 		funcGroup, fgErr := ms.GetAndValidateFunc(ctx, funcStep.FunctionName, projectId, host, url, method, headers, s)
 		if fgErr != nil {
 			err = fgErr
 			return
 		}
 		funcStep.FuncGroup = funcGroup
+		logs.WithContext(ctx).Info(fmt.Sprint("FuncGroup set for  ", funcStep.FunctionName, " :", funcStep.FuncGroup))
 	} else {
 		if funcStep.QueryName != "" {
 			logs.WithContext(ctx).Info(fmt.Sprint("making dummy route for query name ", funcStep.QueryName))

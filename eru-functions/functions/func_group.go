@@ -63,6 +63,22 @@ type FuncStep struct {
 	FuncSteps    map[string]*FuncStep `json:"func_steps"`
 }
 
+func (funcGroup *FuncGroup) Clone(ctx context.Context) (cloneFuncGroup *FuncGroup, err error) {
+	cloneFuncGroupI, cloneFuncGroupIErr := cloneInterface(ctx, funcGroup)
+	if cloneFuncGroupIErr != nil {
+		err = cloneFuncGroupIErr
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	cloneFuncGroupOk := false
+	cloneFuncGroup, cloneFuncGroupOk = cloneFuncGroupI.(*FuncGroup)
+	if !cloneFuncGroupOk {
+		err = errors.New("FuncGroup cloning failed")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return
+}
 func (funcStep *FuncStep) Clone(ctx context.Context) (cloneFuncStep *FuncStep, err error) {
 	cloneFuncStepI, cloneFuncStepIErr := cloneInterface(ctx, funcStep)
 	if cloneFuncStepIErr != nil {
@@ -83,6 +99,14 @@ func (funcStep *FuncStep) Clone(ctx context.Context) (cloneFuncStep *FuncStep, e
 	}
 	cloneFuncStep.Route = *routeClone
 	cloneFuncStep.FuncKey = funcStep.FuncKey
+
+	funcGroupClone, funcGroupCloneErr := funcStep.FuncGroup.Clone(ctx)
+	if funcGroupCloneErr != nil {
+		return
+	}
+	cloneFuncStep.FuncGroup = *funcGroupClone
+	cloneFuncStep.FuncKey = funcStep.FuncKey
+
 	for k, v := range funcStep.FuncSteps {
 		childFs, childFsErr := v.Clone(ctx)
 		if childFsErr != nil {
@@ -104,6 +128,7 @@ func (funcGroup *FuncGroup) Execute(ctx context.Context, request *http.Request, 
 
 func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, funcThreads int, loopThreads int, funcStepName string, started bool) (response *http.Response, err error) {
 	logs.WithContext(ctx).Debug("RunFuncSteps - Start")
+
 	var responses []*http.Response
 	var errs []error
 
@@ -146,6 +171,7 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 	//endTime := time.Now()
 	//diff := endTime.Sub(startTime)
 	//logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
+
 	response, _, err = clubResponses(ctx, responses, nil, errs)
 
 	return
@@ -168,8 +194,10 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 	pspan := oteltrace.SpanFromContext(req.Context())
 	ctx, span := otel.Tracer(server_handlers.ServerName).Start(octx, funcStep.FuncKey, oteltrace.WithAttributes(attribute.String("requestID", req.Header.Get(server_handlers.RequestIdKey)), attribute.String("traceID", pspan.SpanContext().TraceID().String()), attribute.String("spanID", pspan.SpanContext().SpanID().String())))
 	defer span.End()
+
 	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStep - Start : ", funcStep.FuncKey))
-	//logs.WithContext(ctx).Info(fmt.Sprint("mainRouteName for ", funcStep.FuncKey, " is ", mainRouteName))
+	logs.WithContext(ctx).Info(fmt.Sprint("mainRouteName for ", funcStep.FuncKey, " is ", mainRouteName))
+	logs.WithContext(ctx).Info(fmt.Sprint(" *******************  ", funcStepName, "  **********************"))
 	req = req.WithContext(ctx)
 	request := req
 	var loopArray []interface{}
@@ -337,21 +365,18 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 	if started || funcStepName == "" || funcStepName == funcStep.FuncKey {
 		if strCond == "true" {
 			if funcStep.LoopVariable != "" {
-				logs.WithContext(ctx).Info("RunFuncStepInner inside funcStep.LoopVariable")
 				request, _, err = funcStep.transformRequest(ctx, req, reqVars, resVars, mainRouteName)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					return
 				}
 			}
-			logs.WithContext(ctx).Info(fmt.Sprint(funcStep.Route.TargetHosts))
-			logs.WithContext(ctx).Info(fmt.Sprint(reqVars))
 			routevars := &TemplateVars{}
 			_ = routevars
 
 			if funcStep.FunctionName != "" {
 				//TODO - we have to return routevars
-				response, err = RunFuncSteps(ctx, funcStep.FuncGroup.FuncSteps, request, reqVars, resVars, "", funcThread, loopThread, funcStepName, started)
+				response, err = RunFuncSteps(ctx, funcStep.FuncGroup.FuncSteps, request, reqVars, resVars, "", funcThread, loopThread, funcStep.FuncKey, started)
 			} else {
 				eru_utils.PrintRequestBody(ctx, request, "printing request before funcStep.Route.Execute")
 				response, routevars, err = funcStep.Route.Execute(ctx, request, funcStep.Path, funcStep.Async, asyncMsg, reqVars[funcStep.FuncKey], loopThread)

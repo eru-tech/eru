@@ -484,6 +484,7 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 		},
 		"evalFilter": func(filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
 			logs.WithContext(ctx).Info("----------------------------------- evalFilter starting --------------------------------")
+			logs.WithContext(ctx).Info(fmt.Sprint(record))
 			return evalFilter(ctx, filter, record)
 		},
 	}
@@ -537,6 +538,8 @@ func evalFilter(ctx context.Context, filter map[string]interface{}, record map[s
 				return false, err
 			}
 		} else {
+			logs.WithContext(ctx).Info(fmt.Sprint(kk))
+			logs.WithContext(ctx).Info(fmt.Sprint(record))
 			if recordValue, recordValueOk := record[kk]; recordValueOk {
 				logs.WithContext(ctx).Info(fmt.Sprint(kk, " : ", recordValue))
 				if vMap, vMapOk := v.(map[string]interface{}); vMapOk {

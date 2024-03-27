@@ -109,7 +109,6 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 	loopCounter := 0
 	for fk, fs := range funcSteps {
 		fs.FuncKey = fk
-
 		if started || fk == funcStepName || funcStepName == "" {
 			started = true
 		}
@@ -175,6 +174,7 @@ func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, req
 		funcStep := fs
 		var funcStepErr error
 		if len(loopArray) > 1 {
+
 			funcStep, funcStepErr = fs.Clone(ctx)
 			if funcStepErr != nil {
 				logs.WithContext(ctx).Error(funcStepErr.Error())
