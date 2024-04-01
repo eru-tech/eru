@@ -77,6 +77,13 @@ func (funcGroup *FuncGroup) Clone(ctx context.Context) (cloneFuncGroup *FuncGrou
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
+	for k, v := range funcGroup.FuncSteps {
+		childFs, childFsErr := v.Clone(ctx)
+		if childFsErr != nil {
+			return
+		}
+		cloneFuncGroup.FuncSteps[k] = childFs
+	}
 	return
 }
 func (funcStep *FuncStep) Clone(ctx context.Context) (cloneFuncStep *FuncStep, err error) {
@@ -198,6 +205,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStep - Start : ", funcStep.FuncKey))
 	logs.WithContext(ctx).Info(fmt.Sprint("mainRouteName for ", funcStep.FuncKey, " is ", mainRouteName))
 	logs.WithContext(ctx).Info(fmt.Sprint(" *******************  ", funcStepName, "  **********************"))
+
 	req = req.WithContext(ctx)
 	request := req
 	var loopArray []interface{}
@@ -212,7 +220,6 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 
 		//first step is to transform the request which in turn will clone the request before transforming keeping original request as is for further use.
 		request, vars, err = funcStep.transformRequest(ctx, req, reqVars, resVars, mainRouteName)
-
 		if err != nil {
 			return
 		}
@@ -230,8 +237,8 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			avars.Vars = reqVars[funcStep.FuncKey]
 			avars.ResVars = resVars
 			avars.ReqVars = reqVars
+
 			output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.Condition, avars, "string", funcStep.Route.TokenSecretKey)
-			logs.WithContext(ctx).Info(string(output))
 			if outputErr != nil {
 				err = outputErr
 				response = errorResponse(ctx, err.Error(), request)
@@ -376,6 +383,9 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 
 			if funcStep.FunctionName != "" {
 				//TODO - we have to return routevars
+				for k, v := range funcStep.FuncGroup.FuncSteps {
+					logs.WithContext(ctx).Info(fmt.Sprint(k, " ; ", v.Route))
+				}
 				response, err = RunFuncSteps(ctx, funcStep.FuncGroup.FuncSteps, request, reqVars, resVars, "", funcThread, loopThread, funcStep.FuncKey, started)
 			} else {
 				eru_utils.PrintRequestBody(ctx, request, "printing request before funcStep.Route.Execute")
@@ -433,6 +443,7 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 
 func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string) (req *http.Request, vars *TemplateVars, err error) {
 	logs.WithContext(ctx).Debug("transformRequest - Start")
+
 	//first step in transforming is to make a clone of the original request
 	req, err = CloneRequest(ctx, request)
 	if err != nil {
@@ -446,6 +457,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	vars.Body = make(map[string]interface{})
 	vars.OrgBody = make(map[string]interface{})
 	vars.Params = make(map[string]interface{})
+	logs.WithContext(ctx).Info(fmt.Sprint("mainRouteName for ", funcStep.FuncKey, " = ", mainRouteName))
 	if reqVars[mainRouteName] == nil {
 		err = loadRequestVars(ctx, vars, req, funcStep.Route.TokenSecretKey)
 		if err != nil {

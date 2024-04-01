@@ -229,7 +229,7 @@ func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan Func
 		if funcJob.mainRouteName == "" {
 			funcJob.mainRouteName = funcJob.funcStep.FuncKey
 		}
-		//logs.WithContext(ctx).Info(fmt.Sprint("reqVarsClone[funcJob.funcStep.FuncKey].LoopVar = ", funcJob.reqVars[funcJob.funcStep.FuncKey].LoopVar))
+
 		//logs.WithContext(ctx).Info(fmt.Sprint("funcJob.funcStep.Route.TargetHosts = ", funcJob.funcStep.Route.TargetHosts))
 		resp, e := funcJob.funcStep.RunFuncStepInner(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.asyncMessage, funcJob.funcThread, funcJob.loopThread, funcJob.strCond, funcJob.funcStepName, funcJob.started)
 		if e != nil {

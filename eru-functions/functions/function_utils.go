@@ -210,6 +210,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		logs.WithContext(ctx).Info(fmt.Sprint("output ===== ", string(output)))
 		if string(output) == "null" || string(output) == `"null"` {
 			logs.WithContext(ctx).Info("inside string(output) == \"null\"")
+			logs.WithContext(ctx).Info(templateString)
 			output = []byte("")
 		}
 		return

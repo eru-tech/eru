@@ -355,6 +355,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 		}
 		funcStep.FuncGroup = funcGroup
 		logs.WithContext(ctx).Info(fmt.Sprint("FuncGroup set for  ", funcStep.FunctionName, " :", funcStep.FuncGroup))
+
 	} else {
 		if funcStep.QueryName != "" {
 			logs.WithContext(ctx).Info(fmt.Sprint("making dummy route for query name ", funcStep.QueryName))
