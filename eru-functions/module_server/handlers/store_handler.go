@@ -381,3 +381,61 @@ func ProjectFunctionListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		return
 	}
 }
+
+func WfSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("WfSaveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+
+		wfFromReq := json.NewDecoder(r.Body)
+		wfFromReq.DisallowUnknownFields()
+
+		var wfObj functions.Workflow
+		if err := wfFromReq.Decode(&wfObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err := utils.ValidateStruct(r.Context(), wfObj, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		//err := storageObj.Save(s,projectId,storageName)
+		err := s.SaveWf(r.Context(), wfObj, projectId, s, true)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			s.SaveStore(r.Context(), projectId, "", s)
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("workflow config for ", wfObj.WfName, " saved successfully")})
+		}
+		return
+	}
+}
+
+func WfRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("WfRemoveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		wfName := vars["wfname"]
+
+		err := s.RemoveWf(r.Context(), wfName, projectId, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			s.SaveStore(r.Context(), projectId, "", s)
+			server_handlers.FormatResponse(w, 200)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("workflow ", wfName, " removed successfully")})
+		return
+	}
+}

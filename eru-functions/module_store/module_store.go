@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/eru-tech/eru/eru-db/db"
 	"github.com/eru-tech/eru/eru-functions/functions"
 	"github.com/eru-tech/eru/eru-functions/module_model"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
 	"net/http"
+	"reflect"
 	"strings"
 )
 
@@ -36,10 +38,13 @@ type ModuleStoreI interface {
 	RemoveRoute(ctx context.Context, routeName string, projectId string, realStore ModuleStoreI) error
 	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route functions.Route, err error)
 	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
+	GetWf(ctx context.Context, wfName string, projectId string, s ModuleStoreI) (wfObj functions.Workflow, err error)
 	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
 	SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveFunc(ctx context.Context, funcName string, projectId string, realStore ModuleStoreI) error
 	GetFunctionNames(ctx context.Context, projectId string) (functions []string, err error)
+	SaveWf(ctx context.Context, wfObj functions.Workflow, projectId string, realStore ModuleStoreI, persist bool) error
+	RemoveWf(ctx context.Context, wfName string, projectId string, realStore ModuleStoreI) error
 }
 
 type ModuleStore struct {
@@ -177,6 +182,7 @@ func (ms *ModuleStore) GetExtendedProjectConfig(ctx context.Context, projectId s
 		ePrj.ProjectSettings = prj.ProjectSettings
 		ePrj.Routes = prj.Routes
 		ePrj.FuncGroups = prj.FuncGroups
+		ePrj.Workflows = prj.Workflows
 		return ePrj, nil
 	} else {
 		err = errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
@@ -190,6 +196,9 @@ func (ms *ModuleStore) GetExtendedProjectConfig(ctx context.Context, projectId s
 func (ms *ModuleStore) GetProjectConfig(ctx context.Context, projectId string) (*module_model.Project, error) {
 	logs.WithContext(ctx).Debug("GetProjectConfig - Start")
 	if _, ok := ms.Projects[projectId]; ok {
+
+		logs.WithContext(ctx).Info(fmt.Sprint(ms.Projects[projectId].Workflows))
+
 		return ms.Projects[projectId], nil
 	} else {
 		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
@@ -504,4 +513,85 @@ func (ms *ModuleStore) GetFunctionNames(ctx context.Context, projectId string) (
 		}
 		return nil, err
 	}
+}
+
+func (ms *ModuleStore) SaveWf(ctx context.Context, wfObj functions.Workflow, projectId string, realStore ModuleStoreI, persist bool) error {
+	logs.WithContext(ctx).Debug(fmt.Sprint("SaveWf - Start"))
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
+	prj, err := ms.GetProjectConfig(ctx, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(prj.Workflows))
+	err = prj.AddWf(ctx, wfObj)
+	logs.WithContext(ctx).Info(fmt.Sprint(prj.Workflows))
+	if persist == true {
+		return realStore.SaveStore(ctx, projectId, "", realStore)
+	}
+	return nil
+}
+
+func (ms *ModuleStore) RemoveWf(ctx context.Context, wfName string, projectId string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug(fmt.Sprint("RemoveWf - Start"))
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
+	if prg, ok := ms.Projects[projectId]; ok {
+		if _, ok := prg.Workflows[wfName]; ok {
+			delete(prg.Workflows, wfName)
+			logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from RemoveWf"))
+			return realStore.SaveStore(ctx, projectId, "", realStore)
+		} else {
+			err := errors.New(fmt.Sprint("Workflow ", wfName, " does not exists"))
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+	} else {
+		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+}
+
+func (ms *ModuleStore) GetWf(ctx context.Context, wfName string, projectId string, s ModuleStoreI) (cloneWf functions.Workflow, err error) {
+	logs.WithContext(ctx).Debug("GetWf - Start")
+	wfObj := functions.Workflow{}
+	if prg, ok := ms.Projects[projectId]; ok {
+		if wfObj, ok = prg.Workflows[wfName]; !ok {
+			return wfObj, errors.New(fmt.Sprint("Workflow ", wfName, " does not exists"))
+		}
+		cloneWf, err = ms.GetWfCloneObject(ctx, projectId, wfObj, s)
+		cloneWf.WfDb = db.GetDb(s.GetDbType())
+		cloneWf.WfDb.SetConn(s.GetConn())
+		return
+	} else {
+		return wfObj, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+	}
+	return
+}
+
+func (ms *ModuleStore) GetWfCloneObject(ctx context.Context, projectId string, wfObj functions.Workflow, s ModuleStoreI) (cloneWf functions.Workflow, err error) {
+	logs.WithContext(ctx).Debug("GetWfCloneObject - Start")
+
+	wfObjJson, wfObjJsonErr := json.Marshal(wfObj)
+	if wfObjJsonErr != nil {
+		err = errors.New(fmt.Sprint("error while cloning wfObj (marshal)"))
+		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(wfObjJsonErr.Error())
+		return
+	}
+	wfObjJson = s.ReplaceVariables(ctx, projectId, wfObjJson)
+
+	iCloneI := reflect.New(reflect.TypeOf(wfObj))
+	wfObjCloneErr := json.Unmarshal(wfObjJson, iCloneI.Interface())
+	if wfObjCloneErr != nil {
+		err = errors.New(fmt.Sprint("error while cloning wfObj(unmarshal)"))
+		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(wfObjCloneErr.Error())
+		return
+	}
+	return iCloneI.Elem().Interface().(functions.Workflow), nil
 }

@@ -19,6 +19,7 @@ type SmStore struct {
 type SmStoreI interface {
 	Init(ctx context.Context) (err error)
 	FetchSmValue(ctx context.Context) (resultJson map[string]string, err error)
+	SetSmValue(ctx context.Context, secretName string, secretJson map[string]string) (err error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 }
 
@@ -42,6 +43,11 @@ func (smStore *SmStore) Init(ctx context.Context) (err error) {
 }
 
 func (smStore *SmStore) FetchSmValue(ctx context.Context) (resultJson map[string]string, err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+func (smStore *SmStore) SetSmValue(ctx context.Context, secretName string, secretJson map[string]string) (err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return

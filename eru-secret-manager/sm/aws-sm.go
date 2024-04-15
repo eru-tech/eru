@@ -3,6 +3,7 @@ package sm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -75,6 +76,93 @@ func (awsSmStore *AwsSmStore) FetchSmValue(ctx context.Context) (resultJson map[
 		logs.WithContext(ctx).Error(err.Error())
 		resultJson["secret"] = *result.SecretString
 		return
+	}
+	return
+}
+
+func (awsSmStore *AwsSmStore) SetSmValue(ctx context.Context, secretName string, secretJson map[string]string) (err error) {
+	if awsSmStore.client == nil {
+		err = awsSmStore.Init(ctx)
+		if err != nil {
+			return
+		}
+	}
+	paginator := secretsmanager.NewListSecretsPaginator(awsSmStore.client, &secretsmanager.ListSecretsInput{})
+	smFound := false
+	secretId := ""
+	for paginator.HasMorePages() {
+		if smFound {
+			break
+		}
+		page, err := paginator.NextPage(context.TODO())
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		for _, secret := range page.SecretList {
+			if aws.ToString(secret.Name) == secretName {
+				smFound = true
+				secretId = aws.ToString(secret.ARN)
+				break
+			}
+		}
+	}
+	if smFound {
+		input := &secretsmanager.GetSecretValueInput{
+			SecretId:     &secretId,
+			VersionStage: aws.String("AWSCURRENT"), // VersionStage defaults to AWSCURRENT if unspecified
+		}
+
+		result, err := awsSmStore.client.GetSecretValue(context.TODO(), input)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+		resultJson := make(map[string]string)
+		err = json.Unmarshal([]byte(*result.SecretString), &resultJson)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			resultJson["secret"] = *result.SecretString
+			return err
+		}
+
+		logs.WithContext(ctx).Info(fmt.Sprint(secretJson))
+		for k, v := range secretJson {
+			resultJson[k] = v
+		}
+		logs.WithContext(ctx).Info(fmt.Sprint(resultJson))
+		resultStr := ""
+		resultBytes, err := json.Marshal(resultJson)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			resultStr = *result.SecretString
+		} else {
+			resultStr = string(resultBytes)
+		}
+		_, err = awsSmStore.client.PutSecretValue(context.TODO(), &secretsmanager.PutSecretValueInput{
+			SecretId:     aws.String(secretId),
+			SecretString: aws.String(resultStr),
+		})
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+	} else {
+		resultStr := ""
+		resultBytes, err := json.Marshal(secretJson)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		} else {
+			resultStr = string(resultBytes)
+		}
+		_, err = awsSmStore.client.CreateSecret(context.TODO(), &secretsmanager.CreateSecretInput{
+			Name:         aws.String(secretName),
+			SecretString: aws.String(resultStr),
+		})
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
 	}
 	return
 }

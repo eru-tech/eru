@@ -24,6 +24,10 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/func/remove/{funcname}").HandlerFunc(module_handlers.FuncRemoveHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run").HandlerFunc(module_handlers.FuncRunHandler(sh.Store))
 
+	storeRouter.Methods(http.MethodPost).Path("/{project}/wf/save").HandlerFunc(module_handlers.WfSaveHandler(sh.Store))
+	storeRouter.Methods(http.MethodDelete).Path("/{project}/wf/remove/{wfname}").HandlerFunc(module_handlers.WfRemoveHandler(sh.Store))
+	//storeRouter.Methods(http.MethodPost).Path("/{project}/wf/run").HandlerFunc(module_handlers.WfRunHandler(sh.Store))
+
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save").HandlerFunc(module_handlers.ProjectSaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/settings/save").HandlerFunc(module_handlers.ProjectSetingsSaveHandler(sh.Store))
 	//storeRouter.Methods(http.MethodPost).Path("/{project}/authorizer/save").HandlerFunc(module_handlers.ProjectAuthorizerSaveHandler(sh.Store))
@@ -41,6 +45,8 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	serverRouter.PathPrefix("/{project}/func/{funcname}/{funcstepname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
 	serverRouter.PathPrefix("/{project}/func/{funcname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
 	//serverRouter.PathPrefix("/public/{project}/func/{funcname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
+
+	serverRouter.PathPrefix("/{project}/wf/{wfname}").HandlerFunc(module_handlers.WfHandler(sh.Store))
 
 	serverRouter.PathPrefix("/asynctest").HandlerFunc(module_handlers.RouteAsyncTestHandler(sh.Store))
 	serverRouter.PathPrefix("/").HandlerFunc(module_handlers.RouteForwardHandler(sh.Store))

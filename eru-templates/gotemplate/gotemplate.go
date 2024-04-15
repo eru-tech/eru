@@ -48,10 +48,8 @@ func (a sorter) Swap(i, j int) {
 func (a sorter) Less(i, j int) bool {
 	return a[i].Rank < a[j].Rank
 }
-
-func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFormat string) (output interface{}, err error) {
-	logs.WithContext(ctx).Debug("Execute - Start")
-	var funcs = template.FuncMap{
+func GenericFuncMap(ctx context.Context) map[string]interface{} {
+	return map[string]interface{}{
 		"inc": func(n int) int {
 			return n + 1
 		},
@@ -136,7 +134,7 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			case 512:
 				return hex.EncodeToString(erusha.NewSHA512([]byte(b))), nil
 			default:
-				err = errors.New(fmt.Sprint("SHA function not defined for ", bits, "bits"))
+				err := errors.New(fmt.Sprint("SHA function not defined for ", bits, "bits"))
 				logs.WithContext(ctx).Error(err.Error())
 				return "", err
 			}
@@ -487,11 +485,19 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			logs.WithContext(ctx).Info(fmt.Sprint(record))
 			return evalFilter(ctx, filter, record)
 		},
+		"execTemplate": func(obj interface{}, templateString string, outputFormat string) (output interface{}, err error) {
+			goTmpl := GoTemplate{"subtemplate", templateString}
+			return goTmpl.Execute(ctx, obj, outputFormat)
+		},
 	}
+}
+
+func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFormat string) (output interface{}, err error) {
+	logs.WithContext(ctx).Debug("Execute - Start")
 
 	buf := &bytes.Buffer{}
 
-	t := template.Must(template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(funcs).Parse(goTmpl.Template))
+	t := template.Must(template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(GenericFuncMap(ctx)).Parse(goTmpl.Template))
 
 	if err := t.Execute(buf, obj); err != nil {
 		logs.WithContext(ctx).Error(err.Error())

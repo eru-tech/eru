@@ -25,6 +25,7 @@ type ModuleProjectI interface {
 	AddFunc(ctx context.Context, funcObj functions.FuncGroup) error
 	AddRoute(ctx context.Context, routeObj functions.Route) error
 	CompareProject(ctx context.Context, compareProject Project) (StoreCompare, error)
+	AddWf(ctx context.Context, wfObj functions.Workflow) error
 }
 
 //type ProjectConfig struct {
@@ -46,6 +47,7 @@ type Project struct {
 	ProjectId       string                         `json:"project_id" eru:"required"`
 	Routes          map[string]functions.Route     `json:"routes" eru:"required"`
 	FuncGroups      map[string]functions.FuncGroup `json:"func_groups" eru:"required"`
+	Workflows       map[string]functions.Workflow  `json:"workflows" eru:"required"`
 	ProjectSettings ProjectSettings                `json:"project_settings"`
 	//Authorizers   map[string]functions.Authorizer
 }
@@ -261,5 +263,14 @@ func (ePrj *ExtendedProject) UnmarshalJSON(b []byte) error {
 		logs.WithContext(ctx).Info("secret manager attribute not found in store")
 	}
 
+	return nil
+}
+
+func (prj *Project) AddWf(ctx context.Context, wfObj functions.Workflow) error {
+	logs.WithContext(ctx).Info("AddWf - Start")
+	if prj.Workflows == nil {
+		prj.Workflows = make(map[string]functions.Workflow)
+	}
+	prj.Workflows[wfObj.WfName] = wfObj
 	return nil
 }
