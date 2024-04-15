@@ -48,6 +48,7 @@ type StoreI interface {
 	FetchSm(ctx context.Context, projectId string) (sm sm.SmStoreI, err error)
 	LoadSmValue(ctx context.Context, projectId string) (err error)
 	SetSmValue(ctx context.Context, projectId string, secretName string, secretValue map[string]string) (err error)
+	UnsetSmValue(ctx context.Context, projectId string, secretName string, secretKey string) (err error)
 	LoadEnvValue(ctx context.Context, projectId string) (err error)
 	SetStoreFromBytes(ctx context.Context, storeBytes []byte, msi StoreI) (err error)
 	GetMutex() *sync.RWMutex
@@ -644,6 +645,31 @@ func (store *Store) SetSmValue(ctx context.Context, projectId string, secretName
 				return
 			}
 			err = smObjClone.(sm.SmStoreI).SetSmValue(ctx, secretName, secretValue)
+			if err != nil {
+				return
+			}
+
+		}
+	}
+	return
+}
+
+func (store *Store) UnsetSmValue(ctx context.Context, projectId string, secretName string, secretKey string) (err error) {
+	logs.WithContext(ctx).Info("UnsetSmValue - Start")
+
+	if store.SecretManager == nil {
+		err = errors.New("No secret manager defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+	} else if smObj, smObjOk := store.SecretManager[projectId]; !smObjOk {
+		err = errors.New(fmt.Sprint("Secret Manager not defined for project :", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+	} else {
+		if smObj != nil {
+			smObjClone, smObjCloneErr := utils.CloneInterface(ctx, smObj)
+			if smObjCloneErr != nil {
+				return
+			}
+			err = smObjClone.(sm.SmStoreI).UnsetSmValue(ctx, secretName, secretKey)
 			if err != nil {
 				return
 			}

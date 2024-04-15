@@ -3,6 +3,7 @@ package sm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -24,7 +25,7 @@ type AwsSmStore struct {
 
 func (awsSmStore *AwsSmStore) Init(ctx context.Context) (err error) {
 	logs.WithContext(ctx).Debug("Init - Start")
-	awsConf, awsConfErr := config.LoadDefaultConfig(context.TODO(),
+	awsConf, awsConfErr := config.LoadDefaultConfig(ctx,
 		config.WithRegion(awsSmStore.Region),
 	)
 	if awsConfErr != nil {
@@ -66,7 +67,7 @@ func (awsSmStore *AwsSmStore) FetchSmValue(ctx context.Context) (resultJson map[
 		VersionStage: aws.String("AWSCURRENT"), // VersionStage defaults to AWSCURRENT if unspecified
 	}
 
-	result, err := awsSmStore.client.GetSecretValue(context.TODO(), input)
+	result, err := awsSmStore.client.GetSecretValue(ctx, input)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return
@@ -94,7 +95,7 @@ func (awsSmStore *AwsSmStore) SetSmValue(ctx context.Context, secretName string,
 		if smFound {
 			break
 		}
-		page, err := paginator.NextPage(context.TODO())
+		page, err := paginator.NextPage(ctx)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 		}
@@ -112,7 +113,7 @@ func (awsSmStore *AwsSmStore) SetSmValue(ctx context.Context, secretName string,
 			VersionStage: aws.String("AWSCURRENT"), // VersionStage defaults to AWSCURRENT if unspecified
 		}
 
-		result, err := awsSmStore.client.GetSecretValue(context.TODO(), input)
+		result, err := awsSmStore.client.GetSecretValue(ctx, input)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return err
@@ -125,11 +126,9 @@ func (awsSmStore *AwsSmStore) SetSmValue(ctx context.Context, secretName string,
 			return err
 		}
 
-		logs.WithContext(ctx).Info(fmt.Sprint(secretJson))
 		for k, v := range secretJson {
 			resultJson[k] = v
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint(resultJson))
 		resultStr := ""
 		resultBytes, err := json.Marshal(resultJson)
 		if err != nil {
@@ -138,7 +137,7 @@ func (awsSmStore *AwsSmStore) SetSmValue(ctx context.Context, secretName string,
 		} else {
 			resultStr = string(resultBytes)
 		}
-		_, err = awsSmStore.client.PutSecretValue(context.TODO(), &secretsmanager.PutSecretValueInput{
+		_, err = awsSmStore.client.PutSecretValue(ctx, &secretsmanager.PutSecretValueInput{
 			SecretId:     aws.String(secretId),
 			SecretString: aws.String(resultStr),
 		})
@@ -155,7 +154,7 @@ func (awsSmStore *AwsSmStore) SetSmValue(ctx context.Context, secretName string,
 		} else {
 			resultStr = string(resultBytes)
 		}
-		_, err = awsSmStore.client.CreateSecret(context.TODO(), &secretsmanager.CreateSecretInput{
+		_, err = awsSmStore.client.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
 			Name:         aws.String(secretName),
 			SecretString: aws.String(resultStr),
 		})
@@ -163,6 +162,102 @@ func (awsSmStore *AwsSmStore) SetSmValue(ctx context.Context, secretName string,
 			logs.WithContext(ctx).Error(err.Error())
 			return err
 		}
+	}
+	return
+}
+func (awsSmStore *AwsSmStore) getSecretArn(ctx context.Context, secretName string) (secretArn string, smFound bool, err error) {
+	if awsSmStore.client == nil {
+		err = awsSmStore.Init(ctx)
+		if err != nil {
+			return
+		}
+	}
+	paginator := secretsmanager.NewListSecretsPaginator(awsSmStore.client, &secretsmanager.ListSecretsInput{})
+	smFound = false
+	for paginator.HasMorePages() {
+		if smFound {
+			break
+		}
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		for _, secret := range page.SecretList {
+			if aws.ToString(secret.Name) == secretName {
+				smFound = true
+				secretArn = aws.ToString(secret.ARN)
+				break
+			}
+		}
+	}
+	return
+}
+func (awsSmStore *AwsSmStore) DeleteSm(ctx context.Context, secretArn string) (err error) {
+	if awsSmStore.client == nil {
+		err = awsSmStore.Init(ctx)
+		if err != nil {
+			return
+		}
+	}
+	deleteInput := &secretsmanager.DeleteSecretInput{
+		SecretId:                   aws.String(secretArn),
+		ForceDeleteWithoutRecovery: aws.Bool(true), // Set to true to delete immediately without recovery
+	}
+	_, err = awsSmStore.client.DeleteSecret(ctx, deleteInput)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+	}
+	return
+}
+func (awsSmStore *AwsSmStore) UnsetSmValue(ctx context.Context, secretName string, secretKey string) (err error) {
+	secretArn, smFound, secretErr := awsSmStore.getSecretArn(ctx, secretName)
+	if secretErr != nil {
+		return
+	}
+	if smFound {
+		input := &secretsmanager.GetSecretValueInput{
+			SecretId:     &secretArn,
+			VersionStage: aws.String("AWSCURRENT"), // VersionStage defaults to AWSCURRENT if unspecified
+		}
+
+		result, err := awsSmStore.client.GetSecretValue(ctx, input)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+		resultJson := make(map[string]string)
+		err = json.Unmarshal([]byte(*result.SecretString), &resultJson)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			resultJson["secret"] = *result.SecretString
+			return err
+		}
+
+		delete(resultJson, secretKey)
+		logs.WithContext(ctx).Info(fmt.Sprint(len(resultJson)))
+		if len(resultJson) == 0 {
+			err = awsSmStore.DeleteSm(ctx, secretArn)
+			return err
+		}
+
+		resultStr := ""
+		resultBytes, err := json.Marshal(resultJson)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			resultStr = *result.SecretString
+		} else {
+			resultStr = string(resultBytes)
+		}
+		_, err = awsSmStore.client.PutSecretValue(ctx, &secretsmanager.PutSecretValueInput{
+			SecretId:     aws.String(secretArn),
+			SecretString: aws.String(resultStr),
+		})
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+	} else {
+		err = errors.New("secret manager not found")
 	}
 	return
 }

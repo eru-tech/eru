@@ -347,6 +347,42 @@ func SetSmValueHandler(s store.StoreI) http.HandlerFunc {
 	}
 }
 
+func UnsetSmValueHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Info("UnsetSmValueHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+
+		type smMap struct {
+			SecretName string `json:"secret_name"`
+			SecretKey  string `json:"secret_key"`
+		}
+		smMapObj := smMap{}
+
+		smJson := json.NewDecoder(r.Body)
+		smJson.DisallowUnknownFields()
+		if err := smJson.Decode(&smMapObj); err == nil {
+			err = s.UnsetSmValue(r.Context(), projectId, smMapObj.SecretName, smMapObj.SecretKey)
+			if err != nil {
+				logs.WithContext(r.Context()).Info(err.Error())
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		} else {
+			logs.WithContext(r.Context()).Info("error")
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": "secret values unset successfully"})
+	}
+}
+
 func SaveSmHandler(s store.StoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("SaveSmHandler - Start")
