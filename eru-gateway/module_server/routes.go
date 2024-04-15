@@ -29,6 +29,8 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	serverRouter.Get("sm").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.Get("sm_list").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.Get("sm_value").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("sm_set").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("sm_unset").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 
 	//store functions specific to files
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()

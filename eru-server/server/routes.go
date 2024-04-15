@@ -39,8 +39,8 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Name("sm").Methods(http.MethodPost).Path("/store/{project}/sm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))
 	router.Name("sm_list").Methods(http.MethodGet).Path("/store/{project}/sm/list").HandlerFunc(handlers.FetchSmHandler(s.Store))
 	router.Name("sm_value").Methods(http.MethodGet).Path("/store/{project}/sm/load").HandlerFunc(handlers.LoadSmValueHandler(s.Store))
-	router.Name("sm_value").Methods(http.MethodPost).Path("/store/{project}/sm/set").HandlerFunc(handlers.SetSmValueHandler(s.Store))
-	router.Name("sm_value").Methods(http.MethodPost).Path("/store/{project}/sm/unset").HandlerFunc(handlers.UnsetSmValueHandler(s.Store))
+	router.Name("sm_set").Methods(http.MethodPost).Path("/store/{project}/sm/set").HandlerFunc(handlers.SetSmValueHandler(s.Store))
+	router.Name("sm_unset").Methods(http.MethodPost).Path("/store/{project}/sm/unset").HandlerFunc(handlers.UnsetSmValueHandler(s.Store))
 
 	router.Methods(http.MethodPost).Path("/store/gsm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/gsm/list").HandlerFunc(handlers.FetchSmHandler(s.Store))
