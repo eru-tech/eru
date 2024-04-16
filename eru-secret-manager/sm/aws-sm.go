@@ -50,6 +50,7 @@ func (awsSmStore *AwsSmStore) Init(ctx context.Context) (err error) {
 		)
 	}
 	awsSmStore.client = secretsmanager.NewFromConfig(awsConf)
+	logs.WithContext(ctx).Info(fmt.Sprint(awsSmStore.client))
 	return err
 }
 
