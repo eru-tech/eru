@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -50,7 +49,6 @@ func (awsSmStore *AwsSmStore) Init(ctx context.Context) (err error) {
 		)
 	}
 	awsSmStore.client = secretsmanager.NewFromConfig(awsConf)
-	logs.WithContext(ctx).Info(fmt.Sprint(awsSmStore.client))
 	return err
 }
 
@@ -235,7 +233,6 @@ func (awsSmStore *AwsSmStore) UnsetSmValue(ctx context.Context, secretName strin
 		}
 
 		delete(resultJson, secretKey)
-		logs.WithContext(ctx).Info(fmt.Sprint(len(resultJson)))
 		if len(resultJson) == 0 {
 			err = awsSmStore.DeleteSm(ctx, secretArn)
 			return err
