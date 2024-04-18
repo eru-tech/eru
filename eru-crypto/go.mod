@@ -1,6 +1,6 @@
 module github.com/eru-tech/eru/eru-crypto
 
-go 1.20
+go 1.22
 
 require (
 	github.com/golang-jwt/jwt/v4 v4.4.1

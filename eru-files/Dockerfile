@@ -1,4 +1,4 @@
-FROM golang:1.20.4-alpine3.18
+FROM golang:1.22.2-alpine3.19
 
 WORKDIR /build
 
@@ -9,7 +9,7 @@ WORKDIR eru-files
 # Build eru-files
 RUN GOOS=linux CGO_ENABLED=0 go build -a -ldflags '-s -w -extldflags "-static"' -o app .
 
-FROM alpine:3.15.0
+FROM alpine:3.19.0
 
 WORKDIR /build/eru-files/app
 COPY --from=0 /build/eru-files/app .

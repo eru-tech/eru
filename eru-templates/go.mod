@@ -1,6 +1,6 @@
 module github.com/eru-tech/eru/eru-templates
 
-go 1.20
+go 1.22
 
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3

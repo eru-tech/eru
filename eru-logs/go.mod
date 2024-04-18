@@ -1,6 +1,6 @@
 module eru-logs
 
-go 1.20
+go 1.22
 
 require (
 	go.opentelemetry.io/otel v1.14.0
