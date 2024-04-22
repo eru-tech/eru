@@ -7,6 +7,7 @@ import (
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	repos "github.com/eru-tech/eru/eru-repos/repos"
+	kms "github.com/eru-tech/eru/eru-secret-manager/kms"
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/go-cmp/cmp"
@@ -52,6 +53,10 @@ type StoreI interface {
 	LoadEnvValue(ctx context.Context, projectId string) (err error)
 	SetStoreFromBytes(ctx context.Context, storeBytes []byte, msi StoreI) (err error)
 	GetMutex() *sync.RWMutex
+	FetchKms(ctx context.Context, projectId string) (kms map[string]kms.KmsStoreI, err error)
+	SaveKms(ctx context.Context, projectId string, kms kms.KmsStoreI, s StoreI, persist bool) (err error)
+	RemoveKms(ctx context.Context, projectId string, kmsName string, cloudDelete bool, deleteDays int32, s StoreI) (err error)
+
 	//SaveProject(projectId string, realStore StoreI) error
 	//RemoveProject(projectId string, realStore StoreI) error
 	//GetProjectConfig(projectId string) (*model.ProjectI, error)
@@ -61,10 +66,11 @@ type StoreI interface {
 type Store struct {
 	//Projects map[string]*model.Project //ProjectId is the key
 	mu                sync.RWMutex
-	Variables         map[string]Variables       `json:"variables"`
-	ProjectRepos      map[string]repos.RepoI     `json:"repos"`
-	ProjectRepoTokens map[string]repos.RepoToken `json:"repo_token"`
-	SecretManager     map[string]sm.SmStoreI     `json:"secret_manager"`
+	Variables         map[string]Variables                `json:"variables"`
+	ProjectRepos      map[string]repos.RepoI              `json:"repos"`
+	ProjectRepoTokens map[string]repos.RepoToken          `json:"repo_token"`
+	SecretManager     map[string]sm.SmStoreI              `json:"secret_manager"`
+	KMS               map[string]map[string]kms.KmsStoreI `json:"kms"`
 }
 
 type StoreCompare struct {
@@ -794,6 +800,63 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
+	logs.WithContext(ctx).Info("before kms loop")
+	var prjKms map[string]*json.RawMessage
+	if _, ok := storeMap["kms"]; ok {
+		if storeMap["kms"] != nil {
+			logs.WithContext(ctx).Info("inside kms loop")
+			err = json.Unmarshal(*storeMap["kms"], &prjKms)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			for prj, kmsJson := range prjKms {
+				if kmsJson != nil {
+					var kmsObj map[string]*json.RawMessage
+					err = json.Unmarshal(*kmsJson, &kmsObj)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return err
+					}
+					for _, kJson := range kmsObj {
+						var kObj map[string]*json.RawMessage
+						err = json.Unmarshal(*kJson, &kObj)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+							return err
+						}
+						var kmsType string
+						if _, stOk := kObj["kms_store_type"]; stOk {
+							err = json.Unmarshal(*kObj["sm_store_type"], &kmsType)
+							if err != nil {
+								logs.WithContext(ctx).Error(err.Error())
+								return err
+							}
+							kmsI := kms.GetKms(kmsType)
+							if kmsI != nil {
+								err = kmsI.MakeFromJson(ctx, kJson)
+								if err == nil {
+									err = msi.SaveKms(ctx, prj, kmsI, msi, false)
+									if err != nil {
+										return err
+									}
+								} else {
+									return err
+								}
+							}
+						} else {
+							logs.WithContext(ctx).Info("ignoring kms as sm_store_type attribute not found")
+						}
+					}
+				}
+			}
+		} else {
+			logs.WithContext(ctx).Info("kms attribute is nil")
+		}
+	} else {
+		logs.WithContext(ctx).Info("kms attribute not found in store")
+	}
+
 	var prjSm map[string]*json.RawMessage
 	if _, ok := storeMap["secret_manager"]; ok {
 		if storeMap["secret_manager"] != nil {
@@ -884,6 +947,81 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 		logs.WithContext(ctx).Info("repos attribute not found in store")
 	}
 	logs.WithContext(ctx).Error("SetStoreFromBytes before return")
+	return
+}
+func (store *Store) FetchKms(ctx context.Context, projectId string) (kms map[string]kms.KmsStoreI, err error) {
+	logs.WithContext(ctx).Debug("FetchKms - Start")
+	if store.KMS == nil {
+		err = errors.New("no kms defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	ok := false
+	if kms, ok = store.KMS[projectId]; !ok {
+		err = errors.New(fmt.Sprint("kms not defined for project :", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	return
+}
+func (store *Store) SaveKms(ctx context.Context, projectId string, k kms.KmsStoreI, s StoreI, persist bool) (err error) {
+	logs.WithContext(ctx).Debug("SaveKms - Start")
+	if persist {
+		s.GetMutex().Lock()
+		defer s.GetMutex().Unlock()
+	}
+	if store.KMS == nil {
+		store.KMS = make(map[string]map[string]kms.KmsStoreI)
+	}
+	if store.KMS[projectId] == nil {
+		store.KMS[projectId] = make(map[string]kms.KmsStoreI)
+	}
+	if persist {
+		err = k.CreateKey(ctx)
+		if err != nil {
+			return
+		}
+	}
+	kName, err := k.GetAttribute(ctx, "kms_name")
+	if err != nil {
+		return
+	}
+	store.KMS[projectId][kName.(string)] = k
+
+	if persist {
+		err = s.SaveStore(ctx, projectId, "", s)
+	}
+	return
+}
+
+func (store *Store) RemoveKms(ctx context.Context, projectId string, kmsName string, cloudDelete bool, deleteDays int32, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveKms - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
+	if store.KMS == nil {
+		err = errors.New("kms not defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if store.KMS[projectId] == nil {
+		err = errors.New(fmt.Sprint("kms not defined for project ", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if store.KMS[projectId][kmsName] == nil {
+		err = errors.New(fmt.Sprint("key not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if cloudDelete {
+		err = store.KMS[projectId][kmsName].DeleteKey(ctx, kmsName, deleteDays)
+		if err != nil {
+			return
+		}
+	}
+	delete(store.KMS[projectId], kmsName)
+
+	err = s.SaveStore(ctx, projectId, "", s)
 	return
 }
 

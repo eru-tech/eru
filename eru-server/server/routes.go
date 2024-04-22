@@ -42,6 +42,12 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Name("sm_set").Methods(http.MethodPost).Path("/store/{project}/sm/set").HandlerFunc(handlers.SetSmValueHandler(s.Store))
 	router.Name("sm_unset").Methods(http.MethodPost).Path("/store/{project}/sm/unset").HandlerFunc(handlers.UnsetSmValueHandler(s.Store))
 
+	router.Name("kms_list").Methods(http.MethodGet).Path("/store/{project}/kms/list").HandlerFunc(handlers.FetchKmsHandler(s.Store))
+	router.Name("kms_save").Methods(http.MethodPost).Path("/store/{project}/kms/save/{kmstype}").HandlerFunc(handlers.SaveKmsHandler(s.Store))
+	router.Name("kms_remove").Methods(http.MethodDelete).Path("/store/{project}/kms/remove/{kmsname}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
+	router.Name("kms_remove").Methods(http.MethodDelete).Path("/store/{project}/kms/remove/{kmsname}/{clouddelete}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
+	router.Name("kms_remove").Methods(http.MethodDelete).Path("/store/{project}/kms/remove/{kmsname}/{clouddelete}/{deletedays}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
+
 	router.Methods(http.MethodPost).Path("/store/gsm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/gsm/list").HandlerFunc(handlers.FetchSmHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/gsm/load").HandlerFunc(handlers.LoadSmValueHandler(s.Store))

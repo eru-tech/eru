@@ -296,13 +296,11 @@ func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		//_ = ctx
 
 		reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
-		logs.WithContext(r.Context()).Info(fmt.Sprint(reqContentType))
 		if reqContentType == encodedForm || reqContentType == multiPartForm {
 			err = r.ParseMultipartForm((1 << 20) * 10)
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
 			}
-			utils.PrintRequestBody(r.Context(), r, "printing request from FileUploadHandler")
 
 			formData := r.MultipartForm
 			folderPath := formData.Value["folderpath"][0]
@@ -311,9 +309,7 @@ func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			//keyPairName := formData.Value["keyPairName"][0]
 			fileNames := make(map[string]string)
 			files := formData.File["files"]
-			logs.WithContext(r.Context()).Info(fmt.Sprint(formData.File))
 			for _, f := range files {
-				logs.WithContext(r.Context()).Info(fmt.Sprint("inside range files"))
 				docType := ""
 				for _, dt := range docTypes {
 					tmpDt := strings.Split(dt, ":")

@@ -12,6 +12,7 @@ import (
 	"github.com/eru-tech/eru/eru-files/storage"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-repos/repos"
+	"github.com/eru-tech/eru/eru-secret-manager/kms"
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
@@ -72,6 +73,57 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 					}
 				} else {
 					logs.WithContext(ctx).Info("ignoring secret manager as sm_store_type attribute not found")
+				}
+			}
+		} else {
+			logs.WithContext(ctx).Info("secret manager attribute is nil")
+		}
+	} else {
+		logs.WithContext(ctx).Info("secret manager attribute not found in store")
+	}
+
+	var prjKms map[string]*json.RawMessage
+	if _, ok := storeMap["kms"]; ok {
+		if storeMap["kms"] != nil {
+			err = json.Unmarshal(*storeMap["kms"], &prjKms)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			for prj, kmsJson := range prjKms {
+				var kmsObj map[string]*json.RawMessage
+				err = json.Unmarshal(*kmsJson, &kmsObj)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return err
+				}
+				for _, kJson := range kmsObj {
+					var kObj map[string]*json.RawMessage
+					err = json.Unmarshal(*kJson, &kObj)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return err
+					}
+					var kmsType string
+					if _, stOk := kObj["kms_store_type"]; stOk {
+						err = json.Unmarshal(*kObj["kms_store_type"], &kmsType)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+							return err
+						}
+						kmsI := kms.GetKms(kmsType)
+						err = kmsI.MakeFromJson(ctx, kJson)
+						if err == nil {
+							err = msi.SaveKms(ctx, prj, kmsI, msi, false)
+							if err != nil {
+								return err
+							}
+						} else {
+							return err
+						}
+					} else {
+						logs.WithContext(ctx).Info("ignoring secret manager as sm_store_type attribute not found")
+					}
 				}
 			}
 		} else {

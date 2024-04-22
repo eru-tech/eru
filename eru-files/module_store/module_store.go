@@ -59,7 +59,7 @@ type ModuleStoreI interface {
 	GetExtendedProjectConfig(ctx context.Context, projectId string, realStore ModuleStoreI) (file_model.ExtendedProject, error)
 	GetProjectList(ctx context.Context) []map[string]interface{}
 	SaveStorage(ctx context.Context, storageObj storage.StorageI, projectId string, realStore ModuleStoreI, persist bool) error
-	RemoveStorage(ctx context.Context, storageName string, projectId string, realStore ModuleStoreI) error
+	RemoveStorage(ctx context.Context, storageName string, projectId string, cloudDelete bool, forceDelete bool, realStore ModuleStoreI) error
 	GenerateRsaKeyPair(ctx context.Context, projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (rsaKeyPair erursa.RsaKeyPair, err error)
 	GenerateAesKey(ctx context.Context, projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (aesKey eruaes.AesKey, err error)
 	UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string, s ModuleStoreI) (docId string, err error)
@@ -135,7 +135,16 @@ func (ms *ModuleStore) SaveStorage(ctx context.Context, storageObj storage.Stora
 	if err != nil {
 		return err
 	}
+
+	if persist == true {
+		err = storageObj.CreateStorage(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
 	err = prj.AddStorage(ctx, storageObj)
+
 	if persist == true {
 		return realStore.SaveStore(ctx, projectId, "", realStore)
 	}
@@ -181,10 +190,21 @@ func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storage
 		return
 	}
 	keyName, kpErr := storageObjClone.GetAttribute("key_pair")
-	if err != nil {
+	if kpErr != nil {
 		err = kpErr
 		return
 	}
+	kmsName, kpErr := storageObjClone.GetAttribute("key_id")
+	if kpErr != nil {
+		err = kpErr
+		return
+	}
+	kmsMap, kmsErr := s.FetchKms(ctx, projectId)
+	if kmsErr != nil {
+		err = kmsErr
+		return
+	}
+	storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
 	docId, err = storageObjClone.UploadFile(ctx, file, header, docType, folderPath, prj.AesKeys[keyName.(string)])
 	return
 }
@@ -323,6 +343,18 @@ func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, stora
 		err = kpErr
 		return
 	}
+	kmsName, kpErr := storageObjClone.GetAttribute("key_id")
+	if kpErr != nil {
+		err = kpErr
+		return
+	}
+	kmsMap, kmsErr := s.FetchKms(ctx, projectId)
+	if kmsErr != nil {
+		err = kmsErr
+		return
+	}
+	storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
+
 	file, err = storageObjClone.DownloadFile(ctx, fileDownloadRequest.FolderPath, fileDownloadRequest.FileName, prj.AesKeys[keyName.(string)])
 	return file, mimetype.Detect(file).String(), err
 }
@@ -402,12 +434,19 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 	}
 }
 
-func (ms *ModuleStore) RemoveStorage(ctx context.Context, storageName string, projectId string, realStore ModuleStoreI) error {
+func (ms *ModuleStore) RemoveStorage(ctx context.Context, storageName string, projectId string, cloudDelete bool, forceDelete bool, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("RemoveStorage - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
 	if prg, ok := ms.Projects[projectId]; ok {
 		if _, ok := prg.Storages[storageName]; ok {
+			if cloudDelete {
+				err = prg.Storages[storageName].DeleteStorage(ctx, forceDelete)
+				if err != nil {
+					return
+				}
+			}
+
 			delete(prg.Storages, storageName)
 			logs.WithContext(ctx).Info("SaveStore called from RemoveStorage")
 			return realStore.SaveStore(ctx, projectId, "", realStore)

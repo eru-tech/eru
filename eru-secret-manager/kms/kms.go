@@ -19,10 +19,12 @@ type KmsStore struct {
 type KmsStoreI interface {
 	Init(ctx context.Context) (err error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
-	CreateKey(ctx context.Context, keyName string, keyDesc string) (err error)
+	CreateKey(ctx context.Context) (err error)
+	DeleteKey(ctx context.Context, keyId string, deleteDays int32) (err error)
 	ListKeys(ctx context.Context) (keyList []string, err error)
-	Encrypt(ctx context.Context, keyId string, plainText []byte) (encryptedText []byte, err error)
-	Decrypt(ctx context.Context, keyId string, encryptedText []byte) (plainText []byte, err error)
+	Encrypt(ctx context.Context, plainText []byte) (encryptedText []byte, err error)
+	Decrypt(ctx context.Context, encryptedText []byte) (plainText []byte, err error)
+	GetAttribute(ctx context.Context, attrName string) (attrValue interface{}, err error)
 }
 
 func GetKms(storageType string) KmsStoreI {
@@ -44,13 +46,25 @@ func (kmsStore *KmsStore) Init(ctx context.Context) (err error) {
 	return
 }
 
-func (kmsStore *KmsStore) CreateKey(ctx context.Context, keyName string, keyDesc string) (err error) {
+func (kmsStore *KmsStore) GetAttribute(ctx context.Context, attrName string) (attrValue interface{}, err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
 }
 
-func (kmsStore *KmsStore) Decrypt(ctx context.Context, keyId string, encryptedText []byte) (plainText []byte, err error) {
+func (kmsStore *KmsStore) CreateKey(ctx context.Context) (err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
+func (kmsStore *KmsStore) DeleteKey(ctx context.Context, keyId string, deleteDays int32) (err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
+func (kmsStore *KmsStore) Decrypt(ctx context.Context, encryptedText []byte) (plainText []byte, err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
@@ -62,7 +76,7 @@ func (kmsStore *KmsStore) ListKeys(ctx context.Context) (keyList []string, err e
 	return
 }
 
-func (kmsStore *KmsStore) Encrypt(ctx context.Context, keyId string, plainText []byte) (encryptedText []byte, err error) {
+func (kmsStore *KmsStore) Encrypt(ctx context.Context, plainText []byte) (encryptedText []byte, err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return

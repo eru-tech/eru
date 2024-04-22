@@ -5,11 +5,13 @@ import (
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-repos/repos"
+	kms "github.com/eru-tech/eru/eru-secret-manager/kms"
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
 	"github.com/gorilla/mux"
 	"net/http"
 	"os"
+	"strconv"
 )
 
 var ServerName = "unkown"
@@ -450,5 +452,93 @@ func CommitRepoHandler(s store.StoreI) http.HandlerFunc {
 		FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("config for project ", projectId, " commited successfully.")})
 		//_ = json.NewEncoder(w).Encode(config)
+	}
+}
+
+func FetchKmsHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Info("FetchKmsHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		kmsObj, err := s.FetchKms(r.Context(), projectId)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(kmsObj)
+	}
+}
+
+func SaveKmsHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveKmsHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		kmsType := vars["kmstype"]
+
+		kmsJson := json.NewDecoder(r.Body)
+		kmsJson.DisallowUnknownFields()
+
+		var kmsObj = kms.GetKms(kmsType)
+		if err := kmsJson.Decode(&kmsObj); err == nil {
+			err = s.SaveKms(r.Context(), projectId, kmsObj, s, true)
+			if err != nil {
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		} else {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Key for project ", projectId, " saved successfully.")})
+	}
+}
+
+func RemoveKmsHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveKmsHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		kmsName := vars["kmsname"]
+		cloudDelete := vars["clouddelete"]
+		cd := false
+		if cloudDelete == "true" {
+			cd = true
+		}
+		deleteDays := vars["deletedays"]
+		var dd int64 = 7
+		var err error
+		if deleteDays != "" {
+			dd, err = strconv.ParseInt(deleteDays, 10, 32)
+			if err != nil {
+				FormatResponse(w, 400)
+				logs.WithContext(r.Context()).Info(err.Error())
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "invalid delete days"})
+				return
+			}
+		}
+
+		err = s.RemoveKms(r.Context(), projectId, kmsName, cd, int32(dd), s)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Key for project ", projectId, " removed successfully.")})
 	}
 }

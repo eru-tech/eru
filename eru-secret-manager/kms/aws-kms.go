@@ -3,6 +3,7 @@ package kms
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -15,16 +16,39 @@ import (
 type AwsKmsStore struct {
 	KmsStore
 	Region         string `json:"region" eru:"required"`
-	KmsName        string `json:"kms_name" eru:"required"`
+	KmsName        string `json:"kms_name"`
+	KmsDesc        string `json:"kms_desc" eru:"required"`
+	KmsAlias       string `json:"kms_alias" eru:"required"`
 	Authentication string `json:"authentication" eru:"required"`
 	Key            string `json:"key" eru:"required"`
 	Secret         string `json:"secret" eru:"required"`
 	client         *kms.Client
 }
 
+func (awsKmsStore *AwsKmsStore) GetAttribute(ctx context.Context, attrName string) (attrValue interface{}, err error) {
+	switch attrName {
+	case "region":
+		return awsKmsStore.Region, nil
+	case "kms_name":
+		return awsKmsStore.KmsName, nil
+	case "kms_desc":
+		return awsKmsStore.KmsDesc, nil
+	case "kms_alias":
+		return awsKmsStore.KmsAlias, nil
+	case "kms_store_type":
+		return awsKmsStore.KmsStoreType, nil
+
+	default:
+		err = errors.New("attribute not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return "", err
+	}
+	return
+}
+
 func (awsKmsStore *AwsKmsStore) Init(ctx context.Context) (err error) {
 	logs.WithContext(ctx).Debug("Init - Start")
-	awsConf, awsConfErr := config.LoadDefaultConfig(context.TODO(),
+	awsConf, awsConfErr := config.LoadDefaultConfig(ctx,
 		config.WithRegion(awsKmsStore.Region),
 	)
 	if awsConfErr != nil {
@@ -44,36 +68,80 @@ func (awsKmsStore *AwsKmsStore) Init(ctx context.Context) (err error) {
 	return err
 }
 
-func (awsKmsStore *AwsKmsStore) CreateKey(ctx context.Context, aliasName string, keyDesc string) (err error) {
+func (awsKmsStore *AwsKmsStore) CreateKey(ctx context.Context) (err error) {
 	if awsKmsStore.client == nil {
 		err = awsKmsStore.Init(ctx)
 		if err != nil {
 			return
 		}
 	}
-	keyInput := &kms.CreateKeyInput{
-		Description: aws.String(keyDesc),
-		KeySpec:     types.KeySpecSymmetricDefault,
-		KeyUsage:    types.KeyUsageTypeEncryptDecrypt,
+	aliasesPaginator := kms.NewListAliasesPaginator(awsKmsStore.client, &kms.ListAliasesInput{})
+
+	aliasFound := false
+	for aliasesPaginator.HasMorePages() {
+		if aliasFound {
+			break
+		}
+		aliasesPage, err := aliasesPaginator.NextPage(ctx)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		for _, alias := range aliasesPage.Aliases {
+			if fmt.Sprint("alias/", awsKmsStore.KmsAlias) == *alias.AliasName {
+				logs.WithContext(ctx).Info(fmt.Sprint("key alias already exists : ", awsKmsStore.KmsAlias))
+				aliasFound = true
+				awsKmsStore.KmsName = *alias.TargetKeyId
+				break
+			}
+		}
 	}
-	keyResult, err := awsKmsStore.client.CreateKey(context.TODO(), keyInput)
+	if !aliasFound {
+		keyInput := &kms.CreateKeyInput{
+			Description: aws.String(awsKmsStore.KmsDesc),
+			KeySpec:     types.KeySpecSymmetricDefault,
+			KeyUsage:    types.KeyUsageTypeEncryptDecrypt,
+		}
+		keyResult, err := awsKmsStore.client.CreateKey(ctx, keyInput)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+		awsKmsStore.KmsName = *keyResult.KeyMetadata.KeyId
+
+		// Create an alias for the newly created key
+		aliasInput := &kms.CreateAliasInput{
+			AliasName:   aws.String(fmt.Sprint("alias/", awsKmsStore.KmsAlias)),
+			TargetKeyId: &awsKmsStore.KmsName,
+		}
+		_, err = awsKmsStore.client.CreateAlias(ctx, aliasInput)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+	}
+	return
+}
+
+func (awsKmsStore *AwsKmsStore) DeleteKey(ctx context.Context, keyId string, deleteDays int32) (err error) {
+	if awsKmsStore.client == nil {
+		err = awsKmsStore.Init(ctx)
+		if err != nil {
+			return
+		}
+	}
+	deleteInput := &kms.ScheduleKeyDeletionInput{
+		KeyId:               aws.String(keyId),
+		PendingWindowInDays: aws.Int32(deleteDays), // Minimum is 7 days
+	}
+
+	logs.WithContext(ctx).Info(fmt.Sprint(deleteInput))
+
+	_, err = awsKmsStore.client.ScheduleKeyDeletion(ctx, deleteInput)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-
-	keyId := keyResult.KeyMetadata.KeyId
-
-	// Create an alias for the newly created key
-	aliasInput := &kms.CreateAliasInput{
-		AliasName:   aws.String(aliasName),
-		TargetKeyId: keyId,
-	}
-	_, err = awsKmsStore.client.CreateAlias(context.TODO(), aliasInput)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return
-	}
+	logs.WithContext(ctx).Info(fmt.Sprint("delete done"))
 	return
 }
 
@@ -87,43 +155,7 @@ func (awsKmsStore *AwsKmsStore) MakeFromJson(ctx context.Context, rj *json.RawMe
 	return nil
 }
 
-func (awsKmsStore *AwsKmsStore) ListKeys(ctx context.Context) (keyList []string, err error) {
-	if awsKmsStore.client == nil {
-		err = awsKmsStore.Init(ctx)
-		if err != nil {
-			return
-		}
-	}
-	paginator := kms.NewListKeysPaginator(awsKmsStore.client, &kms.ListKeysInput{})
-
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(context.TODO())
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-		}
-
-		for _, key := range page.Keys {
-
-			aliasesPaginator := kms.NewListAliasesPaginator(awsKmsStore.client, &kms.ListAliasesInput{
-				KeyId: key.KeyId,
-			})
-
-			for aliasesPaginator.HasMorePages() {
-				aliasesPage, err := aliasesPaginator.NextPage(context.TODO())
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-				}
-
-				for _, alias := range aliasesPage.Aliases {
-					keyList = append(keyList, fmt.Sprint(*key.KeyId, " (", *alias.AliasName, ")"))
-				}
-			}
-		}
-	}
-	return
-}
-
-func (awsKmsStore *AwsKmsStore) Encrypt(ctx context.Context, keyId string, plainText []byte) (encryptedText []byte, err error) {
+func (awsKmsStore *AwsKmsStore) Encrypt(ctx context.Context, plainText []byte) (encryptedText []byte, err error) {
 	if awsKmsStore.client == nil {
 		err = awsKmsStore.Init(ctx)
 		if err != nil {
@@ -131,18 +163,19 @@ func (awsKmsStore *AwsKmsStore) Encrypt(ctx context.Context, keyId string, plain
 		}
 	}
 	encryptInput := &kms.EncryptInput{
-		KeyId:     aws.String(keyId),
+		KeyId:     aws.String(awsKmsStore.KmsName),
 		Plaintext: plainText,
 	}
-	encryptOutput, err := awsKmsStore.client.Encrypt(context.TODO(), encryptInput)
+	encryptOutput, err := awsKmsStore.client.Encrypt(ctx, encryptInput)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
+		return
 	}
 	encryptedText = encryptOutput.CiphertextBlob
 	return
 }
 
-func (awsKmsStore *AwsKmsStore) Decrypt(ctx context.Context, keyId string, encryptedText []byte) (plainText []byte, err error) {
+func (awsKmsStore *AwsKmsStore) Decrypt(ctx context.Context, encryptedText []byte) (plainText []byte, err error) {
 	if awsKmsStore.client == nil {
 		err = awsKmsStore.Init(ctx)
 		if err != nil {
@@ -150,11 +183,13 @@ func (awsKmsStore *AwsKmsStore) Decrypt(ctx context.Context, keyId string, encry
 		}
 	}
 	decryptInput := &kms.DecryptInput{
+		KeyId:          aws.String(awsKmsStore.KmsName),
 		CiphertextBlob: encryptedText,
 	}
-	decryptOutput, err := awsKmsStore.client.Decrypt(context.TODO(), decryptInput)
+	decryptOutput, err := awsKmsStore.client.Decrypt(ctx, decryptInput)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
+		return
 	}
 	plainText = decryptOutput.Plaintext
 	return

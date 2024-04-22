@@ -158,8 +158,17 @@ func StorageRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		storageName := vars["storagename"]
-
-		err := s.RemoveStorage(r.Context(), storageName, projectId, s)
+		cloudDelete := vars["clouddelete"]
+		cd := false
+		if cloudDelete == "true" {
+			cd = true
+		}
+		forceDelete := vars["forcedelete"]
+		fd := false
+		if forceDelete == "true" {
+			fd = true
+		}
+		err := s.RemoveStorage(r.Context(), storageName, projectId, cd, fd, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
