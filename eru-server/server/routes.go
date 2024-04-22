@@ -45,12 +45,18 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Name("kms_list").Methods(http.MethodGet).Path("/store/{project}/kms/list").HandlerFunc(handlers.FetchKmsHandler(s.Store))
 	router.Name("kms_save").Methods(http.MethodPost).Path("/store/{project}/kms/save/{kmstype}").HandlerFunc(handlers.SaveKmsHandler(s.Store))
 	router.Name("kms_remove").Methods(http.MethodDelete).Path("/store/{project}/kms/remove/{kmsname}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
-	router.Name("kms_remove").Methods(http.MethodDelete).Path("/store/{project}/kms/remove/{kmsname}/{clouddelete}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
-	router.Name("kms_remove").Methods(http.MethodDelete).Path("/store/{project}/kms/remove/{kmsname}/{clouddelete}/{deletedays}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
+	router.Name("kms_remove_cd").Methods(http.MethodDelete).Path("/store/{project}/kms/remove/{kmsname}/{clouddelete}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
+	router.Name("kms_remove_dd").Methods(http.MethodDelete).Path("/store/{project}/kms/remove/{kmsname}/{clouddelete}/{deletedays}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
 
 	router.Methods(http.MethodPost).Path("/store/gsm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/gsm/list").HandlerFunc(handlers.FetchSmHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/gsm/load").HandlerFunc(handlers.LoadSmValueHandler(s.Store))
+
+	router.Methods(http.MethodGet).Path("/store/{project}/gkms/list").HandlerFunc(handlers.FetchKmsHandler(s.Store))
+	router.Methods(http.MethodPost).Path("/store/{project}/gkms/save/{kmstype}").HandlerFunc(handlers.SaveKmsHandler(s.Store))
+	router.Methods(http.MethodDelete).Path("/store/{project}/gkms/remove/{kmsname}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
+	router.Methods(http.MethodDelete).Path("/store/{project}/gkms/remove/{kmsname}/{clouddelete}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
+	router.Methods(http.MethodDelete).Path("/store/{project}/gkms/remove/{kmsname}/{clouddelete}/{deletedays}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
 
 	//router.Methods(http.MethodPost).Path("/store/project/save/{project}").HandlerFunc(handlers.ProjectSaveHandler(s.Store))
 	//router.Methods(http.MethodDelete).Path("/store/project/remove/{project}").HandlerFunc(handlers.ProjectRemoveHandler(s.Store))
