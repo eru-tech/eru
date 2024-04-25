@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 func WfHandler(s module_store.ModuleStoreI) http.HandlerFunc {
@@ -43,7 +44,7 @@ func WfHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		for _, v := range wfObj.WfEvents {
 			fn = v.Function_Name
 		}
-		funcGroup, err := s.GetAndValidateFunc(ctx, fn, projectId, host, url, r.Method, r.Header, s)
+		funcGroup, err := s.GetAndValidateFunc(ctx, fn, projectId, host, url, r.Method, r.Header, nil, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -93,16 +94,46 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		funcName := vars["funcname"]
 		funcStepName := vars["funcstepname"]
 		// Lookup a functions in a function based on host and url
-		funcGroup, err := s.GetAndValidateFunc(ctx, funcName, projectId, host, url, r.Method, r.Header, s)
+
+		reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
+		bodyMap := make(map[string]interface{})
+		if reqContentType == "application/json" && r.ContentLength > 0 {
+
+			tmplBodyFromReq := json.NewDecoder(r.Body)
+			tmplBodyFromReq.DisallowUnknownFields()
+			if err := tmplBodyFromReq.Decode(&bodyMap); err != nil {
+				logs.WithContext(r.Context()).Error(fmt.Sprint("error decode request body : ", err.Error()))
+				server_handlers.FormatResponse(w, http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to decode request body"})
+				return
+			}
+			body, err := json.Marshal(bodyMap)
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("json.Marshal(vars.Body) error : ", err.Error()))
+				server_handlers.FormatResponse(w, http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to marshal request body"})
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			r.Header.Set("Content-Length", strconv.Itoa(len(body)))
+			r.ContentLength = int64(len(body))
+		}
+
+		funcGroup, err := s.GetAndValidateFunc(ctx, funcName, projectId, host, url, r.Method, r.Header, bodyMap, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 
+		errStatusCode := http.StatusBadRequest
+		if funcGroup.ResponseStatusCode > 0 {
+			errStatusCode = funcGroup.ResponseStatusCode
+		}
+
 		response, err := funcGroup.Execute(ctx, r, module_store.FuncThreads, module_store.LoopThreads, funcStepName)
 		if err != nil {
-			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			server_handlers.FormatResponse(w, errStatusCode)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
@@ -115,11 +146,17 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			for k, v := range response.Header {
 				w.Header()[k] = v
 			}
-			w.WriteHeader(response.StatusCode)
+			respStatusCode := response.StatusCode
+			logs.WithContext(r.Context()).Info(fmt.Sprint(respStatusCode))
+			if funcGroup.ResponseStatusCode > 0 {
+				respStatusCode = funcGroup.ResponseStatusCode
+			}
+			logs.WithContext(r.Context()).Info(fmt.Sprint(respStatusCode))
+			w.WriteHeader(respStatusCode)
 			_, err = io.Copy(w, response.Body)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
-				w.WriteHeader(http.StatusBadRequest)
+				w.WriteHeader(errStatusCode)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
 			}
@@ -187,7 +224,7 @@ func FuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 					}
 
-					funcGroup, err := s.ValidateFunc(ctx, funcObj, projectId, host, url, r.Method, r.Header, s)
+					funcGroup, err := s.ValidateFunc(ctx, funcObj, projectId, host, url, r.Method, r.Header, nil, s)
 					if err != nil {
 						server_handlers.FormatResponse(w, http.StatusBadRequest)
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})

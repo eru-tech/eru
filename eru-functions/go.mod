@@ -39,6 +39,7 @@ require (
 	github.com/aws/smithy-go v1.20.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
+	github.com/eru-tech/eru/eru-cache v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
@@ -91,6 +92,7 @@ require (
 )
 
 replace (
+	github.com/eru-tech/eru/eru-cache => ../eru-cache
 	github.com/eru-tech/eru/eru-crypto => ../eru-crypto
 	github.com/eru-tech/eru/eru-db => ../eru-db
 	github.com/eru-tech/eru/eru-logs => ../eru-logs

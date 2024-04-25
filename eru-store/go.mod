@@ -1,8 +1,9 @@
 module github.com/eru-tech/eru/eru-store
 
-go 1.22
+go 1.22.0
 
 require (
+	github.com/eru-tech/eru/eru-cache v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-secret-manager v0.0.0-00010101000000-000000000000
@@ -42,6 +43,7 @@ require (
 )
 
 replace (
+	github.com/eru-tech/eru/eru-cache => ../eru-cache
 	github.com/eru-tech/eru/eru-logs => ../eru-logs
 	github.com/eru-tech/eru/eru-models => ../eru-models
 	github.com/eru-tech/eru/eru-repos => ../eru-repos

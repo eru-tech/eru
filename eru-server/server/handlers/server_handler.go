@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-repos/repos"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 var ServerName = "unkown"
@@ -346,6 +348,49 @@ func SetSmValueHandler(s store.StoreI) http.HandlerFunc {
 		}
 		FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": "secret values set successfully"})
+	}
+}
+
+func GetSmValueHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("GetSmValueHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		if fmt.Sprint(strings.Split(r.Host, ":")[0]) != "localhost" {
+			err := errors.New("you can call this route only locally")
+			logs.WithContext(r.Context()).Error(err.Error())
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		type smMap struct {
+			SecretName  string `json:"secret_name"`
+			SecretKey   string `json:"secret_key"`
+			ForceDelete bool   `json:"force_delete"`
+		}
+		smMapObj := smMap{}
+		var secret_value interface{}
+		smJson := json.NewDecoder(r.Body)
+		smJson.DisallowUnknownFields()
+		if err := smJson.Decode(&smMapObj); err == nil {
+			secret_value, err = s.GetSmValue(r.Context(), projectId, smMapObj.SecretName, smMapObj.SecretKey, smMapObj.ForceDelete)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		} else {
+			logs.WithContext(r.Context()).Info("error")
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{smMapObj.SecretKey: secret_value})
 	}
 }
 

@@ -226,7 +226,7 @@ func (ms *ModuleStore) GetDatasourceCloneObject(ctx context.Context, projectId s
 		logs.WithContext(ctx).Error(datasourceObjJsonErr.Error())
 		return
 	}
-	datasourceObjJson = s.ReplaceVariables(ctx, projectId, datasourceObjJson)
+	datasourceObjJson = s.ReplaceVariables(ctx, projectId, datasourceObjJson, nil)
 
 	iCloneI := reflect.New(reflect.TypeOf(datasource))
 	datasourceObjCloneErr := json.Unmarshal(datasourceObjJson, iCloneI.Interface())

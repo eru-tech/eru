@@ -286,6 +286,8 @@ func (awsStorage AwsStorage) encrypt(ctx context.Context, byteContainer []byte, 
 			return
 		}
 	} else if awsStorage.KmsKey != nil {
+		//byteContainerStr := b64.StdEncoding.EncodeToString(byteContainer)
+		//byteContainer = eruaes.Pad(byteContainer, 512)
 		eByteContainer, err = awsStorage.KmsKey.Encrypt(ctx, byteContainer)
 		if err != nil {
 			return

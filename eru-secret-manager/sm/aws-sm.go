@@ -4,18 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/eru-tech/eru/eru-cache/cache"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 type AwsSmStore struct {
 	SmStore
-	Region         string `json:"region" eru:"required"`
-	SmName         string `json:"sm_name" eru:"required"`
-	KmsName        string `json:"kms_name" eru:"required"`
+	Region string `json:"region" eru:"required"`
+	SmName string `json:"sm_name" eru:"required"`
+	//KmsName        string `json:"kms_name" eru:"required"`
 	Authentication string `json:"authentication" eru:"required"`
 	Key            string `json:"key" eru:"required"`
 	Secret         string `json:"secret" eru:"required"`
@@ -51,7 +53,14 @@ func (awsSmStore *AwsSmStore) Init(ctx context.Context) (err error) {
 	awsSmStore.client = secretsmanager.NewFromConfig(awsConf)
 	return err
 }
-
+func (awsSmStore *AwsSmStore) InitCache(ctx context.Context) (err error) {
+	if awsSmStore.CacheStoreType == "" {
+		awsSmStore.CacheStoreType = "ERU"
+	}
+	awsSmStore.SetCacheStore(cache.GetCacheStore(awsSmStore.CacheStoreType))
+	logs.WithContext(ctx).Info(fmt.Sprint(awsSmStore.CacheStore))
+	return
+}
 func (awsSmStore *AwsSmStore) FetchSmValue(ctx context.Context) (resultJson map[string]string, err error) {
 	logs.WithContext(ctx).Debug("FetchSmValue - Start")
 	if awsSmStore.client == nil {
@@ -268,4 +277,58 @@ func (awsSmStore *AwsSmStore) MakeFromJson(ctx context.Context, rj *json.RawMess
 		return err
 	}
 	return nil
+}
+
+func (awsSmStore *AwsSmStore) GetSmValue(ctx context.Context, secretName string, secretKey string, forceFetch bool) (secretValue interface{}, err error) {
+	logs.WithContext(ctx).Debug("GetSmValue - Start")
+
+	if !forceFetch {
+		logs.WithContext(ctx).Info(fmt.Sprint("fetch secret from cache for : ", secretKey))
+		if awsSmStore.CacheStore == nil {
+			logs.WithContext(ctx).Info(fmt.Sprint("initializing sm cache"))
+			err = awsSmStore.InitCache(ctx)
+		}
+		secretValue, err = awsSmStore.CacheStore.Get(ctx, fmt.Sprint(secretName, "_", secretKey))
+	}
+	if err != nil || forceFetch {
+		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Info(fmt.Sprint("fetch secret from cloud for : ", secretKey))
+		if awsSmStore.client == nil {
+			err = awsSmStore.Init(ctx)
+			if err != nil {
+				return
+			}
+		}
+
+		input := &secretsmanager.GetSecretValueInput{
+			SecretId:     aws.String(secretName),
+			VersionStage: aws.String("AWSCURRENT"), // VersionStage defaults to AWSCURRENT if unspecified
+		}
+
+		result, err := awsSmStore.client.GetSecretValue(ctx, input)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		resultJson := make(map[string]string)
+		err = json.Unmarshal([]byte(*result.SecretString), &resultJson)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			resultJson["secret"] = *result.SecretString
+			return nil, err
+		}
+		svOk := false
+		if secretValue, svOk = resultJson[secretKey]; svOk {
+			err = awsSmStore.CacheStore.Set(ctx, fmt.Sprint(secretName, "_", secretKey), secretValue)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				err = nil // exit silently
+			}
+			return secretValue, nil
+		} else {
+			err = errors.New("secret key not found in secret manager")
+			return nil, err
+		}
+	}
+	return
 }

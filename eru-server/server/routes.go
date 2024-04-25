@@ -39,8 +39,10 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Name("sm").Methods(http.MethodPost).Path("/store/{project}/sm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))
 	router.Name("sm_list").Methods(http.MethodGet).Path("/store/{project}/sm/list").HandlerFunc(handlers.FetchSmHandler(s.Store))
 	router.Name("sm_value").Methods(http.MethodGet).Path("/store/{project}/sm/load").HandlerFunc(handlers.LoadSmValueHandler(s.Store))
+
 	router.Name("sm_set").Methods(http.MethodPost).Path("/store/{project}/sm/set").HandlerFunc(handlers.SetSmValueHandler(s.Store))
 	router.Name("sm_unset").Methods(http.MethodPost).Path("/store/{project}/sm/unset").HandlerFunc(handlers.UnsetSmValueHandler(s.Store))
+	router.Name("sm_get").Methods(http.MethodPost).Path("/store/{project}/sm/get").HandlerFunc(handlers.GetSmValueHandler(s.Store))
 
 	router.Name("kms_list").Methods(http.MethodGet).Path("/store/{project}/kms/list").HandlerFunc(handlers.FetchKmsHandler(s.Store))
 	router.Name("kms_save").Methods(http.MethodPost).Path("/store/{project}/kms/save/{kmstype}").HandlerFunc(handlers.SaveKmsHandler(s.Store))
@@ -51,6 +53,9 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Methods(http.MethodPost).Path("/store/gsm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/gsm/list").HandlerFunc(handlers.FetchSmHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/gsm/load").HandlerFunc(handlers.LoadSmValueHandler(s.Store))
+	router.Methods(http.MethodPost).Path("/store/gsm/sm_set").HandlerFunc(handlers.SetSmValueHandler(s.Store))
+	router.Methods(http.MethodPost).Path("/store/gsm/sm_unset").HandlerFunc(handlers.UnsetSmValueHandler(s.Store))
+	router.Methods(http.MethodPost).Path("/store/gsm/sm_get").HandlerFunc(handlers.GetSmValueHandler(s.Store))
 
 	router.Methods(http.MethodGet).Path("/store/{project}/gkms/list").HandlerFunc(handlers.FetchKmsHandler(s.Store))
 	router.Methods(http.MethodPost).Path("/store/{project}/gkms/save/{kmstype}").HandlerFunc(handlers.SaveKmsHandler(s.Store))

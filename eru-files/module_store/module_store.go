@@ -169,7 +169,7 @@ func (ms *ModuleStore) GetStorageClone(ctx context.Context, projectId string, st
 			logs.WithContext(ctx).Error(storageObjJsonErr.Error())
 			return
 		}
-		storageObjJson = s.ReplaceVariables(ctx, projectId, storageObjJson)
+		storageObjJson = s.ReplaceVariables(ctx, projectId, storageObjJson, nil)
 
 		iCloneI := reflect.New(reflect.TypeOf(storageObj))
 		storageObjCloneErr := json.Unmarshal(storageObjJson, iCloneI.Interface())
@@ -220,6 +220,17 @@ func (ms *ModuleStore) UploadFileB64(ctx context.Context, projectId string, stor
 		err = kpErr
 		return
 	}
+	kmsName, kpErr := storageObjClone.GetAttribute("key_id")
+	if kpErr != nil {
+		err = kpErr
+		return
+	}
+	kmsMap, kmsErr := s.FetchKms(ctx, projectId)
+	if kmsErr != nil {
+		err = kmsErr
+		return
+	}
+	storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
 	docId, err = storageObjClone.UploadFileB64(ctx, file, fileName, docType, folderPath, prj.AesKeys[keyName.(string)])
 	return
 }

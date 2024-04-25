@@ -584,6 +584,7 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 				outputStr = str
 			}
 			request.Header.Set(koutputStr, outputStr)
+			logs.WithContext(ctx).Info(fmt.Sprint("string(output) = ", outputStr))
 		}
 	}
 	if headersToRemove != nil {

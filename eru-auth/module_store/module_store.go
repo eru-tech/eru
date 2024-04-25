@@ -379,7 +379,7 @@ func (ms *ModuleStore) GetAuthCloneObject(ctx context.Context, projectId string,
 		logs.WithContext(ctx).Error(authObjJsonErr.Error())
 		return
 	}
-	authObjJson = s.ReplaceVariables(ctx, projectId, authObjJson)
+	authObjJson = s.ReplaceVariables(ctx, projectId, authObjJson, nil)
 
 	iCloneI := reflect.New(reflect.TypeOf(authObj))
 	authObjCloneErr := json.Unmarshal(authObjJson, iCloneI.Interface())

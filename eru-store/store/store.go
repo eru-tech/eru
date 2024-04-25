@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/eru-tech/eru/eru-cache/cache"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	repos "github.com/eru-tech/eru/eru-repos/repos"
 	kms "github.com/eru-tech/eru/eru-secret-manager/kms"
@@ -39,7 +40,7 @@ type StoreI interface {
 	SaveSecret(ctx context.Context, projectId string, newSecret Secrets, s StoreI) (err error)
 	RemoveSecret(ctx context.Context, projectId string, key string, s StoreI) (err error)
 	FetchVars(ctx context.Context, projectId string) (variables Variables, err error)
-	ReplaceVariables(ctx context.Context, projectId string, text []byte) (returnText []byte)
+	ReplaceVariables(ctx context.Context, projectId string, text []byte, varMap map[string]interface{}) (returnText []byte)
 	SaveRepo(ctx context.Context, projectId string, repo repos.RepoI, s StoreI, persist bool) (err error)
 	SaveRepoToken(ctx context.Context, projectId string, repo repos.RepoToken, s StoreI) (err error)
 	FetchRepo(ctx context.Context, projectId string) (repo repos.RepoI, err error)
@@ -50,13 +51,15 @@ type StoreI interface {
 	LoadSmValue(ctx context.Context, projectId string) (err error)
 	SetSmValue(ctx context.Context, projectId string, secretName string, secretValue map[string]string) (err error)
 	UnsetSmValue(ctx context.Context, projectId string, secretName string, secretKey string) (err error)
+	GetSmValue(ctx context.Context, projectId string, secretName string, secretKey string, force_delete bool) (secret_Value interface{}, err error)
 	LoadEnvValue(ctx context.Context, projectId string) (err error)
 	SetStoreFromBytes(ctx context.Context, storeBytes []byte, msi StoreI) (err error)
 	GetMutex() *sync.RWMutex
 	FetchKms(ctx context.Context, projectId string) (kms map[string]kms.KmsStoreI, err error)
 	SaveKms(ctx context.Context, projectId string, kms kms.KmsStoreI, s StoreI, persist bool) (err error)
 	RemoveKms(ctx context.Context, projectId string, kmsName string, cloudDelete bool, deleteDays int32, s StoreI) (err error)
-
+	GetCacheValue(ctx context.Context, projectId string, key string) (value interface{}, err error)
+	SetCacheValue(ctx context.Context, projectId string, key string, value interface{}) (err error)
 	//SaveProject(projectId string, realStore StoreI) error
 	//RemoveProject(projectId string, realStore StoreI) error
 	//GetProjectConfig(projectId string) (*model.ProjectI, error)
@@ -71,6 +74,7 @@ type Store struct {
 	ProjectRepoTokens map[string]repos.RepoToken          `json:"repo_token"`
 	SecretManager     map[string]sm.SmStoreI              `json:"secret_manager"`
 	KMS               map[string]map[string]kms.KmsStoreI `json:"kms"`
+	CacheStore        map[string]cache.CacheStoreI        `json:"-"`
 }
 
 type StoreCompare struct {
@@ -420,7 +424,7 @@ func (store *Store) ExecuteDbSave(ctx context.Context, queries []Queries) (outpu
 	return
 }
 
-func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text []byte) (returnText []byte) {
+func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text []byte, varMap map[string]interface{}) (returnText []byte) {
 	logs.WithContext(ctx).Debug("ReplaceVariables - Start")
 	textStr := string(text)
 	if _, prjVarsOk := store.Variables[projectId]; prjVarsOk {
@@ -432,6 +436,14 @@ func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text
 		}
 		for k, v := range store.Variables[projectId].Secrets {
 			textStr = strings.Replace(textStr, fmt.Sprint("$SECRET_", k), v.Value, -1)
+		}
+	}
+	if varMap != nil {
+		for k, v := range varMap {
+			if vStr, vStrOk := v.(string); vStrOk {
+				textStr = strings.Replace(textStr, fmt.Sprint("$VAR_", k), vStr, -1)
+			}
+
 		}
 	}
 	return []byte(textStr)
@@ -465,7 +477,7 @@ func (store *Store) CommitRepo(ctx context.Context, projectId string, s StoreI) 
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	repoConfigBytes = s.ReplaceVariables(ctx, projectId, repoConfigBytes)
+	repoConfigBytes = s.ReplaceVariables(ctx, projectId, repoConfigBytes, nil)
 
 	cloneRepo := repos.GetRepo(repo.GetAttribute("repo_type").(string))
 
@@ -646,15 +658,16 @@ func (store *Store) SetSmValue(ctx context.Context, projectId string, secretName
 		logs.WithContext(ctx).Error(err.Error())
 	} else {
 		if smObj != nil {
+			logs.WithContext(ctx).Info(fmt.Sprint(smObj.GetCacheStore()))
 			smObjClone, smObjCloneErr := utils.CloneInterface(ctx, smObj)
 			if smObjCloneErr != nil {
 				return
 			}
+			logs.WithContext(ctx).Info(fmt.Sprint(smObjClone.(sm.SmStoreI).GetCacheStore()))
 			err = smObjClone.(sm.SmStoreI).SetSmValue(ctx, secretName, secretValue)
 			if err != nil {
 				return
 			}
-
 		}
 	}
 	return
@@ -680,6 +693,34 @@ func (store *Store) UnsetSmValue(ctx context.Context, projectId string, secretNa
 				return
 			}
 
+		}
+	}
+	return
+}
+func (store *Store) GetSmValue(ctx context.Context, projectId string, secretName string, secretKey string, force_delete bool) (secret_value interface{}, err error) {
+	logs.WithContext(ctx).Info("GetSmValue - Start")
+	if store.SecretManager == nil {
+		err = errors.New("No secret manager defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+	} else if smObj, smObjOk := store.SecretManager[projectId]; !smObjOk {
+		err = errors.New(fmt.Sprint("Secret Manager not defined for project :", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+	} else {
+		if smObj != nil {
+			//smObjClone, smObjCloneErr := utils.CloneInterface(ctx, smObj)
+			//if smObjCloneErr != nil {
+			//	return
+			//}
+			//smCacheObjClone, smCacheObjCloneErr := utils.CloneInterface(ctx, smObj.GetCacheStore())
+			//if smCacheObjCloneErr != nil {
+			//	return
+			//}
+			//smObjClone.(sm.SmStoreI).SetCacheStore(smCacheObjClone.(cache.CacheStoreI))
+			//logs.WithContext(ctx).Info(fmt.Sprint(smObjClone.(sm.SmStoreI).GetCacheStore()))
+			secret_value, err = smObj.(sm.SmStoreI).GetSmValue(ctx, secretName, secretKey, force_delete)
+			if err != nil {
+				return
+			}
 		}
 	}
 	return
@@ -884,6 +925,8 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 						if smI != nil {
 							err = smI.MakeFromJson(ctx, smJson)
 							if err == nil {
+								logs.WithContext(ctx).Info(fmt.Sprint("________________________ inii cache called while lodaing for ", prj))
+								err = smI.InitCache(ctx)
 								err = msi.SaveSm(ctx, prj, smI, msi, false)
 								if err != nil {
 									return err
@@ -1022,6 +1065,34 @@ func (store *Store) RemoveKms(ctx context.Context, projectId string, kmsName str
 	delete(store.KMS[projectId], kmsName)
 
 	err = s.SaveStore(ctx, projectId, "", s)
+	return
+}
+
+func (store *Store) GetCacheValue(ctx context.Context, projectId string, key string) (value interface{}, err error) {
+	if store.CacheStore != nil {
+		if pcv, pcvOk := store.CacheStore[projectId]; pcvOk {
+			return pcv.Get(ctx, key)
+		} else {
+			err = errors.New(fmt.Sprint("cache store not found for project ", projectId))
+			return
+		}
+	} else {
+		err = errors.New("cache store is not defined")
+		return
+	}
+}
+func (store *Store) SetCacheValue(ctx context.Context, projectId string, key string, value interface{}) (err error) {
+	if store.CacheStore != nil {
+		if pcv, pcvOk := store.CacheStore[projectId]; pcvOk {
+			return pcv.Set(ctx, key, value)
+		} else {
+			err = errors.New(fmt.Sprint("cache store not found for project ", projectId))
+			return
+		}
+	} else {
+		err = errors.New("cache store is not defined")
+		return
+	}
 	return
 }
 

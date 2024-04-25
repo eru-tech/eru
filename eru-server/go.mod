@@ -1,12 +1,13 @@
 module github.com/eru-tech/eru/eru-server
 
-go 1.22
+go 1.22.0
 
 require (
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-secret-manager v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-store v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-cache v0.0.0-00010101000000-000000000000
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
 	github.com/rs/cors v1.7.0
@@ -51,4 +52,5 @@ replace (
 	github.com/eru-tech/eru/eru-secret-manager => ../eru-secret-manager
 	github.com/eru-tech/eru/eru-store => ../eru-store
 	github.com/eru-tech/eru/eru-utils => ../eru-utils
+	github.com/eru-tech/eru/eru-cache => ../eru-cache
 )

@@ -20,10 +20,11 @@ import (
 )
 
 type FuncGroup struct {
-	FuncCategoryName string               `json:"func_category_name"`
-	FuncGroupName    string               `json:"func_group_name"`
-	FuncSteps        map[string]*FuncStep `json:"func_steps"` //routename is the key
-	TokenSecretKey   string               `json:"-"`
+	FuncCategoryName   string               `json:"func_category_name"`
+	FuncGroupName      string               `json:"func_group_name"`
+	FuncSteps          map[string]*FuncStep `json:"func_steps"`
+	TokenSecretKey     string               `json:"-"`
+	ResponseStatusCode int                  `json:"response_status_code"`
 }
 
 type FuncTemplateVars struct {
@@ -180,7 +181,10 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 	//logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
 
 	response, _, err = clubResponses(ctx, responses, nil, errs)
-
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint(err.Error()))
+	}
+	logs.WithContext(ctx).Error(fmt.Sprint(response))
 	return
 }
 
@@ -508,9 +512,6 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	}
 	newContentTypeFull := req.Header.Get("Content-type")
 	newContentType := strings.Split(newContentTypeFull, ";")[0]
-
-	logs.WithContext(ctx).Info(fmt.Sprint("newContentTypeFull = ", newContentTypeFull))
-	logs.WithContext(ctx).Info(fmt.Sprint("oldContentTypeFull = ", oldContentTypeFull))
 
 	//first check if original request is not multipart but the new request to be forwarded to target host is multipart - then make multipart body from json body
 	// else if original request is multipart/form , we process the same

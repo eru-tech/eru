@@ -1,6 +1,6 @@
 module github.com/eru-tech/eru/eru-files
 
-go 1.22
+go 1.22.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.26.1
@@ -38,6 +38,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.23.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.28.6 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
+	github.com/eru-tech/eru/eru-cache v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
@@ -82,6 +83,7 @@ require (
 )
 
 replace (
+	github.com/eru-tech/eru/eru-cache => ../eru-cache
 	github.com/eru-tech/eru/eru-crypto => ../eru-crypto
 	github.com/eru-tech/eru/eru-logs => ../eru-logs
 	github.com/eru-tech/eru/eru-models => ../eru-models

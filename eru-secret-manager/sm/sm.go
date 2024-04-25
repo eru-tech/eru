@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/eru-tech/eru/eru-cache/cache"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
@@ -13,7 +14,9 @@ const (
 )
 
 type SmStore struct {
-	SmStoreType string `json:"sm_store_type" eru:"required"`
+	SmStoreType    string            `json:"sm_store_type" eru:"required"`
+	CacheStoreType string            `json:"cache_store_type" eru:"required"`
+	CacheStore     cache.CacheStoreI `json:"-"`
 }
 
 type SmStoreI interface {
@@ -21,7 +24,11 @@ type SmStoreI interface {
 	FetchSmValue(ctx context.Context) (resultJson map[string]string, err error)
 	SetSmValue(ctx context.Context, secretName string, secretJson map[string]string) (err error)
 	UnsetSmValue(ctx context.Context, secretName string, secretKey string) (err error)
+	GetSmValue(ctx context.Context, secretName string, secretKey string, forceFetch bool) (secretValue interface{}, err error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
+	InitCache(ctx context.Context) error
+	GetCacheStore() cache.CacheStoreI
+	SetCacheStore(cache.CacheStoreI)
 }
 
 func GetSm(storageType string) SmStoreI {
@@ -43,6 +50,19 @@ func (smStore *SmStore) Init(ctx context.Context) (err error) {
 	return
 }
 
+func (smStore *SmStore) GetCacheStore() cache.CacheStoreI {
+	return smStore.CacheStore
+}
+func (smStore *SmStore) SetCacheStore(cs cache.CacheStoreI) {
+	smStore.CacheStore = cs
+}
+
+func (smStore *SmStore) InitCache(ctx context.Context) (err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
 func (smStore *SmStore) FetchSmValue(ctx context.Context) (resultJson map[string]string, err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
@@ -55,6 +75,12 @@ func (smStore *SmStore) SetSmValue(ctx context.Context, secretName string, secre
 }
 
 func (smStore *SmStore) UnsetSmValue(ctx context.Context, secretName string, secretKey string) (err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
+func (smStore *SmStore) GetSmValue(ctx context.Context, secretName string, secretKey string, forceFetch bool) (secretValue interface{}, err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return

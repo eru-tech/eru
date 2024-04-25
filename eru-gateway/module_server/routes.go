@@ -31,6 +31,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	serverRouter.Get("sm_value").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.Get("sm_set").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.Get("sm_unset").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("sm_get").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 
 	serverRouter.Get("kms_list").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.Get("kms_save").HandlerFunc(module_handlers.RouteHandler(sh.Store))
