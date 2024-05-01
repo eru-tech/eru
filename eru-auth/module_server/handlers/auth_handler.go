@@ -265,7 +265,7 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		loginPostBody.CodeVerifier = msParams.CodeVerifier
 		loginPostBody.Nonce = msParams.Nonce
-		res, tokens, err := authObjI.Login(ctx, loginPostBody, true)
+		res, tokens, err := authObjI.Login(ctx, loginPostBody, projectId, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

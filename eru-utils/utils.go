@@ -234,6 +234,7 @@ func HTTPClientTransporter(rt http.RoundTripper) http.RoundTripper {
 func callHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("callHttp - Start")
 	reqBody, err := json.Marshal(postBody)
+
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
@@ -257,7 +258,6 @@ func callHttp(ctx context.Context, method string, url string, headers http.Heade
 		reqParams.Add(k, v)
 	}
 	req.URL.RawQuery = reqParams.Encode()
-
 	reqContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
 	if reqContentType == multiPartForm {
 		var reqBodyNew bytes.Buffer
@@ -297,13 +297,14 @@ func callHttp(ctx context.Context, method string, url string, headers http.Heade
 		req.Body = io.NopCloser(&reqBodyNew)
 		req.Header.Set("Content-Length", strconv.Itoa(len(data.Encode())))
 		req.ContentLength = int64(len(data.Encode()))
+	} else {
+		req.Header.Set("Content-Length", strconv.Itoa(bytes.NewReader(reqBody).Len()))
 	}
 	return ExecuteHttp(ctx, req)
 }
 
 func CallHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
 	logs.WithContext(ctx).Debug("CallHttp - Start")
-	logs.WithContext(ctx).Info(url)
 	resp, err := callHttp(ctx, method, url, headers, formData, reqCookies, params, postBody)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -316,8 +317,9 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 	//todo - check if below change from reqContentType to header.get breaks anything
 	//todo - merge conflict - main had below first if commented
 	contentType := strings.Split(headers.Get("Content-type"), ";")[0]
+	respcontentType := strings.Split(resp.Header.Get("Content-type"), ";")[0]
 	if resp.ContentLength > 0 || contentType == encodedForm || contentType == applicationJson {
-		if strings.Split(resp.Header.Get("content-type"), ";")[0] == applicationJson {
+		if respcontentType == applicationJson || respcontentType == "" {
 			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
 				logs.WithContext(ctx).Error(err.Error())
 				return nil, nil, nil, resp.StatusCode, err

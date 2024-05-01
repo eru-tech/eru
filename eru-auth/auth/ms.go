@@ -87,7 +87,7 @@ func (msAuth *MsAuth) GetUrl(ctx context.Context, state string) (urlStr string, 
 	return
 }
 
-func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
+func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
 	logs.WithContext(ctx).Debug("Login - Start")
 
 	headers := http.Header{}
@@ -339,40 +339,4 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, wi
 func (msAuth *MsAuth) GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error) {
 	logs.WithContext(ctx).Debug("GetUserInfo - Start")
 	return msAuth.Hydra.GetUserInfo(ctx, access_token)
-}
-
-func (msAuth *MsAuth) RemoveUser(ctx context.Context, removeUser RemoveUser) (err error) {
-	logs.WithContext(ctx).Debug("RemoveUser - Start")
-
-	var queries []*models.Queries
-	idiQuery := models.Queries{}
-	idiQuery.Query = msAuth.AuthDb.GetDbQuery(ctx, INSERT_DELETED_IDENTITY)
-	idiQuery.Vals = append(idiQuery.Vals, removeUser.UserId)
-	idiQuery.Rank = 1
-	queries = append(queries, &idiQuery)
-
-	dipQuery := models.Queries{}
-	dipQuery.Query = msAuth.AuthDb.GetDbQuery(ctx, DELETE_IDENTITY_PASSWORD)
-	dipQuery.Vals = append(dipQuery.Vals, removeUser.UserId)
-	dipQuery.Rank = 2
-	queries = append(queries, &dipQuery)
-
-	dicQuery := models.Queries{}
-	dicQuery.Query = msAuth.AuthDb.GetDbQuery(ctx, DELETE_IDENTITY_CREDENTIALS)
-	dicQuery.Vals = append(dicQuery.Vals, removeUser.UserId)
-	dicQuery.Rank = 3
-	queries = append(queries, &dicQuery)
-
-	diQuery := models.Queries{}
-	diQuery.Query = msAuth.AuthDb.GetDbQuery(ctx, DELETE_IDENTITY)
-	diQuery.Vals = append(diQuery.Vals, removeUser.UserId)
-	diQuery.Rank = 4
-	queries = append(queries, &diQuery)
-
-	_, err = utils.ExecuteDbSave(ctx, msAuth.AuthDb.GetConn(), queries)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return errors.New("something went wrong - please try again")
-	}
-	return
 }

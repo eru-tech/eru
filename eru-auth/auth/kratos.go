@@ -710,7 +710,7 @@ func (kratosHydraAuth *KratosHydraAuth) GenerateRecoveryCode(ctx context.Context
 	//_ = firstName
 	return recovery_link[1], nil
 }
-func (kratosHydraAuth *KratosHydraAuth) Login(ctx context.Context, loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
+func (kratosHydraAuth *KratosHydraAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
 	logs.WithContext(ctx).Debug("Login - Start")
 	flowId, flowErr := kratosHydraAuth.getFlowId(ctx, "login")
 	if flowErr != nil {
@@ -977,7 +977,7 @@ func (kratosHydraAuth *KratosHydraAuth) ChangePassword(ctx context.Context, toke
 	var loginPostBody LoginPostBody
 	loginPostBody.Username = identifier
 	loginPostBody.Password = changePassword.OldPassword
-	_, _, loginErr := kratosHydraAuth.Login(ctx, loginPostBody, false)
+	_, _, loginErr := kratosHydraAuth.Login(ctx, loginPostBody, "", false)
 	if loginErr != nil {
 		err = errors.New("Incorrect Old Password")
 		logs.WithContext(ctx).Info(err.Error())

@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	erujwt "github.com/eru-tech/eru/eru-crypto/jwt"
 	"github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -33,9 +32,8 @@ func ExecuteTemplateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		tmplBodyFromReq.DisallowUnknownFields()
 
 		var tmplBody TemplateBody
-		jwkurl := "https://cognito-idp.ap-south-1.amazonaws.com/ap-south-1_44nu2KbZ0/.well-known/jwks.json"
-		erujwt.DecryptTokenJWK(r.Context(), r.Header.Get("Authorization"), jwkurl)
-
+		//jwkurl := "https://cognito-idp.ap-south-1.amazonaws.com/ap-south-1_44nu2KbZ0/.well-known/jwks.json"
+		//erujwt.DecryptTokenJWK(r.Context(), r.Header.Get("Authorization"), jwkurl)
 		if err := tmplBodyFromReq.Decode(&tmplBody); err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -49,7 +47,9 @@ func ExecuteTemplateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 		}
-
+		logs.WithContext(r.Context()).Info(fmt.Sprint(tmplBody.Name))
+		logs.WithContext(r.Context()).Info(fmt.Sprint(tmplBody.Template))
+		logs.WithContext(r.Context()).Info(fmt.Sprint(tmplBody.Object))
 		goTmpl := gotemplate.GoTemplate{tmplBody.Name, tmplBody.Template}
 		str, err := goTmpl.Execute(r.Context(), tmplBody.Object, "json")
 		if err != nil {

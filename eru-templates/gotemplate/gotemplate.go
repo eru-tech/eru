@@ -110,6 +110,13 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 		"stringToByte": func(s string) []byte {
 			return []byte(s)
 		},
+		"stringify": func(j interface{}) (string, error) {
+			d, err := json.Marshal(j)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			return string(d), err
+		},
 		"unquote": func(s string) string {
 			str, uerr := strconv.Unquote(string(s))
 			if uerr != nil {
@@ -503,19 +510,20 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 		logs.WithContext(ctx).Error(err.Error())
 		return "", err
 	}
+	str := buf.String()
 	switch outputFormat {
 	case "string":
-		if buf.String() == "<no value>" {
+		if str == "<no value>" {
 			err = errors.New("Template returned <no value>")
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
-		return buf.String(), nil
+		return str, nil
 	case "json":
-		if buf.String() == "<no value>" {
+		if str == "<no value>" {
 			return nil, err
 		}
-		if err = json.Unmarshal([]byte(buf.String()), &output); err != nil {
+		if err = json.Unmarshal([]byte(str), &output); err != nil {
 			err = errors.New(fmt.Sprintf("Unable to marhsal templated output to JSON : ", buf.String(), " ", err))
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
@@ -530,12 +538,9 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 func evalFilter(ctx context.Context, filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
 	for k, v := range filter {
 		kk := fetchKey(k)
-		logs.WithContext(ctx).Info(fmt.Sprint(kk, " : ", v))
 		if kk == "$or" {
-			logs.WithContext(ctx).Info(fmt.Sprint(reflect.TypeOf(v)))
 			if vArray, vArrayOk := v.([]interface{}); vArrayOk {
 				result, err = evalOrFilter(ctx, vArray, record)
-				logs.WithContext(ctx).Info(fmt.Sprint(result))
 				if !result {
 					return false, nil
 				}
@@ -544,19 +549,14 @@ func evalFilter(ctx context.Context, filter map[string]interface{}, record map[s
 				return false, err
 			}
 		} else {
-			logs.WithContext(ctx).Info(fmt.Sprint(kk))
-			logs.WithContext(ctx).Info(fmt.Sprint(record))
 			if recordValue, recordValueOk := record[kk]; recordValueOk {
-				logs.WithContext(ctx).Info(fmt.Sprint(kk, " : ", recordValue))
 				if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
 					result, err = evalCondition(ctx, vMap, recordValue)
-					logs.WithContext(ctx).Info(fmt.Sprint(result))
 					if !result {
 						return false, err
 					}
 				} else {
 					result = eruutils.ImplCompare(recordValue, v)
-					logs.WithContext(ctx).Info(fmt.Sprint(result))
 					if !result {
 						return false, err
 					}

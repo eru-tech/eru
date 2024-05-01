@@ -23,7 +23,7 @@ type AuthI interface {
 	//Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error)
 	SetAuthDb(authDbI AuthDbI)
 	GetAuthDb() (authDbI AuthDbI)
-	Login(ctx context.Context, loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error)
+	Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error)
 	Register(ctx context.Context, registerUser RegisterUser, projectId string) (identity Identity, loginSuccess LoginSuccess, err error)
 	RemoveUser(ctx context.Context, removeUser RemoveUser) (err error)
 	Logout(ctx context.Context, req *http.Request) (res interface{}, resStatusCode int, err error)
@@ -146,6 +146,8 @@ type AuthHooks struct {
 	SRCF string          `json:"srcf"`
 	SVCF string          `json:"svcf"`
 	SWEF string          `json:"swef"`
+	USRP string          `json:"usrp"`
+	USRR string          `json:"usrr"`
 }
 
 type IdentifierConfig struct {
@@ -157,6 +159,7 @@ type Identifiers struct {
 	Email    IdentifierConfig `json:"email"`
 	Mobile   IdentifierConfig `json:"mobile"`
 	Username IdentifierConfig `json:"username"`
+	UserId   IdentifierConfig `json:"user_id"`
 }
 
 type UserTraits struct {
@@ -171,7 +174,8 @@ type UserTraits struct {
 
 type RegisterUser struct {
 	UserTraits
-	Password string `json:"password"`
+	Password       string            `json:"password"`
+	UserAttributes map[string]string `json:"user_attributes"`
 }
 
 type RemoveUser struct {
@@ -250,7 +254,7 @@ func (auth *Auth) sendCode(ctx context.Context, credentialIdentifier string, rec
 	if purpose == OTP_PURPOSE_RECOVERY {
 		logs.WithContext(ctx).Info(auth.Hooks.SRCF)
 		if auth.Hooks.SRCF != "" {
-			err = triggerHook(ctx, auth.Hooks.SRCF, projectId, trReqVars.Vars)
+			_, err = triggerHook(ctx, auth.Hooks.SRCF, projectId, trReqVars.Vars)
 			srcHookFound = true
 		}
 		if !srcHookFound {
@@ -260,7 +264,7 @@ func (auth *Auth) sendCode(ctx context.Context, credentialIdentifier string, rec
 	if purpose == OTP_PURPOSE_VERIFY {
 		logs.WithContext(ctx).Info(auth.Hooks.SVCF)
 		if auth.Hooks.SVCF != "" {
-			err = triggerHook(ctx, auth.Hooks.SVCF, projectId, trReqVars.Vars)
+			_, err = triggerHook(ctx, auth.Hooks.SVCF, projectId, trReqVars.Vars)
 			srcHookFound = true
 		}
 		if !srcHookFound {
@@ -270,7 +274,7 @@ func (auth *Auth) sendCode(ctx context.Context, credentialIdentifier string, rec
 	return
 }
 
-func triggerHook(ctx context.Context, functionName string, projectId string, funcBody map[string]interface{}) (err error) {
+func triggerHook(ctx context.Context, functionName string, projectId string, funcBody map[string]interface{}) (res interface{}, err error) {
 	urlArray := strings.Split(ctx.Value("Erufuncbaseurl").(string), "://")
 	if len(urlArray) < 2 {
 		err = errors.New("incorrect eru-functions url")
@@ -285,14 +289,13 @@ func triggerHook(ctx context.Context, functionName string, projectId string, fun
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
 	headers.Set("Content-Length", strconv.Itoa(0))
-
 	hookRes, _, _, _, hookErr := utils.CallHttp(ctx, http.MethodPost, srcfUrl.String(), headers, nil, nil, nil, funcBody)
 	if hookErr != nil {
 		err = hookErr
+		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	logs.WithContext(ctx).Debug(fmt.Sprint(hookRes))
-	return
+	return hookRes, hookErr
 }
 
 func (auth *Auth) sendWelcomeEmail(ctx context.Context, credentialIdentifier string, name string, projectId string, credentialType string) (err error) {
@@ -307,7 +310,7 @@ func (auth *Auth) sendWelcomeEmail(ctx context.Context, credentialIdentifier str
 
 	logs.WithContext(ctx).Info(auth.Hooks.SWEF)
 	if auth.Hooks.SWEF != "" {
-		err = triggerHook(ctx, auth.Hooks.SWEF, projectId, trReqVars.Vars)
+		_, err = triggerHook(ctx, auth.Hooks.SWEF, projectId, trReqVars.Vars)
 	} else {
 		logs.WithContext(ctx).Warn("SWEF hook not defined for auth")
 	}
@@ -384,7 +387,7 @@ func (auth *Auth) FetchTokens(ctx context.Context, refresh_token string, userId 
 	return nil, err
 }
 
-func (auth *Auth) Login(ctx context.Context, loginPostBody LoginPostBody, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
+func (auth *Auth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
 	err = errors.New("Login Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return Identity{}, LoginSuccess{}, err
@@ -418,6 +421,8 @@ func GetAuth(authType string) AuthI {
 		return new(EruAuth)
 	case "GOOGLE":
 		return new(GlAuth)
+	case "OAUTH":
+		return new(OAuth)
 	default:
 		return new(Auth)
 	}
@@ -480,8 +485,39 @@ func (auth *Auth) VerifyCode(ctx context.Context, verifyCode VerifyCode, tokenOb
 	logs.WithContext(ctx).Info("VerifyCode Method not implemented")
 	return
 }
+
 func (auth *Auth) RemoveUser(ctx context.Context, removeUser RemoveUser) (err error) {
 	logs.WithContext(ctx).Debug("RemoveUser - Start")
-	logs.WithContext(ctx).Info("RemoveUser Method not implemented")
+
+	var queries []*models.Queries
+	idiQuery := models.Queries{}
+	idiQuery.Query = auth.AuthDb.GetDbQuery(ctx, INSERT_DELETED_IDENTITY)
+	idiQuery.Vals = append(idiQuery.Vals, removeUser.UserId)
+	idiQuery.Rank = 1
+	queries = append(queries, &idiQuery)
+
+	dipQuery := models.Queries{}
+	dipQuery.Query = auth.AuthDb.GetDbQuery(ctx, DELETE_IDENTITY_PASSWORD)
+	dipQuery.Vals = append(dipQuery.Vals, removeUser.UserId)
+	dipQuery.Rank = 2
+	queries = append(queries, &dipQuery)
+
+	dicQuery := models.Queries{}
+	dicQuery.Query = auth.AuthDb.GetDbQuery(ctx, DELETE_IDENTITY_CREDENTIALS_BY_ID)
+	dicQuery.Vals = append(dicQuery.Vals, removeUser.UserId)
+	dicQuery.Rank = 3
+	queries = append(queries, &dicQuery)
+
+	diQuery := models.Queries{}
+	diQuery.Query = auth.AuthDb.GetDbQuery(ctx, DELETE_IDENTITY)
+	diQuery.Vals = append(diQuery.Vals, removeUser.UserId)
+	diQuery.Rank = 4
+	queries = append(queries, &diQuery)
+
+	_, err = utils.ExecuteDbSave(ctx, auth.AuthDb.GetConn(), queries)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return errors.New("something went wrong - please try again")
+	}
 	return
 }
