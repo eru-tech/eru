@@ -27,7 +27,6 @@ type OAuthConfig struct {
 	ClientId            string      `json:"client_id"`
 	ClientSecret        string      `json:"client_secret"`
 	RedirectURI         string      `json:"redirect_uri" eru:"required"`
-	RedirectKey         string      `json:"redirect_key"`
 	CodeKey             string      `json:"code_key"`
 	TokenUrlContentType string      `json:"token_url_content_type"`
 	Scope               string      `json:"scope"`
@@ -35,11 +34,7 @@ type OAuthConfig struct {
 	TokenUrl            string      `json:"token_url" eru:"required"`
 	JwkUrl              string      `json:"jwk_url"`
 	Identifiers         Identifiers `json:"identifiers"`
-	//NonIdentifiers      []string    `json:"non_identifiers"`
-	TokenKey string `json:"token_key"`
-	//ProfileUrl          string      `json:"profile_url"`
-	//ProfileTokenKey     string      `json:"profile_token_key"`
-	//ProfileHeaderKey    string      `json:"profile_header_key"`
+	TokenKey            string      `json:"token_key"`
 }
 
 func (oAuth *OAuth) PerformPreSaveTask(ctx context.Context) (err error) {
@@ -87,11 +82,7 @@ func (oAuth *OAuth) GetUrl(ctx context.Context, state string) (urlStr string, oA
 		tags := f.Type().Field(i).Tag.Get("json")
 		if tags != "redirect_key" {
 			if tags != "" && f.Field(i).String() != "" {
-				if oAuth.OAuthConfig.RedirectKey != "" && tags == "redirect_uri" {
-					params.Add(oAuth.OAuthConfig.RedirectKey, f.Field(i).String())
-				} else {
-					params.Add(tags, f.Field(i).String())
-				}
+				params.Add(tags, f.Field(i).String())
 			}
 		}
 	}
