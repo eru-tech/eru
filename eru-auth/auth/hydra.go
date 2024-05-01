@@ -87,12 +87,11 @@ func (hydra HydraConfig) GetLoginChallenge(ctx context.Context) (loginChallenge 
 	}
 	outhConfig, ocErr := hydra.GetOauthConfig(ctx, hydraClientId)
 	if ocErr != nil {
-		logs.WithContext(ctx).Error(fmt.Sprint("generate state failed: %v", err.Error()))
+		logs.WithContext(ctx).Error(fmt.Sprint("fetch ouathcofig failed: %v", err.Error()))
 		err = ocErr
 		return
 	}
 	redirectTo := outhConfig.AuthCodeURL(state)
-
 	_, headers, respCookies, statusCode, err := utils.CallHttp(ctx, http.MethodGet, redirectTo, nil, nil, nil, nil, nil)
 	cookies = respCookies
 	if statusCode >= 300 && statusCode < 400 {
@@ -413,11 +412,12 @@ func (hydraConfig HydraConfig) AcceptLoginRequest(ctx context.Context, subject s
 	if respMap, ok := resp.(map[string]interface{}); ok {
 		if redirectUrl, ok1 := respMap["redirect_to"]; ok1 {
 			logs.WithContext(ctx).Info(redirectUrl.(string))
-			_, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(ctx, http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
+			resp2, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(ctx, http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
 			respCookies = append(respCookies, respCookies2...)
 			if err2 != nil {
 				return "", nil, err
 			}
+			logs.WithContext(ctx).Info(fmt.Sprint(resp2))
 			if statusCode2 >= 300 && statusCode2 < 400 {
 				redirectLocation := respHeaders2["Location"][0]
 				logs.WithContext(ctx).Info(redirectLocation)
@@ -458,6 +458,7 @@ func (hydraConfig HydraConfig) AcceptConsentRequest(ctx context.Context, identit
 	paramsMap["consent_challenge"] = consentChallenge
 
 	postUrl := fmt.Sprint(hydraConfig.GetAminUrl(), "/admin/oauth2/auth/requests/consent/accept")
+
 	resp, _, respCookies, _, err := utils.CallHttp(ctx, http.MethodPut, postUrl, headers, dummyMap, loginCookies, paramsMap, hydraCLR)
 	respCookies = append(respCookies, loginCookies...)
 	if err != nil {
@@ -465,17 +466,14 @@ func (hydraConfig HydraConfig) AcceptConsentRequest(ctx context.Context, identit
 		return LoginSuccess{}, err
 	}
 	code := ""
-	logs.WithContext(ctx).Info(fmt.Sprint(resp))
 	if respMap, ok := resp.(map[string]interface{}); ok {
 		if redirectUrl, ok1 := respMap["redirect_to"]; ok1 {
-			resp2, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(ctx, http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
+			_, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(ctx, http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
 			respCookies = append(respCookies, respCookies2...)
 			if err2 != nil {
 				logs.WithContext(ctx).Error(err2.Error())
 				return LoginSuccess{}, err
 			}
-			logs.WithContext(ctx).Info(fmt.Sprint(resp2))
-			logs.WithContext(ctx).Info(fmt.Sprint(statusCode2))
 			if statusCode2 >= 300 && statusCode2 < 400 {
 				redirectLocation := respHeaders2["Location"][0]
 				params := strings.Split(redirectLocation, "?")[1]

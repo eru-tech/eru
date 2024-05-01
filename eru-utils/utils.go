@@ -297,9 +297,10 @@ func callHttp(ctx context.Context, method string, url string, headers http.Heade
 		req.Body = io.NopCloser(&reqBodyNew)
 		req.Header.Set("Content-Length", strconv.Itoa(len(data.Encode())))
 		req.ContentLength = int64(len(data.Encode()))
-	} else {
-		req.Header.Set("Content-Length", strconv.Itoa(bytes.NewReader(reqBody).Len()))
 	}
+	//else {
+	//	req.Header.Set("Content-Length", strconv.Itoa(bytes.NewReader(reqBody).Len()))
+	//}
 	return ExecuteHttp(ctx, req)
 }
 
@@ -319,7 +320,7 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 	contentType := strings.Split(headers.Get("Content-type"), ";")[0]
 	respcontentType := strings.Split(resp.Header.Get("Content-type"), ";")[0]
 	if resp.ContentLength > 0 || contentType == encodedForm || contentType == applicationJson {
-		if respcontentType == applicationJson || respcontentType == "" {
+		if respcontentType == applicationJson {
 			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
 				logs.WithContext(ctx).Error(err.Error())
 				return nil, nil, nil, resp.StatusCode, err
