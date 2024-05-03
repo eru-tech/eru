@@ -289,6 +289,9 @@ func triggerHook(ctx context.Context, functionName string, projectId string, fun
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
 	headers.Set("Content-Length", strconv.Itoa(0))
+	logs.WithContext(ctx).Info(fmt.Sprint(srcfUrl.String()))
+	logs.WithContext(ctx).Info(fmt.Sprint(headers))
+	logs.WithContext(ctx).Info(fmt.Sprint(funcBody))
 	hookRes, _, _, _, hookErr := utils.CallHttp(ctx, http.MethodPost, srcfUrl.String(), headers, nil, nil, nil, funcBody)
 	if hookErr != nil {
 		err = hookErr

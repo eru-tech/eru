@@ -69,7 +69,7 @@ func (awsSmStore *AwsSmStore) FetchSmValue(ctx context.Context) (resultJson map[
 			return
 		}
 	}
-
+	logs.WithContext(ctx).Info(awsSmStore.SmName)
 	input := &secretsmanager.GetSecretValueInput{
 		SecretId:     aws.String(awsSmStore.SmName),
 		VersionStage: aws.String("AWSCURRENT"), // VersionStage defaults to AWSCURRENT if unspecified
