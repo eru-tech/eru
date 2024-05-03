@@ -187,6 +187,7 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 				logs.WithContext(ctx).Error(fmt.Sprint("error while executing USRP hook :", hookErr.Error()))
 				return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 			}
+			logs.WithContext(ctx).Info(fmt.Sprint(hookRes))
 			if tokenMap, tokenMapOk = hookRes.(map[string]interface{}); !tokenMapOk {
 				logs.WithContext(ctx).Error(fmt.Sprint("USRP hook response is not a map"))
 				return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
