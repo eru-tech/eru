@@ -143,9 +143,13 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	lMap := make(map[string]interface{})
 	lMapOk := false
 	if lMap, lMapOk = loginRes.(map[string]interface{}); lMapOk {
-		if lToken, lTokensOk := lMap[oAuth.OAuthConfig.TokenKey]; lTokensOk {
-			logs.WithContext(ctx).Info(fmt.Sprint(loginRes))
-			idToken = lToken.(string)
+		vI, vIErr := utils.GetNestedFieldValue(ctx, lMap, oAuth.OAuthConfig.TokenKey)
+		if vIErr != nil {
+			logs.WithContext(ctx).Error(vIErr.Error())
+			return Identity{}, LoginSuccess{}, vIErr
+		}
+		if lToken, lTokensOk := vI.(string); lTokensOk {
+			idToken = lToken
 		} else {
 			logs.WithContext(ctx).Error("token could not be retrieved from IDP response")
 		}
@@ -417,7 +421,7 @@ func (oAuth *OAuth) Register(ctx context.Context, registerUser RegisterUser, pro
 	//tokens, err = oAuth.makeTokens(ctx, identity)
 
 	if oAuth.Hooks.SWEF != "" {
-		oAuth.sendWelcomeEmail(ctx, "abaradia@gmail.com", userTraits.FirstName, projectId, "email")
+		oAuth.sendWelcomeEmail(ctx, userTraits.Email, userTraits.FirstName, projectId, "email")
 	} else {
 		logs.WithContext(ctx).Info("SWEF hook not defined")
 	}

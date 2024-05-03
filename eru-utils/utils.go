@@ -544,3 +544,26 @@ func ImplContains[T comparable](s []T, e T) bool {
 func ImplCompare[T comparable](s T, e T) bool {
 	return s == e
 }
+
+func GetNestedFieldValue(ctx context.Context, data interface{}, fieldPath string) (interface{}, error) {
+	fields := strings.Split(fieldPath, ".")
+	val := reflect.ValueOf(data)
+	for _, field := range fields {
+		if val.Kind() == reflect.Map {
+			val = val.MapIndex(reflect.ValueOf(field))
+			if !val.IsValid() {
+				err := errors.New("invalid value")
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, err
+			}
+			if val.Kind() == reflect.Interface {
+				val = reflect.ValueOf(val.Interface())
+			}
+		} else {
+			err := errors.New("not a map")
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+	}
+	return val.Interface(), nil
+}
