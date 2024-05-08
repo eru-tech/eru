@@ -440,7 +440,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 }
 
 func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
-	logs.WithContext(ctx).Debug("Login - Start")
+	logs.WithContext(ctx).Info("Login - Start")
 
 	loginQuery := models.Queries{}
 	loginQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, SELECT_LOGIN)
