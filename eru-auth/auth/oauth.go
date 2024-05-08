@@ -126,9 +126,6 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	glLoginFormBody["grant_type"] = "authorization_code"
 	var loginErr error
 	var loginRes interface{}
-	logs.WithContext(ctx).Info(fmt.Sprint(oAuth.OAuthConfig.TokenUrl))
-	logs.WithContext(ctx).Info(fmt.Sprint(headers))
-	logs.WithContext(ctx).Info(fmt.Sprint(glLoginFormBody))
 	if contentType == "application/x-www-form-urlencoded" {
 		loginRes, _, _, _, loginErr = utils.CallHttp(ctx, http.MethodPost, oAuth.OAuthConfig.TokenUrl, headers, glLoginFormBody, nil, nil, nil)
 	} else if contentType == "application/json" {
@@ -226,7 +223,7 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	if identity.Attributes == nil {
 		identity.Attributes = make(map[string]interface{})
 	}
-	identity.Attributes[oAuth.OAuthConfig.TokenKey] = lMap[oAuth.OAuthConfig.TokenKey]
+	identity.Attributes["idp_token"] = idToken
 	logs.WithContext(ctx).Info(fmt.Sprint(output))
 	//creating Just-In-Time user if not found in eru database
 	if len(output) == 0 {
