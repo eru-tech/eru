@@ -367,6 +367,7 @@ func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, stora
 	storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
 
 	file, err = storageObjClone.DownloadFile(ctx, fileDownloadRequest.FolderPath, fileDownloadRequest.FileName, prj.AesKeys[keyName.(string)])
+	mimetype.SetLimit(2000)
 	return file, mimetype.Detect(file).String(), err
 }
 
@@ -378,7 +379,7 @@ func (ms *ModuleStore) DownloadFileAsJson(ctx context.Context, projectId string,
 		return
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint(m))
-
+	mimetype.SetLimit(2000)
 	fMime := mimetype.Detect(f)
 	logs.WithContext(ctx).Info(fmt.Sprint("fileDownloadRequest.ExcelAsJson = ", fileDownloadRequest.ExcelAsJson))
 	logs.WithContext(ctx).Info(fmt.Sprint("fMime ", fMime))
