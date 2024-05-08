@@ -26,7 +26,7 @@ const (
 	DELETE_IDENTITY_CREDENTIALS       = "delete from eruauth_identity_credentials where identity_id = ??? and identity_credential_type = ??? and identity_credential = ??? "
 	DELETE_IDENTITY_CREDENTIALS_BY_ID = "delete from eruauth_identity_credentials where identity_id = ??? "
 	INSERT_IDENTITY_PASSWORD          = "insert into eruauth_identity_passwords (identity_password_id,identity_id,identity_password) values (??? , ??? , ???)"
-	SELECT_LOGIN                      = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a inner join eruauth_identity_credentials b on a.identity_id=b.identity_id and b.identity_credential= ??? inner join eruauth_identity_passwords c on a.identity_id=c.identity_id and c.identity_password= ???"
+	SELECT_LOGIN                      = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a inner join eruauth_identity_credentials b on a.identity_id=b.identity_id and lower(b.identity_credential) = lower(???) inner join eruauth_identity_passwords c on a.identity_id=c.identity_id and c.identity_password= ???"
 	SELECT_LOGIN_ID                   = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a inner join eruauth_identity_passwords c on a.identity_id=c.identity_id and c.identity_password= ??? where a.identity_id= ???"
 	SELECT_IDENTITY                   = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a  where a.identity_id = ???"
 	SELECT_IDENTITY_CREDENTIAL        = "select b.traits->>'first_name' first_name , a.* from eruauth_identity_credentials a left join eruauth_identities b on a.identity_id=b.identity_id where a.identity_credential = ???"
@@ -444,6 +444,17 @@ func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, 
 
 	loginQuery := models.Queries{}
 	loginQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, SELECT_LOGIN)
+	orgPassword := ""
+	if eruAuth.EruConfig.LoginFallback {
+		passwordBytes, passwordErr := b64.StdEncoding.DecodeString(loginPostBody.Password)
+		if passwordErr != nil {
+			logs.WithContext(ctx).Error(passwordErr.Error())
+			return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+		}
+		loginPostBody.Password = hex.EncodeToString(erusha.NewSHA512(passwordBytes))
+		orgPassword = string(passwordBytes)
+	}
+
 	loginQuery.Vals = append(loginQuery.Vals, loginPostBody.Username, loginPostBody.Password)
 	loginQuery.Rank = 1
 
@@ -451,7 +462,6 @@ func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, 
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
-
 	}
 
 	if len(loginOutput) == 0 {
@@ -464,6 +474,8 @@ func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, 
 			err = nil
 			logs.WithContext(ctx).Info("executing login fallback query")
 			loginQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, ERU_LOGIN_FALLBACK)
+			loginQuery.Vals = nil
+			loginQuery.Vals = append(loginQuery.Vals, loginPostBody.Username, orgPassword)
 			loginOutput, err = utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), loginQuery)
 		}
 		if err != nil {
@@ -480,6 +492,18 @@ func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, 
 			err = errors.New("invalid credentials - please try again")
 			logs.WithContext(ctx).Error(fmt.Sprint("fallback match : ", err.Error()))
 			return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+		} else {
+			var insertQueries []*models.Queries
+			insertPQuery := models.Queries{}
+			insertPQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY_PASSWORD)
+			insertPQuery.Vals = append(insertPQuery.Vals, uuid.New().String(), loginOutput[0]["identity_id"].(string), loginPostBody.Password)
+			insertPQuery.Rank = 1
+			insertQueries = append(insertQueries, &insertPQuery)
+			_, err = utils.ExecuteDbSave(ctx, eruAuth.AuthDb.GetConn(), insertQueries)
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("fallback save : ", err.Error()))
+				//silently exit and proceed further
+			}
 		}
 	}
 

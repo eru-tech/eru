@@ -95,7 +95,6 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	logs.WithContext(ctx).Debug("Login - Start")
 
 	headers := http.Header{}
-	//headers.Set("Host", "localhost:8083")
 	contentType := "application/x-www-form-urlencoded"
 	if oAuth.OAuthConfig.TokenUrlContentType != "" {
 		contentType = oAuth.OAuthConfig.TokenUrlContentType
