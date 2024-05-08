@@ -96,9 +96,7 @@ func (hydra HydraConfig) GetLoginChallenge(ctx context.Context) (loginChallenge 
 	cookies = respCookies
 	if statusCode >= 300 && statusCode < 400 {
 		redirectLocation := headers["Location"][0]
-		logs.WithContext(ctx).Info(redirectLocation)
 		params := strings.Split(redirectLocation, "?")[1]
-		logs.WithContext(ctx).Info(fmt.Sprint(params))
 		loginChallenge = strings.Split(params, "=")[1]
 	}
 	return
@@ -411,18 +409,14 @@ func (hydraConfig HydraConfig) AcceptLoginRequest(ctx context.Context, subject s
 	}
 	if respMap, ok := resp.(map[string]interface{}); ok {
 		if redirectUrl, ok1 := respMap["redirect_to"]; ok1 {
-			logs.WithContext(ctx).Info(redirectUrl.(string))
-			resp2, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(ctx, http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
+			_, respHeaders2, respCookies2, statusCode2, err2 := utils.CallHttp(ctx, http.MethodGet, redirectUrl.(string), headers, dummyMap, respCookies, dummyMap, dummyMap)
 			respCookies = append(respCookies, respCookies2...)
 			if err2 != nil {
 				return "", nil, err
 			}
-			logs.WithContext(ctx).Info(fmt.Sprint(resp2))
 			if statusCode2 >= 300 && statusCode2 < 400 {
 				redirectLocation := respHeaders2["Location"][0]
-				logs.WithContext(ctx).Info(redirectLocation)
 				params := strings.Split(redirectLocation, "?")[1]
-				logs.WithContext(ctx).Info(fmt.Sprint(params))
 				consentChallenge = strings.Split(params, "=")[1]
 			}
 		} else {
@@ -439,7 +433,7 @@ func (hydraConfig HydraConfig) AcceptLoginRequest(ctx context.Context, subject s
 }
 
 func (hydraConfig HydraConfig) AcceptConsentRequest(ctx context.Context, identityHolder map[string]interface{}, consentChallenge string, loginCookies []*http.Cookie) (tokens LoginSuccess, err error) {
-	logs.WithContext(ctx).Info("acceptConsentRequest - Start")
+	logs.WithContext(ctx).Debug("acceptConsentRequest - Start")
 	hydraCLR := hydraAcceptConsentRequest{}
 	hydraCLR.Remember = true
 	hydraCLR.RememberFor = 0
@@ -498,7 +492,6 @@ func (hydraConfig HydraConfig) AcceptConsentRequest(ctx context.Context, identit
 					return
 				}
 				idt := token.Extra("id_token")
-				logs.WithContext(ctx).Info(idt.(string))
 				loginSuccess := LoginSuccess{}
 				loginSuccess.AccessToken = token.AccessToken
 				loginSuccess.RefreshToken = token.RefreshToken

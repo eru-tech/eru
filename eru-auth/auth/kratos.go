@@ -28,7 +28,7 @@ var kratosTraits = [...]string{"email", "phone", "name", "role"}
 type KratosHydraAuth struct {
 	Auth
 	Kratos KratosConfig `json:"kratos"`
-	Hydra  HydraConfig  `json:"hydra"`
+	//Hydra  HydraConfig  `json:"hydra"`
 }
 
 type KratosLoginPostBody struct {

@@ -20,7 +20,7 @@ import (
 type OAuth struct {
 	Auth
 	OAuthConfig OAuthConfig `json:"oauth_config" eru:"required"`
-	Hydra       HydraConfig `json:"hydra" eru:"required"`
+	//Hydra       HydraConfig `json:"hydra" eru:"required"`
 }
 
 type OAuthConfig struct {

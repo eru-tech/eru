@@ -133,12 +133,13 @@ type IdentityAuth struct {
 }
 
 type Auth struct {
-	AuthType       string    `json:"auth_type"`
-	AuthName       string    `json:"auth_name"`
-	TokenHeaderKey string    `json:"token_header_key"`
-	Hooks          AuthHooks `json:"hooks" eru:"optional"`
-	AuthDb         AuthDbI   `json:"-"`
-	PKCE           bool      `json:"pkce"`
+	AuthType       string      `json:"auth_type"`
+	AuthName       string      `json:"auth_name"`
+	TokenHeaderKey string      `json:"token_header_key"`
+	Hooks          AuthHooks   `json:"hooks" eru:"optional"`
+	AuthDb         AuthDbI     `json:"-"`
+	PKCE           bool        `json:"pkce"`
+	Hydra          HydraConfig `json:"hydra" eru:"required"`
 }
 
 type AuthHooks struct {
@@ -365,11 +366,49 @@ func (auth *Auth) GetAttribute(ctx context.Context, attributeName string) (attri
 		return nil, err
 	}
 }
-
 func (auth *Auth) GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error) {
-	err = errors.New("GetUserInfo Method not implemented")
-	logs.WithContext(ctx).Error(err.Error())
-	return Identity{}, err
+	logs.WithContext(ctx).Debug("GetUserInfo - Start")
+	identity, err = auth.Hydra.GetUserInfo(ctx, access_token)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return Identity{}, errors.New("something went wrong - please try again")
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(identity))
+	return auth.getUserInfo(ctx, identity.Id)
+}
+
+func (auth *Auth) getUserInfo(ctx context.Context, id string) (identity Identity, err error) {
+	loginQuery := models.Queries{}
+	loginQuery.Query = auth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY)
+	loginQuery.Vals = append(loginQuery.Vals, id)
+	loginQuery.Rank = 1
+	logs.WithContext(ctx).Info(fmt.Sprint(auth.AuthDb.GetConn()))
+	loginOutput, err := utils.ExecuteDbFetch(ctx, auth.AuthDb.GetConn(), loginQuery)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return Identity{}, errors.New("something went wrong - please try again")
+	}
+
+	if len(loginOutput) == 0 {
+		err = errors.New("user not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return Identity{}, err
+	}
+	identity.Id = loginOutput[0]["identity_id"].(string)
+	identity.Status = loginOutput[0]["status"].(string)
+	identity.Attributes = make(map[string]interface{})
+
+	if attrs, attrsOk := loginOutput[0]["attributes"].(*map[string]interface{}); attrsOk {
+		for k, v := range *attrs {
+			identity.Attributes[k] = v
+		}
+	}
+	if traits, traitsOk := loginOutput[0]["traits"].(*map[string]interface{}); traitsOk {
+		for k, v := range *traits {
+			identity.Attributes[k] = v
+		}
+	}
+	return
 }
 
 func (auth *Auth) GetUser(ctx context.Context, userId string) (identity Identity, err error) {
@@ -384,10 +423,40 @@ func (auth *Auth) UpdateUser(ctx context.Context, identityToUpdate Identity, use
 	return nil, err
 }
 
-func (auth *Auth) FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error) {
-	err = errors.New("FetchTokens Method not implemented")
-	logs.WithContext(ctx).Error(err.Error())
-	return nil, err
+func (auth *Auth) FetchTokens(ctx context.Context, refreshToken string, userId string) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("FetchTokens - Start")
+	_, err = auth.Hydra.fetchTokens(ctx, refreshToken)
+	if err != nil {
+		return
+	}
+	identity, ierr := auth.getUserInfo(ctx, userId)
+	if ierr != nil {
+		return nil, ierr
+	}
+	return auth.makeTokens(ctx, identity)
+}
+
+func (auth *Auth) makeTokens(ctx context.Context, identity Identity) (eruTokens LoginSuccess, err error) {
+	loginChallenge, loginChallengeCookies, loginChallengeErr := auth.Hydra.GetLoginChallenge(ctx)
+	if loginChallengeErr != nil {
+		err = loginChallengeErr
+		return
+	}
+
+	consentChallenge, loginAcceptRequestCookies, loginAcceptErr := auth.Hydra.AcceptLoginRequest(ctx, identity.Id, loginChallenge, loginChallengeCookies)
+	if loginAcceptErr != nil {
+		err = loginAcceptErr
+		return
+	}
+	identityHolder := make(map[string]interface{})
+	identityHolder["identity"] = identity
+	eruTokens.Id = identity.Id
+	eruTokens, err = auth.Hydra.AcceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
+	if err != nil {
+		return
+	}
+	eruTokens.Id = identity.Id
+	return
 }
 
 func (auth *Auth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {

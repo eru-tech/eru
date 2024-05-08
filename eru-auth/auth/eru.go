@@ -37,16 +37,18 @@ const (
 	INSERT_DELETED_IDENTITY           = "insert into eruauth_deleted_identities (identity_id,identity_provider,identity_provider_id,traits,attributes,is_active,identity_password) select a.identity_id,identity_provider,identity_provider_id,traits,attributes,is_active, b.identity_password  from eruauth_identities a left join eruauth_identity_passwords b on a.identity_id=b.identity_id where a.identity_id= ???"
 	DELETE_IDENTITY_PASSWORD          = "delete from eruauth_identity_passwords where identity_id= ???"
 	DELETE_IDENTITY                   = "delete from eruauth_identities where identity_id= ???"
+	ERU_LOGIN_FALLBACK                = "with i as (select c.config->>'hashed_password' hp, a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a inner join eruauth_identity_credentials b on a.identity_id=b.identity_id and lower(b.identity_credential) = lower(???) inner join ory_identity_credentials c on a.identity_id=c.identity_id::text) select crypt(???,hp) = hp pmatch, i.* from i"
 )
 
 type EruAuth struct {
 	Auth
-	EruConfig EruConfig   `json:"eru_config" eru:"required"`
-	Hydra     HydraConfig `json:"hydra" eru:"required"`
+	EruConfig EruConfig `json:"eru_config" eru:"required"`
+	//Hydra     HydraConfig `json:"hydra" eru:"required"`
 }
 
 type EruConfig struct {
-	Identifiers Identifiers `json:"identifiers" eru:"required"`
+	LoginFallback bool        `json:"login_fallback"`
+	Identifiers   Identifiers `json:"identifiers" eru:"required"`
 }
 
 func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser, projectId string) (identity Identity, tokens LoginSuccess, err error) {
@@ -211,11 +213,6 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 	}
 
 	return identity, tokens, nil
-}
-
-func (eruAuth *EruAuth) GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error) {
-	logs.WithContext(ctx).Debug("GetUserInfo - Start")
-	return eruAuth.Hydra.GetUserInfo(ctx, access_token)
 }
 
 func (eruAuth *EruAuth) PerformPreSaveTask(ctx context.Context) (err error) {
@@ -454,12 +451,36 @@ func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, 
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+
 	}
 
 	if len(loginOutput) == 0 {
 		err = errors.New("invalid credentials - please try again")
 		logs.WithContext(ctx).Error(err.Error())
-		return Identity{}, LoginSuccess{}, err
+		logs.WithContext(ctx).Info(fmt.Sprint("eruAuth.EruConfig.LoginFallback  = ", eruAuth.EruConfig.LoginFallback))
+		if !eruAuth.EruConfig.LoginFallback {
+			return Identity{}, LoginSuccess{}, err
+		} else {
+			err = nil
+			logs.WithContext(ctx).Info("executing login fallback query")
+			loginQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, ERU_LOGIN_FALLBACK)
+			loginOutput, err = utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), loginQuery)
+		}
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+		}
+		if len(loginOutput) == 0 {
+			err = errors.New("invalid credentials - please try again")
+			logs.WithContext(ctx).Error(fmt.Sprint("fallback : ", err.Error()))
+			return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+		}
+		pMatch := loginOutput[0]["pmatch"].(bool)
+		if !pMatch {
+			err = errors.New("invalid credentials - please try again")
+			logs.WithContext(ctx).Error(fmt.Sprint("fallback match : ", err.Error()))
+			return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+		}
 	}
 
 	identity.Id = loginOutput[0]["identity_id"].(string)
@@ -481,72 +502,6 @@ func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, 
 		return identity, eruTokens, eruTokensErr
 	}
 	return identity, LoginSuccess{}, nil
-}
-
-func (eruAuth *EruAuth) FetchTokens(ctx context.Context, refreshToken string, userId string) (res interface{}, err error) {
-	logs.WithContext(ctx).Debug("FetchTokens - Start")
-	logs.WithContext(ctx).Info(userId)
-	//logs.WithContext(ctx).Info(refreshToken)
-	//_, err = eruAuth.Hydra.fetchTokens(ctx, refreshToken)
-	//if err != nil {
-	//	return
-	//}
-
-	loginQuery := models.Queries{}
-	loginQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY)
-	loginQuery.Vals = append(loginQuery.Vals, userId)
-	loginQuery.Rank = 1
-
-	loginOutput, err := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), loginQuery)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, errors.New("something went wrong - please try again")
-	}
-
-	if len(loginOutput) == 0 {
-		err = errors.New("user not found")
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
-	}
-	identity := Identity{}
-	identity.Id = loginOutput[0]["identity_id"].(string)
-	identity.Status = loginOutput[0]["status"].(string)
-	identity.Attributes = make(map[string]interface{})
-
-	if attrs, attrsOk := loginOutput[0]["attributes"].(*map[string]interface{}); attrsOk {
-		for k, v := range *attrs {
-			identity.Attributes[k] = v
-		}
-	}
-	if traits, traitsOk := loginOutput[0]["traits"].(*map[string]interface{}); traitsOk {
-		for k, v := range *traits {
-			identity.Attributes[k] = v
-		}
-	}
-	return eruAuth.makeTokens(ctx, identity)
-}
-
-func (eruAuth *EruAuth) makeTokens(ctx context.Context, identity Identity) (eruTokens LoginSuccess, err error) {
-	loginChallenge, loginChallengeCookies, loginChallengeErr := eruAuth.Hydra.GetLoginChallenge(ctx)
-	if loginChallengeErr != nil {
-		err = loginChallengeErr
-		return
-	}
-
-	consentChallenge, loginAcceptRequestCookies, loginAcceptErr := eruAuth.Hydra.AcceptLoginRequest(ctx, identity.Id, loginChallenge, loginChallengeCookies)
-	if loginAcceptErr != nil {
-		err = loginAcceptErr
-		return
-	}
-	identityHolder := make(map[string]interface{})
-	identityHolder["identity"] = identity
-	eruTokens.Id = identity.Id
-	eruTokens, err = eruAuth.Hydra.AcceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
-	if err != nil {
-		return
-	}
-	eruTokens.Id = identity.Id
-	return
 }
 
 func (eruAuth *EruAuth) GenerateRecoveryCode(ctx context.Context, recoveryIdentifier RecoveryPostBody, projectId string, silentFlag bool) (msg string, err error) {

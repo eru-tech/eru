@@ -20,8 +20,8 @@ import (
 
 type MsAuth struct {
 	Auth
-	MsConfig MsConfig    `json:"ms_config" eru:"required"`
-	Hydra    HydraConfig `json:"hydra" eru:"required"`
+	MsConfig MsConfig `json:"ms_config" eru:"required"`
+	//Hydra    HydraConfig `json:"hydra" eru:"required"`
 }
 
 type MsConfig struct {

@@ -19,8 +19,8 @@ import (
 
 type GlAuth struct {
 	Auth
-	GlConfig GlConfig    `json:"gl_config" eru:"required"`
-	Hydra    HydraConfig `json:"hydra" eru:"required"`
+	GlConfig GlConfig `json:"gl_config" eru:"required"`
+	//Hydra    HydraConfig `json:"hydra" eru:"required"`
 }
 
 type GlConfig struct {
