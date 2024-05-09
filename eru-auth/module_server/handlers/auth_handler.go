@@ -195,12 +195,14 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		}
 		logs.WithContext(r.Context()).Info(fmt.Sprint("auth conn is set"))
+		utils.PrintRequestBody(r.Context(), r, "from login handler in eruauth")
 		loginPostBodyFromReq := json.NewDecoder(r.Body)
 		loginPostBodyFromReq.DisallowUnknownFields()
 
 		var loginPostBody auth.LoginPostBody
 
 		if err = loginPostBodyFromReq.Decode(&loginPostBody); err != nil {
+			logs.WithContext(ctx).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
