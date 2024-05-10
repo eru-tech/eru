@@ -567,7 +567,7 @@ func evalFilter(ctx context.Context, filter map[string]interface{}, record map[s
 			} else {
 				err = errors.New(fmt.Sprint("key : ", kk, " not found in data"))
 				logs.WithContext(ctx).Info(err.Error())
-				return false, err
+				return false, nil
 			}
 		}
 	}

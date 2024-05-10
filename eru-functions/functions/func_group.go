@@ -185,7 +185,6 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprint(err.Error()))
 	}
-	logs.WithContext(ctx).Error(fmt.Sprint(response))
 	return
 }
 
