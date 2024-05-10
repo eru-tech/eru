@@ -156,6 +156,9 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 			return eruaes.Unpad(buf)
 		},
 		"saveVar": func(vars map[string]interface{}, ketToSave string, valueToSave interface{}) error {
+			if vars == nil {
+				vars = make(map[string]interface{})
+			}
 			vars[ketToSave] = valueToSave
 			return nil
 		},
