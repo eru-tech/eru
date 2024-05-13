@@ -19,7 +19,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
 	"math"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -268,7 +267,6 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 			var tmpArray []*OrderedMap
 			for _, v := range mapArray {
 				if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
-					logs.WithContext(ctx).Error(fmt.Sprint(reflect.TypeOf(vMap[sortKey])))
 					if r, rOk := vMap[sortKey].(float64); !rOk {
 						err = errors.New("sortKey is not an int")
 						return
@@ -504,7 +502,6 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 
 func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFormat string) (output interface{}, err error) {
 	logs.WithContext(ctx).Debug("Execute - Start")
-
 	buf := &bytes.Buffer{}
 
 	t := template.Must(template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(GenericFuncMap(ctx)).Parse(goTmpl.Template))

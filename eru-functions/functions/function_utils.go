@@ -543,6 +543,14 @@ func processParams(ctx context.Context, request *http.Request, queryParamsRemove
 func processHeaderTemplates(ctx context.Context, request *http.Request, headersToRemove []string, headers []Headers, reqVarsLoaded bool, vars *TemplateVars, tokenSecretKey string, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (err error) {
 	logs.WithContext(ctx).Debug("processHeaderTemplates - Start")
 	//TODO remove reqVarsLoaded unused parameter
+	logs.WithContext(ctx).Info("printing from process headers before processing")
+	logs.WithContext(ctx).Info(fmt.Sprint(request.Header))
+	if headersToRemove != nil {
+		for _, v := range headersToRemove {
+			request.Header.Del(v)
+		}
+	}
+
 	for _, h := range headers {
 		if h.IsTemplate {
 
@@ -587,11 +595,8 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 			logs.WithContext(ctx).Info(fmt.Sprint("string(output) = ", outputStr))
 		}
 	}
-	if headersToRemove != nil {
-		for _, v := range headersToRemove {
-			request.Header.Del(v)
-		}
-	}
+	logs.WithContext(ctx).Info("printing from process headers before returning after processing")
+	logs.WithContext(ctx).Info(fmt.Sprint(request.Header))
 	return
 }
 
