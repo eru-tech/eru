@@ -25,7 +25,7 @@ const (
 	INSERT_IDENTITY_CREDENTIALS       = "insert into eruauth_identity_credentials (identity_credential_id , identity_id, identity_credential, identity_credential_type) values (???,???,???,???)"
 	DELETE_IDENTITY_CREDENTIALS       = "delete from eruauth_identity_credentials where identity_id = ??? and identity_credential_type = ??? and identity_credential = ??? "
 	DELETE_IDENTITY_CREDENTIALS_BY_ID = "delete from eruauth_identity_credentials where identity_id = ??? "
-	INSERT_IDENTITY_PASSWORD          = "insert into eruauth_identity_passwords (identity_password_id,identity_id,identity_password) values (??? , ??? , ???)"
+	INSERT_IDENTITY_PASSWORD          = "insert into eruauth_identity_passwords (identity_password_id,identity_id,identity_password) values (??? , ??? , ???) on conflict ON CONSTRAINT unique_identity_id do update set identity_password=EXCLUDED.identity_password"
 	SELECT_LOGIN                      = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a inner join eruauth_identity_credentials b on a.identity_id=b.identity_id and lower(b.identity_credential) = lower(???) inner join eruauth_identity_passwords c on a.identity_id=c.identity_id and c.identity_password= ???"
 	SELECT_LOGIN_ID                   = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a inner join eruauth_identity_passwords c on a.identity_id=c.identity_id and c.identity_password= ??? where a.identity_id= ???"
 	SELECT_IDENTITY                   = "select a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a  where a.identity_id = ???"
@@ -457,7 +457,6 @@ func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, 
 
 	loginQuery.Vals = append(loginQuery.Vals, loginPostBody.Username, loginPostBody.Password)
 	loginQuery.Rank = 1
-
 	loginOutput, err := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), loginQuery)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -617,7 +616,6 @@ func (eruAuth *EruAuth) VerifyCode(ctx context.Context, verifyCode VerifyCode, t
 	verifyQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, VERIFY_OTP)
 	verifyQuery.Vals = append(verifyQuery.Vals, verifyCode.UserId, verifyCode.Code, verifyCode.Id, OTP_PURPOSE_VERIFY)
 	verifyQuery.Rank = 1
-
 	verifyOutput, err := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), verifyQuery)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -685,6 +683,8 @@ func (eruAuth *EruAuth) ChangePassword(ctx context.Context, tokenObj map[string]
 }
 
 func (eruAuth *EruAuth) VerifyRecovery(ctx context.Context, recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error) {
+	logs.WithContext(ctx).Debug("VerifyRecovery - Start")
+	logs.WithContext(ctx).Info(fmt.Sprint(recoveryPassword))
 	verifyQuery := models.Queries{}
 	verifyQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, VERIFY_RECOVERY_OTP)
 	verifyQuery.Vals = append(verifyQuery.Vals, recoveryPassword.Code, recoveryPassword.Id, OTP_PURPOSE_RECOVERY)
@@ -712,16 +712,18 @@ func (eruAuth *EruAuth) VerifyRecovery(ctx context.Context, recoveryPassword Rec
 
 	var queries []*models.Queries
 	cpQuery := models.Queries{}
-	cpQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, CHANGE_PASSWORD)
-	cpQuery.Vals = append(cpQuery.Vals, recoveryPassword.Password, userId)
+
+	cpQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY_PASSWORD)
+	cpQuery.Vals = append(cpQuery.Vals, uuid.New().String(), userId, recoveryPassword.Password)
 	cpQuery.Rank = 1
 	queries = append(queries, &cpQuery)
 
-	_, err = utils.ExecuteDbSave(ctx, eruAuth.AuthDb.GetConn(), queries)
+	resCp, err := utils.ExecuteDbSave(ctx, eruAuth.AuthDb.GetConn(), queries)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, errors.New("something went wrong - please try again")
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint(len(resCp)))
 	res = make(map[string]string)
 	res["status"] = "account recovery successful"
 	return
