@@ -434,7 +434,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 		logs.WithContext(ctx).Error(err.Error())
 		return LoginSuccess{}, errors.New("something went wrong - please try again")
 	}
-	tokens, err = eruAuth.FetchTokens(ctx, "", identity.Id)
+	tokens, err = eruAuth.makeTokens(ctx, identity)
 
 	return
 }
@@ -616,6 +616,7 @@ func (eruAuth *EruAuth) VerifyCode(ctx context.Context, verifyCode VerifyCode, t
 	verifyQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, VERIFY_OTP)
 	verifyQuery.Vals = append(verifyQuery.Vals, verifyCode.UserId, verifyCode.Code, verifyCode.Id, OTP_PURPOSE_VERIFY)
 	verifyQuery.Rank = 1
+	logs.WithContext(ctx).Info(fmt.Sprint(verifyQuery.Vals))
 	verifyOutput, err := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), verifyQuery)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
