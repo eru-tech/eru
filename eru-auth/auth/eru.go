@@ -138,13 +138,14 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 	identity.AuthDetails = IdentityAuth{}
 	identity.Attributes["sub"] = identity.Id
 	identity.Attributes["idp"] = eruAuth.AuthName
-	identity.Attributes["idp_sub"] = identity.Id
-	identity.Attributes["email_verified"] = false
-	identity.Attributes["mobile_verified"] = false
 
 	userAttrs["sub"] = identity.Id
 	userAttrs["idp"] = eruAuth.AuthName
-	userAttrs["idp_sub"] = identity.Id
+
+	for k, v := range registerUser.UserAttributes {
+		userAttrs[k] = v
+		identity.Attributes[k] = v
+	}
 
 	userAttrsBytes, userAttrsBytesErr := json.Marshal(userAttrs)
 	if userAttrsBytesErr != nil {
