@@ -578,18 +578,15 @@ func (eruAuth *EruAuth) GenerateVerifyCode(ctx context.Context, verifyIdentifier
 		logs.WithContext(ctx).Error(err.Error())
 		return "", errors.New("something went wrong - please try again")
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(verifyOutput))
 	if len(verifyOutput) == 0 {
 		err = errors.New("user not found")
 		logs.WithContext(ctx).Error(err.Error())
 		return "", err
 	}
 	name := " "
-	logs.WithContext(ctx).Info(fmt.Sprint(verifyOutput))
 	if fn, fnOk := verifyOutput[0]["first_name"]; fnOk {
 		name = fn.(string)
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("name = ", name))
 	if ct, ctOk := verifyOutput[0]["identity_credential_type"]; ctOk {
 		if verifyIdentifier.CredentialType != ct.(string) {
 			err = errors.New("user not found")
@@ -616,7 +613,6 @@ func (eruAuth *EruAuth) VerifyCode(ctx context.Context, verifyCode VerifyCode, t
 	verifyQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, VERIFY_OTP)
 	verifyQuery.Vals = append(verifyQuery.Vals, verifyCode.UserId, verifyCode.Code, verifyCode.Id, OTP_PURPOSE_VERIFY)
 	verifyQuery.Rank = 1
-	logs.WithContext(ctx).Info(fmt.Sprint(verifyQuery.Vals))
 	verifyOutput, err := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), verifyQuery)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -685,7 +681,6 @@ func (eruAuth *EruAuth) ChangePassword(ctx context.Context, tokenObj map[string]
 
 func (eruAuth *EruAuth) VerifyRecovery(ctx context.Context, recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error) {
 	logs.WithContext(ctx).Debug("VerifyRecovery - Start")
-	logs.WithContext(ctx).Info(fmt.Sprint(recoveryPassword))
 	verifyQuery := models.Queries{}
 	verifyQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, VERIFY_RECOVERY_OTP)
 	verifyQuery.Vals = append(verifyQuery.Vals, recoveryPassword.Code, recoveryPassword.Id, OTP_PURPOSE_RECOVERY)
@@ -719,12 +714,11 @@ func (eruAuth *EruAuth) VerifyRecovery(ctx context.Context, recoveryPassword Rec
 	cpQuery.Rank = 1
 	queries = append(queries, &cpQuery)
 
-	resCp, err := utils.ExecuteDbSave(ctx, eruAuth.AuthDb.GetConn(), queries)
+	_, err = utils.ExecuteDbSave(ctx, eruAuth.AuthDb.GetConn(), queries)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, errors.New("something went wrong - please try again")
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(len(resCp)))
 	res = make(map[string]string)
 	res["status"] = "account recovery successful"
 	return

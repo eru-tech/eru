@@ -105,7 +105,6 @@ func FetchTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 		}
-		logs.WithContext(r.Context()).Info(fmt.Sprint(fetchTokenObj))
 		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)

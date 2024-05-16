@@ -246,7 +246,6 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 		}
 
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(output))
 	identity.Id = output[0]["identity_id"].(string)
 	if output[0]["is_active"].(bool) {
 		identity.Status = "ACTIVE"
@@ -268,32 +267,6 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	if withTokens {
 		eruTokens, eruTokensErr := oAuth.makeTokens(ctx, identity)
 		return identity, eruTokens, eruTokensErr
-
-		/*
-			loginChallenge, loginChallengeCookies, loginChallengeErr := oAuth.Hydra.GetLoginChallenge(ctx)
-			if loginChallengeErr != nil {
-				err = loginChallengeErr
-				return
-			}
-
-			consentChallenge, loginAcceptRequestCookies, loginAcceptErr := oAuth.Hydra.AcceptLoginRequest(ctx, identity.Id, loginChallenge, loginChallengeCookies)
-			if loginAcceptErr != nil {
-				err = loginAcceptErr
-				return
-			}
-			identityHolder := make(map[string]interface{})
-			identityHolder["identity"] = identity
-			eruTokens, cosentAcceptErr := oAuth.Hydra.AcceptConsentRequest(ctx, identityHolder, consentChallenge, loginAcceptRequestCookies)
-			if cosentAcceptErr != nil {
-				err = cosentAcceptErr
-				logs.WithContext(ctx).Error(err.Error())
-				return
-			}
-			eruTokens.Id = identity.Id
-			logs.WithContext(ctx).Info(fmt.Sprint(identity))
-			logs.WithContext(ctx).Info(fmt.Sprint(eruTokens))
-			return identity, eruTokens, nil
-		*/
 	}
 	return identity, LoginSuccess{}, nil
 }

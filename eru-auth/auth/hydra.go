@@ -155,7 +155,7 @@ func (hydraConfig HydraConfig) GetUserInfo(ctx context.Context, access_token str
 }
 
 func (hydraConfig HydraConfig) fetchTokens(ctx context.Context, refresh_token string) (res interface{}, err error) {
-	logs.WithContext(ctx).Info("fetchTokens - Start")
+	logs.WithContext(ctx).Debug("fetchTokens - Start")
 	dummyMap := make(map[string]string)
 	headers := http.Header{}
 	headers.Add("content-type", "application/x-www-form-urlencoded")
@@ -166,8 +166,6 @@ func (hydraConfig HydraConfig) fetchTokens(ctx context.Context, refresh_token st
 		formData["client_id"] = v.ClientId
 		break
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(formData))
-	logs.WithContext(ctx).Info(fmt.Sprint(headers))
 
 	res, _, _, _, err = utils.CallHttp(ctx, "POST", fmt.Sprint(hydraConfig.GetPublicUrl(), "/oauth2/token"), headers, formData, nil, dummyMap, dummyMap)
 	if err != nil {
