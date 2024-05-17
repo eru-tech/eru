@@ -385,6 +385,10 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 				userTraits.MobileVerified = v.(bool)
 			}
 		}
+		if k == "idp_token" {
+			userTraitsFound = true
+			//setting it true to avoid it from getting added to userAttrs - we don't want to save it in DB
+		}
 		if !userTraitsFound {
 			userAttrs[k] = v
 		}
