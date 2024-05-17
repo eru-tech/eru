@@ -278,8 +278,8 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 
 	idptoken_query := models.Queries{}
 	idptoken_query.Query = oAuth.AuthDb.GetDbQuery(ctx, UPDATE_IDP_TOKEN)
-	idptoken_query.Vals = append(query.Vals, idToken)
-	idptoken_query.Vals = append(query.Vals, identity.Id)
+	idptoken_query.Vals = append(idptoken_query.Vals, idToken)
+	idptoken_query.Vals = append(idptoken_query.Vals, identity.Id)
 	_, outputErr = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), idptoken_query)
 	if outputErr != nil {
 		err = outputErr
