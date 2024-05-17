@@ -38,6 +38,7 @@ const (
 	DELETE_IDENTITY_PASSWORD          = "delete from eruauth_identity_passwords where identity_id= ???"
 	DELETE_IDENTITY                   = "delete from eruauth_identities where identity_id= ???"
 	ERU_LOGIN_FALLBACK                = "with i as (select c.config->>'hashed_password' hp, a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a inner join eruauth_identity_credentials b on a.identity_id=b.identity_id and lower(b.identity_credential) = lower(???) inner join ory_identity_credentials c on a.identity_id=c.identity_id::text) select crypt(???,hp) = hp pmatch, i.* from i"
+	UPDATE_IDP_TOKEN                  = "update eruauth_identities set idp_token = ??? where identity_id= ???"
 )
 
 type EruAuth struct {
@@ -73,6 +74,7 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 
 	if eruAuth.EruConfig.Identifiers.Email.Enable {
 		userTraits.Email = registerUser.Email
+		userTraits.EmailVerified = registerUser.EmailVerified
 		identity.Attributes["email"] = userTraits.Email
 		if registerUser.Email != "" {
 			identifierFound = true
@@ -88,6 +90,7 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 	}
 	if eruAuth.EruConfig.Identifiers.Mobile.Enable {
 		userTraits.Mobile = registerUser.Mobile
+		userTraits.MobileVerified = registerUser.MobileVerified
 		identity.Attributes["mobile"] = userTraits.Mobile
 		if registerUser.Mobile != "" {
 			identifierFound = true
@@ -756,5 +759,6 @@ func (eruAuth *EruAuth) Logout(ctx context.Context, req *http.Request) (res inte
 	if res == nil {
 		res = make(map[string]interface{})
 	}
+
 	return res, resStatusCode, err
 }

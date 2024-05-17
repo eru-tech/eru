@@ -403,6 +403,7 @@ func (auth *Auth) getUserInfo(ctx context.Context, id string) (identity Identity
 			identity.Attributes[k] = v
 		}
 	}
+	identity.Attributes["idp_token"] = loginOutput[0]["idp_token"].(string)
 	if traits, traitsOk := loginOutput[0]["traits"].(*map[string]interface{}); traitsOk {
 		for k, v := range *traits {
 			identity.Attributes[k] = v
