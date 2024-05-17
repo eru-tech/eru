@@ -139,6 +139,7 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	}
 
 	idToken := ""
+	sub := ""
 	lMap := make(map[string]interface{})
 	lMapOk := false
 	if lMap, lMapOk = loginRes.(map[string]interface{}); lMapOk {
@@ -152,6 +153,17 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 		} else {
 			logs.WithContext(ctx).Error("token could not be retrieved from IDP response")
 		}
+
+		subI, subIErr := utils.GetNestedFieldValue(ctx, lMap, oAuth.OAuthConfig.Identifiers.UserId.IdpMapper)
+		if subIErr != nil {
+			logs.WithContext(ctx).Error(vIErr.Error())
+		} else {
+			if subStr, subStrOk := subI.(string); subStrOk {
+				sub = subStr
+			} else {
+				logs.WithContext(ctx).Error("idp_sub could not be retrieved from IDP response")
+			}
+		}
 	} else {
 		logs.WithContext(ctx).Error("token API response received from IDP is not a map")
 		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
@@ -163,7 +175,6 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	tokenMapOk := false
 	strTokenEmail := ""
 	nonce := ""
-	sub := ""
 
 	if idToken != "" && oAuth.OAuthConfig.JwkUrl != "" {
 		tokens, tokensErr := jwt.DecryptTokenJWK(ctx, idToken, oAuth.OAuthConfig.JwkUrl)
@@ -203,6 +214,8 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	}
 	if tokenSub, tokenSubOk := tokenMap[oAuth.OAuthConfig.Identifiers.UserId.IdpMapper]; tokenSubOk {
 		sub = tokenSub.(string)
+	} else {
+		tokenMap[oAuth.OAuthConfig.Identifiers.UserId.IdpMapper] = sub
 	}
 	if tokenEmail, tokenEmailOk := tokenMap[oAuth.OAuthConfig.Identifiers.Email.IdpMapper]; tokenEmailOk {
 		strTokenEmail = tokenEmail.(string)
@@ -222,7 +235,6 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	if identity.Attributes == nil {
 		identity.Attributes = make(map[string]interface{})
 	}
-	identity.Attributes["idp_token"] = idToken
 	logs.WithContext(ctx).Info(fmt.Sprint(output))
 	//creating Just-In-Time user if not found in eru database
 	if len(output) == 0 {
@@ -263,7 +275,7 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 			identity.Attributes[k] = v
 		}
 	}
-
+	identity.Attributes["idp_token"] = idToken
 	if withTokens {
 		eruTokens, eruTokensErr := oAuth.makeTokens(ctx, identity)
 		return identity, eruTokens, eruTokensErr
