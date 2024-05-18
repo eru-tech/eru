@@ -204,9 +204,10 @@ func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storage
 	kmsMap, kmsErr := s.FetchKms(ctx, projectId)
 	if kmsErr != nil {
 		err = kmsErr
-		return
+		//return
+	} else {
+		storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
 	}
-	storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
 	docId, err = storageObjClone.UploadFile(ctx, file, header, docType, folderPath, prj.AesKeys[keyName.(string)])
 	return
 }
@@ -230,9 +231,10 @@ func (ms *ModuleStore) UploadFileB64(ctx context.Context, projectId string, stor
 	kmsMap, kmsErr := s.FetchKms(ctx, projectId)
 	if kmsErr != nil {
 		err = kmsErr
-		return
+		//return
+	} else {
+		storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
 	}
-	storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
 	docId, err = storageObjClone.UploadFileB64(ctx, file, fileName, docType, folderPath, prj.AesKeys[keyName.(string)])
 	return
 }
@@ -364,9 +366,10 @@ func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, stora
 	kmsMap, kmsErr := s.FetchKms(ctx, projectId)
 	if kmsErr != nil {
 		err = kmsErr
-		return
+		//return
+	} else {
+		storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
 	}
-	storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
 
 	file, err = storageObjClone.DownloadFile(ctx, fileDownloadRequest.FolderPath, fileDownloadRequest.FileName, prj.AesKeys[keyName.(string)])
 	mimetype.SetLimit(2000)
