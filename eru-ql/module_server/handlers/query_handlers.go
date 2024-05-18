@@ -13,12 +13,31 @@ import (
 	"github.com/eru-tech/eru/eru-ql/ql"
 	eru_writes "github.com/eru-tech/eru/eru-read-write/eru_writes"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 	//"../server"
 )
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // TODO to check origin as per env variable
+	},
+}
+
+type Client struct {
+	conn *websocket.Conn
+	id   string
+	// other relevant fields like subscribed channels or user preferences
+}
+
+var clients = make(map[string]*Client)
+var lock = sync.RWMutex{}
 
 func ProjectMyQuerySaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -318,6 +337,62 @@ func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 		//logs.WithContext(r.Context()).Info(fmt.Sprint("---------------------------"))
 		//logs.WithContext(r.Context()).Info(fmt.Sprint(w.Header()))
 		return
+	}
+}
+
+func GraphqlWsExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Info("GraphqlExecuteHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+		outputType := vars["outputtype"]
+		logs.WithContext(r.Context()).Info(fmt.Sprint(projectID))
+		logs.WithContext(r.Context()).Info(fmt.Sprint(outputType))
+		respHeader := make(http.Header)
+		respHeader.Add("Sec-WebSocket-Protocol", "graphql-ws")
+		conn, err := upgrader.Upgrade(w, r, respHeader) // Upgrade HTTP to WebSocket
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			if err = conn.WriteMessage(websocket.TextMessage, []byte("connection error")); err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				return
+			}
+		}
+		defer conn.Close()
+
+		client := &Client{conn: conn, id: uuid.New().String()}
+		lock.Lock()
+		clients[client.id] = client
+		lock.Unlock()
+
+		defer func() {
+			lock.Lock()
+			delete(clients, client.id)
+			lock.Unlock()
+		}()
+		m := make(map[string]interface{})
+		for {
+			if err = conn.ReadJSON(&m); err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					logs.WithContext(r.Context()).Error("IsUnexpectedCloseError")
+					logs.WithContext(r.Context()).Error(err.Error())
+					break
+				} else {
+					logs.WithContext(r.Context()).Error(err.Error())
+					_ = conn.WriteJSON(map[string]interface{}{"error": err.Error()})
+					return
+				}
+			}
+
+			// Logic to check database for updates
+			time.Sleep(10 * time.Second) // Polling every 10 seconds
+			// Suppose we have an update
+			wmessage := "Update detected in the database"
+			if err := conn.WriteMessage(websocket.TextMessage, []byte(wmessage)); err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				return
+			}
+		}
 	}
 }
 

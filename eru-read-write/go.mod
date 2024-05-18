@@ -5,6 +5,7 @@ go 1.22
 require (
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/xuri/excelize/v2 v2.7.0
+	github.com/tidwall/gjson v1.17.1
 )
 
 require (

@@ -5,7 +5,10 @@ import (
 	"context"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-read-write/validator"
 	"github.com/xuri/excelize/v2"
+	"strconv"
+	"strings"
 )
 
 type ExcelReadData struct {
@@ -15,7 +18,7 @@ type ExcelReadData struct {
 
 func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (readOutput map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("WriteColumnar - Start")
-
+	logs.WithContext(ctx).Info(fmt.Sprint(erd.Sheets))
 	f, err := excelize.OpenReader(bytes.NewReader(readData))
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -34,6 +37,7 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 			erd.Sheets[sn] = FileReadData{}
 		}
 	}
+	schema := validator.Schema{}
 	for sheetName, sheetObj := range erd.Sheets {
 		if sheetName == "*" {
 			for _, sn := range f.GetSheetList() {
@@ -44,8 +48,16 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 		}
 	}
 	for sheetName, sheetObj := range erd.Sheets {
+
+		err = schema.SetFields(ctx, sheetObj.Fields)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+
 		var sheetData []map[string]interface{}
-		rows, rowsErr := f.GetRows(sheetName)
+		logs.WithContext(ctx).Info(fmt.Sprint(sheetName))
+		rows, rowsErr := f.GetRows(sheetName, excelize.Options{RawCellValue: true})
 		if rowsErr != nil {
 			err = rowsErr
 			logs.WithContext(ctx).Error(err.Error())
@@ -93,16 +105,36 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 		} else {
 			cols = sheetObj.Columns
 		}
+		type colValue interface{}
+
 		for rowNo, row := range rows {
+			var errs []string
 			if rowNo+1 >= sheetObj.DataStartRow {
 				sheetRow := make(map[string]interface{})
 				for _, colNo := range cols {
 					if len(row) > colNo-1 {
-						sheetRow[colHeaders[colNo-1]] = row[colNo-1]
+						var rowValue interface{}
+						rowValue, err = strconv.ParseFloat(row[colNo-1], 64)
+						if err != nil {
+							rowValue, err = strconv.ParseBool(row[colNo-1])
+							if err != nil {
+								rowValue = row[colNo-1]
+							}
+						}
+						sheetRow[colHeaders[colNo-1]] = rowValue
+						field := schema.GetField(ctx, colHeaders[colNo-1])
+						if field != nil {
+							vErr := field.Validate(ctx, rowValue)
+							if vErr != nil {
+								errs = append(errs, vErr.Error())
+							}
+						}
 					} else {
 						sheetRow[colHeaders[colNo-1]] = ""
 					}
-
+				}
+				if len(errs) > 0 {
+					sheetRow["error"] = strings.Join(errs, " , ")
 				}
 				sheetData = append(sheetData, sheetRow)
 			}

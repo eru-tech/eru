@@ -17,6 +17,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	//store functions specific to files
 	serverRouter.Methods(http.MethodPost).Path("/graphql/{project}/execute").HandlerFunc(module_handlers.GraphqlExecuteHandler(sh.Store))
+	serverRouter.Path("/graphql/{project}/ws/execute").HandlerFunc(module_handlers.GraphqlWsExecuteHandler(sh.Store))
 	serverRouter.Methods(http.MethodPost).Path("/sql/{project}/execute").HandlerFunc(module_handlers.SqlExecuteHandler(sh.Store))
 
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()

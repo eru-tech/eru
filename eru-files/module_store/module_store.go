@@ -70,6 +70,8 @@ type ModuleStoreI interface {
 	DownloadFileB64(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, err error)
 	DownloadFileUnzip(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (files map[string]FileObj, err error)
 	SaveProjectSettings(ctx context.Context, projectId string, projectSettings file_model.ProjectSettings, realStore ModuleStoreI) error
+	ExcelToJson(ctx context.Context, projectId string, file multipart.File, header *multipart.FileHeader, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (jsonObj interface{}, err error)
+	BytesToJson(ctx context.Context, projectId string, f []byte, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (jsonObj []map[string]interface{}, err error)
 }
 
 type ModuleStore struct {
@@ -567,4 +569,50 @@ func GetStore(storeType string) ModuleStoreI {
 	default:
 		return nil
 	}
+}
+
+func (ms *ModuleStore) ExcelToJson(ctx context.Context, projectId string, file multipart.File, header *multipart.FileHeader, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (jsonObj interface{}, err error) {
+	logs.WithContext(ctx).Info("ExcelToJson - Start")
+
+	var byteContainer []byte
+	byteContainer, err = io.ReadAll(file)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return ms.BytesToJson(ctx, projectId, byteContainer, fileDownloadRequest, s)
+}
+
+func (ms *ModuleStore) BytesToJson(ctx context.Context, projectId string, f []byte, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (jsonObj []map[string]interface{}, err error) {
+	logs.WithContext(ctx).Info("bytesToJson - Start")
+
+	mimetype.SetLimit(2000)
+	fMime := mimetype.Detect(f)
+	logs.WithContext(ctx).Info(fmt.Sprint("fMime ", fMime))
+
+	if fileDownloadRequest.CsvAsJson && (fMime.Is(MIME_TEXT) || fMime.Is(MIME_CSV)) {
+		jsonObj, err = csvToJson(ctx, f, fileDownloadRequest)
+		if err != nil {
+			return
+		}
+	} else if fileDownloadRequest.ExcelAsJson && fMime.Is(MIME_XLSX) {
+		var sheets map[string]eru_reads.FileReadData
+		if fileDownloadRequest.ExcelSheets != nil {
+			for fn, v := range fileDownloadRequest.ExcelSheets {
+				if fn == fileDownloadRequest.FileName || fn == "*" {
+					sheets = v
+					break
+				}
+			}
+		}
+		logs.WithContext(ctx).Info(fmt.Sprint(sheets))
+		erd := eru_reads.ExcelReadData{Sheets: sheets}
+		jsonDataObj, jsonErr := erd.ReadAsJson(ctx, f)
+		if jsonErr != nil {
+			err = jsonErr
+			return
+		}
+		jsonObj = append(jsonObj, jsonDataObj)
+	}
+	return
 }

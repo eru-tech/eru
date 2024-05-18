@@ -2,6 +2,7 @@ package eru_reads
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 )
 
@@ -9,10 +10,11 @@ type ReadData struct {
 }
 
 type FileReadData struct {
-	HeaderRow     int      `json:"header_row"`
-	DataStartRow  int      `json:"data_start_row"`
-	ColumnHeaders []string `json:"column_headers"`
-	Columns       []int    `json:"columns"`
+	HeaderRow     int                `json:"header_row"`
+	DataStartRow  int                `json:"data_start_row"`
+	ColumnHeaders []string           `json:"column_headers"`
+	Columns       []int              `json:"columns"`
+	Fields        []*json.RawMessage `json:"fields"`
 }
 
 type ReadI interface {

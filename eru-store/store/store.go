@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/eru-tech/eru/eru-cache/cache"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-read-write/validator"
 	repos "github.com/eru-tech/eru/eru-repos/repos"
 	kms "github.com/eru-tech/eru/eru-secret-manager/kms"
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jmoiron/sqlx"
+	"github.com/tidwall/gjson"
 	"os"
 	"strings"
 	"sync"
@@ -60,6 +62,7 @@ type StoreI interface {
 	RemoveKms(ctx context.Context, projectId string, kmsName string, cloudDelete bool, deleteDays int32, s StoreI) (err error)
 	GetCacheValue(ctx context.Context, projectId string, key string) (value interface{}, err error)
 	SetCacheValue(ctx context.Context, projectId string, key string, value interface{}) (err error)
+	ValidateJSON(ctx context.Context, schema validator.Schema, data []interface{}) (records []interface{}, errRecords []interface{})
 	//SaveProject(projectId string, realStore StoreI) error
 	//RemoveProject(projectId string, realStore StoreI) error
 	//GetProjectConfig(projectId string) (*model.ProjectI, error)
@@ -1094,6 +1097,17 @@ func (store *Store) SetCacheValue(ctx context.Context, projectId string, key str
 		return
 	}
 	return
+}
+
+func (store *Store) ValidateJSON(ctx context.Context, schema validator.Schema, data []interface{}) (records []interface{}, errRecords []interface{}) {
+	var jsonData gjson.Result
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	jsonData = gjson.ParseBytes(dataBytes)
+	return schema.Validate(ctx, jsonData)
 }
 
 /*

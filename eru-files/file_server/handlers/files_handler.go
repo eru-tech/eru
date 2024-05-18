@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"github.com/eru-tech/eru/eru-files/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_reads "github.com/eru-tech/eru/eru-read-write/eru-reads"
+	"github.com/eru-tech/eru/eru-read-write/validator"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
+	"github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
+	"github.com/tidwall/gjson"
 	"io"
 	"net/http"
 	"strings"
@@ -291,9 +295,6 @@ func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		storageName := vars["storagename"]
 
 		var err error
-		//ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
-		//defer cancel()
-		//_ = ctx
 
 		reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
 		if reqContentType == encodedForm || reqContentType == multiPartForm {
@@ -342,6 +343,176 @@ func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		if err != nil {
 			logs.WithContext(r.Context()).Error(fmt.Sprint("Could not parse form: %s", err))
+			return
+		}
+	}
+}
+
+func ExcelToJsonHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		defer r.Body.Close()
+		logs.WithContext(r.Context()).Debug("FileUploadHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+
+		var err error
+
+		reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
+		if reqContentType == encodedForm || reqContentType == multiPartForm {
+			err = r.ParseMultipartForm((1 << 20) * 10)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+			}
+
+			formData := r.MultipartForm
+
+			fileJsons := make(map[string]interface{})
+			for _, files := range formData.File {
+				for _, f := range files {
+					fdr := module_store.FileDownloadRequest{}
+					fdr.ExcelAsJson = true
+					sheets := formData.Value["excel_sheets"]
+					if sheets != nil {
+						err = json.Unmarshal([]byte(sheets[0]), &fdr.ExcelSheets)
+						if err != nil {
+							logs.WithContext(r.Context()).Error(err.Error())
+							server_handlers.FormatResponse(w, 200)
+							_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "error reading the sheets attributes"})
+						}
+					} else {
+						fdr.ExcelSheets = make(map[string]map[string]eru_reads.FileReadData)
+						fdr.ExcelSheets["*"] = make(map[string]eru_reads.FileReadData)
+						rd := eru_reads.FileReadData{}
+						fdr.ExcelSheets["*"]["*"] = rd
+					}
+					logs.WithContext(r.Context()).Info(fmt.Sprint(fdr))
+
+					file, err := f.Open()
+					defer file.Close()
+					if err != nil {
+						logs.WithContext(r.Context()).Error(err.Error())
+						server_handlers.FormatResponse(w, 200)
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+						return
+					}
+					//TODO - check for file size and check for file meme
+					fileJson, err := s.ExcelToJson(r.Context(), projectId, file, f, fdr, s)
+					if err != nil {
+						server_handlers.FormatResponse(w, 400)
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+						return
+					}
+					fileJsons[f.Filename] = fileJson
+				}
+			}
+
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(fileJsons)
+
+			return
+		} else {
+			err = r.ParseForm()
+		}
+		if err != nil {
+			logs.WithContext(r.Context()).Error(fmt.Sprint("Could not parse form: %s", err))
+			return
+		}
+	}
+}
+
+func ExcelToJsonB64Handler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		var err error
+
+		ufFromReq := json.NewDecoder(r.Body)
+		ufFromReq.DisallowUnknownFields()
+		type ufFromObj struct {
+			FileName    string                                       `json:"file_name"`
+			ExcelSheets map[string]map[string]eru_reads.FileReadData `json:"excel_sheets"`
+			File        string                                       `json:"file"`
+		}
+		ufFromMap := ufFromObj{}
+
+		if err := ufFromReq.Decode(&ufFromMap); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		fileJsons := make(map[string]interface{})
+		fileBytes, err := b64.StdEncoding.DecodeString(ufFromMap.File)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "base64 decode failed"})
+			return
+		}
+		fdr := module_store.FileDownloadRequest{}
+		fdr.ExcelAsJson = true
+		sheets := ufFromMap.ExcelSheets
+		if sheets != nil {
+			fdr.ExcelSheets = sheets
+		} else {
+			fdr.ExcelSheets = make(map[string]map[string]eru_reads.FileReadData)
+			fdr.ExcelSheets["*"] = make(map[string]eru_reads.FileReadData)
+			rd := eru_reads.FileReadData{}
+			fdr.ExcelSheets["*"]["*"] = rd
+		}
+		logs.WithContext(r.Context()).Info(fmt.Sprint(fdr))
+		fileJson, err := s.BytesToJson(r.Context(), projectId, fileBytes, fdr, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		fileJsons[ufFromMap.FileName] = fileJson
+
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(fileJsons)
+
+		return
+	}
+}
+func JsonValidatorHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("JsonValidatorHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+
+		type schemePostBody struct {
+			Fields []*json.RawMessage `json:"fields" eru:"required"`
+			Data   []interface{}      `json:"data" eru:"required"`
+		}
+		spb := schemePostBody{}
+		schema := validator.Schema{}
+		schJson := json.NewDecoder(r.Body)
+		schJson.DisallowUnknownFields()
+		if err := schJson.Decode(&spb); err == nil {
+			err = schema.SetFields(r.Context(), spb.Fields)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 200)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+			var jsonData gjson.Result
+			dataBytes, dataBytesErr := json.Marshal(spb.Data)
+			if dataBytesErr != nil {
+				logs.WithContext(r.Context()).Error(dataBytesErr.Error())
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": dataBytesErr.Error()})
+				return
+			}
+			jsonData = gjson.ParseBytes(dataBytes)
+			rec, errRec := schema.Validate(r.Context(), jsonData)
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"records": rec, "error": errRec})
 			return
 		}
 	}

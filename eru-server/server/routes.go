@@ -62,7 +62,6 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Methods(http.MethodDelete).Path("/store/{project}/gkms/remove/{kmsname}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
 	router.Methods(http.MethodDelete).Path("/store/{project}/gkms/remove/{kmsname}/{clouddelete}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
 	router.Methods(http.MethodDelete).Path("/store/{project}/gkms/remove/{kmsname}/{clouddelete}/{deletedays}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
-
 	//router.Methods(http.MethodPost).Path("/store/project/save/{project}").HandlerFunc(handlers.ProjectSaveHandler(s.Store))
 	//router.Methods(http.MethodDelete).Path("/store/project/remove/{project}").HandlerFunc(handlers.ProjectRemoveHandler(s.Store))
 	//router.Methods(http.MethodGet).Path("/store/project/list").HandlerFunc(handlers.ProjectListHandler(s.Store))
