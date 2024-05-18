@@ -31,6 +31,7 @@ type AuthI interface {
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
 	GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error)
 	FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error)
+	LoginApi(ctx context.Context, refresh_token string, userId string) (res interface{}, err error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) (err error)
 	PerformPreSaveTask(ctx context.Context) (err error)
 	PerformPreDeleteTask(ctx context.Context) (err error)
@@ -435,6 +436,20 @@ func (auth *Auth) FetchTokens(ctx context.Context, refreshToken string, userId s
 		return nil, ierr
 	}
 	return auth.makeTokens(ctx, identity)
+}
+
+func (auth *Auth) LoginApi(ctx context.Context, refreshToken string, userId string) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("FetchTokens - Start")
+	res, err = auth.Hydra.fetchTokens(ctx, refreshToken)
+	if err != nil {
+		return
+	}
+	//identity, ierr := auth.getUserInfo(ctx, userId)
+	//if ierr != nil {
+	//		return nil, ierr
+	//	}
+	//	return auth.makeTokens(ctx, identity)
+	return
 }
 
 func (auth *Auth) makeTokens(ctx context.Context, identity Identity) (eruTokens LoginSuccess, err error) {
