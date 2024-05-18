@@ -76,6 +76,7 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 		userTraits.Email = registerUser.Email
 		userTraits.EmailVerified = registerUser.EmailVerified
 		identity.Attributes["email"] = userTraits.Email
+		identity.Attributes["email_verified"] = registerUser.EmailVerified
 		if registerUser.Email != "" {
 			identifierFound = true
 			insertQueryIcEmail := models.Queries{}
@@ -92,6 +93,7 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 		userTraits.Mobile = registerUser.Mobile
 		userTraits.MobileVerified = registerUser.MobileVerified
 		identity.Attributes["mobile"] = userTraits.Mobile
+		identity.Attributes["mobile_verified"] = registerUser.MobileVerified
 		if registerUser.Mobile != "" {
 			identifierFound = true
 			insertQueryIcMobile := models.Queries{}
@@ -263,7 +265,6 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 		return LoginSuccess{}, errors.New("User not found")
 	}
 
-	logs.WithContext(ctx).Info(fmt.Sprint(tokenAttributes))
 	for k, v := range tokenAttributes {
 		userTraitsFound := false
 		if k == "email" {
@@ -292,11 +293,11 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 				}
 			} else {
 				userTraits.Email = v.(string)
+				identity.Attributes["email"] = v.(string)
 			}
 		}
 
 		if k == "mobile" {
-			logs.WithContext(ctx).Info(fmt.Sprint("inside mobile for = ", v))
 			userTraitsFound = true
 			userTraitsArray = append(userTraitsArray, k)
 			if mobileAttr, mobileAttrOk := identity.Attributes["mobile"]; mobileAttrOk {
@@ -322,6 +323,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 				}
 			} else {
 				userTraits.Mobile = v.(string)
+				identity.Attributes["mobile"] = v.(string)
 			}
 		}
 
@@ -349,6 +351,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 					userTraits.Username = userNameAttr.(string)
 				}
 			} else {
+				identity.Attributes["username"] = v.(string)
 				userTraits.Username = v.(string)
 			}
 		}
@@ -358,6 +361,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 			if firstNameAttr, firstNameAttrOk := identity.Attributes["first_name"]; firstNameAttrOk {
 				userTraits.FirstName = firstNameAttr.(string)
 			} else {
+				identity.Attributes["first_name"] = v.(string)
 				userTraits.FirstName = v.(string)
 			}
 		}
@@ -367,6 +371,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 			if lastNameAttr, lastNameAttrOk := identity.Attributes["last_name"]; lastNameAttrOk {
 				userTraits.LastName = lastNameAttr.(string)
 			} else {
+				identity.Attributes["last_name"] = v.(string)
 				userTraits.LastName = v.(string)
 			}
 		}
@@ -376,6 +381,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 			if emailVerifiedAttr, emailVerifiedAttrOk := identity.Attributes["email_verified"]; emailVerifiedAttrOk {
 				userTraits.EmailVerified = emailVerifiedAttr.(bool)
 			} else {
+				identity.Attributes["email_verified"] = v.(bool)
 				userTraits.EmailVerified = v.(bool)
 			}
 		}
@@ -386,6 +392,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 				userTraits.MobileVerified = mobileVerifiedAttr.(bool)
 			} else {
 				userTraits.MobileVerified = v.(bool)
+				identity.Attributes["mobile_verified"] = v.(bool)
 			}
 		}
 		if k == "idp_token" {
@@ -394,6 +401,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 		}
 		if !userTraitsFound {
 			userAttrs[k] = v
+			identity.Attributes[k] = v
 		}
 	}
 	for k, v := range identity.Attributes {
@@ -433,8 +441,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 	for _, v := range queries {
 		logs.WithContext(ctx).Info(fmt.Sprint(v))
 	}
-	insertOutput, err := utils.ExecuteDbSave(ctx, eruAuth.AuthDb.GetConn(), queries)
-	logs.WithContext(ctx).Info(fmt.Sprint(insertOutput))
+	_, err = utils.ExecuteDbSave(ctx, eruAuth.AuthDb.GetConn(), queries)
 	if err != nil {
 		if strings.Contains(err.Error(), "unique_identity_credential") {
 			return LoginSuccess{}, errors.New("user with same credentials already exists")
