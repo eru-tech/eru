@@ -10,6 +10,7 @@ import (
 	models "github.com/eru-tech/eru/eru-models"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
+	"golang.org/x/oauth2"
 	"io"
 	"math/rand"
 	"net/http"
@@ -439,11 +440,34 @@ func (auth *Auth) FetchTokens(ctx context.Context, refreshToken string, userId s
 }
 
 func (auth *Auth) LoginApi(ctx context.Context, refreshToken string, userId string) (res interface{}, err error) {
-	logs.WithContext(ctx).Debug("FetchTokens - Start")
-	res, err = auth.Hydra.fetchTokens(ctx, refreshToken)
-	if err != nil {
+	logs.WithContext(ctx).Info("LoginApi - Start")
+	hydraClientId := ""
+	for _, v := range auth.Hydra.HydraClients {
+		logs.WithContext(ctx).Info(v.ClientId)
+		logs.WithContext(ctx).Info(v.ClientName)
+		hydraClientId = v.ClientId
+		break
+	}
+
+	outhConfig, ocErr := auth.Hydra.GetOauthConfig(ctx, hydraClientId)
+	if ocErr != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("fetch ouathcofig failed: %v", err.Error()))
+		err = ocErr
 		return
 	}
+
+	token := &oauth2.Token{RefreshToken: refreshToken}
+	newToken, err := outhConfig.TokenSource(context.Background(), token).Token()
+
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint(fmt.Sprintf("Failed to refresh token: %v", err), http.StatusInternalServerError))
+		return
+	}
+	return newToken, nil
+	//res, err = auth.Hydra.fetchTokens(ctx, refreshToken)
+	//if err != nil {
+	//	return
+	//}
 	//identity, ierr := auth.getUserInfo(ctx, userId)
 	//if ierr != nil {
 	//		return nil, ierr

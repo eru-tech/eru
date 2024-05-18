@@ -91,7 +91,7 @@ func (hydra HydraConfig) GetLoginChallenge(ctx context.Context) (loginChallenge 
 		err = ocErr
 		return
 	}
-	redirectTo := outhConfig.AuthCodeURL(state)
+	redirectTo := outhConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	_, headers, respCookies, statusCode, err := utils.CallHttp(ctx, http.MethodGet, redirectTo, nil, nil, nil, nil, nil)
 	cookies = respCookies
 	if statusCode >= 300 && statusCode < 400 {
@@ -162,6 +162,7 @@ func (hydraConfig HydraConfig) fetchTokens(ctx context.Context, refresh_token st
 	formData := make(map[string]string)
 	formData["refresh_token"] = refresh_token
 	formData["grant_type"] = "refresh_token"
+	formData["scope"] = "openid offline_access"
 	for _, v := range hydraConfig.HydraClients {
 		formData["client_id"] = v.ClientId
 		break
@@ -486,7 +487,6 @@ func (hydraConfig HydraConfig) AcceptConsentRequest(ctx context.Context, identit
 					err = ocErr
 					return
 				}
-
 				token, tokenErr := outhConfig.Exchange(ctx, code)
 				if tokenErr != nil {
 					err = tokenErr
