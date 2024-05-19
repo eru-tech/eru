@@ -122,15 +122,15 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 							return err
 						}
 					} else {
-						logs.WithContext(ctx).Info("ignoring secret manager as sm_store_type attribute not found")
+						logs.WithContext(ctx).Info("ignoring kms as kms_store_type attribute not found")
 					}
 				}
 			}
 		} else {
-			logs.WithContext(ctx).Info("secret manager attribute is nil")
+			logs.WithContext(ctx).Info("kms attribute is nil")
 		}
 	} else {
-		logs.WithContext(ctx).Info("secret manager attribute not found in store")
+		logs.WithContext(ctx).Info("kms attribute not found in store")
 	}
 
 	var prjRepo map[string]*json.RawMessage

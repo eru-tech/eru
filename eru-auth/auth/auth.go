@@ -366,7 +366,7 @@ func (auth *Auth) GetAttribute(ctx context.Context, attributeName string) (attri
 		return auth.TokenHeaderKey, nil
 	case "pkce":
 		return auth.PKCE, nil
-	case "kms_id":
+	case "key_id":
 		return auth.KmsId, nil
 	default:
 		err := errors.New("Attribute not found")
@@ -647,5 +647,6 @@ func (auth *Auth) RemoveUser(ctx context.Context, removeUser RemoveUser) (err er
 
 func (auth *Auth) SetKms(ctx context.Context, kmsObj kms.KmsStoreI) (err error) {
 	auth.KmsKey = kmsObj
+	logs.WithContext(ctx).Info(fmt.Sprint(auth.KmsKey))
 	return
 }

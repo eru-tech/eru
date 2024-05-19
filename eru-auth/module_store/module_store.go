@@ -366,7 +366,7 @@ func (ms *ModuleStore) GetAuthClone(ctx context.Context, projectId string, authN
 		authObjClone, err = ms.GetAuthCloneObject(ctx, projectId, authObj, s)
 		authObjClone.SetAuthDb(GetAuthDb(s.GetDbType()))
 		var kmsIdI interface{}
-		kmsIdI, err = authObjClone.GetAttribute(ctx, "kms_id")
+		kmsIdI, err = authObjClone.GetAttribute(ctx, "key_id")
 		if err == nil && kmsIdI != nil {
 			kmsMap, kmsErr := s.FetchKms(ctx, projectId)
 			if kmsErr != nil {
@@ -376,7 +376,6 @@ func (ms *ModuleStore) GetAuthClone(ctx context.Context, projectId string, authN
 				authObjClone.SetKms(ctx, kmsMap[kmsIdI.(string)])
 			}
 		}
-
 		return
 	}
 }

@@ -94,6 +94,11 @@ func (oAuth *OAuth) GetUrl(ctx context.Context, state string) (urlStr string, oA
 
 func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
 	logs.WithContext(ctx).Debug("Login - Start")
+	idToken := ""
+	sub := ""
+	lMap := make(map[string]interface{})
+	lMapOk := false
+	_ = lMapOk
 
 	headers := http.Header{}
 	contentType := "application/x-www-form-urlencoded"
@@ -139,10 +144,6 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 	}
 
-	idToken := ""
-	sub := ""
-	lMap := make(map[string]interface{})
-	lMapOk := false
 	if lMap, lMapOk = loginRes.(map[string]interface{}); lMapOk {
 		vI, vIErr := utils.GetNestedFieldValue(ctx, lMap, oAuth.OAuthConfig.TokenKey)
 		if vIErr != nil {
@@ -171,7 +172,6 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	}
 
 	logs.WithContext(ctx).Info(idToken)
-	logs.WithContext(ctx).Info(fmt.Sprint(lMap))
 	tokenMap := make(map[string]interface{})
 	tokenMapOk := false
 	strTokenEmail := ""
@@ -202,7 +202,7 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 			}
 		} else {
 			logs.WithContext(ctx).Error(fmt.Sprint("USRP hook not defined"))
-			return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+			//return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 		}
 	}
 
@@ -221,6 +221,7 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	if tokenEmail, tokenEmailOk := tokenMap[oAuth.OAuthConfig.Identifiers.Email.IdpMapper]; tokenEmailOk {
 		strTokenEmail = tokenEmail.(string)
 	}
+
 	var output []map[string]interface{}
 	var outputErr error
 	query := models.Queries{}
