@@ -24,6 +24,8 @@ const (
 	AuthTypeIAM    = "IAM"
 )
 
+const iv = "0123456789ABCDEF"
+
 type AwsStorage struct {
 	Storage
 	Region         string `json:"region" eru:"required"`
@@ -60,7 +62,13 @@ func (awsStorage *AwsStorage) DownloadFile(ctx context.Context, folderPath strin
 	}
 
 	if awsStorage.EncryptFiles {
-		byteContainer, err = awsStorage.decrypt(ctx, byteContainer, keyName)
+		var byteContainerKey []byte
+		byteContainerSlice := bytes.Split(byteContainer, []byte("___eru___"))
+		if len(byteContainerSlice) > 1 {
+			byteContainerKey = byteContainerSlice[1]
+		}
+		byteContainer = byteContainerSlice[0]
+		byteContainer, err = awsStorage.decrypt(ctx, byteContainer, byteContainerKey, keyName)
 		if err != nil {
 			return
 		}
@@ -87,11 +95,15 @@ func (awsStorage *AwsStorage) UploadFile(ctx context.Context, file multipart.Fil
 
 	if awsStorage.EncryptFiles {
 		enc = ".enc"
-		byteContainer, err = awsStorage.encrypt(ctx, byteContainer, keyName)
+		var byteContainerKey []byte
+		byteContainer, byteContainerKey, err = awsStorage.encrypt(ctx, byteContainer, keyName)
 		if err != nil {
 			return
 		}
+		byteContainer = append(byteContainer, []byte("___eru___")...)
+		byteContainer = append(byteContainer, byteContainerKey...)
 	}
+
 	docId = ksuid.New().String()
 	if docType != "" {
 		docType = fmt.Sprint(docType, "_")
@@ -122,10 +134,13 @@ func (awsStorage *AwsStorage) UploadFileB64(ctx context.Context, file []byte, fi
 
 	if awsStorage.EncryptFiles {
 		enc = ".enc"
-		file, err = awsStorage.encrypt(ctx, file, keyName)
+		var fileKey []byte
+		file, fileKey, err = awsStorage.encrypt(ctx, file, keyName)
 		if err != nil {
 			return
 		}
+		file = append(file, []byte("___eru___")...)
+		file = append(file, fileKey...)
 	}
 	docId = ksuid.New().String()
 	if docType != "" {
@@ -278,7 +293,7 @@ func (awsStorage *AwsStorage) emptyBucket() error {
 	return nil
 }
 
-func (awsStorage AwsStorage) encrypt(ctx context.Context, byteContainer []byte, keyName eruaes.AesKey) (eByteContainer []byte, err error) {
+func (awsStorage AwsStorage) encrypt(ctx context.Context, byteContainer []byte, keyName eruaes.AesKey) (eByteContainer []byte, eByteContainerKey []byte, err error) {
 	if awsStorage.KeyPair != "" {
 		byteContainer = eruaes.Pad(byteContainer, 16)
 		eByteContainer, err = eruaes.EncryptCBC(ctx, byteContainer, keyName.Key, keyName.Vector)
@@ -286,9 +301,19 @@ func (awsStorage AwsStorage) encrypt(ctx context.Context, byteContainer []byte, 
 			return
 		}
 	} else if awsStorage.KmsKey != nil {
-		//byteContainerStr := b64.StdEncoding.EncodeToString(byteContainer)
-		//byteContainer = eruaes.Pad(byteContainer, 512)
-		eByteContainer, err = awsStorage.KmsKey.Encrypt(ctx, byteContainer)
+		aKey := eruaes.AesKey{}
+		aKey, err = eruaes.GenerateKey(ctx, 16)
+		if err != nil {
+			return
+		}
+
+		byteContainer = eruaes.Pad(byteContainer, 16)
+		eByteContainer, err = eruaes.EncryptCBC(ctx, byteContainer, aKey.Key, []byte(iv))
+		if err != nil {
+			return
+		}
+
+		eByteContainerKey, err = awsStorage.KmsKey.Encrypt(ctx, aKey.Key)
 		if err != nil {
 			return
 		}
@@ -299,7 +324,7 @@ func (awsStorage AwsStorage) encrypt(ctx context.Context, byteContainer []byte, 
 	return
 }
 
-func (awsStorage AwsStorage) decrypt(ctx context.Context, eByteContainer []byte, keyName eruaes.AesKey) (byteContainer []byte, err error) {
+func (awsStorage AwsStorage) decrypt(ctx context.Context, eByteContainer []byte, byteContainerKey []byte, keyName eruaes.AesKey) (byteContainer []byte, err error) {
 	if awsStorage.KeyPair != "" {
 		byteContainer, err = eruaes.DecryptCBC(ctx, eByteContainer, keyName.Key, keyName.Vector)
 		if err != nil {
@@ -311,10 +336,21 @@ func (awsStorage AwsStorage) decrypt(ctx context.Context, eByteContainer []byte,
 			return
 		}
 	} else if awsStorage.KmsKey != nil {
-		byteContainer, err = awsStorage.KmsKey.Decrypt(ctx, eByteContainer)
+		byteContainerKey, err = awsStorage.KmsKey.Decrypt(ctx, byteContainerKey)
 		if err != nil {
 			return
 		}
+
+		byteContainer, err = eruaes.DecryptCBC(ctx, eByteContainer, byteContainerKey, []byte(iv))
+		if err != nil {
+			return
+		}
+		byteContainer, err = eruaes.Unpad(byteContainer)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+
 	} else {
 		err = errors.New("encryption key not found")
 		return

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	b64 "encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -276,9 +277,15 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 		}
 	}
 
+	idTokenToSave := []byte(idToken)
+	if oAuth.KmsId != "" {
+		idTokenToSave, err = oAuth.KmsKey.Encrypt(ctx, idTokenToSave)
+	}
+	idTokenToSaveStr := b64.StdEncoding.EncodeToString(idTokenToSave)
+
 	idptoken_query := models.Queries{}
 	idptoken_query.Query = oAuth.AuthDb.GetDbQuery(ctx, UPDATE_IDP_TOKEN)
-	idptoken_query.Vals = append(idptoken_query.Vals, idToken)
+	idptoken_query.Vals = append(idptoken_query.Vals, idTokenToSaveStr)
 	idptoken_query.Vals = append(idptoken_query.Vals, identity.Id)
 	_, outputErr = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), idptoken_query)
 	if outputErr != nil {
@@ -287,7 +294,7 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 	}
 
-	identity.Attributes["idp_token"] = idToken
+	identity.Attributes["idp_token"] = idTokenToSaveStr
 	if withTokens {
 		eruTokens, eruTokensErr := oAuth.makeTokens(ctx, identity)
 		return identity, eruTokens, eruTokensErr

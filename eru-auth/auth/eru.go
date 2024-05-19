@@ -401,7 +401,9 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 		}
 		if !userTraitsFound {
 			userAttrs[k] = v
-			identity.Attributes[k] = v
+			if identity.Attributes[k] == nil {
+				identity.Attributes[k] = v
+			}
 		}
 	}
 	for k, v := range identity.Attributes {

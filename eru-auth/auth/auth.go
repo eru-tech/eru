@@ -8,6 +8,7 @@ import (
 	"github.com/eru-tech/eru/eru-functions/functions"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	"github.com/eru-tech/eru/eru-secret-manager/kms"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
@@ -45,6 +46,7 @@ type AuthI interface {
 	VerifyRecovery(ctx context.Context, recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error)
 	VerifyCode(ctx context.Context, verifyCode VerifyCode, tokenObj map[string]interface{}, withToken bool) (res interface{}, err error)
 	GetUrl(ctx context.Context, state string) (url string, oAuthParams OAuthParams, err error)
+	SetKms(ctx context.Context, kmsObj kms.KmsStoreI) (err error)
 }
 
 const (
@@ -135,13 +137,15 @@ type IdentityAuth struct {
 }
 
 type Auth struct {
-	AuthType       string      `json:"auth_type"`
-	AuthName       string      `json:"auth_name"`
-	TokenHeaderKey string      `json:"token_header_key"`
-	Hooks          AuthHooks   `json:"hooks" eru:"optional"`
-	AuthDb         AuthDbI     `json:"-"`
-	PKCE           bool        `json:"pkce"`
-	Hydra          HydraConfig `json:"hydra" eru:"required"`
+	AuthType       string        `json:"auth_type"`
+	AuthName       string        `json:"auth_name"`
+	TokenHeaderKey string        `json:"token_header_key"`
+	Hooks          AuthHooks     `json:"hooks" eru:"optional"`
+	AuthDb         AuthDbI       `json:"-"`
+	PKCE           bool          `json:"pkce"`
+	Hydra          HydraConfig   `json:"hydra" eru:"required"`
+	KmsId          string        `json:"key_id"`
+	KmsKey         kms.KmsStoreI `json:"-"`
 }
 
 type AuthHooks struct {
@@ -362,6 +366,8 @@ func (auth *Auth) GetAttribute(ctx context.Context, attributeName string) (attri
 		return auth.TokenHeaderKey, nil
 	case "pkce":
 		return auth.PKCE, nil
+	case "kms_id":
+		return auth.KmsId, nil
 	default:
 		err := errors.New("Attribute not found")
 		logs.WithContext(ctx).Error(err.Error())
@@ -636,5 +642,10 @@ func (auth *Auth) RemoveUser(ctx context.Context, removeUser RemoveUser) (err er
 		logs.WithContext(ctx).Error(err.Error())
 		return errors.New("something went wrong - please try again")
 	}
+	return
+}
+
+func (auth *Auth) SetKms(ctx context.Context, kmsObj kms.KmsStoreI) (err error) {
+	auth.KmsKey = kmsObj
 	return
 }
