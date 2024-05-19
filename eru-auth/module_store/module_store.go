@@ -370,7 +370,7 @@ func (ms *ModuleStore) GetAuthClone(ctx context.Context, projectId string, authN
 		if err == nil && kmsIdI != nil {
 			kmsMap, kmsErr := s.FetchKms(ctx, projectId)
 			if kmsErr != nil {
-				err = kmsErr
+				logs.WithContext(ctx).Error(kmsErr.Error())
 				//return
 			} else {
 				authObjClone.SetKms(ctx, kmsMap[kmsIdI.(string)])
