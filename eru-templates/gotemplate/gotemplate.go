@@ -15,6 +15,7 @@ import (
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-secret-manager/kms"
 	eruutils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
@@ -496,6 +497,12 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 		"execTemplate": func(obj interface{}, templateString string, outputFormat string) (output interface{}, err error) {
 			goTmpl := GoTemplate{"subtemplate", templateString}
 			return goTmpl.Execute(ctx, obj, outputFormat)
+		},
+		"kmsDecrypt": func(eStr []byte, kmsStoreType string, region string, kmsId string, kmsAlias string) (output string, err error) {
+			ksMap := kms.KmsStore{KmsStoreType: kmsStoreType}
+			kmsMap := kms.AwsKmsStore{KmsName: kmsId, KmsAlias: kmsAlias, Region: region, KmsStore: ksMap}
+			plainBytes, err := kmsMap.Decrypt(ctx, eStr)
+			return string(plainBytes), err
 		},
 	}
 }

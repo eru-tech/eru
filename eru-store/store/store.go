@@ -871,7 +871,7 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 						}
 						var kmsType string
 						if _, stOk := kObj["kms_store_type"]; stOk {
-							err = json.Unmarshal(*kObj["sm_store_type"], &kmsType)
+							err = json.Unmarshal(*kObj["kms_store_type"], &kmsType)
 							if err != nil {
 								logs.WithContext(ctx).Error(err.Error())
 								return err
