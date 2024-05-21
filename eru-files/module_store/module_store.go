@@ -203,7 +203,8 @@ func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storage
 	}
 	kmsMap, kmsErr := s.FetchKms(ctx, projectId)
 	if kmsErr != nil {
-		err = kmsErr
+		logs.WithContext(ctx).Error(kmsErr.Error())
+		//err = kmsErr
 		//return
 	} else {
 		storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
@@ -230,7 +231,8 @@ func (ms *ModuleStore) UploadFileB64(ctx context.Context, projectId string, stor
 	}
 	kmsMap, kmsErr := s.FetchKms(ctx, projectId)
 	if kmsErr != nil {
-		err = kmsErr
+		logs.WithContext(ctx).Error(kmsErr.Error())
+		//err = kmsErr
 		//return
 	} else {
 		storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
@@ -365,7 +367,8 @@ func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, stora
 	}
 	kmsMap, kmsErr := s.FetchKms(ctx, projectId)
 	if kmsErr != nil {
-		err = kmsErr
+		logs.WithContext(ctx).Error(kmsErr.Error())
+		//err = kmsErr
 		//return
 	} else {
 		storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
