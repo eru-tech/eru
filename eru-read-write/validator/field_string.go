@@ -56,7 +56,7 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 			}
 		}
 		if !vFound {
-			errs = append(errs, fmt.Sprint("invalid value for '", f.Name, "'"))
+			errs = append(errs, fmt.Sprint("invalid value for field '", f.Name, "'"))
 			return
 		}
 	}
@@ -64,14 +64,14 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 	if f.FormatCheck != "" {
 		r, rErr := regexp.Compile(f.FormatCheck)
 		if rErr != nil {
-			errs = append(errs, fmt.Sprint("invalid format checker for '", f.Name, "'"))
+			errs = append(errs, fmt.Sprint("invalid format checker for field '", f.Name, "'"))
 			return
 		}
 
 		isValidFormat := r.MatchString(value)
 
 		if !isValidFormat {
-			errs = append(errs, fmt.Sprint("invalid string format for '", f.Name, "'"))
+			errs = append(errs, fmt.Sprint("invalid string format for field '", f.Name, "'"))
 			return
 		}
 	}
