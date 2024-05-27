@@ -312,7 +312,7 @@ func (oAuth *OAuth) Register(ctx context.Context, registerUser RegisterUser, pro
 	logs.WithContext(ctx).Debug("Register - Start")
 
 	userTraits := UserTraits{}
-	userAttrs := make(map[string]string)
+	userAttrs := make(map[string]interface{})
 
 	if identity.Attributes == nil {
 		identity.Attributes = make(map[string]interface{})
