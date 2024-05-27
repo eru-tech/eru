@@ -181,8 +181,8 @@ type UserTraits struct {
 
 type RegisterUser struct {
 	UserTraits
-	Password       string            `json:"password"`
-	UserAttributes map[string]string `json:"user_attributes"`
+	Password       string                 `json:"password"`
+	UserAttributes map[string]interface{} `json:"user_attributes"`
 }
 
 type RemoveUser struct {

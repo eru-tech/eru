@@ -62,7 +62,7 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 	}
 
 	userTraits := UserTraits{}
-	userAttrs := make(map[string]string)
+	userAttrs := make(map[string]interface{})
 
 	if identity.Attributes == nil {
 		identity.Attributes = make(map[string]interface{})
