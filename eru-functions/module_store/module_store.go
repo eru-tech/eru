@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-db/db"
+	"github.com/eru-tech/eru/eru-events/events"
 	"github.com/eru-tech/eru/eru-functions/functions"
 	"github.com/eru-tech/eru/eru-functions/module_model"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-store/store"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"net/http"
 	"reflect"
 	"strings"
@@ -19,8 +22,23 @@ var Eruqlbaseurl = "http://localhost:8087"
 var FuncThreads = 3
 var LoopThreads = 3
 
+const (
+	SELECT_FUNC_ASYNC = "update erufunctions_async set async_status='IN PROGRESS', processed_date=now() where async_id = ??? and (async_status=??? or 'ALL'=???) returning async_id, event_id, func_group_name func_name, func_step_name,  event_msg, event_request, request_id"
+	UPDATE_FUNC_ASYNC = "update erufunctions_async set async_status=???, processed_date=now() where async_id = ??? and async_status='IN PROGRESS'"
+)
+
 type StoreHolder struct {
 	Store ModuleStoreI
+}
+
+type AsyncFuncData struct {
+	AsyncId      string                     `json:"async_id"`
+	EventId      string                     `json:"event_id"`
+	FuncName     string                     `json:"func_group_name"`
+	FuncStepName string                     `json:"func_step_name"`
+	EventMsg     functions.FuncTemplateVars `json:"event_msg"`
+	EventRequest string                     `json:"event_request"`
+	RequestId    string                     `json:"request_id"`
 }
 type ModuleStoreI interface {
 	store.StoreI
@@ -45,6 +63,8 @@ type ModuleStoreI interface {
 	GetFunctionNames(ctx context.Context, projectId string) (functions []string, err error)
 	SaveWf(ctx context.Context, wfObj functions.Workflow, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveWf(ctx context.Context, wfName string, projectId string, realStore ModuleStoreI) error
+	FetchAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, realStore ModuleStoreI) (asyncFuncData AsyncFuncData, err error)
+	UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, realStore ModuleStoreI) (err error)
 }
 
 type ModuleStore struct {
@@ -336,6 +356,7 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.Fun
 	var errArray []string
 	for k, v := range cloneFunc.FuncSteps {
 		fs := cloneFunc.FuncSteps[k]
+		fs.ParentFuncGroupName = cloneFunc.FuncGroupName
 		err = ms.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, host, v.Path, method, headers, s, cloneFunc.TokenSecretKey, reqBody)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
@@ -416,9 +437,19 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 		}
 		r.TokenSecretKey = ms.Projects[projectId].ProjectSettings.ClaimsKey
 		funcStep.Route = r
+		logs.WithContext(ctx).Info(s.GetDbType())
+		funcStep.FsDb = db.GetDb(s.GetDbType())
+		funcStep.FsDb.SetConn(s.GetConn())
+		var eventI events.EventI
+		eventI, err = s.FetchEvent(ctx, projectId, funcStep.AsyncEventName)
+		if err != nil {
+			return
+		}
+		funcStep.AsyncEvent = eventI
 	}
 	for ck, cv := range funcStep.FuncSteps {
 		fs := funcStep.FuncSteps[ck]
+		fs.ParentFuncGroupName = funcStep.ParentFuncGroupName
 		err = ms.LoadRoutesForFunction(ctx, fs, cv.RouteName, projectId, host, cv.Path, method, headers, s, tokenHeaderKey, reqBody)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
@@ -594,4 +625,60 @@ func (ms *ModuleStore) GetWfCloneObject(ctx context.Context, projectId string, w
 		return
 	}
 	return iCloneI.Elem().Interface().(functions.Workflow), nil
+}
+
+func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, s ModuleStoreI) (asyncFuncData AsyncFuncData, err error) {
+	logs.WithContext(ctx).Debug("FetchAsyncEvent - Start")
+	var selectQueries []*models.Queries
+	selectQueryFuncAsync := models.Queries{}
+	selectQueryFuncAsync.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SELECT_FUNC_ASYNC)
+	selectQueryFuncAsync.Vals = append(selectQueryFuncAsync.Vals, asyncId, asyncStatus, asyncStatus)
+	logs.WithContext(ctx).Info(fmt.Sprint(selectQueryFuncAsync.Vals))
+	selectQueryFuncAsync.Rank = 1
+	selectQueries = append(selectQueries, &selectQueryFuncAsync)
+	selectOutput, err := eru_utils.ExecuteDbSave(ctx, s.GetConn(), selectQueries)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	var fVars functions.FuncTemplateVars
+	if selectOutput[0] != nil {
+		if selectOutput[0][0] != nil {
+			fVarsBytes := []byte("")
+			fVarsBytesOk := false
+			if fVarsBytes, fVarsBytesOk = selectOutput[0][0]["event_msg"].([]byte); !fVarsBytesOk {
+				logs.WithContext(ctx).Error(err.Error())
+				return
+			}
+			err = json.Unmarshal(fVarsBytes, &fVars)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return
+			}
+			asyncFuncData.FuncName = selectOutput[0][0]["func_name"].(string)
+			asyncFuncData.FuncStepName = selectOutput[0][0]["func_step_name"].(string)
+			asyncFuncData.AsyncId = selectOutput[0][0]["async_id"].(string)
+			asyncFuncData.EventMsg = fVars
+			asyncFuncData.EventRequest = selectOutput[0][0]["event_request"].(string)
+			asyncFuncData.RequestId = selectOutput[0][0]["request_id"].(string)
+		}
+	}
+	return
+}
+
+func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, s ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("UpdateAsyncEvent - Start")
+	var updateQueries []*models.Queries
+	updateQueryFuncAsync := models.Queries{}
+	updateQueryFuncAsync.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, UPDATE_FUNC_ASYNC)
+	updateQueryFuncAsync.Vals = append(updateQueryFuncAsync.Vals, asyncStatus, asyncId)
+	updateQueryFuncAsync.Rank = 1
+	updateQueries = append(updateQueries, &updateQueryFuncAsync)
+	logs.WithContext(ctx).Info(fmt.Sprint(updateQueryFuncAsync.Vals))
+	_, err = eru_utils.ExecuteDbSave(ctx, s.GetConn(), updateQueries)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return
 }

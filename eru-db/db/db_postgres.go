@@ -12,6 +12,7 @@ type DbPostgres struct {
 }
 
 func (DbPostgres *DbPostgres) GetDbQuery(ctx context.Context, query string) (finalQuery string) {
+	logs.WithContext(ctx).Info("inside GetDbQuery of postgres")
 	placeHolderCount := strings.Count(query, "???")
 
 	for i := 0; i <= placeHolderCount; i++ {

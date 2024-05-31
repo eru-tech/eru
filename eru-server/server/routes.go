@@ -50,6 +50,13 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Name("kms_remove_cd").Methods(http.MethodDelete).Path("/store/{project}/kms/remove/{kmsname}/{clouddelete}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
 	router.Name("kms_remove_dd").Methods(http.MethodDelete).Path("/store/{project}/kms/remove/{kmsname}/{clouddelete}/{deletedays}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
 
+	router.Name("event_list").Methods(http.MethodGet).Path("/store/{project}/event/list").HandlerFunc(handlers.FetchEventsHandler(s.Store))
+	router.Name("event_save").Methods(http.MethodPost).Path("/store/{project}/event/save/{eventtype}").HandlerFunc(handlers.SaveEventHandler(s.Store))
+	router.Name("event_remove").Methods(http.MethodDelete).Path("/store/{project}/event/remove/{eventname}").HandlerFunc(handlers.RemoveEventHandler(s.Store))
+	router.Name("event_remove_cd").Methods(http.MethodDelete).Path("/store/{project}/event/remove/{eventname}/{clouddelete}").HandlerFunc(handlers.RemoveEventHandler(s.Store))
+	router.Name("event_pub").Methods(http.MethodPost).Path("/store/{project}/event/publish/{eventname}").HandlerFunc(handlers.PublishEventHandler(s.Store))
+	router.Name("event_poll").Methods(http.MethodPost).Path("/store/{project}/event/poll/{eventname}").HandlerFunc(handlers.PollEventHandler(s.Store))
+
 	router.Methods(http.MethodPost).Path("/store/gsm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/gsm/list").HandlerFunc(handlers.FetchSmHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/gsm/load").HandlerFunc(handlers.LoadSmValueHandler(s.Store))
@@ -62,6 +69,13 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Methods(http.MethodDelete).Path("/store/{project}/gkms/remove/{kmsname}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
 	router.Methods(http.MethodDelete).Path("/store/{project}/gkms/remove/{kmsname}/{clouddelete}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
 	router.Methods(http.MethodDelete).Path("/store/{project}/gkms/remove/{kmsname}/{clouddelete}/{deletedays}").HandlerFunc(handlers.RemoveKmsHandler(s.Store))
+
+	router.Methods(http.MethodGet).Path("/store/{project}/gevent/list").HandlerFunc(handlers.FetchEventsHandler(s.Store))
+	router.Methods(http.MethodPost).Path("/store/{project}/gevent/save/{eventtype}").HandlerFunc(handlers.SaveEventHandler(s.Store))
+	router.Methods(http.MethodDelete).Path("/store/{project}/gevent/remove/{eventname}").HandlerFunc(handlers.RemoveEventHandler(s.Store))
+	router.Methods(http.MethodDelete).Path("/store/{project}/gevent/remove/{eventname}/{clouddelete}").HandlerFunc(handlers.RemoveEventHandler(s.Store))
+	router.Methods(http.MethodPost).Path("/store/{project}/gevent/publish/{eventname}").HandlerFunc(handlers.PublishEventHandler(s.Store))
+	router.Methods(http.MethodPost).Path("/store/{project}/gevent/poll/{eventname}").HandlerFunc(handlers.PollEventHandler(s.Store))
 	//router.Methods(http.MethodPost).Path("/store/project/save/{project}").HandlerFunc(handlers.ProjectSaveHandler(s.Store))
 	//router.Methods(http.MethodDelete).Path("/store/project/remove/{project}").HandlerFunc(handlers.ProjectRemoveHandler(s.Store))
 	//router.Methods(http.MethodGet).Path("/store/project/list").HandlerFunc(handlers.ProjectListHandler(s.Store))

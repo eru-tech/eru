@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-repos/repos"
 	kms "github.com/eru-tech/eru/eru-secret-manager/kms"
@@ -585,5 +586,141 @@ func RemoveKmsHandler(s store.StoreI) http.HandlerFunc {
 		}
 		FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Key for project ", projectId, " removed successfully.")})
+	}
+}
+
+func FetchEventsHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Info("FetchEventsHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		eventObj, err := s.FetchEvents(r.Context(), projectId)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(eventObj)
+	}
+}
+
+func SaveEventHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveEventHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		eventType := vars["eventtype"]
+
+		eventJson := json.NewDecoder(r.Body)
+		eventJson.DisallowUnknownFields()
+
+		var eventObj = events.GetEvent(eventType)
+		if err := eventJson.Decode(&eventObj); err == nil {
+			err = s.SaveEvent(r.Context(), projectId, eventObj, s, true)
+			if err != nil {
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		} else {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("event for project ", projectId, " saved successfully.")})
+	}
+}
+
+func PublishEventHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("PublishEventHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		eventName := vars["eventname"]
+
+		eventJson := json.NewDecoder(r.Body)
+		eventJson.DisallowUnknownFields()
+
+		type msgType struct {
+			Msg interface{} `json:"msg"`
+		}
+		var msgObj msgType
+		msgId := ""
+		if err := eventJson.Decode(&msgObj); err == nil {
+			msgId, err = s.PublishEvent(r.Context(), projectId, eventName, msgObj, s)
+			if err != nil {
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		} else {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("event published for project ", projectId, " : ", msgId)})
+	}
+}
+
+func PollEventHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("PublishEventHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		eventName := vars["eventname"]
+
+		eventJson := json.NewDecoder(r.Body)
+		eventJson.DisallowUnknownFields()
+
+		err := s.PollEvent(r.Context(), projectId, eventName, s)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("event message processed for project ", projectId, ".")})
+	}
+}
+
+func RemoveEventHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("RemoveEventHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		eventName := vars["eventname"]
+		cloudDelete := vars["clouddelete"]
+		cd := false
+		if cloudDelete == "true" {
+			cd = true
+		}
+
+		err := s.RemoveEvent(r.Context(), projectId, eventName, cd, s)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("event for project ", projectId, " removed successfully.")})
 	}
 }

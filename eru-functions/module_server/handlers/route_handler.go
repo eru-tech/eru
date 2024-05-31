@@ -15,12 +15,12 @@ import (
 
 func RouteForwardHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		logs.WithContext(r.Context()).Debug("RouteForwardHandler - Start")
+		logs.WithContext(r.Context()).Info("RouteForwardHandler - Start")
 		defer r.Body.Close()
 		// Extract the host and url from incoming request
 		host, url := extractHostUrl(r)
-		logs.WithContext(r.Context()).Debug(host)
-		logs.WithContext(r.Context()).Debug(url)
+		logs.WithContext(r.Context()).Info(host)
+		logs.WithContext(r.Context()).Info(url)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-cache/cache"
+	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-read-write/validator"
 	repos "github.com/eru-tech/eru/eru-repos/repos"
@@ -63,6 +64,13 @@ type StoreI interface {
 	GetCacheValue(ctx context.Context, projectId string, key string) (value interface{}, err error)
 	SetCacheValue(ctx context.Context, projectId string, key string, value interface{}) (err error)
 	ValidateJSON(ctx context.Context, schema validator.Schema, data []interface{}) (records []interface{}, errRecords []interface{})
+	FetchEvents(ctx context.Context, projectId string) (events map[string]events.EventI, err error)
+	FetchEvent(ctx context.Context, projectId string, eventName string) (event events.EventI, err error)
+	SaveEvent(ctx context.Context, projectId string, event events.EventI, s StoreI, persist bool) (err error)
+	RemoveEvent(ctx context.Context, projectId string, eventName string, cloudDelete bool, s StoreI) (err error)
+	PublishEvent(ctx context.Context, projectId string, eventName string, msg interface{}, s StoreI) (msgId string, err error)
+	PollEvent(ctx context.Context, projectId string, eventName string, s StoreI) (err error)
+
 	//SaveProject(projectId string, realStore StoreI) error
 	//RemoveProject(projectId string, realStore StoreI) error
 	//GetProjectConfig(projectId string) (*model.ProjectI, error)
@@ -77,6 +85,7 @@ type Store struct {
 	ProjectRepoTokens map[string]repos.RepoToken          `json:"repo_token"`
 	SecretManager     map[string]sm.SmStoreI              `json:"secret_manager"`
 	KMS               map[string]map[string]kms.KmsStoreI `json:"kms"`
+	Events            map[string]map[string]events.EventI `json:"events"`
 	CacheStore        map[string]cache.CacheStoreI        `json:"-"`
 }
 
@@ -661,12 +670,10 @@ func (store *Store) SetSmValue(ctx context.Context, projectId string, secretName
 		logs.WithContext(ctx).Error(err.Error())
 	} else {
 		if smObj != nil {
-			logs.WithContext(ctx).Info(fmt.Sprint(smObj.GetCacheStore()))
 			smObjClone, smObjCloneErr := utils.CloneInterface(ctx, smObj)
 			if smObjCloneErr != nil {
 				return
 			}
-			logs.WithContext(ctx).Info(fmt.Sprint(smObjClone.(sm.SmStoreI).GetCacheStore()))
 			err = smObjClone.(sm.SmStoreI).SetSmValue(ctx, secretName, secretValue)
 			if err != nil {
 				return
@@ -844,7 +851,63 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
-	logs.WithContext(ctx).Info("before kms loop")
+
+	var prjEvents map[string]*json.RawMessage
+	if _, ok := storeMap["events"]; ok {
+		if storeMap["events"] != nil {
+			logs.WithContext(ctx).Info("inside event loop")
+			err = json.Unmarshal(*storeMap["events"], &prjEvents)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			for prj, eventJson := range prjEvents {
+				if eventJson != nil {
+					var eventObj map[string]*json.RawMessage
+					err = json.Unmarshal(*eventJson, &eventObj)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return err
+					}
+					for _, eJson := range eventObj {
+						var eObj map[string]*json.RawMessage
+						err = json.Unmarshal(*eJson, &eObj)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+							return err
+						}
+						var eventType string
+						if _, stOk := eObj["event_type"]; stOk {
+							err = json.Unmarshal(*eObj["event_type"], &eventType)
+							if err != nil {
+								logs.WithContext(ctx).Error(err.Error())
+								return err
+							}
+							eventI := events.GetEvent(eventType)
+							if eventI != nil {
+								err = eventI.MakeFromJson(ctx, eJson)
+								if err == nil {
+									err = msi.SaveEvent(ctx, prj, eventI, msi, false)
+									if err != nil {
+										return err
+									}
+								} else {
+									return err
+								}
+							}
+						} else {
+							logs.WithContext(ctx).Info("ignoring event as event_type attribute not found")
+						}
+					}
+				}
+			}
+		} else {
+			logs.WithContext(ctx).Info("event attribute is nil")
+		}
+	} else {
+		logs.WithContext(ctx).Info("event attribute not found in store")
+	}
+
 	var prjKms map[string]*json.RawMessage
 	if _, ok := storeMap["kms"]; ok {
 		if storeMap["kms"] != nil {
@@ -889,7 +952,7 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 								}
 							}
 						} else {
-							logs.WithContext(ctx).Info("ignoring kms as sm_store_type attribute not found")
+							logs.WithContext(ctx).Info("ignoring kms as kms_store_type attribute not found")
 						}
 					}
 				}
@@ -1071,6 +1134,105 @@ func (store *Store) RemoveKms(ctx context.Context, projectId string, kmsName str
 	return
 }
 
+func (store *Store) FetchEvent(ctx context.Context, projectId string, eventName string) (event events.EventI, err error) {
+	logs.WithContext(ctx).Debug("FetchEvent - Start")
+	if store.Events == nil {
+		err = errors.New("no event defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	if eventMap, ok := store.Events[projectId]; !ok {
+		err = errors.New(fmt.Sprint("event not defined for project :", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	} else {
+		ok = false
+		if event, ok = eventMap[eventName]; !ok {
+			err = errors.New(fmt.Sprint("event ", eventName, " not found for project :", projectId))
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+	}
+
+	return
+}
+
+func (store *Store) FetchEvents(ctx context.Context, projectId string) (event map[string]events.EventI, err error) {
+	logs.WithContext(ctx).Debug("FetchEvents - Start")
+	if store.Events == nil {
+		err = errors.New("no event defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	ok := false
+	if event, ok = store.Events[projectId]; !ok {
+		err = errors.New(fmt.Sprint("event not defined for project :", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	return
+}
+func (store *Store) SaveEvent(ctx context.Context, projectId string, e events.EventI, s StoreI, persist bool) (err error) {
+	logs.WithContext(ctx).Debug("SaveEvent - Start")
+	if persist {
+		s.GetMutex().Lock()
+		defer s.GetMutex().Unlock()
+	}
+	if store.Events == nil {
+		store.Events = make(map[string]map[string]events.EventI)
+	}
+	if store.Events[projectId] == nil {
+		store.Events[projectId] = make(map[string]events.EventI)
+	}
+	if persist {
+		err = e.CreateEvent(ctx)
+		if err != nil {
+			return
+		}
+	}
+	eName, err := e.GetAttribute("event_name")
+	if err != nil {
+		return
+	}
+	store.Events[projectId][eName.(string)] = e
+
+	if persist {
+		err = s.SaveStore(ctx, projectId, "", s)
+	}
+	return
+}
+
+func (store *Store) RemoveEvent(ctx context.Context, projectId string, eventName string, cloudDelete bool, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveEvent - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
+	if store.Events == nil {
+		err = errors.New("event not defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if store.Events[projectId] == nil {
+		err = errors.New(fmt.Sprint("event not defined for project ", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if store.Events[projectId][eventName] == nil {
+		err = errors.New(fmt.Sprint("event not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if cloudDelete {
+		err = store.Events[projectId][eventName].DeleteEvent(ctx)
+		if err != nil {
+			return
+		}
+	}
+	delete(store.Events[projectId], eventName)
+
+	err = s.SaveStore(ctx, projectId, "", s)
+	return
+}
+
 func (store *Store) GetCacheValue(ctx context.Context, projectId string, key string) (value interface{}, err error) {
 	if store.CacheStore != nil {
 		if pcv, pcvOk := store.CacheStore[projectId]; pcvOk {
@@ -1083,6 +1245,51 @@ func (store *Store) GetCacheValue(ctx context.Context, projectId string, key str
 		err = errors.New("cache store is not defined")
 		return
 	}
+}
+func (store *Store) PollEvent(ctx context.Context, projectId string, eventName string, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("PollEvent - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
+	if store.Events == nil {
+		err = errors.New("event not defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if store.Events[projectId] == nil {
+		err = errors.New(fmt.Sprint("event not defined for project ", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if store.Events[projectId][eventName] == nil {
+		err = errors.New(fmt.Sprint("event not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	_, err = store.Events[projectId][eventName].Poll(ctx)
+	return
+}
+
+func (store *Store) PublishEvent(ctx context.Context, projectId string, eventName string, msg interface{}, s StoreI) (msgId string, err error) {
+	logs.WithContext(ctx).Debug("PublishEvent - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
+	if store.Events == nil {
+		err = errors.New("event not defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if store.Events[projectId] == nil {
+		err = errors.New(fmt.Sprint("event not defined for project ", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if store.Events[projectId][eventName] == nil {
+		err = errors.New(fmt.Sprint("event not found"))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	msgId, err = store.Events[projectId][eventName].Publish(ctx, msg, store.Events[projectId][eventName])
+	return
 }
 func (store *Store) SetCacheValue(ctx context.Context, projectId string, key string, value interface{}) (err error) {
 	if store.CacheStore != nil {

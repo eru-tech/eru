@@ -9,6 +9,7 @@ import (
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 	"io"
 	"io/ioutil"
@@ -503,7 +504,7 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 	return
 }
 
-func processParams(ctx context.Context, request *http.Request, queryParamsRemove []string, queryParams []Headers, vars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, tokenHeaderKey string) (err error) {
+func processParams(ctx context.Context, request *http.Request, queryParamsRemove []string, queryParams []Headers, vars *TemplateVars, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, tokenHeaderKey string) (err error, errs []string) {
 	logs.WithContext(ctx).Debug("processParams - Start")
 	pvars := &FuncTemplateVars{}
 	pvars.Vars = vars
@@ -514,8 +515,7 @@ func processParams(ctx context.Context, request *http.Request, queryParamsRemove
 		if p.IsTemplate {
 			valueBytes, terr := processTemplate(ctx, p.Key, p.Value, pvars, "string", tokenHeaderKey)
 			if terr != nil {
-				err = terr
-				return
+				errs = append(errs, terr.Error())
 			}
 			valueStr, uerr := strconv.Unquote(string(valueBytes))
 			if uerr != nil {
@@ -540,11 +540,9 @@ func processParams(ctx context.Context, request *http.Request, queryParamsRemove
 	return
 }
 
-func processHeaderTemplates(ctx context.Context, request *http.Request, headersToRemove []string, headers []Headers, reqVarsLoaded bool, vars *TemplateVars, tokenSecretKey string, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (err error) {
+func processHeaderTemplates(ctx context.Context, request *http.Request, headersToRemove []string, headers []Headers, reqVarsLoaded bool, vars *TemplateVars, tokenSecretKey string, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (err error, errs []string) {
 	logs.WithContext(ctx).Debug("processHeaderTemplates - Start")
 	//TODO remove reqVarsLoaded unused parameter
-	logs.WithContext(ctx).Info("printing from process headers before processing")
-	logs.WithContext(ctx).Info(fmt.Sprint(request.Header))
 	if headersToRemove != nil {
 		for _, v := range headersToRemove {
 			request.Header.Del(v)
@@ -573,9 +571,9 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 
 			koutputStr := h.Key
 			if strings.HasPrefix(h.Key, "{{") {
-				koutput, err := processTemplate(ctx, "headerkey", h.Key, fvars, "string", tokenSecretKey)
-				if err != nil {
-					return err
+				koutput, kErr := processTemplate(ctx, "headerkey", h.Key, fvars, "string", tokenSecretKey)
+				if kErr != nil {
+					errs = append(errs, kErr.Error())
 				}
 				koutputStr = string(koutput)
 				if str, err := strconv.Unquote(koutputStr); err == nil {
@@ -583,9 +581,9 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 				}
 			}
 
-			output, err := processTemplate(ctx, h.Key, h.Value, fvars, "string", tokenSecretKey)
-			if err != nil {
-				return err
+			output, vErr := processTemplate(ctx, h.Key, h.Value, fvars, "string", tokenSecretKey)
+			if vErr != nil {
+				errs = append(errs, vErr.Error())
 			}
 			outputStr := string(output)
 			if str, err := strconv.Unquote(outputStr); err == nil {
@@ -595,19 +593,24 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 			logs.WithContext(ctx).Info(fmt.Sprint("string(output) = ", outputStr))
 		}
 	}
-	logs.WithContext(ctx).Info("printing from process headers before returning after processing")
-	logs.WithContext(ctx).Info(fmt.Sprint(request.Header))
 	return
 }
 
 func clubResponses(ctx context.Context, responses []*http.Response, trResVars []*TemplateVars, errs []error) (response *http.Response, trResVar *TemplateVars, err error) {
-	logs.WithContext(ctx).Debug("clubResponses - Start")
+	logs.WithContext(ctx).Info("clubResponses - Start")
 	if len(errs) > 0 {
 		logs.WithContext(ctx).Error(fmt.Sprint(errs))
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint(len(responses)))
+	for _, rp := range responses {
+		utils.PrintResponseBody(ctx, rp, "printing from club repsonse loop")
+	}
 	if len(responses) > 0 {
+		logs.WithContext(ctx).Info(fmt.Sprint("inside ", len(responses)))
 		if responses[0] != nil {
+			logs.WithContext(ctx).Info(fmt.Sprint("inside responses[0]"))
 			reqContentType := strings.Split(responses[0].Header.Get("Content-type"), ";")[0]
+			logs.WithContext(ctx).Info(fmt.Sprint(reqContentType))
 			if reqContentType != applicationjson {
 				response = responses[0]
 				if len(trResVars) == 1 {
@@ -620,7 +623,7 @@ func clubResponses(ctx context.Context, responses []*http.Response, trResVars []
 			}
 		}
 	}
-
+	logs.WithContext(ctx).Info(fmt.Sprint(errs))
 	var errMsg []string
 	errorFound := false
 	for _, e := range errs {
@@ -650,7 +653,7 @@ func clubResponses(ctx context.Context, responses []*http.Response, trResVars []
 			trResVar.Body = resBody
 		}
 	}
-	logs.WithContext(ctx).Debug(fmt.Sprint("errorFound = ", errorFound))
+	logs.WithContext(ctx).Info(fmt.Sprint("errorFound = ", errorFound))
 	if errorFound {
 		logs.WithContext(ctx).Error(strings.Join(errMsg, " , "))
 		return nil, trResVar, errors.New(strings.Join(errMsg, " , "))
@@ -675,42 +678,60 @@ func clubResponses(ctx context.Context, responses []*http.Response, trResVars []
 	}
 	var rJsonArray []interface{}
 	statusCode := http.StatusOK
+	logs.WithContext(ctx).Info(fmt.Sprint("response count = ", len(responses)))
 	for _, rp := range responses {
-		var rJson interface{}
-		reqContentTypeCheck := strings.Split(rp.Header.Get("Content-type"), ";")[0]
-		if reqContentTypeCheck == applicationjson {
-			err = json.NewDecoder(rp.Body).Decode(&rJson)
-			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
-				return nil, trResVar, err
-			}
-			rJson = stripSingleElement(rJson)
-		} else {
-			rJson, err = io.ReadAll(rp.Body)
-			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
-				return nil, trResVar, err
+		if rp != nil {
+			logs.WithContext(ctx).Info(fmt.Sprint(rp.Body))
+			if rp.Body != nil {
+				var rJson interface{}
+				reqContentTypeCheck := strings.Split(rp.Header.Get("Content-type"), ";")[0]
+				logs.WithContext(ctx).Info(fmt.Sprint(reqContentTypeCheck))
+				if reqContentTypeCheck == applicationjson {
+					err = json.NewDecoder(rp.Body).Decode(&rJson)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return nil, trResVar, err
+					}
+					rJson = stripSingleElement(rJson)
+				} else {
+					rJson, err = io.ReadAll(rp.Body)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return nil, trResVar, err
+					}
+				}
+				rJsonArray = append(rJsonArray, rJson)
+				//this will set status code of last response which will be passed
+				statusCode = rp.StatusCode
 			}
 		}
-		rJsonArray = append(rJsonArray, rJson)
-		//this will set status code of last response which will be passed
-		statusCode = rp.StatusCode
 	}
+
+	contentLength := 0
+
 	rJsonArrayBytes, eee := json.Marshal(stripSingleElement(rJsonArray))
 	if eee != nil {
 		return nil, trResVar, eee
 	}
-	respHeader.Set("Content-Length", fmt.Sprint(len(rJsonArrayBytes)))
+	logs.WithContext(ctx).Info(fmt.Sprint("len(rJsonArray) = ", len(rJsonArray)))
+	logs.WithContext(ctx).Info(fmt.Sprint(rJsonArray))
+	if len(rJsonArray) == 0 {
+		respHeader.Set("Content-Type", applicationjson)
+		rJsonArrayBytes = []byte("{}")
+	}
+	contentLength = len(rJsonArrayBytes)
+	respHeader.Set("Content-Length", fmt.Sprint(contentLength))
 	response = &http.Response{
 		StatusCode:    statusCode,
 		Proto:         "HTTP/1.1",
 		ProtoMajor:    1,
 		ProtoMinor:    1,
 		Body:          io.NopCloser(bytes.NewBuffer(rJsonArrayBytes)),
-		ContentLength: int64(len(rJsonArrayBytes)),
+		ContentLength: int64(contentLength),
 		Request:       newR,
 		Header:        respHeader,
 	}
+	utils.PrintResponseBody(ctx, response, "printing response inside club response before returning")
 	return
 }
 

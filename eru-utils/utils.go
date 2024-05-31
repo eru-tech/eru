@@ -136,21 +136,28 @@ func ReplaceUnderscoresWithDots(str string) string {
 
 func PrintResponseBody(ctx context.Context, response *http.Response, msg string) {
 	logs.WithContext(ctx).Debug("PrintResponseBody - Start")
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-	}
 	logs.WithContext(ctx).Info(msg)
-	logs.WithContext(ctx).Info(fmt.Sprint(response.Request.URL))
-	cl, _ := strconv.Atoi(response.Header.Get("Content-Length"))
-	if cl > 1000 {
-		logs.WithContext(ctx).Info(string(body)[0:1000])
-	} else if len(string(body)) > 1000 {
-		logs.WithContext(ctx).Info(string(body)[0:1000])
+	if response != nil {
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		if response.Request != nil {
+			logs.WithContext(ctx).Info(fmt.Sprint(response.Request.URL))
+		}
+		cl, _ := strconv.Atoi(response.Header.Get("Content-Length"))
+		if cl > 1000 {
+			logs.WithContext(ctx).Info(string(body)[0:1000])
+		} else if len(string(body)) > 1000 {
+			logs.WithContext(ctx).Info(string(body)[0:1000])
+		} else {
+			logs.WithContext(ctx).Info(string(body))
+		}
+		response.Body = io.NopCloser(bytes.NewReader(body))
 	} else {
-		logs.WithContext(ctx).Info(string(body))
+		logs.WithContext(ctx).Info("response is nil")
+
 	}
-	response.Body = io.NopCloser(bytes.NewReader(body))
 }
 
 func PrintRequestBody(ctx context.Context, request *http.Request, msg string) {
@@ -497,8 +504,6 @@ func ExecuteDbSave(ctx context.Context, db *sqlx.DB, queries []*models.Queries) 
 
 	tx := db.MustBegin()
 	for _, q := range queries {
-		//logs.WithContext(ctx).Info(q.Query)
-		//logs.WithContext(ctx).Info(fmt.Sprint(q.Vals))
 		stmt, err := tx.PreparexContext(ctx, q.Query)
 		if err != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.PreparexContext : ", err.Error()))

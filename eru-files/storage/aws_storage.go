@@ -207,6 +207,8 @@ func (awsStorage *AwsStorage) CreateStorage(ctx context.Context) (err error) {
 		}
 	}
 	if !awsStorage.bucketExists(ctx) {
+		logs.WithContext(ctx).Info(awsStorage.BucketName)
+		logs.WithContext(ctx).Info(awsStorage.Region)
 		_, err = awsStorage.session.CreateBucket(ctx, &s3.CreateBucketInput{
 			Bucket: aws.String(awsStorage.BucketName),
 			CreateBucketConfiguration: &s3types.CreateBucketConfiguration{

@@ -24,6 +24,7 @@ const (
 const MatchTypePrefix = "PREFIX"
 const MatchTypeExact = "EXACT"
 const ConditionFailActionError = "ERROR"
+const ConditionFailActionStop = "STOP"
 const ConditionFailActionIgnore = "IGNORE"
 
 //type Authorizer struct {
@@ -637,9 +638,9 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 			}
 		}
 	}
-
-	err = processParams(ctx, request, route.RemoveParams.QueryParams, route.QueryParams, vars, nil, nil, route.TokenSecretKey)
-	if err != nil {
+	var ppErr []string
+	err, ppErr = processParams(ctx, request, route.RemoveParams.QueryParams, route.QueryParams, vars, nil, nil, route.TokenSecretKey)
+	if err != nil || ppErr != nil {
 		return
 	}
 	if !multiPart || route.TransformRequest != "" {
@@ -691,9 +692,9 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 			//request.ContentLength = int64(len(body))
 		}
 	}
-
-	err = processHeaderTemplates(ctx, request, route.RemoveParams.RequestHeaders, route.RequestHeaders, true, vars, route.TokenSecretKey, nil, nil)
-	if err != nil {
+	var hErrs []string
+	err, hErrs = processHeaderTemplates(ctx, request, route.RemoveParams.RequestHeaders, route.RequestHeaders, true, vars, route.TokenSecretKey, nil, nil)
+	if err != nil || hErrs != nil {
 		return
 	}
 	return

@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"github.com/jmoiron/sqlx"
+	"strings"
 )
 
 type DbI interface {
@@ -12,10 +13,10 @@ type DbI interface {
 }
 
 func GetDb(dbType string) DbI {
-	switch dbType {
-	case "POSTGRES":
+	switch strings.ToLower(dbType) {
+	case "postgres":
 		return new(DbPostgres)
-	case "MYSQL":
+	case "mysql":
 		return new(DbMysql)
 	default:
 		return new(Db)

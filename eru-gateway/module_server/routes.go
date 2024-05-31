@@ -39,6 +39,13 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	serverRouter.Get("kms_remove_cd").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.Get("kms_remove_dd").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	//store functions specific to files
+	serverRouter.Get("event_list").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("event_save").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("event_remove").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("event_remove_cd").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("event_pub").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("event_poll").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 
 	storeRouter.Methods(http.MethodPost).Path("/compare").HandlerFunc(module_handlers.StoreCompareHandler(sh.Store))

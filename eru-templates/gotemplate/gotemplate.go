@@ -511,9 +511,19 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 	logs.WithContext(ctx).Debug("Execute - Start")
 	buf := &bytes.Buffer{}
 
-	t := template.Must(template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(GenericFuncMap(ctx)).Parse(goTmpl.Template))
-
-	if err := t.Execute(buf, obj); err != nil {
+	t := template.Must(template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(GenericFuncMap(ctx)), err)
+	if err != nil {
+		logs.WithContext(ctx).Error("error while initializing template")
+		logs.WithContext(ctx).Error(err.Error())
+		return "", err
+	}
+	t, err = t.Parse(goTmpl.Template)
+	if err != nil {
+		logs.WithContext(ctx).Error("error while parsing template")
+		logs.WithContext(ctx).Error(err.Error())
+		return "", err
+	}
+	if err = t.Execute(buf, obj); err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return "", err
 	}
