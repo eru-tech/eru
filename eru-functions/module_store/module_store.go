@@ -440,12 +440,14 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 		logs.WithContext(ctx).Info(s.GetDbType())
 		funcStep.FsDb = db.GetDb(s.GetDbType())
 		funcStep.FsDb.SetConn(s.GetConn())
-		var eventI events.EventI
-		eventI, err = s.FetchEvent(ctx, projectId, funcStep.AsyncEventName)
-		if err != nil {
-			return
+		if funcStep.AsyncEventName != "" {
+			var eventI events.EventI
+			eventI, err = s.FetchEvent(ctx, projectId, funcStep.AsyncEventName)
+			if err != nil {
+				return
+			}
+			funcStep.AsyncEvent = eventI
 		}
-		funcStep.AsyncEvent = eventI
 	}
 	for ck, cv := range funcStep.FuncSteps {
 		fs := funcStep.FuncSteps[ck]
