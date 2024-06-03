@@ -18,7 +18,6 @@ import (
 type AWS_SQS_Event struct {
 	Event
 	Region         string `json:"region" eru:"required"`
-	BucketName     string `json:"bucket_name" eru:"required"`
 	Authentication string `json:"authentication" eru:"required"`
 	Key            string `json:"key" eru:"required"`
 	Secret         string `json:"secret" eru:"required"`
@@ -27,6 +26,8 @@ type AWS_SQS_Event struct {
 	Fifo           bool              `json:"fifo" eru:"required"`
 	Attributes     map[string]string `json:"attributes" eru:"required"`
 	Tags           map[string]string `json:"tags" eru:"required"`
+	MsgToPoll      int32             `json:"msg_to_poll" eru:"required"`
+	WaitTime       int32             `json:"wait_time" eru:"required"`
 }
 
 func (aws_sqs_event *AWS_SQS_Event) Init(ctx context.Context) (err error) {
@@ -157,8 +158,8 @@ func (aws_sqs_event *AWS_SQS_Event) Poll(ctx context.Context) (eventMsgs []Event
 
 	msgResult, err := aws_sqs_event.client.ReceiveMessage(context.Background(), &sqs.ReceiveMessageInput{
 		QueueUrl:            aws.String(aws_sqs_event.QueueUrl),
-		MaxNumberOfMessages: 1,
-		WaitTimeSeconds:     5,
+		MaxNumberOfMessages: aws_sqs_event.MsgToPoll,
+		WaitTimeSeconds:     aws_sqs_event.WaitTime,
 	})
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())

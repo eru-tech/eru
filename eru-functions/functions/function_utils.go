@@ -596,7 +596,7 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 	return
 }
 
-func clubResponses(ctx context.Context, responses []*http.Response, trResVars []*TemplateVars, errs []error) (response *http.Response, trResVar *TemplateVars, err error) {
+func clubResponses(ctx context.Context, responses []*http.Response, errs []error) (response *http.Response, err error) {
 	logs.WithContext(ctx).Info("clubResponses - Start")
 	if len(errs) > 0 {
 		logs.WithContext(ctx).Error(fmt.Sprint(errs))
@@ -613,9 +613,9 @@ func clubResponses(ctx context.Context, responses []*http.Response, trResVars []
 			logs.WithContext(ctx).Info(fmt.Sprint(reqContentType))
 			if reqContentType != applicationjson {
 				response = responses[0]
-				if len(trResVars) == 1 {
-					trResVar = trResVars[0]
-				}
+				//if len(trResVars) == 1 {
+				//	trResVar = trResVars[0]
+				//}
 				if len(errs) == 1 {
 					err = errs[0]
 				}
@@ -635,28 +635,31 @@ func clubResponses(ctx context.Context, responses []*http.Response, trResVars []
 		}
 
 	}
-	//trResVar - copying all attributes of first element as it will be same except response body
-	trResVar = &TemplateVars{}
-	if trResVars != nil {
-		if trResVars[0] != nil {
-			trResVar.LoopVars = trResVars[0].LoopVars
-			trResVar.Vars = trResVars[0].Vars
-			trResVar.FormData = trResVars[0].FormData
-			trResVar.Params = trResVars[0].Params
-			trResVar.Headers = trResVars[0].Headers
-			trResVar.FormDataKeyArray = trResVars[0].FormDataKeyArray
-			trResVar.Token = trResVars[0].Token
-			var resBody []interface{}
-			for _, tr := range trResVars {
-				resBody = append(resBody, tr.Body)
+	/*
+		//trResVar - copying all attributes of first element as it will be same except response body
+
+		trResVar = &TemplateVars{}
+		if trResVars != nil {
+			if trResVars[0] != nil {
+				trResVar.LoopVars = trResVars[0].LoopVars
+				trResVar.Vars = trResVars[0].Vars
+				trResVar.FormData = trResVars[0].FormData
+				trResVar.Params = trResVars[0].Params
+				trResVar.Headers = trResVars[0].Headers
+				trResVar.FormDataKeyArray = trResVars[0].FormDataKeyArray
+				trResVar.Token = trResVars[0].Token
+				var resBody []interface{}
+				for _, tr := range trResVars {
+					resBody = append(resBody, tr.Body)
+				}
+				trResVar.Body = resBody
 			}
-			trResVar.Body = resBody
 		}
-	}
+	*/
 	logs.WithContext(ctx).Info(fmt.Sprint("errorFound = ", errorFound))
 	if errorFound {
 		logs.WithContext(ctx).Error(strings.Join(errMsg, " , "))
-		return nil, trResVar, errors.New(strings.Join(errMsg, " , "))
+		return nil, errors.New(strings.Join(errMsg, " , "))
 	}
 
 	defer func(resps []*http.Response) {
@@ -690,14 +693,14 @@ func clubResponses(ctx context.Context, responses []*http.Response, trResVars []
 					err = json.NewDecoder(rp.Body).Decode(&rJson)
 					if err != nil {
 						logs.WithContext(ctx).Error(err.Error())
-						return nil, trResVar, err
+						return nil, err
 					}
 					rJson = stripSingleElement(rJson)
 				} else {
 					rJson, err = io.ReadAll(rp.Body)
 					if err != nil {
 						logs.WithContext(ctx).Error(err.Error())
-						return nil, trResVar, err
+						return nil, err
 					}
 				}
 				rJsonArray = append(rJsonArray, rJson)
@@ -711,7 +714,7 @@ func clubResponses(ctx context.Context, responses []*http.Response, trResVars []
 
 	rJsonArrayBytes, eee := json.Marshal(stripSingleElement(rJsonArray))
 	if eee != nil {
-		return nil, trResVar, eee
+		return nil, eee
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("len(rJsonArray) = ", len(rJsonArray)))
 	logs.WithContext(ctx).Info(fmt.Sprint(rJsonArray))

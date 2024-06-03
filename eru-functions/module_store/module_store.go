@@ -24,7 +24,7 @@ var LoopThreads = 3
 
 const (
 	SELECT_FUNC_ASYNC = "update erufunctions_async set async_status='IN PROGRESS', processed_date=now() where async_id = ??? and (async_status=??? or 'ALL'=???) returning async_id, event_id, func_group_name func_name, func_step_name,  event_msg, event_request, request_id"
-	UPDATE_FUNC_ASYNC = "update erufunctions_async set async_status=???, processed_date=now() where async_id = ??? and async_status='IN PROGRESS'"
+	UPDATE_FUNC_ASYNC = "update erufunctions_async set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
 )
 
 type StoreHolder struct {
@@ -64,7 +64,8 @@ type ModuleStoreI interface {
 	SaveWf(ctx context.Context, wfObj functions.Workflow, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveWf(ctx context.Context, wfName string, projectId string, realStore ModuleStoreI) error
 	FetchAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, realStore ModuleStoreI) (asyncFuncData AsyncFuncData, err error)
-	UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, realStore ModuleStoreI) (err error)
+	UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, eventResponse string, realStore ModuleStoreI) (err error)
+	//StartPolling(ctx context.Context) (err error)
 }
 
 type ModuleStore struct {
@@ -668,19 +669,33 @@ func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyn
 	return
 }
 
-func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, s ModuleStoreI) (err error) {
+func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, eventResponse string, s ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("UpdateAsyncEvent - Start")
 	var updateQueries []*models.Queries
 	updateQueryFuncAsync := models.Queries{}
 	updateQueryFuncAsync.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, UPDATE_FUNC_ASYNC)
-	updateQueryFuncAsync.Vals = append(updateQueryFuncAsync.Vals, asyncStatus, asyncId)
+	updateQueryFuncAsync.Vals = append(updateQueryFuncAsync.Vals, asyncStatus, eventResponse, asyncId)
 	updateQueryFuncAsync.Rank = 1
 	updateQueries = append(updateQueries, &updateQueryFuncAsync)
-	logs.WithContext(ctx).Info(fmt.Sprint(updateQueryFuncAsync.Vals))
 	_, err = eru_utils.ExecuteDbSave(ctx, s.GetConn(), updateQueries)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
+	return
+}
+
+func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("StartPolling - Start")
+	for _, p := range ms.Projects {
+		events, err := s.FetchEvents(ctx, p.ProjectId)
+		if err != nil {
+			return err
+		}
+		for _, e := range events {
+			go e.Poll(context.Background())
+		}
+	}
+
 	return
 }

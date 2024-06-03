@@ -3,6 +3,7 @@ package functions
 import (
 	"context"
 	"fmt"
+	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"net/http"
@@ -25,26 +26,38 @@ type Result struct {
 	responseErr  error
 }
 type FuncJob struct {
-	id            int
-	request       *http.Request
-	funcStep      *FuncStep
-	reqVars       map[string]*TemplateVars
-	resVars       map[string]*TemplateVars
-	asyncMessage  string
-	mainRouteName string
-	funcThread    int
-	loopThread    int
-	strCond       string
-	funcStepName  string
-	started       bool
-	fromAsync     bool
+	id              int
+	request         *http.Request
+	funcStep        *FuncStep
+	reqVars         map[string]*TemplateVars
+	resVars         map[string]*TemplateVars
+	asyncMessage    string
+	mainRouteName   string
+	funcThread      int
+	loopThread      int
+	strCond         string
+	funcStepName    string
+	endFuncStepName string
+	started         bool
+	fromAsync       bool
 }
 
 type FuncResult struct {
-	job          FuncJob
-	response     *http.Response
-	responseVars *TemplateVars
-	responseErr  error
+	job             FuncJob
+	response        *http.Response
+	responseVars    FuncTemplateVars
+	responseVarsMap map[string]FuncTemplateVars
+	responseErr     error
+}
+
+type EventJob struct {
+	id    int
+	event events.EventI
+}
+
+type EventResult struct {
+	job       EventJob
+	eventMsgs []events.EventMsg
 }
 
 func worker(ctx context.Context, route *Route, wg *sync.WaitGroup, jobs chan Job, results chan Result) {
@@ -101,7 +114,7 @@ func allocate(ctx context.Context, req *http.Request, u string, vars *TemplateVa
 	close(jobs)
 }
 
-func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int, funcStepName string, started bool, fromAsync bool) {
+func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int, funcStepName string, endFuncStepName string, started bool, fromAsync bool) {
 	logs.WithContext(ctx).Debug("allocateFunc - Start")
 	defer func() {
 		if r := recover(); r != nil {
@@ -112,19 +125,28 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 	for fk, fs := range funcSteps {
 		childStart := false
 		fs.FuncKey = fk
-		logs.WithContext(ctx).Info(fmt.Sprint("started = ", started))
-		logs.WithContext(ctx).Info(fmt.Sprint("funcStepName = ", funcStepName))
-		logs.WithContext(ctx).Info(fmt.Sprint("fk = ", fk))
 		if started || fk == funcStepName || funcStepName == "" {
-			logs.WithContext(ctx).Info(fmt.Sprint("setting childStart as true"))
 			childStart = true
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint("childStart = ", childStart))
 		r, rErr := CloneRequest(ctx, req)
 		if rErr != nil {
 			logs.WithContext(ctx).Error(rErr.Error())
 		}
-		funcJob := FuncJob{loopCounter, r, fs, reqVars, resVars, "", mainRouteName, funcThread, loopThread, "true", funcStepName, childStart, fromAsync}
+		resVarsI, _ := cloneInterface(ctx, resVars)
+		resVarsClone, _ := resVarsI.(map[string]*TemplateVars)
+
+		reqVarsI, _ := cloneInterface(ctx, reqVars)
+		reqVarsClone, _ := reqVarsI.(map[string]*TemplateVars)
+
+		logs.WithContext(ctx).Info(fmt.Sprint(fs.FuncKey))
+		for k, _ := range reqVarsClone {
+			logs.WithContext(ctx).Info(fmt.Sprint(k))
+		}
+		for k, _ := range resVarsClone {
+			logs.WithContext(ctx).Info(fmt.Sprint(k))
+		}
+
+		funcJob := FuncJob{loopCounter, r, fs, reqVarsClone, resVarsClone, "", mainRouteName, funcThread, loopThread, "true", funcStepName, endFuncStepName, childStart, fromAsync}
 		funcJobs <- funcJob
 		loopCounter++
 	}
@@ -157,27 +179,31 @@ func workerFunc(ctx context.Context, wg *sync.WaitGroup, funcJobs chan FuncJob, 
 	}()
 	for funcJob := range funcJobs {
 		//currentJob = funcJob
+		logs.WithContext(ctx).Info(fmt.Sprint("funcJob.mainRouteName from ", funcJob.funcStep.FuncKey, " is ", funcJob.mainRouteName))
 		if funcJob.mainRouteName == "" {
 			funcJob.mainRouteName = funcJob.funcStep.FuncKey
 		}
-		resp, e := funcJob.funcStep.RunFuncStep(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.funcThread, funcJob.loopThread, funcJob.funcStepName, funcJob.started, funcJob.fromAsync)
-		utils.PrintResponseBody(ctx, resp, "printing response from workerFunc after RunFuncStep")
+		resp, funcVars, e := funcJob.funcStep.RunFuncStep(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.funcThread, funcJob.loopThread, funcJob.funcStepName, funcJob.endFuncStepName, funcJob.started, funcJob.fromAsync)
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print RunFuncStep error = ", e.Error()))
 		}
-		output := FuncResult{funcJob, resp, nil, e}
+		cloneFuncVarsI, _ := cloneInterface(ctx, funcVars)
+		cloneFuncVarsMap, _ := cloneFuncVarsI.(map[string]FuncTemplateVars)
+		output := FuncResult{funcJob, resp, FuncTemplateVars{}, cloneFuncVarsMap, e}
 		funcResults <- output
 	}
 	wg.Done()
 }
 
-func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, loopArray []interface{}, asyncMessage string, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int, strCond string, funcStepName string, started bool, fromAsync bool) {
+func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, loopArray []interface{}, asyncMessage string, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int, strCond string, funcStepName string, endFuncStepName string, started bool, fromAsync bool) {
 	logs.WithContext(ctx).Debug("allocateFuncInner - Start")
 	defer func() {
 		if r := recover(); r != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in allocateFuncInner: ", r, " : ", string(debug.Stack())))
 		}
 	}()
+	logs.WithContext(ctx).Info(fmt.Sprint(loopArray))
+	logs.WithContext(ctx).Info(fmt.Sprint(fs.FuncKey))
 	loopCounter := 0
 	for loopCounter < len(loopArray) {
 		funcStep := fs
@@ -205,7 +231,9 @@ func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, req
 		} else {
 			logs.WithContext(ctx).Info(fmt.Sprint(reqVarsClone[funcStep.FuncKey].LoopVar))
 		}
-		funcJob := FuncJob{loopCounter, req, funcStep, reqVarsClone, resVars, asyncMessage, mainRouteName, funcThread, loopThread, strCond, funcStepName, started, fromAsync}
+		resVarsI, _ := cloneInterface(ctx, resVars)
+		resVarsClone, _ := resVarsI.(map[string]*TemplateVars)
+		funcJob := FuncJob{loopCounter, req, funcStep, reqVarsClone, resVarsClone, asyncMessage, mainRouteName, funcThread, loopThread, strCond, funcStepName, endFuncStepName, started, fromAsync}
 		funcJobs <- funcJob
 		loopCounter++
 	}
@@ -244,13 +272,66 @@ func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan Func
 		}
 
 		//logs.WithContext(ctx).Info(fmt.Sprint("funcJob.funcStep.Route.TargetHosts = ", funcJob.funcStep.Route.TargetHosts))
-		resp, e := funcJob.funcStep.RunFuncStepInner(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.asyncMessage, funcJob.funcThread, funcJob.loopThread, funcJob.strCond, funcJob.funcStepName, funcJob.started, funcJob.fromAsync)
+		resp, funcVars, e := funcJob.funcStep.RunFuncStepInner(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.asyncMessage, funcJob.funcThread, funcJob.loopThread, funcJob.strCond, funcJob.funcStepName, funcJob.endFuncStepName, funcJob.started, funcJob.fromAsync)
 		utils.PrintResponseBody(ctx, resp, "printing from workerFuncInner after RunFuncStepInner")
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print RunFuncStepInner error = ", e.Error()))
 		}
-		output := FuncResult{funcJob, resp, nil, e}
+		cloneFuncVarsI, _ := cloneInterface(ctx, funcVars)
+		cloneFuncVars, _ := cloneFuncVarsI.(FuncTemplateVars)
+		output := FuncResult{funcJob, resp, cloneFuncVars, nil, e}
 		funcResults <- output
+	}
+	wg.Done()
+}
+
+func allocateEvent(ctx context.Context, event events.EventI, eventJobs chan EventJob) {
+	logs.WithContext(ctx).Debug("allocateEvent - Start")
+	defer func() {
+		if r := recover(); r != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in allocateEvent: ", r, " : ", string(debug.Stack())))
+		}
+	}()
+
+	eventJob := EventJob{1, event}
+	eventJobs <- eventJob
+
+	close(eventJobs)
+}
+
+func createWorkerPoolEvent(ctx context.Context, noOfWorkers int, eventJobs chan EventJob, eventResults chan EventResult) {
+	logs.WithContext(ctx).Debug("createWorkerPoolEvent - Start")
+	defer func() {
+		if r := recover(); r != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in createWorkerPoolEvent: ", r, " : ", string(debug.Stack())))
+		}
+	}()
+	var wg sync.WaitGroup
+	for i := 0; i < noOfWorkers; i++ {
+		wg.Add(1)
+		go workerEvent(ctx, &wg, eventJobs, eventResults)
+	}
+	wg.Wait()
+	close(eventResults)
+}
+func workerEvent(ctx context.Context, wg *sync.WaitGroup, eventJobs chan EventJob, eventResults chan EventResult) {
+	logs.WithContext(ctx).Debug("workerEvent - Start")
+	defer func() {
+		if r := recover(); r != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in workerEvent: ", r, " : ", string(debug.Stack())))
+			//output := FuncResult{currentJob, nil, nil, errors.New(fmt.Sprint(r))}
+			//funcResults <- output
+			wg.Done()
+		}
+	}()
+	for eventJob := range eventJobs {
+
+		eventMsgs, e := eventJob.event.Poll(ctx)
+		if e != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("print event.Poll error = ", e.Error()))
+		}
+		output := EventResult{eventJob, eventMsgs}
+		eventResults <- output
 	}
 	wg.Done()
 }

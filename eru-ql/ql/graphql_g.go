@@ -425,13 +425,24 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 						}
 						switch v.String() {
 						case "$gte", "$lte", "$gt", "$lt", "$eq", "$ne":
+							valType := reflect.ValueOf(newVal).Kind()
+							logs.WithContext(ctx).Info(fmt.Sprint(valType.String()))
+							switch valType {
+							case reflect.Float64, reflect.Float32, reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
+								//TODO get casting from db specific syntax
+								parentKey = fmt.Sprint("(", parentKey, ")::numeric")
+							default:
+								//do nothing
+							}
+							logs.WithContext(ctx).Info(fmt.Sprint(newVal))
 							valTmp := reflect.ValueOf(newVal).String()
+							logs.WithContext(ctx).Info(fmt.Sprint(valTmp))
 							if strings.HasPrefix(valTmp, "FIELD_") {
 								valTmp = strings.Replace(valTmp, "FIELD_", "", -1)
 								valPrefix = ""
 								valSuffix = ""
 							}
-							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, valTmp, valSuffix))
+							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, fmt.Sprint(newVal), valSuffix))
 						case "$like":
 							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, "%", reflect.ValueOf(newVal), "%", valSuffix))
 						case "$btw":
@@ -526,6 +537,10 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 			}
 			return fmt.Sprint(parentKey, " = ", valPrefix, newVal, valSuffix), ""
 		case reflect.Int, reflect.Float32, reflect.Float64:
+			if jsonOp {
+				//TODO database specific syntax
+				parentKey = fmt.Sprint("(", parentKey, ")::numeric ")
+			}
 			return fmt.Sprint(parentKey, " = ", reflect.ValueOf(val)), ""
 		default:
 			return "", ""

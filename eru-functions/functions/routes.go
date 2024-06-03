@@ -392,11 +392,31 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 
 	createWorkerPool(ctx, route, noOfWorkers, jobs, results)
 	<-done
-	response, trResVar, resErr = clubResponses(ctx, responses, trResVars, errs)
+	response, resErr = clubResponses(ctx, responses, errs)
 	//endTime := time.Now()
 	//diff := endTime.Sub(startTime)
 	//logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
 	logs.WithContext(ctx).Info(fmt.Sprint("Route Execute - End : ", route.RouteName))
+	if trResVars != nil {
+		if len(trResVars) == 1 {
+			trResVar = trResVars[0]
+		} else {
+			if trResVars[0] != nil {
+				trResVar.LoopVars = trResVars[0].LoopVars
+				trResVar.Vars = trResVars[0].Vars
+				trResVar.FormData = trResVars[0].FormData
+				trResVar.Params = trResVars[0].Params
+				trResVar.Headers = trResVars[0].Headers
+				trResVar.FormDataKeyArray = trResVars[0].FormDataKeyArray
+				trResVar.Token = trResVars[0].Token
+				var resBody []interface{}
+				for _, tr := range trResVars {
+					resBody = append(resBody, tr.Body)
+				}
+				trResVar.Body = resBody
+			}
+		}
+	}
 	return
 }
 

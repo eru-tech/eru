@@ -146,27 +146,26 @@ func (funcStep *FuncStep) Clone(ctx context.Context) (cloneFuncStep *FuncStep, e
 	return
 }
 
-func (funcGroup *FuncGroup) Execute(ctx context.Context, request *http.Request, FuncThreads int, LoopThreads int, funcStepName string, fromAsync bool, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (response *http.Response, err error) {
+func (funcGroup *FuncGroup) Execute(ctx context.Context, request *http.Request, FuncThreads int, LoopThreads int, funcStepName string, endFuncStepName string, fromAsync bool, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (response *http.Response, funcVarsMap map[string]FuncTemplateVars, err error) {
 	logs.WithContext(ctx).Debug("FuncGroup Execute - Start")
 	//reqVars := make(map[string]*TemplateVars)
 	//resVars := make(map[string]*TemplateVars)
-	response, err = RunFuncSteps(ctx, funcGroup.FuncSteps, request, reqVars, resVars, "", FuncThreads, LoopThreads, funcStepName, false, fromAsync)
+	response, funcVarsMap, err = RunFuncSteps(ctx, funcGroup.FuncSteps, request, reqVars, resVars, "", FuncThreads, LoopThreads, funcStepName, endFuncStepName, false, fromAsync)
 	return
 }
 
-func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, funcThreads int, loopThreads int, funcStepName string, started bool, fromAsync bool) (response *http.Response, err error) {
+func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, funcThreads int, loopThreads int, funcStepName string, endFuncStepName string, started bool, fromAsync bool) (response *http.Response, funcVarsMap map[string]FuncTemplateVars, err error) {
 	logs.WithContext(ctx).Debug("RunFuncSteps - Start")
+	funcVarsMap = make(map[string]FuncTemplateVars)
 	var responses []*http.Response
 	var errs []error
-
 	//for _, cv := range funcSteps {
 	//	response, err = cv.RunFuncStep(request, reqVars, resVars, mainRouteName)
 	//}
-
 	var funcJobs = make(chan FuncJob, 10)
 	var funcResults = make(chan FuncResult, 10)
 	//startTime := time.Now()
-	go allocateFunc(ctx, request, funcSteps, reqVars, resVars, funcJobs, mainRouteName, funcThreads, loopThreads, funcStepName, started, fromAsync)
+	go allocateFunc(ctx, request, funcSteps, reqVars, resVars, funcJobs, mainRouteName, funcThreads, loopThreads, funcStepName, endFuncStepName, started, fromAsync)
 	done := make(chan bool)
 
 	go func(done chan bool, funcResults chan FuncResult) {
@@ -177,15 +176,16 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 		}()
 
 		for res := range funcResults {
-			logs.WithContext(ctx).Info(fmt.Sprint("**************************************"))
 			if res.response != nil {
-				logs.WithContext(ctx).Info(fmt.Sprint(res.response.ContentLength))
 				if res.response.ContentLength > 0 {
 					logs.WithContext(ctx).Info(fmt.Sprint("adding response to array"))
 					responses = append(responses, res.response)
 				}
 			}
-			//trResVars = append(trResVars, res.responseVars)
+			for k, v := range res.responseVarsMap {
+				funcVarsMap[k] = v
+			}
+
 			if res.responseErr != nil {
 				errs = append(errs, res.responseErr)
 			}
@@ -204,8 +204,7 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 	//endTime := time.Now()
 	//diff := endTime.Sub(startTime)
 	//logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
-	logs.WithContext(ctx).Info(fmt.Sprint(responses))
-	response, _, err = clubResponses(ctx, responses, nil, errs)
+	response, err = clubResponses(ctx, responses, errs)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprint(err.Error()))
 	}
@@ -226,7 +225,7 @@ func (funcStep *FuncStep) GetRouteName() (routeName string) {
 	return
 }
 
-func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, FuncThread int, LoopThread int, funcStepName string, started bool, fromAsync bool) (response *http.Response, err error) {
+func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, FuncThread int, LoopThread int, funcStepName string, endFuncStepName string, started bool, fromAsync bool) (response *http.Response, funcVarsMap map[string]FuncTemplateVars, err error) {
 	pspan := oteltrace.SpanFromContext(req.Context())
 	ctx, span := otel.Tracer(server_handlers.ServerName).Start(octx, funcStep.FuncKey, oteltrace.WithAttributes(attribute.String("requestID", req.Header.Get(server_handlers.RequestIdKey)), attribute.String("traceID", pspan.SpanContext().TraceID().String()), attribute.String("spanID", pspan.SpanContext().SpanID().String())))
 	defer span.End()
@@ -234,7 +233,6 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStep - Start : ", funcStep.FuncKey))
 	logs.WithContext(ctx).Info(fmt.Sprint("mainRouteName for ", funcStep.FuncKey, " is ", mainRouteName))
 	logs.WithContext(ctx).Info(fmt.Sprint(" *******************  ", funcStepName, "  **********************"))
-
 	req = req.WithContext(ctx)
 	request := req
 	var loopArray []interface{}
@@ -249,16 +247,14 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 		//started = true
 
 		//first step is to transform the request which in turn will clone the request before transforming keeping original request as is for further use.
-		request, vars, err = funcStep.transformRequest(ctx, req, reqVars, resVars, mainRouteName, true)
+		request, vars, err = funcStep.transformRequest(ctx, req, reqVars, resVars, mainRouteName, true, fromAsync, funcStepName)
 		if err != nil {
 			logs.WithContext(ctx).Info("inside error of transformRequest of RunFuncStep")
 			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
-
 		reqVars[funcStep.GetRouteName()] = vars
 		reqVars[funcStep.FuncKey] = vars
-
 		var strCondErr error
 
 		logs.WithContext(ctx).Info(funcStep.FuncKey)
@@ -397,7 +393,9 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			}
 
 			lerr := false
-
+			logs.WithContext(ctx).Info(fmt.Sprint(" fromAsync = ", fromAsync))
+			logs.WithContext(ctx).Info(fmt.Sprint(" funcStep.FuncKey = ", funcStep.FuncKey))
+			logs.WithContext(ctx).Info(fmt.Sprint(" funcStepName = ", funcStepName))
 			if (!fromAsync && funcStep.LoopVariable != "") || (fromAsync && funcStep.FuncKey != funcStepName && funcStep.LoopVariable != "") {
 				logs.WithContext(ctx).Info(fmt.Sprint("inside loop processing for ", funcStep.FuncKey))
 				loopArray, lerr = vars.LoopVars.([]interface{})
@@ -426,10 +424,11 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 	//adding delay
 	time.Sleep(time.Duration(funcStep.Delay) * time.Millisecond)
 
-	go allocateFuncInner(ctx, request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs, mainRouteName, FuncThread, LoopThread, strCond, funcStepName, started, fromAsync)
+	go allocateFuncInner(ctx, request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs, mainRouteName, FuncThread, LoopThread, strCond, funcStepName, endFuncStepName, started, fromAsync)
 	done := make(chan bool)
 	//go result(done,results,responses, trResVars,errs)
-	var trResVars []*TemplateVars
+	funcVarsMap = make(map[string]FuncTemplateVars)
+
 	go func(done chan bool, results chan FuncResult) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -438,12 +437,9 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 		}()
 		for res := range results {
 			if res.response != nil {
-				logs.WithContext(ctx).Info(funcStep.FuncKey)
-				logs.WithContext(ctx).Info(fmt.Sprint(res.response))
-				logs.WithContext(ctx).Info(fmt.Sprint(res.responseErr))
 				responses = append(responses, res.response)
 			}
-			trResVars = append(trResVars, res.responseVars)
+			funcVarsMap[funcStep.FuncKey] = res.responseVars
 			if res.responseErr != nil {
 				errs = append(errs, res.responseErr)
 			}
@@ -462,28 +458,31 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 
 	createWorkerPoolFuncInner(ctx, noOfWorkers, jobs, results)
 	<-done
-	response, _, err = clubResponses(ctx, responses, trResVars, errs)
+	response, err = clubResponses(ctx, responses, errs)
 	endTime := time.Now()
 	diff := endTime.Sub(startTime)
-
-	logs.WithContext(ctx).Info(fmt.Sprint("funcStep.Delay = ", funcStep.Delay))
 
 	logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
 	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStep - End : ", funcStep.FuncKey))
 
 	return
 }
-func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, asyncMsg string, funcThread int, loopThread int, strCond string, funcStepName string, started bool, fromAsync bool) (response *http.Response, err error) {
+func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, asyncMsg string, funcThread int, loopThread int, strCond string, funcStepName string, endFuncStepName string, started bool, fromAsync bool) (response *http.Response, funcVars FuncTemplateVars, err error) {
 	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStepInner - Start : ", funcStep.FuncKey))
-
+	logs.WithContext(ctx).Info(fmt.Sprint(funcStep.FuncKey))
+	for k, _ := range reqVars {
+		logs.WithContext(ctx).Info(fmt.Sprint(k))
+	}
+	for k, _ := range resVars {
+		logs.WithContext(ctx).Info(fmt.Sprint(k))
+	}
 	request := req
 	logs.WithContext(ctx).Info(fmt.Sprint(started))
 	logs.WithContext(ctx).Info(fmt.Sprint(funcStepName))
-
 	if started || funcStepName == "" || funcStepName == funcStep.FuncKey {
 		if strCond == "true" {
 			if funcStep.LoopVariable != "" {
-				request, _, err = funcStep.transformRequest(ctx, req, reqVars, resVars, mainRouteName, false)
+				request, _, err = funcStep.transformRequest(ctx, req, reqVars, resVars, mainRouteName, false, fromAsync, funcStepName)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					return
@@ -492,11 +491,6 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 
 			/////////////////////////
 			asyncMessage := ""
-			logs.WithContext(ctx).Info(fmt.Sprint("fromAsync = ", fromAsync))
-			logs.WithContext(ctx).Info(fmt.Sprint("funcStepName = ", funcStepName))
-			logs.WithContext(ctx).Info(fmt.Sprint("funcStep.FuncKey = ", funcStep.FuncKey))
-			logs.WithContext(ctx).Info(fmt.Sprint("funcStep.Async = ", funcStep.Async))
-			logs.WithContext(ctx).Info(fmt.Sprint("funcStep.AsyncMessage = ", funcStep.AsyncMessage))
 			if (!fromAsync || (fromAsync && funcStepName != funcStep.FuncKey)) && funcStep.Async && funcStep.AsyncMessage != "" {
 				logs.WithContext(ctx).Info("inside inner async")
 				avars := &FuncTemplateVars{}
@@ -541,6 +535,7 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 						eventMsgRequest = []byte(requestIdSlice[0])
 					}
 				}
+
 				var requestBytes = &bytes.Buffer{}
 				err = req.Write(requestBytes)
 				if err != nil {
@@ -574,10 +569,17 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 
 			routevars := &TemplateVars{}
 			_ = routevars
-
+			subFuncVarsMap := map[string]FuncTemplateVars{}
 			if funcStep.FunctionName != "" {
-				//TODO - we have to return routevars
-				response, err = RunFuncSteps(ctx, funcStep.FuncGroup.FuncSteps, request, reqVars, resVars, "", funcThread, loopThread, funcStep.FuncKey, started, fromAsync)
+				response, subFuncVarsMap, err = RunFuncSteps(ctx, funcStep.FuncGroup.FuncSteps, request, reqVars, resVars, "", funcThread, loopThread, funcStep.FuncKey, "", started, fromAsync)
+				for _, v := range subFuncVarsMap {
+					for kk, vv := range v.ResVars {
+						resVars[fmt.Sprint(funcStep.FuncKey, ".", kk)] = vv
+					}
+					for kk, vv := range v.ReqVars {
+						reqVars[fmt.Sprint(funcStep.FuncKey, ".", kk)] = vv
+					}
+				}
 			} else {
 				eru_utils.PrintRequestBody(ctx, request, "printing request before funcStep.Route.Execute")
 				response, routevars, err = funcStep.Route.Execute(ctx, request, funcStep.Path, funcStep.Async, asyncMsg, reqVars[funcStep.FuncKey], loopThread)
@@ -610,6 +612,7 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 			if err == nil {
 				var trespErr error
 				var trVars *TemplateVars
+				logs.WithContext(ctx).Info(fmt.Sprint(resVars[funcStep.FuncKey]))
 				trVars, trespErr = funcStep.transformResponse(ctx, response, resVars[funcStep.FuncKey], reqVars, resVars)
 				if trespErr != nil {
 					err = trespErr
@@ -626,15 +629,32 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 			}
 		}
 	}
-	if len(funcStep.FuncSteps) > 0 {
-		response, err = RunFuncSteps(ctx, funcStep.FuncSteps, request, reqVars, resVars, mainRouteName, funcThread, loopThread, funcStepName, started, fromAsync)
+
+	if len(funcStep.FuncSteps) > 0 && funcStep.FuncKey != endFuncStepName {
+		childFuncVarsMap := map[string]FuncTemplateVars{}
+		response, childFuncVarsMap, err = RunFuncSteps(ctx, funcStep.FuncSteps, request, reqVars, resVars, mainRouteName, funcThread, loopThread, funcStepName, endFuncStepName, started, fromAsync)
+		for _, v := range childFuncVarsMap {
+			for kk, vv := range v.ResVars {
+				resVars[kk] = vv
+			}
+			for kk, vv := range v.ReqVars {
+				reqVars[kk] = vv
+			}
+		}
 	}
-	logs.WithContext(ctx).Info(funcStep.FuncKey)
-	logs.WithContext(ctx).Info(fmt.Sprint(response))
+	funcVars.ResVars = resVars
+	funcVars.ReqVars = reqVars
+	logs.WithContext(ctx).Info(fmt.Sprint(funcStep.FuncKey))
+	for k, _ := range reqVars {
+		logs.WithContext(ctx).Info(fmt.Sprint(k))
+	}
+	for k, _ := range resVars {
+		logs.WithContext(ctx).Info(fmt.Sprint(k))
+	}
 	return
 }
 
-func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, supressTemplateErrors bool) (req *http.Request, vars *TemplateVars, err error) {
+func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, supressTemplateErrors bool, fromAsync bool, funcStepName string) (req *http.Request, vars *TemplateVars, err error) {
 	logs.WithContext(ctx).Debug("transformRequest - Start")
 	var tErrs []string
 	//first step in transforming is to make a clone of the original request
@@ -652,7 +672,12 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	vars.Params = make(map[string]interface{})
 	logs.WithContext(ctx).Info(fmt.Sprint("mainRouteName for ", funcStep.FuncKey, " = ", mainRouteName))
 	logs.WithContext(ctx).Info(fmt.Sprint(reqVars[mainRouteName] == nil))
-	if reqVars[mainRouteName] == nil {
+	logs.WithContext(ctx).Info(fmt.Sprint("fromAsync = ", fromAsync))
+	logs.WithContext(ctx).Info(fmt.Sprint("funcStepName = ", funcStepName))
+	if fromAsync && funcStep.FuncKey == funcStepName {
+		v, _ := cloneInterface(ctx, reqVars[funcStep.FuncKey])
+		vars = v.(*TemplateVars)
+	} else if reqVars[mainRouteName] == nil {
 		err = loadRequestVars(ctx, vars, req, funcStep.Route.TokenSecretKey)
 		if err != nil {
 			return
@@ -661,6 +686,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		v, _ := cloneInterface(ctx, reqVars[mainRouteName])
 		vars = v.(*TemplateVars)
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint(vars))
 	//utils.PrintRequestBody(req, "printing request in transformRequest")
 	var loopArray []interface{}
 	if funcStep.LoopVariable != "" {
@@ -900,6 +926,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	if len(tErrs) > 0 && !supressTemplateErrors {
 		err = errors.New(strings.Join(tErrs, " ; "))
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint(vars.LoopVar))
 	return req, vars, err
 }
 
@@ -907,7 +934,7 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 	logs.WithContext(ctx).Debug("transformResponse - Start")
 	//utils.PrintResponseBody(response, "response printed from inside funcStep transformResponse")
 	vars = trResVars
-
+	logs.WithContext(ctx).Info(fmt.Sprint(vars))
 	for _, h := range funcStep.ResponseHeaders {
 		response.Header.Set(h.Key, h.Value)
 	}
@@ -989,3 +1016,155 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 	vars.Cookies = response.Cookies()
 	return
 }
+
+/*
+func StartPolling(ctx context.Context, events map[string]events.EventI) (err error) {
+	logs.WithContext(ctx).Debug("StartPolling - Start")
+	for _, e := range events {
+
+		var eventJobs = make(chan EventJob, 1)
+		var eventResults = make(chan EventResult, 1)
+		//startTime := time.Now()
+		go allocateEvent(ctx, e)
+		done := make(chan bool)
+
+		go func(done chan bool, eventResults chan EventResult) {
+			defer func() {
+				if r := recover(); r != nil {
+					logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in StartPolling: ", r))
+				}
+			}()
+
+			for res := range eventResults {
+				_ = res
+				//do something
+			}
+			done <- true
+		}(done, eventResults)
+
+		//set it to one to run synchronously
+		noOfWorkers := 1
+		createWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults)
+		<-done
+	}
+	return
+}
+
+func StartPollingEvent(ctx context.Context, event events.EventI) (err error) {
+	logs.WithContext(ctx).Debug("StartPollingEvent - Start")
+	for {
+		var eventJobs = make(chan EventJob, 1)
+		var eventResults = make(chan EventResult, 1)
+		//startTime := time.Now()
+		go allocateEvent(ctx, event, eventJobs)
+		done := make(chan bool)
+
+		go func(done chan bool, eventResults chan EventResult) {
+			defer func() {
+				if r := recover(); r != nil {
+					logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in StartPollingEvent: ", r))
+				}
+			}()
+			aStatus := "PENDING"
+			for res := range eventResults {
+				for _, m := range res.eventMsgs {
+
+					asyncStatus := "PROCESSED"
+					var asyncFuncData module_store.AsyncFuncData
+					logs.WithContext(ctx).Info("fetching event from db")
+					logs.WithContext(ctx).Info(fmt.Sprint(m.Msg, " ", aStatus))
+
+					asyncFuncData, err = s.FetchAsyncEvent(ctx, m.Msg, aStatus, s)
+					if err != nil || asyncFuncData.AsyncId == "" {
+						failedCount = failedCount + 1
+						asyncStatus = "FAILED"
+						logs.WithContext(ctx).Error("event not found")
+					} else {
+						bodyMap := make(map[string]interface{})
+						eventResponseBytes := []byte("")
+						bodyMapOk := false
+						if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
+							logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
+						}
+						funcGroup, err := s.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, host, url, r.Method, r.Header, bodyMap, s)
+						if err != nil {
+							failedCount = failedCount + 1
+							asyncStatus = "FAILED"
+							logs.WithContext(ctx).Error("Function validation failed")
+						} else {
+							reqBytes := []byte("")
+							reqBytes, err = b64.StdEncoding.DecodeString(asyncFuncData.EventRequest)
+							if err != nil {
+								failedCount = failedCount + 1
+								asyncStatus = "FAILED"
+								logs.WithContext(ctx).Error("event request decoding failed")
+							} else {
+								var newReq *http.Request
+								if newReq, err = http.ReadRequest(bufio.NewReader(bytes.NewReader(reqBytes))); err != nil { // deserialize request
+									failedCount = failedCount + 1
+									asyncStatus = "FAILED"
+									logs.WithContext(ctx).Error("event request deserialization failed")
+								}
+								reqVars := make(map[string]*functions.TemplateVars)
+								resVars := make(map[string]*functions.TemplateVars)
+								if asyncFuncData.EventMsg.ReqVars != nil {
+									reqVars = asyncFuncData.EventMsg.ReqVars
+								}
+								if asyncFuncData.EventMsg.ResVars != nil {
+									resVars = asyncFuncData.EventMsg.ResVars
+								}
+								response, funcVarsMap, err := funcGroup.Execute(ctx, newReq, module_store.FuncThreads, module_store.LoopThreads, asyncFuncData.FuncStepName, "", true, reqVars, resVars)
+								if err != nil {
+									failedCount = failedCount + 1
+									asyncStatus = "FAILED"
+									logs.WithContext(ctx).Error(err.Error())
+									logs.WithContext(ctx).Error("Function execution failed")
+								} else {
+									responseBytes := []byte("")
+									responseBytes, err = io.ReadAll(response.Body)
+									if err != nil {
+										logs.WithContext(ctx).Error(err.Error())
+										failedCount = failedCount + 1
+										asyncStatus = "FAILED"
+									} else {
+										response.Body = io.NopCloser(bytes.NewBuffer(responseBytes))
+										responseStr := string(responseBytes)
+										eventResponse := make(map[string]interface{})
+										eventResponse["response"] = responseStr
+										eventResponse["func_vars"] = funcVarsMap
+										eventResponseBytes, err = json.Marshal(eventResponse)
+										if err != nil {
+											logs.WithContext(ctx).Error(err.Error())
+											failedCount = failedCount + 1
+											asyncStatus = "FAILED"
+										} else {
+											logs.WithContext(ctx).Info(fmt.Sprint(response))
+											utils.PrintResponseBody(ctx, response, "printing response from async handler")
+											processedCount = processedCount + 1
+										}
+									}
+								}
+								defer func() {
+									if response != nil {
+										response.Body.Close()
+									}
+								}()
+							}
+						}
+						_ = s.UpdateAsyncEvent(ctx, m.Msg, asyncStatus, string(eventResponseBytes), s)
+						_ = eventI.DeleteMessage(ctx, m.MsgIdentifer)
+					}
+				}
+			}
+			done <- true
+		}(done, eventResults)
+
+		//set it to one to run synchronously
+		noOfWorkers := 1
+		createWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults)
+		<-done
+
+		time.Sleep(10 * time.Second)
+	}
+}
+*/
