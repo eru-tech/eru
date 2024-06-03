@@ -106,6 +106,7 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 		contentType = oAuth.OAuthConfig.TokenUrlContentType
 	}
 	headers.Set("Content-Type", contentType)
+	headers.Set("Reference", "0")
 
 	glLoginFormBody := make(map[string]string)
 	if oAuth.OAuthConfig.ClientId != "" {
