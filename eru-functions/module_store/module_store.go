@@ -694,14 +694,13 @@ func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asy
 func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("FetchProjectEvents - Start")
 	for _, p := range ms.Projects {
-		ep, err := s.GetExtendedProjectConfig(ctx, p.ProjectId, s)
 		if err != nil {
 			return err
 		}
 		events, err := s.FetchEvents(ctx, p.ProjectId)
 		if err == nil {
 			for _, e := range events {
-				err = ms.StartPolling(ctx, p.ProjectId, e, ep.ProjectSettings.AsyncRepollWaitTime, s)
+				err = ms.StartPolling(ctx, p.ProjectId, e, s)
 				if err != nil {
 					return err
 				}
@@ -711,7 +710,7 @@ func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI) (
 	return
 }
 
-func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event events.EventI, repollWaitTime int32, s ModuleStoreI) (err error) {
+func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event events.EventI, s ModuleStoreI) (err error) {
 	eventName, _ := event.GetAttribute("event_name")
 	logs.WithContext(ctx).Info(fmt.Sprint("StartPolling - Start : ", eventName))
 	for {
@@ -732,7 +731,9 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 
 				err = ms.ProcessEvents(ctx, projectId, res.EventMsgs, event, s)
 				if err != nil {
-
+					logs.WithContext(ctx).Error(err.Error())
+					//ignore error and continue to poll
+					err = nil
 				}
 			}
 			done <- true
@@ -742,8 +743,12 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 		noOfWorkers := 1
 		functions.CreateWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults, s.GetConn())
 		<-done
-
-		time.Sleep(time.Duration(repollWaitTime) * time.Second)
+		ep, err := s.GetExtendedProjectConfig(ctx, projectId, s)
+		var waitTime int32 = 5
+		if err == nil {
+			waitTime = ep.ProjectSettings.AsyncRepollWaitTime
+		}
+		time.Sleep(time.Duration(waitTime) * time.Second)
 	}
 }
 

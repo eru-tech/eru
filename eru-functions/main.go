@@ -57,7 +57,7 @@ func main() {
 		logs.Logger.Error(e.Error())
 	}
 
-	//go sh.Store.FetchProjectEvents(context.Background(), sh.Store)
+	go sh.Store.FetchProjectEvents(context.Background(), sh.Store)
 
 	server.Launch(sr, port)
 }
