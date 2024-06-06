@@ -27,7 +27,19 @@ import (
 
 const (
 	INSERT_FUNC_ASYNC = "insert into erufunctions_async (async_id,event_id,func_group_name,func_step_name,event_msg,request_id, event_request) values (???,???,???,???,???,???,???)"
+	SELECT_FUNC_ASYNC = "update erufunctions_async set async_status='IN PROGRESS', processed_date=now() where async_id = ??? and (async_status=??? or 'ALL'=???) returning async_id, event_id, func_group_name func_name, func_step_name,  event_msg, event_request, request_id"
+	UPDATE_FUNC_ASYNC = "update erufunctions_async set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
 )
+
+type AsyncFuncData struct {
+	AsyncId      string           `json:"async_id"`
+	EventId      string           `json:"event_id"`
+	FuncName     string           `json:"func_group_name"`
+	FuncStepName string           `json:"func_step_name"`
+	EventMsg     FuncTemplateVars `json:"event_msg"`
+	EventRequest string           `json:"event_request"`
+	RequestId    string           `json:"request_id"`
+}
 
 type FuncGroup struct {
 	FuncCategoryName   string               `json:"func_category_name"`
@@ -1016,155 +1028,3 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 	vars.Cookies = response.Cookies()
 	return
 }
-
-/*
-func StartPolling(ctx context.Context, events map[string]events.EventI) (err error) {
-	logs.WithContext(ctx).Debug("StartPolling - Start")
-	for _, e := range events {
-
-		var eventJobs = make(chan EventJob, 1)
-		var eventResults = make(chan EventResult, 1)
-		//startTime := time.Now()
-		go allocateEvent(ctx, e)
-		done := make(chan bool)
-
-		go func(done chan bool, eventResults chan EventResult) {
-			defer func() {
-				if r := recover(); r != nil {
-					logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in StartPolling: ", r))
-				}
-			}()
-
-			for res := range eventResults {
-				_ = res
-				//do something
-			}
-			done <- true
-		}(done, eventResults)
-
-		//set it to one to run synchronously
-		noOfWorkers := 1
-		createWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults)
-		<-done
-	}
-	return
-}
-
-func StartPollingEvent(ctx context.Context, event events.EventI) (err error) {
-	logs.WithContext(ctx).Debug("StartPollingEvent - Start")
-	for {
-		var eventJobs = make(chan EventJob, 1)
-		var eventResults = make(chan EventResult, 1)
-		//startTime := time.Now()
-		go allocateEvent(ctx, event, eventJobs)
-		done := make(chan bool)
-
-		go func(done chan bool, eventResults chan EventResult) {
-			defer func() {
-				if r := recover(); r != nil {
-					logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in StartPollingEvent: ", r))
-				}
-			}()
-			aStatus := "PENDING"
-			for res := range eventResults {
-				for _, m := range res.eventMsgs {
-
-					asyncStatus := "PROCESSED"
-					var asyncFuncData module_store.AsyncFuncData
-					logs.WithContext(ctx).Info("fetching event from db")
-					logs.WithContext(ctx).Info(fmt.Sprint(m.Msg, " ", aStatus))
-
-					asyncFuncData, err = s.FetchAsyncEvent(ctx, m.Msg, aStatus, s)
-					if err != nil || asyncFuncData.AsyncId == "" {
-						failedCount = failedCount + 1
-						asyncStatus = "FAILED"
-						logs.WithContext(ctx).Error("event not found")
-					} else {
-						bodyMap := make(map[string]interface{})
-						eventResponseBytes := []byte("")
-						bodyMapOk := false
-						if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
-							logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
-						}
-						funcGroup, err := s.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, host, url, r.Method, r.Header, bodyMap, s)
-						if err != nil {
-							failedCount = failedCount + 1
-							asyncStatus = "FAILED"
-							logs.WithContext(ctx).Error("Function validation failed")
-						} else {
-							reqBytes := []byte("")
-							reqBytes, err = b64.StdEncoding.DecodeString(asyncFuncData.EventRequest)
-							if err != nil {
-								failedCount = failedCount + 1
-								asyncStatus = "FAILED"
-								logs.WithContext(ctx).Error("event request decoding failed")
-							} else {
-								var newReq *http.Request
-								if newReq, err = http.ReadRequest(bufio.NewReader(bytes.NewReader(reqBytes))); err != nil { // deserialize request
-									failedCount = failedCount + 1
-									asyncStatus = "FAILED"
-									logs.WithContext(ctx).Error("event request deserialization failed")
-								}
-								reqVars := make(map[string]*functions.TemplateVars)
-								resVars := make(map[string]*functions.TemplateVars)
-								if asyncFuncData.EventMsg.ReqVars != nil {
-									reqVars = asyncFuncData.EventMsg.ReqVars
-								}
-								if asyncFuncData.EventMsg.ResVars != nil {
-									resVars = asyncFuncData.EventMsg.ResVars
-								}
-								response, funcVarsMap, err := funcGroup.Execute(ctx, newReq, module_store.FuncThreads, module_store.LoopThreads, asyncFuncData.FuncStepName, "", true, reqVars, resVars)
-								if err != nil {
-									failedCount = failedCount + 1
-									asyncStatus = "FAILED"
-									logs.WithContext(ctx).Error(err.Error())
-									logs.WithContext(ctx).Error("Function execution failed")
-								} else {
-									responseBytes := []byte("")
-									responseBytes, err = io.ReadAll(response.Body)
-									if err != nil {
-										logs.WithContext(ctx).Error(err.Error())
-										failedCount = failedCount + 1
-										asyncStatus = "FAILED"
-									} else {
-										response.Body = io.NopCloser(bytes.NewBuffer(responseBytes))
-										responseStr := string(responseBytes)
-										eventResponse := make(map[string]interface{})
-										eventResponse["response"] = responseStr
-										eventResponse["func_vars"] = funcVarsMap
-										eventResponseBytes, err = json.Marshal(eventResponse)
-										if err != nil {
-											logs.WithContext(ctx).Error(err.Error())
-											failedCount = failedCount + 1
-											asyncStatus = "FAILED"
-										} else {
-											logs.WithContext(ctx).Info(fmt.Sprint(response))
-											utils.PrintResponseBody(ctx, response, "printing response from async handler")
-											processedCount = processedCount + 1
-										}
-									}
-								}
-								defer func() {
-									if response != nil {
-										response.Body.Close()
-									}
-								}()
-							}
-						}
-						_ = s.UpdateAsyncEvent(ctx, m.Msg, asyncStatus, string(eventResponseBytes), s)
-						_ = eventI.DeleteMessage(ctx, m.MsgIdentifer)
-					}
-				}
-			}
-			done <- true
-		}(done, eventResults)
-
-		//set it to one to run synchronously
-		noOfWorkers := 1
-		createWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults)
-		<-done
-
-		time.Sleep(10 * time.Second)
-	}
-}
-*/

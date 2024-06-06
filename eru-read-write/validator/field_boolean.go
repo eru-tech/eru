@@ -40,7 +40,7 @@ func (f *BooleanField) Validate(ctx context.Context, v interface{}) (err error) 
 	}
 
 	if f.CheckValue && f.Value != value {
-		errs = append(errs, fmt.Sprint("invalid value for '", f.Name, "'"))
+		errs = append(errs, fmt.Sprint("invalid value for field '", f.Name, "'"))
 	}
 
 	return

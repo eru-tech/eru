@@ -6,6 +6,7 @@ import (
 	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/jmoiron/sqlx"
 	"net/http"
 	"runtime/debug"
 	"sync"
@@ -56,8 +57,8 @@ type EventJob struct {
 }
 
 type EventResult struct {
-	job       EventJob
-	eventMsgs []events.EventMsg
+	Job       EventJob
+	EventMsgs []events.EventMsg
 }
 
 func worker(ctx context.Context, route *Route, wg *sync.WaitGroup, jobs chan Job, results chan Result) {
@@ -285,7 +286,7 @@ func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan Func
 	wg.Done()
 }
 
-func allocateEvent(ctx context.Context, event events.EventI, eventJobs chan EventJob) {
+func AllocateEvent(ctx context.Context, event events.EventI, eventJobs chan EventJob) {
 	logs.WithContext(ctx).Debug("allocateEvent - Start")
 	defer func() {
 		if r := recover(); r != nil {
@@ -299,7 +300,7 @@ func allocateEvent(ctx context.Context, event events.EventI, eventJobs chan Even
 	close(eventJobs)
 }
 
-func createWorkerPoolEvent(ctx context.Context, noOfWorkers int, eventJobs chan EventJob, eventResults chan EventResult) {
+func CreateWorkerPoolEvent(ctx context.Context, noOfWorkers int, eventJobs chan EventJob, eventResults chan EventResult, dbCon *sqlx.DB) {
 	logs.WithContext(ctx).Debug("createWorkerPoolEvent - Start")
 	defer func() {
 		if r := recover(); r != nil {
@@ -309,12 +310,12 @@ func createWorkerPoolEvent(ctx context.Context, noOfWorkers int, eventJobs chan 
 	var wg sync.WaitGroup
 	for i := 0; i < noOfWorkers; i++ {
 		wg.Add(1)
-		go workerEvent(ctx, &wg, eventJobs, eventResults)
+		go WorkerEvent(ctx, &wg, eventJobs, eventResults, dbCon)
 	}
 	wg.Wait()
 	close(eventResults)
 }
-func workerEvent(ctx context.Context, wg *sync.WaitGroup, eventJobs chan EventJob, eventResults chan EventResult) {
+func WorkerEvent(ctx context.Context, wg *sync.WaitGroup, eventJobs chan EventJob, eventResults chan EventResult, dbCon *sqlx.DB) {
 	logs.WithContext(ctx).Debug("workerEvent - Start")
 	defer func() {
 		if r := recover(); r != nil {
@@ -331,6 +332,7 @@ func workerEvent(ctx context.Context, wg *sync.WaitGroup, eventJobs chan EventJo
 			logs.WithContext(ctx).Error(fmt.Sprint("print event.Poll error = ", e.Error()))
 		}
 		output := EventResult{eventJob, eventMsgs}
+		logs.WithContext(ctx).Info(fmt.Sprint("count of messages recevied : ", len(eventMsgs)))
 		eventResults <- output
 	}
 	wg.Done()

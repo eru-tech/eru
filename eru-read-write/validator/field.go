@@ -11,6 +11,8 @@ const (
 	DataTypeString  = "string"
 	DataTypeBoolean = "boolean"
 	DataTypeNumber  = "number"
+	DataTypeDate    = "date"
+	DataTypeArray   = "array"
 )
 
 type FieldI interface {
@@ -42,6 +44,10 @@ func GetField(dt string) FieldI {
 		return new(NumberField)
 	case DataTypeBoolean:
 		return new(BooleanField)
+	case DataTypeDate:
+		return new(DateField)
+	case DataTypeArray:
+		return new(ArrayField)
 	default:
 		return new(Field)
 	}

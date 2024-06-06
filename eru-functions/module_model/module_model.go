@@ -35,7 +35,8 @@ type ModuleProjectI interface {
 //}
 
 type ProjectSettings struct {
-	ClaimsKey string `json:"claims_key" eru:"required"`
+	ClaimsKey           string `json:"claims_key" eru:"required"`
+	AsyncRepollWaitTime int32  `json:"async_repoll_wait_time"`
 }
 type ExtendedProject struct {
 	Project
