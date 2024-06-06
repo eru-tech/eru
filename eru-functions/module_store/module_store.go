@@ -71,7 +71,7 @@ type ModuleStoreI interface {
 	FetchAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, realStore ModuleStoreI) (asyncFuncData AsyncFuncData, err error)
 	UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, eventResponse string, realStore ModuleStoreI) (err error)
 	FetchProjectEvents(ctx context.Context, s ModuleStoreI) (err error)
-	StartPolling(ctx context.Context, projectId string, event events.EventI, repollWaitTime int32, s ModuleStoreI) (err error)
+	StartPolling(ctx context.Context, projectId string, event events.EventI, s ModuleStoreI) (err error)
 }
 
 type ModuleStore struct {
