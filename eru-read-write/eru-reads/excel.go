@@ -3,12 +3,16 @@ package eru_reads
 import (
 	"bytes"
 	"context"
+	b64 "encoding/base64"
+	"encoding/json"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-read-write/validator"
 	"github.com/xuri/excelize/v2"
+	"math/big"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type ExcelReadData struct {
@@ -57,7 +61,7 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 
 		var sheetData []map[string]interface{}
 		logs.WithContext(ctx).Info(fmt.Sprint(sheetName))
-		rows, rowsErr := f.GetRows(sheetName, excelize.Options{RawCellValue: true})
+		rows, rowsErr := f.GetRows(sheetName)
 		if rowsErr != nil {
 			err = rowsErr
 			logs.WithContext(ctx).Error(err.Error())
@@ -105,7 +109,7 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 		} else {
 			cols = sheetObj.Columns
 		}
-		type colValue interface{}
+		//type colValue interface{}
 
 		for rowNo, row := range rows {
 			var errs []string
@@ -113,20 +117,72 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 				sheetRow := make(map[string]interface{})
 				for _, colNo := range cols {
 					if len(row) > colNo-1 {
+						isNum := false
 						var rowValue interface{}
-						rowValue, err = strconv.ParseFloat(row[colNo-1], 64)
+						var rowValueF float64
+						logs.WithContext(ctx).Info(row[colNo-1])
+						rowValueF, err = strconv.ParseFloat(row[colNo-1], 64)
 						if err != nil {
 							rowValue, err = strconv.ParseBool(row[colNo-1])
 							if err != nil {
 								rowValue = row[colNo-1]
 							}
+						} else {
+							rowValue = rowValueF
+							isNum = true
 						}
 						sheetRow[colHeaders[colNo-1]] = rowValue
 						field := schema.GetField(ctx, colHeaders[colNo-1])
+
 						if field != nil {
+							if field.GetDatatype() == "date" && isNum {
+								logs.WithContext(ctx).Info("inside date datattype")
+								var vTime time.Time
+								vTime, err = excelize.ExcelDateToTime(rowValueF, false)
+								if err != nil {
+									logs.WithContext(ctx).Error(err.Error())
+									errs = append(errs, err.Error())
+								}
+								sheetRow[colHeaders[colNo-1]] = vTime.Format("2006-01-02")
+								rowValue = vTime.Format("2006-01-02")
+							} else if field.GetDatatype() == "array" {
+								if arrayStr, arrayStrOk := rowValue.(string); arrayStrOk {
+									arrayVal := strings.Split(arrayStr, ",")
+									var rowValueArray []interface{}
+									ary := make([]float64, len(arrayVal))
+									for i, sa := range arrayVal {
+										ary[i], err = strconv.ParseFloat(sa, 64)
+										if err != nil {
+											rowValueArray = append(rowValueArray, sa)
+										} else {
+											rowValueArray = append(rowValueArray, ary[i])
+										}
+									}
+									sheetRow[colHeaders[colNo-1]] = rowValueArray
+									rowValue = rowValueArray
+								}
+							}
 							vErr := field.Validate(ctx, rowValue)
 							if vErr != nil {
+								logs.WithContext(ctx).Error(vErr.Error())
 								errs = append(errs, vErr.Error())
+							}
+							if field.ToEncode(ctx) {
+								rowBytes := []byte("")
+								rowBytes, err = json.Marshal(rowValue)
+								if err != nil {
+									errs = append(errs, err.Error())
+								}
+								rowStr := ""
+								rowStr, err = strconv.Unquote(string(rowBytes))
+								if err != nil {
+									errs = append(errs, err.Error())
+								}
+								sheetRow[colHeaders[colNo-1]] = b64.StdEncoding.EncodeToString([]byte(rowStr))
+							} else if field.GetDatatype() == "string" && isNum {
+								bigint := big.NewFloat(rowValueF)
+								rowValue = bigint.String()
+								sheetRow[colHeaders[colNo-1]] = rowValue
 							}
 						}
 					} else {
@@ -144,6 +200,5 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 		}
 		readOutput[sheetName] = sheetData
 	}
-
 	return readOutput, nil
 }

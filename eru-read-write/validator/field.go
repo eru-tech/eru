@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
@@ -20,12 +21,14 @@ type FieldI interface {
 	GetDatatype() string
 	Validate(ctx context.Context, v interface{}) error
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
+	ToEncode(ctx context.Context) bool
 }
 
 type Field struct {
 	Name     string `json:"name" eru:"required"`
 	Required bool   `json:"required" eru:"required"`
 	DataType string `json:"data_type" eru:"required"`
+	Encode   bool   `json:"encode"`
 }
 
 func (f *Field) GetName() string {
@@ -34,6 +37,11 @@ func (f *Field) GetName() string {
 
 func (f *Field) GetDatatype() string {
 	return f.DataType
+}
+func (f *Field) ToEncode(ctx context.Context) bool {
+	logs.WithContext(ctx).Info(fmt.Sprint(f))
+	logs.WithContext(ctx).Info(fmt.Sprint(f.GetName()))
+	return f.Encode
 }
 
 func GetField(dt string) FieldI {

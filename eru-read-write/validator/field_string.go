@@ -42,8 +42,11 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 		return
 	}
 
-	value, ok := v.(string)
-	if !ok {
+	value := ""
+	switch vv := v.(type) {
+	case int, float64, string:
+		value = fmt.Sprint("%v", vv)
+	default:
 		errs = append(errs, fmt.Sprint("'", f.Name, "' has to be a string"))
 		return
 	}
@@ -97,7 +100,6 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 			//do nothing
 		}
 	}
-
 	return
 }
 

@@ -45,72 +45,66 @@ func (f *DateField) Validate(ctx context.Context, v interface{}) (err error) {
 
 	valueDtMin, valueDtMinErr := time.Parse("2006-01-02", f.MinValue)
 
-	if valueDtMinErr != nil {
-		errs = append(errs, fmt.Sprint("'incorrect minvalue for field ", f.Name))
-		return
-	}
-	logs.WithContext(ctx).Info(fmt.Sprintln(value))
-	logs.WithContext(ctx).Info(fmt.Sprintln(valueDtMin))
-	logs.WithContext(ctx).Info(fmt.Sprintln(valueDtMin.Sub(value)))
-	if f.MinCheck && valueDtMin.Sub(value) > 0 {
-		errs = append(errs, fmt.Sprint("minimum date for '", f.Name, "' has to be ", f.MinValue))
+	if f.MinCheck {
+		if valueDtMinErr != nil {
+			errs = append(errs, fmt.Sprint("'incorrect minvalue for field ", f.Name))
+			return
+		}
+
+		if valueDtMin.Sub(value) > 0 {
+			errs = append(errs, fmt.Sprint("minimum date for '", f.Name, "' has to be ", f.MinValue))
+		}
 	}
 
-	valueDtMax, valueDtMaxErr := time.Parse("2006-01-02", f.MaxValue)
+	if f.MaxCheck {
+		valueDtMax, valueDtMaxErr := time.Parse("2006-01-02", f.MaxValue)
 
-	if valueDtMaxErr != nil {
-		errs = append(errs, fmt.Sprint("'incorrect maxvalue for field ", f.Name))
-		return
-	}
-	logs.WithContext(ctx).Info(fmt.Sprintln(value))
-	logs.WithContext(ctx).Info(fmt.Sprintln(valueDtMax))
-	logs.WithContext(ctx).Info(fmt.Sprintln(valueDtMax.Sub(value)))
+		if valueDtMaxErr != nil {
+			errs = append(errs, fmt.Sprint("'incorrect maxvalue for field ", f.Name))
+			return
+		}
 
-	if f.MaxCheck && valueDtMax.Sub(value) < 0 {
-		errs = append(errs, fmt.Sprint("maximum date of '", f.Name, "' has to be ", f.MaxValue))
+		if valueDtMax.Sub(value) < 0 {
+			errs = append(errs, fmt.Sprint("maximum date of '", f.Name, "' has to be ", f.MaxValue))
+		}
 	}
 	adErr := false
 	wd := value.Weekday()
-	logs.WithContext(ctx).Info(fmt.Sprint(wd))
-	logs.WithContext(ctx).Info(fmt.Sprint(f.AllowDays))
 	for _, ad := range f.AllowDays {
 		logs.WithContext(ctx).Info(fmt.Sprint(ad))
 		adErr = true
 		switch ad {
-		case "SUN":
+		case "Sun":
 			if wd == time.Sunday {
 				adErr = false
 				break
 			}
-		case "MON":
+		case "Mon":
 			if wd == time.Monday {
 				adErr = false
 				break
 			}
-		case "TUE":
+		case "Tue":
 			if wd == time.Tuesday {
-
 				adErr = false
 				break
 			}
-		case "WED":
+		case "Wed":
 			if wd == time.Wednesday {
 				adErr = false
 				break
 			}
-		case "THU":
+		case "Thu":
 			if wd == time.Thursday {
 				adErr = false
 				break
 			}
-		case "FRI":
-			logs.WithContext(ctx).Info(fmt.Sprint(wd == time.Friday))
-			logs.WithContext(ctx).Info(fmt.Sprint(wd))
+		case "Fri":
 			if wd == time.Friday {
 				adErr = false
 				break
 			}
-		case "SAT":
+		case "Sat":
 			if wd == time.Saturday {
 				adErr = false
 				break
