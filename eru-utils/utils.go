@@ -556,15 +556,13 @@ func GetNestedFieldValue(ctx context.Context, data interface{}, fieldPath string
 	logs.WithContext(ctx).Info(fmt.Sprint(fieldPath))
 	fields := strings.Split(fieldPath, ".")
 	val := reflect.ValueOf(data)
-	logs.WithContext(ctx).Info(fmt.Sprint(fields))
-	logs.WithContext(ctx).Info(fmt.Sprint(val))
 	for _, field := range fields {
 		if val.Kind() == reflect.Map {
 			val = val.MapIndex(reflect.ValueOf(field))
 			if !val.IsValid() {
 				err := errors.New("invalid value")
 				logs.WithContext(ctx).Error(err.Error())
-				return nil, err
+				return nil, nil
 			}
 			if val.Kind() == reflect.Interface {
 				val = reflect.ValueOf(val.Interface())
