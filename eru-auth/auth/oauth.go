@@ -131,6 +131,10 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	glLoginFormBody["grant_type"] = "authorization_code"
 	var loginErr error
 	var loginRes interface{}
+
+	logs.WithContext(ctx).Info(fmt.Sprint(headers))
+	logs.WithContext(ctx).Info(fmt.Sprint(glLoginFormBody))
+
 	if contentType == "application/x-www-form-urlencoded" {
 		loginRes, _, _, _, loginErr = utils.CallHttp(ctx, http.MethodPost, oAuth.OAuthConfig.TokenUrl, headers, glLoginFormBody, nil, nil, nil)
 	} else if contentType == "application/json" {
@@ -143,7 +147,7 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 		logs.WithContext(ctx).Error(fmt.Sprint(map[string]interface{}{"request_id": loginPostBody.IdpRequestId, "error": fmt.Sprint(loginErr)}))
 		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 	}
-
+	logs.WithContext(ctx).Info(fmt.Sprint(loginRes))
 	if lMap, lMapOk = loginRes.(map[string]interface{}); lMapOk {
 		vI, vIErr := utils.GetNestedFieldValue(ctx, lMap, oAuth.OAuthConfig.TokenKey)
 		if vIErr != nil {
