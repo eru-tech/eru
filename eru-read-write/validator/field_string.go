@@ -45,7 +45,7 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 	value := ""
 	switch vv := v.(type) {
 	case int, float64, string:
-		value = fmt.Sprint("%v", vv)
+		value = fmt.Sprintf("%v", vv)
 	default:
 		errs = append(errs, fmt.Sprint("'", f.Name, "' has to be a string"))
 		return
@@ -53,6 +53,8 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 
 	if len(f.Values) > 0 {
 		vFound := false
+		logs.WithContext(ctx).Info(fmt.Sprint(f.Values))
+		logs.WithContext(ctx).Info(fmt.Sprint(value))
 		for _, val := range f.Values {
 			if value == val {
 				vFound = true
@@ -70,6 +72,9 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 			errs = append(errs, fmt.Sprint("invalid format checker for field '", f.Name, "'"))
 			return
 		}
+
+		logs.WithContext(ctx).Info(fmt.Sprint(r))
+		logs.WithContext(ctx).Info(fmt.Sprint(value))
 
 		isValidFormat := r.MatchString(value)
 

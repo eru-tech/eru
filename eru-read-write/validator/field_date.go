@@ -36,6 +36,13 @@ func (f *DateField) Validate(ctx context.Context, v interface{}) (err error) {
 		}
 		return
 	}
+	if v.(string) == "" {
+		if f.Required {
+			errs = append(errs, fmt.Sprint("'", f.Name, "' cannot be blank"))
+		}
+		return
+	}
+
 	var value time.Time
 	value, err = time.Parse("2006-01-02", v.(string))
 	if err != nil {

@@ -363,6 +363,11 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 							valPrefix = "'"
 							valSuffix = "'"
 						}
+						if strings.Contains(newVal.(string), "\\.") {
+							valPrefix = "'"
+							valSuffix = "'"
+							newVal = strings.Replace(newVal.(string), "\\.", ".", -1)
+						}
 					}
 					if v.String() == "$or" || v.String() == "or" {
 						if reflect.TypeOf(newVal).Kind().String() != "slice" {
@@ -420,6 +425,8 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 							op = fmt.Sprint(" <@ ", module_model.MAKE_JSON_ARRAY_FN)
 						case "$like":
 							op = " like "
+						case "$nlike":
+							op = " not like "
 						default:
 							op = ""
 						}
@@ -431,6 +438,9 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 							case reflect.Float64, reflect.Float32, reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
 								//TODO get casting from db specific syntax
 								parentKey = fmt.Sprint("(", parentKey, ")::numeric")
+							case reflect.Bool:
+								//TODO get casting from db specific syntax
+								parentKey = fmt.Sprint("(", parentKey, ")::boolean")
 							default:
 								//do nothing
 							}
@@ -443,7 +453,7 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 								valSuffix = ""
 							}
 							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, fmt.Sprint(newVal), valSuffix))
-						case "$like":
+						case "$like", "$nlike":
 							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, "%", reflect.ValueOf(newVal), "%", valSuffix))
 						case "$btw":
 							btwClause, ok := reflect.ValueOf(newVal).Interface().(map[string]interface{})
@@ -540,6 +550,12 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 			if jsonOp {
 				//TODO database specific syntax
 				parentKey = fmt.Sprint("(", parentKey, ")::numeric ")
+			}
+			return fmt.Sprint(parentKey, " = ", reflect.ValueOf(val)), ""
+		case reflect.Bool:
+			if jsonOp {
+				//TODO database specific syntax
+				parentKey = fmt.Sprint("(", parentKey, ")::boolean ")
 			}
 			return fmt.Sprint(parentKey, " = ", reflect.ValueOf(val)), ""
 		default:
