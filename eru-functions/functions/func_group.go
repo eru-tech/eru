@@ -375,7 +375,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 					}
 				}
 				var requestBytes = &bytes.Buffer{}
-				err = req.Write(requestBytes)
+				err = request.Write(requestBytes)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					return
@@ -481,16 +481,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 }
 func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, asyncMsg string, funcThread int, loopThread int, strCond string, funcStepName string, endFuncStepName string, started bool, fromAsync bool) (response *http.Response, funcVars FuncTemplateVars, err error) {
 	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStepInner - Start : ", funcStep.FuncKey))
-	logs.WithContext(ctx).Info(fmt.Sprint(funcStep.FuncKey))
-	for k, _ := range reqVars {
-		logs.WithContext(ctx).Info(fmt.Sprint(k))
-	}
-	for k, _ := range resVars {
-		logs.WithContext(ctx).Info(fmt.Sprint(k))
-	}
 	request := req
-	logs.WithContext(ctx).Info(fmt.Sprint(started))
-	logs.WithContext(ctx).Info(fmt.Sprint(funcStepName))
 	if started || funcStepName == "" || funcStepName == funcStep.FuncKey {
 		if strCond == "true" {
 			if funcStep.LoopVariable != "" {

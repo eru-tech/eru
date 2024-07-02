@@ -383,6 +383,18 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	var errArray []string
 	r := functions.Route{}
 
+	logs.WithContext(ctx).Info(s.GetDbType())
+	funcStep.FsDb = db.GetDb(s.GetDbType())
+	funcStep.FsDb.SetConn(s.GetConn())
+	if funcStep.AsyncEventName != "" {
+		var eventI events.EventI
+		eventI, err = s.FetchEvent(ctx, projectId, funcStep.AsyncEventName)
+		if err != nil {
+			return
+		}
+		funcStep.AsyncEvent = eventI
+	}
+
 	if funcStep.FunctionName != "" {
 		logs.WithContext(ctx).Info(fmt.Sprint("funcStep.FunctionName called for ", funcStep.FunctionName))
 		funcGroup, fgErr := ms.GetAndValidateFunc(ctx, funcStep.FunctionName, projectId, host, url, method, headers, reqBody, s)
@@ -390,6 +402,18 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			err = fgErr
 			return
 		}
+
+		tsk := ms.Projects[projectId].ProjectSettings.ClaimsKey
+		if funcStep.Async {
+			for k, _ := range funcGroup.FuncSteps {
+				funcGroup.FuncSteps[k].Async = true
+				funcGroup.FuncSteps[k].AsyncEvent = funcStep.AsyncEvent
+				funcGroup.FuncSteps[k].AsyncMessage = funcStep.AsyncMessage
+				funcGroup.FuncSteps[k].AsyncEventName = funcStep.AsyncEventName
+				funcGroup.FuncSteps[k].Route.TokenSecretKey = tsk
+			}
+		}
+
 		funcStep.FuncGroup = funcGroup
 		logs.WithContext(ctx).Info(fmt.Sprint("FuncGroup set for  ", funcStep.FunctionName, " :", funcStep.FuncGroup))
 
@@ -444,17 +468,6 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 		}
 		r.TokenSecretKey = ms.Projects[projectId].ProjectSettings.ClaimsKey
 		funcStep.Route = r
-		logs.WithContext(ctx).Info(s.GetDbType())
-		funcStep.FsDb = db.GetDb(s.GetDbType())
-		funcStep.FsDb.SetConn(s.GetConn())
-		if funcStep.AsyncEventName != "" {
-			var eventI events.EventI
-			eventI, err = s.FetchEvent(ctx, projectId, funcStep.AsyncEventName)
-			if err != nil {
-				return
-			}
-			funcStep.AsyncEvent = eventI
-		}
 	}
 	for ck, cv := range funcStep.FuncSteps {
 		fs := funcStep.FuncSteps[ck]
