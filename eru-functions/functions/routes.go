@@ -162,6 +162,7 @@ func (route *Route) Clone(ctx context.Context) (cloneRoute *Route, err error) {
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
+	cloneRoute.TokenSecretKey = route.TokenSecretKey
 	return
 }
 func (route *Route) GetTargetSchemeHostPortPath(ctx context.Context, url string) (scheme string, host string, port string, path string, method string, err error) {
