@@ -332,6 +332,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 		}
 		if strCond == "true" {
 			if (!fromAsync || (fromAsync && funcStepName != funcStep.FuncKey)) && funcStep.Async && funcStep.AsyncMessage != "" && funcStep.LoopVariable == "" {
+				startTime := time.Now()
 				avars := &FuncTemplateVars{}
 				avars.Vars = reqVars[funcStep.FuncKey]
 				avars.ReqVars = reqVars
@@ -401,6 +402,9 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 					logs.WithContext(ctx).Error(err.Error())
 					return
 				}
+				endTime := time.Now()
+				diff := endTime.Sub(startTime)
+				logs.WithContext(ctx).Info(fmt.Sprint("total time taken to publich asyn message is ", diff.Seconds(), "seconds"))
 				return
 			}
 

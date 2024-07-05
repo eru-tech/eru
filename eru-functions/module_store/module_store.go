@@ -691,6 +691,7 @@ func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyn
 
 func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, eventResponse string, s ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("UpdateAsyncEvent - Start")
+	startTime := time.Now()
 	var updateQueries []*models.Queries
 	updateQueryFuncAsync := models.Queries{}
 	updateQueryFuncAsync.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, UPDATE_FUNC_ASYNC)
@@ -702,6 +703,9 @@ func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asy
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
+	endTime := time.Now()
+	diff := endTime.Sub(startTime)
+	logs.WithContext(ctx).Info(fmt.Sprint("total time taken for UpdateAsyncEvent ", asyncId, " is ", diff.Seconds(), "seconds"))
 	return
 }
 
@@ -711,9 +715,9 @@ func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI) (
 		if err != nil {
 			return err
 		}
-		events, err := s.FetchEvents(ctx, p.ProjectId)
+		evts, err := s.FetchEvents(ctx, p.ProjectId)
 		if err == nil {
-			for _, e := range events {
+			for _, e := range evts {
 				err = ms.StartPolling(ctx, p.ProjectId, e, s)
 				if err != nil {
 					return err
@@ -728,11 +732,12 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 	eventName, _ := event.GetAttribute("event_name")
 	logs.WithContext(ctx).Info(fmt.Sprint("StartPolling - Start : ", eventName))
 	for {
+		msgRecd := false
 		logs.WithContext(ctx).Info(fmt.Sprint("polling message for event : ", eventName))
-		var eventJobs = make(chan functions.EventJob, 1)
-		var eventResults = make(chan functions.EventResult, 1)
+		var eventJobs = make(chan functions.EventJob, EventThreads)
+		var eventResults = make(chan functions.EventResult, EventThreads)
 		//startTime := time.Now()
-		go functions.AllocateEvent(ctx, event, eventJobs)
+		go functions.AllocateEvent(ctx, event, eventJobs, EventThreads)
 		done := make(chan bool)
 
 		go func(done chan bool, eventResults chan functions.EventResult) {
@@ -743,6 +748,7 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 			}()
 			cnt := 0
 			for res := range eventResults {
+				msgRecd = true
 				cnt = cnt + 1
 				err = ms.ProcessEvents(ctx, projectId, res.EventMsgs, event, s, cnt)
 				if err != nil {
@@ -758,7 +764,7 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 		noOfWorkers := EventThreads
 		functions.CreateWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults, s.GetConn())
 		<-done
-		if len(eventResults) == 0 {
+		if !msgRecd {
 			ep, err := s.GetExtendedProjectConfig(ctx, projectId, s)
 			var waitTime int32 = 5
 			if err == nil {

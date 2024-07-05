@@ -13,21 +13,23 @@ import (
 	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type AWS_SQS_Event struct {
 	Event
-	Region         string `json:"region" eru:"required"`
-	Authentication string `json:"authentication" eru:"required"`
-	Key            string `json:"key" eru:"required"`
-	Secret         string `json:"secret" eru:"required"`
-	client         *sqs.Client
-	QueueUrl       string            `json:"queue_url" eru:"required"`
-	Fifo           bool              `json:"fifo" eru:"required"`
-	Attributes     map[string]string `json:"attributes" eru:"required"`
-	Tags           map[string]string `json:"tags" eru:"required"`
-	MsgToPoll      int32             `json:"msg_to_poll" eru:"required"`
-	WaitTime       int32             `json:"wait_time" eru:"required"`
+	Region            string `json:"region" eru:"required"`
+	Authentication    string `json:"authentication" eru:"required"`
+	Key               string `json:"key" eru:"required"`
+	Secret            string `json:"secret" eru:"required"`
+	client            *sqs.Client
+	QueueUrl          string            `json:"queue_url" eru:"required"`
+	Fifo              bool              `json:"fifo" eru:"required"`
+	Attributes        map[string]string `json:"attributes" eru:"required"`
+	Tags              map[string]string `json:"tags" eru:"required"`
+	MsgToPoll         int32             `json:"msg_to_poll" eru:"required"`
+	WaitTime          int32             `json:"wait_time" eru:"required"`
+	MsgVisibleTimeOut int32             `json:"msg_visible_time_out" eru:"required"`
 }
 
 func (aws_sqs_event *AWS_SQS_Event) Init(ctx context.Context) (err error) {
@@ -160,6 +162,7 @@ func (aws_sqs_event *AWS_SQS_Event) Poll(ctx context.Context) (eventMsgs []Event
 		QueueUrl:            aws.String(aws_sqs_event.QueueUrl),
 		MaxNumberOfMessages: aws_sqs_event.MsgToPoll,
 		WaitTimeSeconds:     aws_sqs_event.WaitTime,
+		VisibilityTimeout:   aws_sqs_event.MsgVisibleTimeOut,
 	})
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -179,6 +182,7 @@ func (aws_sqs_event *AWS_SQS_Event) Poll(ctx context.Context) (eventMsgs []Event
 
 func (aws_sqs_event *AWS_SQS_Event) DeleteMessage(ctx context.Context, msgIdentifier string) (err error) {
 	logs.WithContext(ctx).Info(fmt.Sprint("DeleteMessage"))
+	startTime := time.Now()
 	if aws_sqs_event.client == nil {
 		err = aws_sqs_event.Init(ctx)
 		if err != nil {
@@ -189,6 +193,10 @@ func (aws_sqs_event *AWS_SQS_Event) DeleteMessage(ctx context.Context, msgIdenti
 		QueueUrl:      aws.String(aws_sqs_event.QueueUrl),
 		ReceiptHandle: aws.String(msgIdentifier),
 	})
+	endTime := time.Now()
+	diff := endTime.Sub(startTime)
+	logs.WithContext(ctx).Info(fmt.Sprint("total time taken for DeleteMessage is ", diff.Seconds(), "seconds"))
+
 	return
 }
 
