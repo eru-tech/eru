@@ -48,6 +48,18 @@ func StartUp() (module_store.ModuleStoreI, error) {
 		module_store.LoopThreads = 3
 	}
 
+	eventThreads := os.Getenv("LOOP_THREADS")
+	if eventThreads == "" {
+		eventThreads = "3"
+		logs.WithContext(context.Background()).Info("'EVENT_THREADS' environment variable not found - setting default value as 3")
+	}
+	module_store.EventThreads, err = strconv.Atoi(eventThreads)
+	if err != nil {
+		err = nil
+		logs.WithContext(context.Background()).Info("'EVENT_THREADS' environment variable is non numeric - setting default value as 3")
+		module_store.EventThreads = 3
+	}
+
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
 	if storeType == "" {
 		storeType = "STANDALONE"

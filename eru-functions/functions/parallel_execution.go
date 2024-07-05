@@ -325,14 +325,15 @@ func WorkerEvent(ctx context.Context, wg *sync.WaitGroup, eventJobs chan EventJo
 			wg.Done()
 		}
 	}()
+	cnt := 0
 	for eventJob := range eventJobs {
-
+		cnt = cnt + 1
 		eventMsgs, e := eventJob.event.Poll(ctx)
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print event.Poll error = ", e.Error()))
 		}
 		output := EventResult{eventJob, eventMsgs}
-		logs.WithContext(ctx).Info(fmt.Sprint("count of messages recevied : ", len(eventMsgs)))
+		logs.WithContext(ctx).Info(fmt.Sprint("count of messages recevied for job no : ", cnt, " is ", len(eventMsgs)))
 		eventResults <- output
 	}
 	wg.Done()

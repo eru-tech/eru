@@ -467,13 +467,12 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			noOfWorkers = len(loopArray)
 		}
 	}
-
+	logs.WithContext(ctx).Info(fmt.Sprint("creating loop workers count = ", noOfWorkers))
 	createWorkerPoolFuncInner(ctx, noOfWorkers, jobs, results)
 	<-done
 	response, err = clubResponses(ctx, responses, errs)
 	endTime := time.Now()
 	diff := endTime.Sub(startTime)
-
 	logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
 	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStep - End : ", funcStep.FuncKey))
 
@@ -647,13 +646,6 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 	}
 	funcVars.ResVars = resVars
 	funcVars.ReqVars = reqVars
-	logs.WithContext(ctx).Info(fmt.Sprint(funcStep.FuncKey))
-	for k, _ := range reqVars {
-		logs.WithContext(ctx).Info(fmt.Sprint(k))
-	}
-	for k, _ := range resVars {
-		logs.WithContext(ctx).Info(fmt.Sprint(k))
-	}
 	return
 }
 
@@ -689,7 +681,6 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		v, _ := cloneInterface(ctx, reqVars[mainRouteName])
 		vars = v.(*TemplateVars)
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(vars))
 	//utils.PrintRequestBody(req, "printing request in transformRequest")
 	var loopArray []interface{}
 	if funcStep.LoopVariable != "" {

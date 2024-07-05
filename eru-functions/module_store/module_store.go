@@ -26,6 +26,7 @@ import (
 var Eruqlbaseurl = "http://localhost:8087"
 var FuncThreads = 3
 var LoopThreads = 3
+var EventThreads = 3
 
 const (
 	SELECT_FUNC_ASYNC = "update erufunctions_async set async_status='IN PROGRESS', processed_date=now() where async_id = ??? and (async_status=??? or 'ALL'=???) returning async_id, event_id, func_group_name func_name, func_step_name,  event_msg, event_request, request_id"
@@ -740,9 +741,10 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 					logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in StartPolling: ", r))
 				}
 			}()
+			cnt := 0
 			for res := range eventResults {
-
-				err = ms.ProcessEvents(ctx, projectId, res.EventMsgs, event, s)
+				cnt = cnt + 1
+				err = ms.ProcessEvents(ctx, projectId, res.EventMsgs, event, s, cnt)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					//ignore error and continue to poll
@@ -753,22 +755,28 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 		}(done, eventResults)
 
 		//set it to one to run synchronously
-		noOfWorkers := 1
+		noOfWorkers := EventThreads
 		functions.CreateWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults, s.GetConn())
 		<-done
-		ep, err := s.GetExtendedProjectConfig(ctx, projectId, s)
-		var waitTime int32 = 5
-		if err == nil {
-			waitTime = ep.ProjectSettings.AsyncRepollWaitTime
+		if len(eventResults) == 0 {
+			ep, err := s.GetExtendedProjectConfig(ctx, projectId, s)
+			var waitTime int32 = 5
+			if err == nil {
+				waitTime = ep.ProjectSettings.AsyncRepollWaitTime
+			}
+			logs.WithContext(ctx).Info(fmt.Sprint("waiting for next poll since no message retrived this time : ", waitTime))
+			time.Sleep(time.Duration(waitTime) * time.Second)
+		} else {
+			logs.WithContext(ctx).Info(fmt.Sprint("next poll is immediate after processing the current messages : ", len(eventResults)))
 		}
-		time.Sleep(time.Duration(waitTime) * time.Second)
 	}
 }
 
-func (ms *ModuleStore) ProcessEvents(ctx context.Context, projectId string, eventMsgs []events.EventMsg, event events.EventI, s ModuleStoreI) (err error) {
+func (ms *ModuleStore) ProcessEvents(ctx context.Context, projectId string, eventMsgs []events.EventMsg, event events.EventI, s ModuleStoreI, cnt int) (err error) {
 	logs.WithContext(ctx).Debug("ProcessEvents - Start")
 	aStatus := "PENDING"
-	for _, m := range eventMsgs {
+	for i, m := range eventMsgs {
+		startTime := time.Now()
 		asyncStatus := "PROCESSED"
 		var asyncFuncData AsyncFuncData
 		logs.WithContext(ctx).Info("fetching event from db")
@@ -872,6 +880,9 @@ func (ms *ModuleStore) ProcessEvents(ctx context.Context, projectId string, even
 			_ = s.UpdateAsyncEvent(ctx, m.Msg, asyncStatus, string(eventResponseBytes), s)
 			_ = event.DeleteMessage(ctx, m.MsgIdentifer)
 		}
+		endTime := time.Now()
+		diff := endTime.Sub(startTime)
+		logs.WithContext(ctx).Info(fmt.Sprint("total time taken for message processing for job ", cnt, " and msg ", i, " is ", diff.Seconds(), "seconds"))
 	}
 	return
 }
