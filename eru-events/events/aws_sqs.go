@@ -13,7 +13,6 @@ import (
 	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type AWS_SQS_Event struct {
@@ -182,7 +181,6 @@ func (aws_sqs_event *AWS_SQS_Event) Poll(ctx context.Context) (eventMsgs []Event
 
 func (aws_sqs_event *AWS_SQS_Event) DeleteMessage(ctx context.Context, msgIdentifier string) (err error) {
 	logs.WithContext(ctx).Info(fmt.Sprint("DeleteMessage"))
-	startTime := time.Now()
 	if aws_sqs_event.client == nil {
 		err = aws_sqs_event.Init(ctx)
 		if err != nil {
@@ -193,10 +191,6 @@ func (aws_sqs_event *AWS_SQS_Event) DeleteMessage(ctx context.Context, msgIdenti
 		QueueUrl:      aws.String(aws_sqs_event.QueueUrl),
 		ReceiptHandle: aws.String(msgIdentifier),
 	})
-	endTime := time.Now()
-	diff := endTime.Sub(startTime)
-	logs.WithContext(ctx).Info(fmt.Sprint("total time taken for DeleteMessage is ", diff.Seconds(), "seconds"))
-
 	return
 }
 

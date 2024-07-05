@@ -691,7 +691,6 @@ func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyn
 
 func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, eventResponse string, s ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("UpdateAsyncEvent - Start")
-	startTime := time.Now()
 	var updateQueries []*models.Queries
 	updateQueryFuncAsync := models.Queries{}
 	updateQueryFuncAsync.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, UPDATE_FUNC_ASYNC)
@@ -703,9 +702,6 @@ func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asy
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	endTime := time.Now()
-	diff := endTime.Sub(startTime)
-	logs.WithContext(ctx).Info(fmt.Sprint("total time taken for UpdateAsyncEvent ", asyncId, " is ", diff.Seconds(), "seconds"))
 	return
 }
 
@@ -732,10 +728,9 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 	eventName, _ := event.GetAttribute("event_name")
 	logs.WithContext(ctx).Info(fmt.Sprint("StartPolling - Start : ", eventName))
 	for {
-		msgRecd := false
 		logs.WithContext(ctx).Info(fmt.Sprint("polling message for event : ", eventName))
-		var eventJobs = make(chan functions.EventJob, EventThreads)
-		var eventResults = make(chan functions.EventResult, EventThreads)
+		var eventJobs = make(chan functions.EventJob, 10)
+		var eventResults = make(chan functions.EventResult, 10)
 		//startTime := time.Now()
 		go functions.AllocateEvent(ctx, event, eventJobs, EventThreads)
 		done := make(chan bool)
@@ -748,7 +743,7 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 			}()
 			cnt := 0
 			for res := range eventResults {
-				msgRecd = true
+				logs.WithContext(ctx).Info(fmt.Sprint("result processing starting for job worker ", cnt))
 				cnt = cnt + 1
 				err = ms.ProcessEvents(ctx, projectId, res.EventMsgs, event, s, cnt)
 				if err != nil {
@@ -756,6 +751,7 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 					//ignore error and continue to poll
 					err = nil
 				}
+				logs.WithContext(ctx).Info(fmt.Sprint("result processing ending for job worker ", cnt))
 			}
 			done <- true
 		}(done, eventResults)
@@ -764,17 +760,19 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 		noOfWorkers := EventThreads
 		functions.CreateWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults, s.GetConn())
 		<-done
-		if !msgRecd {
-			ep, err := s.GetExtendedProjectConfig(ctx, projectId, s)
-			var waitTime int32 = 5
-			if err == nil {
-				waitTime = ep.ProjectSettings.AsyncRepollWaitTime
+		/*
+			if !msgRecd {
+				ep, err := s.GetExtendedProjectConfig(ctx, projectId, s)
+				var waitTime int32 = 5
+				if err == nil {
+					waitTime = ep.ProjectSettings.AsyncRepollWaitTime
+				}
+				logs.WithContext(ctx).Info(fmt.Sprint("waiting for next poll since no message retrived this time : ", waitTime))
+				time.Sleep(time.Duration(waitTime) * time.Second)
+			} else {
+				logs.WithContext(ctx).Info(fmt.Sprint("next poll is immediate after processing the current messages : ", len(eventResults)))
 			}
-			logs.WithContext(ctx).Info(fmt.Sprint("waiting for next poll since no message retrived this time : ", waitTime))
-			time.Sleep(time.Duration(waitTime) * time.Second)
-		} else {
-			logs.WithContext(ctx).Info(fmt.Sprint("next poll is immediate after processing the current messages : ", len(eventResults)))
-		}
+		*/
 	}
 }
 

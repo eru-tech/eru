@@ -328,8 +328,8 @@ func WorkerEvent(ctx context.Context, wg *sync.WaitGroup, eventJobs chan EventJo
 			wg.Done()
 		}
 	}()
-	logs.WithContext(ctx).Info(fmt.Sprint("length of eventJobs is ", len(eventJobs)))
 	for eventJob := range eventJobs {
+		logs.WithContext(ctx).Info(fmt.Sprint("polling starting for job worker ", wcnt))
 		eventMsgs, e := eventJob.event.Poll(ctx)
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print event.Poll error = ", e.Error()))
