@@ -360,6 +360,8 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.Fun
 	} else {
 		return cloneFunc, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 	}
+	newCloneFunc, _ := cloneFunc.Clone(ctx)
+	cloneFunc = *newCloneFunc
 
 	var errArray []string
 	for k, v := range cloneFunc.FuncSteps {
@@ -406,7 +408,6 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 
 		tsk := ms.Projects[projectId].ProjectSettings.ClaimsKey
 		if funcStep.Async && !fromAsync {
-			logs.WithContext(ctx).Info(fmt.Sprint("inside !fromAsysnc ", funcGroup.FuncGroupName))
 			for k, _ := range funcGroup.FuncSteps {
 				funcGroup.FuncSteps[k].Async = true
 				funcGroup.FuncSteps[k].AsyncEvent = funcStep.AsyncEvent
@@ -730,8 +731,8 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 	logs.WithContext(ctx).Info(fmt.Sprint("StartPolling - Start : ", eventName, " jcnt = ", jcnt))
 	for {
 		logs.WithContext(ctx).Info(fmt.Sprint("polling message for event : ", eventName, " jcnt = ", jcnt))
-		var eventJobs = make(chan functions.EventJob, 10)
-		var eventResults = make(chan functions.EventResult, 10)
+		eventJobs := make(chan functions.EventJob, 10)
+		eventResults := make(chan functions.EventResult, 10)
 		//startTime := time.Now()
 		go functions.AllocateEvent(ctx, event, eventJobs, EventThreads)
 		done := make(chan bool)
