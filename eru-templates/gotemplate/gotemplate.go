@@ -17,6 +17,7 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-secret-manager/kms"
 	eruutils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
 	"math"
@@ -503,6 +504,24 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 			kmsMap := kms.AwsKmsStore{KmsName: kmsId, KmsAlias: kmsAlias, Region: region, KmsStore: ksMap}
 			plainBytes, err := kmsMap.Decrypt(ctx, eStr)
 			return string(plainBytes), err
+		},
+		"getObjDiff": func(a map[string]interface{}, b map[string]interface{}) (r map[string]interface{}, err error) {
+			r = make(map[string]interface{})
+			o := make(map[string]interface{})
+			n := make(map[string]interface{})
+			var oDiffR eruutils.DiffReporter
+			for k, v := range a {
+				if b[k] != nil {
+					if !cmp.Equal(v, b[k], cmp.Reporter(&oDiffR)) {
+						o[k] = v
+						n[k] = b[k]
+					}
+				}
+			}
+			r["o"] = o
+			r["n"] = n
+
+			return r, err
 		},
 	}
 }

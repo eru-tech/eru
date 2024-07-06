@@ -61,9 +61,9 @@ type ModuleStoreI interface {
 	SaveRoute(ctx context.Context, routeObj functions.Route, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveRoute(ctx context.Context, routeName string, projectId string, realStore ModuleStoreI) error
 	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route functions.Route, err error)
-	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
+	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool) (funcGroup functions.FuncGroup, err error)
 	GetWf(ctx context.Context, wfName string, projectId string, s ModuleStoreI) (wfObj functions.Workflow, err error)
-	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
+	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool) (funcGroup functions.FuncGroup, err error)
 	SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveFunc(ctx context.Context, funcName string, projectId string, realStore ModuleStoreI) error
 	GetFunctionNames(ctx context.Context, projectId string) (functions []string, err error)
@@ -71,8 +71,8 @@ type ModuleStoreI interface {
 	RemoveWf(ctx context.Context, wfName string, projectId string, realStore ModuleStoreI) error
 	FetchAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, realStore ModuleStoreI) (asyncFuncData AsyncFuncData, err error)
 	UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, eventResponse string, realStore ModuleStoreI) (err error)
-	FetchProjectEvents(ctx context.Context, s ModuleStoreI) (err error)
-	StartPolling(ctx context.Context, projectId string, event events.EventI, s ModuleStoreI) (err error)
+	FetchProjectEvents(ctx context.Context, s ModuleStoreI, cnt int) (err error)
+	StartPolling(ctx context.Context, projectId string, event events.EventI, s ModuleStoreI, cnt int) (err error)
 }
 
 type ModuleStore struct {
@@ -328,19 +328,19 @@ func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string
 	return cloneRoute, nil
 }
 
-func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI) (cloneFunc functions.FuncGroup, err error) {
+func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool) (cloneFunc functions.FuncGroup, err error) {
 	logs.WithContext(ctx).Debug("GetAndValidateFunc - Start")
 	funcGroup := functions.FuncGroup{}
 	if prg, ok := ms.Projects[projectId]; ok {
 		if funcGroup, ok = prg.FuncGroups[funcName]; !ok {
 			return funcGroup, errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
 		}
-		return ms.ValidateFunc(ctx, funcGroup, projectId, host, url, method, headers, reqBody, s)
+		return ms.ValidateFunc(ctx, funcGroup, projectId, host, url, method, headers, reqBody, s, fromAsync)
 	}
 	return
 }
 
-func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI) (cloneFunc functions.FuncGroup, err error) {
+func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool) (cloneFunc functions.FuncGroup, err error) {
 	logs.WithContext(ctx).Debug("ValidateFunc - Start")
 	if prg, ok := ms.Projects[projectId]; ok {
 		FuncI, jmErr := json.Marshal(funcGroup)
@@ -365,7 +365,7 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.Fun
 	for k, v := range cloneFunc.FuncSteps {
 		fs := cloneFunc.FuncSteps[k]
 		fs.ParentFuncGroupName = cloneFunc.FuncGroupName
-		err = ms.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, host, v.Path, method, headers, s, cloneFunc.TokenSecretKey, reqBody)
+		err = ms.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, host, v.Path, method, headers, s, cloneFunc.TokenSecretKey, reqBody, fromAsync)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			errArray = append(errArray, err.Error())
@@ -379,7 +379,7 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.Fun
 	return
 }
 
-func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *functions.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI, tokenHeaderKey string, reqBody map[string]interface{}) (err error) {
+func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *functions.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI, tokenHeaderKey string, reqBody map[string]interface{}, fromAsync bool) (err error) {
 	logs.WithContext(ctx).Info(fmt.Sprint("loadRoutesForFunction - Start : ", funcStep.GetRouteName()))
 	var errArray []string
 	r := functions.Route{}
@@ -398,14 +398,15 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 
 	if funcStep.FunctionName != "" {
 		logs.WithContext(ctx).Info(fmt.Sprint("funcStep.FunctionName called for ", funcStep.FunctionName))
-		funcGroup, fgErr := ms.GetAndValidateFunc(ctx, funcStep.FunctionName, projectId, host, url, method, headers, reqBody, s)
+		funcGroup, fgErr := ms.GetAndValidateFunc(ctx, funcStep.FunctionName, projectId, host, url, method, headers, reqBody, s, fromAsync)
 		if fgErr != nil {
 			err = fgErr
 			return
 		}
 
 		tsk := ms.Projects[projectId].ProjectSettings.ClaimsKey
-		if funcStep.Async {
+		if funcStep.Async && !fromAsync {
+			logs.WithContext(ctx).Info(fmt.Sprint("inside !fromAsysnc ", funcGroup.FuncGroupName))
 			for k, _ := range funcGroup.FuncSteps {
 				funcGroup.FuncSteps[k].Async = true
 				funcGroup.FuncSteps[k].AsyncEvent = funcStep.AsyncEvent
@@ -473,7 +474,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	for ck, cv := range funcStep.FuncSteps {
 		fs := funcStep.FuncSteps[ck]
 		fs.ParentFuncGroupName = funcStep.ParentFuncGroupName
-		err = ms.LoadRoutesForFunction(ctx, fs, cv.RouteName, projectId, host, cv.Path, method, headers, s, tokenHeaderKey, reqBody)
+		err = ms.LoadRoutesForFunction(ctx, fs, cv.RouteName, projectId, host, cv.Path, method, headers, s, tokenHeaderKey, reqBody, fromAsync)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			errArray = append(errArray, err.Error())
@@ -705,7 +706,7 @@ func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asy
 	return
 }
 
-func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI) (err error) {
+func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI, cnt int) (err error) {
 	logs.WithContext(ctx).Debug("FetchProjectEvents - Start")
 	for _, p := range ms.Projects {
 		if err != nil {
@@ -714,7 +715,7 @@ func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI) (
 		evts, err := s.FetchEvents(ctx, p.ProjectId)
 		if err == nil {
 			for _, e := range evts {
-				err = ms.StartPolling(ctx, p.ProjectId, e, s)
+				err = ms.StartPolling(ctx, p.ProjectId, e, s, cnt)
 				if err != nil {
 					return err
 				}
@@ -724,11 +725,11 @@ func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI) (
 	return
 }
 
-func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event events.EventI, s ModuleStoreI) (err error) {
+func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event events.EventI, s ModuleStoreI, jcnt int) (err error) {
 	eventName, _ := event.GetAttribute("event_name")
-	logs.WithContext(ctx).Info(fmt.Sprint("StartPolling - Start : ", eventName))
+	logs.WithContext(ctx).Info(fmt.Sprint("StartPolling - Start : ", eventName, " jcnt = ", jcnt))
 	for {
-		logs.WithContext(ctx).Info(fmt.Sprint("polling message for event : ", eventName))
+		logs.WithContext(ctx).Info(fmt.Sprint("polling message for event : ", eventName, " jcnt = ", jcnt))
 		var eventJobs = make(chan functions.EventJob, 10)
 		var eventResults = make(chan functions.EventResult, 10)
 		//startTime := time.Now()
@@ -745,7 +746,7 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 			for res := range eventResults {
 				startTime := time.Now()
 				cnt = cnt + 1
-				err = ms.ProcessEvents(ctx, projectId, res.EventMsgs, event, s, cnt)
+				err = ms.ProcessEvents(ctx, projectId, res.EventMsgs, event, s, cnt, jcnt)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					//ignore error and continue to poll
@@ -753,14 +754,14 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 				}
 				endTime := time.Now()
 				diff := endTime.Sub(startTime)
-				logs.WithContext(ctx).Info(fmt.Sprint("result processing ending for job worker ", cnt, " is ", diff.Seconds(), "seconds"))
+				logs.WithContext(ctx).Info(fmt.Sprint("result processing ending for job worker ", cnt, " of ", jcnt, " is ", diff.Seconds(), "seconds"))
 			}
 			done <- true
 		}(done, eventResults)
 
 		//set it to one to run synchronously
-		noOfWorkers := EventThreads
-		functions.CreateWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults, s.GetConn())
+		noOfWorkers := 1 //EventThreads
+		functions.CreateWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults, s.GetConn(), jcnt)
 		<-done
 		/*
 			if !msgRecd {
@@ -778,7 +779,7 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 	}
 }
 
-func (ms *ModuleStore) ProcessEvents(ctx context.Context, projectId string, eventMsgs []events.EventMsg, event events.EventI, s ModuleStoreI, cnt int) (err error) {
+func (ms *ModuleStore) ProcessEvents(ctx context.Context, projectId string, eventMsgs []events.EventMsg, event events.EventI, s ModuleStoreI, cnt int, jcnt int) (err error) {
 	logs.WithContext(ctx).Debug("ProcessEvents - Start")
 	aStatus := "PENDING"
 	for i, m := range eventMsgs {
@@ -816,7 +817,7 @@ func (ms *ModuleStore) ProcessEvents(ctx context.Context, projectId string, even
 					if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
 						logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
 					}
-					funcGroup, err := ms.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, strings.Split(eventReq.Host, ":")[0], eventReq.URL.Path, eventReq.Method, eventReq.Header, bodyMap, s)
+					funcGroup, err := ms.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, strings.Split(eventReq.Host, ":")[0], eventReq.URL.Path, eventReq.Method, eventReq.Header, bodyMap, s, true)
 					if err != nil {
 						failedCount = failedCount + 1
 						asyncStatus = "FAILED"
@@ -888,7 +889,7 @@ func (ms *ModuleStore) ProcessEvents(ctx context.Context, projectId string, even
 		}
 		endTime := time.Now()
 		diff := endTime.Sub(startTime)
-		logs.WithContext(ctx).Info(fmt.Sprint("total time taken for message processing for job ", cnt, " and msg ", i, " is ", diff.Seconds(), "seconds"))
+		logs.WithContext(ctx).Info(fmt.Sprint("total time taken for message processing for job ", jcnt, " of ", cnt, " and msg ", i, " is ", diff.Seconds(), "seconds"))
 	}
 	return
 }

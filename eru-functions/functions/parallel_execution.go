@@ -294,7 +294,6 @@ func AllocateEvent(ctx context.Context, event events.EventI, eventJobs chan Even
 			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in allocateEvent: ", r, " : ", string(debug.Stack())))
 		}
 	}()
-	logs.WithContext(ctx).Info(fmt.Sprint("length of eventJobs in AllocateEvent is ", len(eventJobs)))
 	for i := 0; i < noOfWorkers; i++ {
 		eventJob := EventJob{i + 1, event}
 		eventJobs <- eventJob
@@ -303,7 +302,7 @@ func AllocateEvent(ctx context.Context, event events.EventI, eventJobs chan Even
 	close(eventJobs)
 }
 
-func CreateWorkerPoolEvent(ctx context.Context, noOfWorkers int, eventJobs chan EventJob, eventResults chan EventResult, dbCon *sqlx.DB) {
+func CreateWorkerPoolEvent(ctx context.Context, noOfWorkers int, eventJobs chan EventJob, eventResults chan EventResult, dbCon *sqlx.DB, jcnt int) {
 	logs.WithContext(ctx).Debug("createWorkerPoolEvent - Start")
 	defer func() {
 		if r := recover(); r != nil {
@@ -314,13 +313,13 @@ func CreateWorkerPoolEvent(ctx context.Context, noOfWorkers int, eventJobs chan 
 
 	for i := 0; i < noOfWorkers; i++ {
 		wg.Add(1)
-		go WorkerEvent(ctx, &wg, eventJobs, eventResults, dbCon, i)
+		go WorkerEvent(ctx, &wg, eventJobs, eventResults, dbCon, i, jcnt)
 	}
 	wg.Wait()
 	close(eventResults)
 }
-func WorkerEvent(ctx context.Context, wg *sync.WaitGroup, eventJobs chan EventJob, eventResults chan EventResult, dbCon *sqlx.DB, wcnt int) {
-	logs.WithContext(ctx).Info(fmt.Sprint("workerEvent - Start : ", wcnt))
+func WorkerEvent(ctx context.Context, wg *sync.WaitGroup, eventJobs chan EventJob, eventResults chan EventResult, dbCon *sqlx.DB, wcnt int, jcnt int) {
+	logs.WithContext(ctx).Info(fmt.Sprint("workerEvent - Start : ", wcnt, " of ", jcnt))
 	defer func() {
 		if r := recover(); r != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in workerEvent: ", r, " : ", string(debug.Stack())))
@@ -331,7 +330,7 @@ func WorkerEvent(ctx context.Context, wg *sync.WaitGroup, eventJobs chan EventJo
 	}()
 	for eventJob := range eventJobs {
 		startTime := time.Now()
-		logs.WithContext(ctx).Info(fmt.Sprint("polling starting for job worker ", wcnt))
+		logs.WithContext(ctx).Info(fmt.Sprint("polling starting for job worker ", wcnt, " of ", jcnt))
 		eventMsgs, e := eventJob.event.Poll(ctx)
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print event.Poll error = ", e.Error()))
@@ -339,7 +338,7 @@ func WorkerEvent(ctx context.Context, wg *sync.WaitGroup, eventJobs chan EventJo
 		output := EventResult{eventJob, eventMsgs}
 		endTime := time.Now()
 		diff := endTime.Sub(startTime)
-		logs.WithContext(ctx).Info(fmt.Sprint("total time taken for polling for job ", wcnt, " is ", diff.Seconds(), "seconds - records fetched : ", len(eventMsgs)))
+		logs.WithContext(ctx).Info(fmt.Sprint("total time taken for polling for job ", wcnt, " of ", jcnt, " is ", diff.Seconds(), "seconds - records fetched : ", len(eventMsgs)))
 		eventResults <- output
 	}
 	wg.Done()
