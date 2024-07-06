@@ -58,6 +58,8 @@ func main() {
 	}
 
 	go sh.Store.FetchProjectEvents(context.Background(), sh.Store)
+	go sh.Store.FetchProjectEvents(context.Background(), sh.Store)
+	go sh.Store.FetchProjectEvents(context.Background(), sh.Store)
 
 	server.Launch(sr, port)
 }
