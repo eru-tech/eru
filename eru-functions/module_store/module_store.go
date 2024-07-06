@@ -743,7 +743,7 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 			}()
 			cnt := 0
 			for res := range eventResults {
-				logs.WithContext(ctx).Info(fmt.Sprint("result processing starting for job worker ", cnt))
+				startTime := time.Now()
 				cnt = cnt + 1
 				err = ms.ProcessEvents(ctx, projectId, res.EventMsgs, event, s, cnt)
 				if err != nil {
@@ -751,7 +751,9 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 					//ignore error and continue to poll
 					err = nil
 				}
-				logs.WithContext(ctx).Info(fmt.Sprint("result processing ending for job worker ", cnt))
+				endTime := time.Now()
+				diff := endTime.Sub(startTime)
+				logs.WithContext(ctx).Info(fmt.Sprint("result processing ending for job worker ", cnt, " is ", diff.Seconds(), "seconds"))
 			}
 			done <- true
 		}(done, eventResults)

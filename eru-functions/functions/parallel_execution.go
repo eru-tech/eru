@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"sync"
+	"time"
 )
 
 type Job struct {
@@ -329,13 +330,16 @@ func WorkerEvent(ctx context.Context, wg *sync.WaitGroup, eventJobs chan EventJo
 		}
 	}()
 	for eventJob := range eventJobs {
+		startTime := time.Now()
 		logs.WithContext(ctx).Info(fmt.Sprint("polling starting for job worker ", wcnt))
 		eventMsgs, e := eventJob.event.Poll(ctx)
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print event.Poll error = ", e.Error()))
 		}
 		output := EventResult{eventJob, eventMsgs}
-		logs.WithContext(ctx).Info(fmt.Sprint("count of messages recevied for job worker no : ", wcnt, " is ", len(eventMsgs)))
+		endTime := time.Now()
+		diff := endTime.Sub(startTime)
+		logs.WithContext(ctx).Info(fmt.Sprint("total time taken for polling for job ", wcnt, " is ", diff.Seconds(), "seconds - records fetched : ", len(eventMsgs)))
 		eventResults <- output
 	}
 	wg.Done()
