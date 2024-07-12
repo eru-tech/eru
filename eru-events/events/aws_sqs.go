@@ -148,7 +148,7 @@ func (aws_sqs_event *AWS_SQS_Event) Publish(ctx context.Context, msg interface{}
 }
 
 func (aws_sqs_event *AWS_SQS_Event) Poll(ctx context.Context) (eventMsgs []EventMsg, err error) {
-	logs.WithContext(ctx).Debug("Publish - Start")
+	logs.WithContext(ctx).Debug("Poll - Start")
 
 	if aws_sqs_event.client == nil {
 		err = aws_sqs_event.Init(ctx)

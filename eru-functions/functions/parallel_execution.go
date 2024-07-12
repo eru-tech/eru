@@ -140,14 +140,6 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 		reqVarsI, _ := cloneInterface(ctx, reqVars)
 		reqVarsClone, _ := reqVarsI.(map[string]*TemplateVars)
 
-		logs.WithContext(ctx).Info(fmt.Sprint(fs.FuncKey))
-		for k, _ := range reqVarsClone {
-			logs.WithContext(ctx).Info(fmt.Sprint(k))
-		}
-		for k, _ := range resVarsClone {
-			logs.WithContext(ctx).Info(fmt.Sprint(k))
-		}
-
 		funcJob := FuncJob{loopCounter, r, fs, reqVarsClone, resVarsClone, "", mainRouteName, funcThread, loopThread, "true", funcStepName, endFuncStepName, childStart, fromAsync}
 		funcJobs <- funcJob
 		loopCounter++
@@ -210,6 +202,12 @@ func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, req
 	for loopCounter < len(loopArray) {
 		funcStep := fs
 		var funcStepErr error
+		reqVarsI, _ := cloneInterface(ctx, reqVars)
+		reqVarsClone, _ := reqVarsI.(map[string]*TemplateVars)
+
+		resVarsI, _ := cloneInterface(ctx, resVars)
+		resVarsClone, _ := resVarsI.(map[string]*TemplateVars)
+
 		if len(loopArray) > 1 {
 			funcStep, funcStepErr = fs.Clone(ctx)
 			if funcStepErr != nil {
@@ -217,24 +215,27 @@ func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, req
 				return
 			}
 		}
-		reqVarsI, _ := cloneInterface(ctx, reqVars)
-		reqVarsClone, _ := reqVarsI.(map[string]*TemplateVars)
-		if reqVarsClone[funcStep.GetRouteName()] == nil {
-			reqVarsClone[funcStep.GetRouteName()] = &TemplateVars{}
-		}
-		reqVarsClone[funcStep.GetRouteName()].LoopVar = loopArray[loopCounter]
 
-		if reqVarsClone[funcStep.FuncKey] == nil {
-			reqVarsClone[funcStep.FuncKey] = &TemplateVars{}
-		}
-		if !fromAsync || (fromAsync && funcStep.FuncKey != funcStepName) {
+		if funcStep.FuncKey == funcStepName || started || funcStepName == "" {
+
+			if reqVarsClone[funcStep.GetRouteName()] == nil {
+				reqVarsClone[funcStep.GetRouteName()] = &TemplateVars{}
+			}
 			reqVarsClone[funcStep.GetRouteName()].LoopVar = loopArray[loopCounter]
+
+			if reqVarsClone[funcStep.FuncKey] == nil {
+				reqVarsClone[funcStep.FuncKey] = &TemplateVars{}
+			}
 			reqVarsClone[funcStep.FuncKey].LoopVar = loopArray[loopCounter]
-		} else {
-			logs.WithContext(ctx).Info(fmt.Sprint(reqVarsClone[funcStep.FuncKey].LoopVar))
+
+			/*if !fromAsync || (fromAsync && funcStep.FuncKey != funcStepName) {
+				reqVarsClone[funcStep.GetRouteName()].LoopVar = loopArray[loopCounter]
+				reqVarsClone[funcStep.FuncKey].LoopVar = loopArray[loopCounter]
+			} else {
+				logs.WithContext(ctx).Info(fmt.Sprint(reqVarsClone[funcStep.FuncKey].LoopVar))
+			}*/
 		}
-		resVarsI, _ := cloneInterface(ctx, resVars)
-		resVarsClone, _ := resVarsI.(map[string]*TemplateVars)
+
 		funcJob := FuncJob{loopCounter, req, funcStep, reqVarsClone, resVarsClone, asyncMessage, mainRouteName, funcThread, loopThread, strCond, funcStepName, endFuncStepName, started, fromAsync}
 		funcJobs <- funcJob
 		loopCounter++

@@ -714,14 +714,33 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 		case "$eq":
 			return eruutils.ImplCompare(cv, recordValue), nil
 		case "$jin":
-			//todo implement jin and jnin
-			err = errors.New("$jin not implemented")
-			logs.WithContext(ctx).Error(err.Error())
-			return
+			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
+				if rArray, rArrayOk := recordValue.([]interface{}); rArrayOk {
+					return eruutils.ImplArrayContains(cvArray, rArray), nil
+				} else {
+					err = errors.New("$jin operator requires an array for record value")
+					logs.WithContext(ctx).Error(err.Error())
+					return false, err
+				}
+			} else {
+				err = errors.New("$jin operator requires an array for filter")
+				logs.WithContext(ctx).Error(err.Error())
+				return false, err
+			}
 		case "$jnin":
-			err = errors.New("jnin not implemented")
-			logs.WithContext(ctx).Error(err.Error())
-			return
+			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
+				if rArray, rArrayOk := recordValue.([]interface{}); rArrayOk {
+					return eruutils.ImplArrayNotContains(cvArray, rArray), nil
+				} else {
+					err = errors.New("$jnin operator requires an array for record value")
+					logs.WithContext(ctx).Error(err.Error())
+					return false, err
+				}
+			} else {
+				err = errors.New("$jnin operator requires an array for filter")
+				logs.WithContext(ctx).Error(err.Error())
+				return false, err
+			}
 		default:
 			logs.WithContext(ctx).Info("operator not found")
 			return false, nil

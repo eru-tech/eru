@@ -546,6 +546,32 @@ func ImplContains[T comparable](s []T, e T) bool {
 	return false
 }
 
+func ImplArrayContains[T comparable](s []T, e []T) bool {
+	for _, v := range s {
+		result := false
+		for _, vv := range e {
+			if v == vv {
+				result = true
+			}
+		}
+		if !result {
+			return false
+		}
+	}
+	return true
+}
+
+func ImplArrayNotContains[T comparable](s []T, e []T) bool {
+	for _, v := range s {
+		for _, vv := range e {
+			if v == vv {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func ImplCompare[T comparable](s T, e T) bool {
 	return s == e
 }
