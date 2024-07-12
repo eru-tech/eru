@@ -36,6 +36,25 @@ type AwsStorage struct {
 	session        *s3.Client
 }
 
+func (awsStorage *AwsStorage) GetAttribute(attributeName string) (attributeValue interface{}, err error) {
+	switch attributeName {
+	case "storage_name":
+		return awsStorage.StorageName, nil
+	case "storage_type":
+		return awsStorage.StorageType, nil
+	case "key_pair":
+		return awsStorage.KeyPair, nil
+	case "key_id":
+		return awsStorage.KmsId, nil
+	case "bucket_name":
+		return awsStorage.BucketName, nil
+	case "region":
+		return awsStorage.Region, nil
+	default:
+		return nil, errors.New("Attribute not found")
+	}
+}
+
 func (awsStorage *AwsStorage) DownloadFile(ctx context.Context, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error) {
 	logs.WithContext(ctx).Debug("DownloadFile - Start")
 	if awsStorage.session == nil {
@@ -197,7 +216,7 @@ func (awsStorage *AwsStorage) MakeFromJson(ctx context.Context, rj *json.RawMess
 	return nil
 }
 
-func (awsStorage *AwsStorage) CreateStorage(ctx context.Context) (err error) {
+func (awsStorage *AwsStorage) CreateStorage(ctx context.Context, cloneStorage StorageI, persist bool) (err error) {
 
 	if awsStorage.session == nil {
 		logs.WithContext(ctx).Info("creating AWS session")
@@ -206,45 +225,69 @@ func (awsStorage *AwsStorage) CreateStorage(ctx context.Context) (err error) {
 			return
 		}
 	}
-	if !awsStorage.bucketExists(ctx) {
-		logs.WithContext(ctx).Info(awsStorage.BucketName)
-		logs.WithContext(ctx).Info(awsStorage.Region)
-		_, err = awsStorage.session.CreateBucket(ctx, &s3.CreateBucketInput{
-			Bucket: aws.String(awsStorage.BucketName),
-			CreateBucketConfiguration: &s3types.CreateBucketConfiguration{
-				LocationConstraint: s3types.BucketLocationConstraint(awsStorage.Region),
-			},
-		})
+	if persist {
+		be := false
+		be, err = cloneStorage.BucketExists(ctx)
 		if err != nil {
-			logs.WithContext(ctx).Info(err.Error())
-			err = errors.New("error while creating new AWS bucket")
 			return
 		}
-	} else {
-		logs.WithContext(ctx).Info("skipping bucket creation in AWS as it already exists")
+
+		logs.WithContext(ctx).Info(fmt.Sprint("be = ", be))
+
+		if !be {
+			bn, _ := cloneStorage.GetAttribute("bucket_name")
+			rg, _ := cloneStorage.GetAttribute("region")
+
+			logs.WithContext(ctx).Info(bn.(string))
+			logs.WithContext(ctx).Info(rg.(string))
+
+			_, err = awsStorage.session.CreateBucket(ctx, &s3.CreateBucketInput{
+				Bucket: aws.String(bn.(string)),
+				CreateBucketConfiguration: &s3types.CreateBucketConfiguration{
+					LocationConstraint: s3types.BucketLocationConstraint(rg.(string)),
+				},
+			})
+			if err != nil {
+				logs.WithContext(ctx).Info(err.Error())
+				err = errors.New("error while creating new AWS bucket")
+				return
+			}
+		} else {
+			logs.WithContext(ctx).Info("skipping bucket creation in AWS as it already exists")
+		}
 	}
 	return
 }
 
-func (awsStorage *AwsStorage) bucketExists(ctx context.Context) bool {
-	_, err := awsStorage.session.HeadBucket(ctx, &s3.HeadBucketInput{
+func (awsStorage *AwsStorage) BucketExists(ctx context.Context) (exists bool, err error) {
+
+	if awsStorage.session == nil {
+		logs.WithContext(ctx).Info("creating AWS session")
+		err = awsStorage.Init(ctx)
+		if err != nil {
+			return
+		}
+	}
+	logs.WithContext(ctx).Info(awsStorage.BucketName)
+	_, err = awsStorage.session.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(awsStorage.BucketName),
 	})
+
 	if err != nil {
 		var apiErr smithy.APIError
 		if errors.As(err, &apiErr) {
 			switch apiErr.ErrorCode() {
 			case "NotFound", "NoSuchBucket":
-				return false // Bucket does not exist
+				return false, nil // Bucket does not exist
 			}
 		}
 		logs.WithContext(ctx).Info(err.Error())
 		err = errors.New(fmt.Sprint("error occurred while checking bucket : ", awsStorage.BucketName))
-		return false
+		return false, err
 	}
-	return true // Bucket exists
+	return true, err // Bucket exists
 }
-func (awsStorage *AwsStorage) DeleteStorage(ctx context.Context, forceDelete bool) (err error) {
+func (awsStorage *AwsStorage) DeleteStorage(ctx context.Context, forceDelete bool, cloneStorage StorageI) (err error) {
 
 	if awsStorage.session == nil {
 		logs.WithContext(ctx).Info("creating AWS session")
@@ -254,14 +297,18 @@ func (awsStorage *AwsStorage) DeleteStorage(ctx context.Context, forceDelete boo
 		}
 	}
 	if forceDelete {
-		err = awsStorage.emptyBucket()
+		err = cloneStorage.EmptyBucket()
 		if err != nil {
 			return
 		}
 	}
+
+	bn, _ := cloneStorage.GetAttribute("bucket_name")
+
 	_, err = awsStorage.session.DeleteBucket(ctx, &s3.DeleteBucketInput{
-		Bucket: aws.String(awsStorage.BucketName),
+		Bucket: aws.String(bn.(string)),
 	})
+
 	if err != nil {
 		logs.WithContext(ctx).Info(err.Error())
 		err = errors.New("error while deleting AWS bucket")
@@ -271,7 +318,7 @@ func (awsStorage *AwsStorage) DeleteStorage(ctx context.Context, forceDelete boo
 	return
 }
 
-func (awsStorage *AwsStorage) emptyBucket() error {
+func (awsStorage *AwsStorage) EmptyBucket() (err error) {
 	paginator := s3.NewListObjectsV2Paginator(awsStorage.session, &s3.ListObjectsV2Input{
 		Bucket: aws.String(awsStorage.BucketName),
 	})

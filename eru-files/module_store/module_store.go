@@ -139,7 +139,13 @@ func (ms *ModuleStore) SaveStorage(ctx context.Context, storageObj storage.Stora
 	}
 
 	if persist == true {
-		err = storageObj.CreateStorage(ctx)
+		storageObjClone, _, err := ms.GetStorageObjClone(ctx, projectId, storageObj, realStore)
+		if err != nil {
+			return err
+		}
+
+		err = storageObj.CreateStorage(ctx, storageObjClone, persist)
+		//  TODO to create bucket here instead of createstorage
 		if err != nil {
 			return err
 		}
@@ -183,6 +189,33 @@ func (ms *ModuleStore) GetStorageClone(ctx context.Context, projectId string, st
 		}
 		return iCloneI.Elem().Interface().(storage.StorageI), prj, nil
 	}
+}
+
+func (ms *ModuleStore) GetStorageObjClone(ctx context.Context, projectId string, storageObj storage.StorageI, s ModuleStoreI) (storageObjClone storage.StorageI, prj *file_model.Project, err error) {
+	prj, err = ms.GetProjectConfig(ctx, projectId)
+	if err != nil {
+		return
+	}
+
+	storageObjJson, storageObjJsonErr := json.Marshal(storageObj)
+	if storageObjJsonErr != nil {
+		err = errors.New(fmt.Sprint("error while cloning storageObj (marshal)"))
+		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(storageObjJsonErr.Error())
+		return
+	}
+	storageObjJson = s.ReplaceVariables(ctx, projectId, storageObjJson, nil)
+
+	iCloneI := reflect.New(reflect.TypeOf(storageObj))
+	storageObjCloneErr := json.Unmarshal(storageObjJson, iCloneI.Interface())
+	if storageObjCloneErr != nil {
+		err = errors.New(fmt.Sprint("error while cloning storageObj(unmarshal)"))
+		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(storageObjCloneErr.Error())
+		return
+	}
+	return iCloneI.Elem().Interface().(storage.StorageI), prj, nil
+
 }
 
 func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, s ModuleStoreI) (docId string, err error) {
@@ -461,9 +494,20 @@ func (ms *ModuleStore) RemoveStorage(ctx context.Context, storageName string, pr
 	if prg, ok := ms.Projects[projectId]; ok {
 		if _, ok := prg.Storages[storageName]; ok {
 			if cloudDelete {
-				err = prg.Storages[storageName].DeleteStorage(ctx, forceDelete)
+
+				sn, snerr := prg.Storages[storageName].GetAttribute("storage_name")
+				if snerr != nil {
+					return snerr
+				}
+
+				storageObjClone, _, err := ms.GetStorageClone(ctx, projectId, sn.(string), realStore)
 				if err != nil {
-					return
+					return err
+				}
+
+				err = prg.Storages[storageName].DeleteStorage(ctx, forceDelete, storageObjClone)
+				if err != nil {
+					return err
 				}
 			}
 

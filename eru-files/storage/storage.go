@@ -16,10 +16,12 @@ type StorageI interface {
 	DownloadFile(ctx context.Context, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error)
 	GetAttribute(attributeName string) (attributeValue interface{}, err error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
-	CreateStorage(ctx context.Context) (err error)
-	DeleteStorage(ctx context.Context, forceDelete bool) (err error)
+	CreateStorage(ctx context.Context, cloneStorage StorageI, persist bool) (err error)
+	DeleteStorage(ctx context.Context, forceDelete bool, cloneStorage StorageI) (err error)
 	Init(ctx context.Context) error
 	SetKms(ctx context.Context, kmsObj kms.KmsStoreI) (err error)
+	BucketExists(ctx context.Context) (exists bool, err error)
+	EmptyBucket() error
 }
 
 type Storage struct {
@@ -58,13 +60,25 @@ func GetStorage(storageType string) StorageI {
 	return nil
 }
 
-func (storage *Storage) CreateStorage(ctx context.Context) (err error) {
+func (storage *Storage) CreateStorage(ctx context.Context, cloneStorage StorageI, persist bool) (err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
 }
 
-func (storage *Storage) DeleteStorage(ctx context.Context, forceDelete bool) (err error) {
+func (storage *Storage) BucketExists(ctx context.Context) (exists bool, err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
+func (storage *Storage) EmptyBucket() (err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(context.Background()).Error(err.Error())
+	return
+}
+
+func (storage *Storage) DeleteStorage(ctx context.Context, forceDelete bool, cloneStorage StorageI) (err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
