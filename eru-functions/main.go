@@ -58,7 +58,10 @@ func main() {
 	}
 
 	for i := 0; i < module_store.EventThreads; i++ {
-		go sh.Store.FetchProjectEvents(context.Background(), sh.Store, i+1)
+		err := sh.Store.FetchProjectEvents(context.Background(), sh.Store, i+1)
+		if err != nil {
+			logs.Logger.Error(err.Error())
+		}
 	}
 
 	server.Launch(sr, port)

@@ -716,10 +716,7 @@ func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI, c
 		evts, err := s.FetchEvents(ctx, p.ProjectId)
 		if err == nil {
 			for _, e := range evts {
-				err = ms.StartPolling(ctx, p.ProjectId, e, s, cnt)
-				if err != nil {
-					return err
-				}
+				go ms.StartPolling(ctx, p.ProjectId, e, s, cnt)
 			}
 		}
 	}
@@ -755,7 +752,7 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 				}
 				endTime := time.Now()
 				diff := endTime.Sub(startTime)
-				logs.WithContext(ctx).Info(fmt.Sprint("result processing ending for job worker ", cnt, " of ", jcnt, " is ", diff.Seconds(), "seconds"))
+				logs.WithContext(ctx).Info(fmt.Sprint("result processing ending for ", eventName, " job worker ", cnt, " of ", jcnt, " is ", diff.Seconds(), "seconds"))
 			}
 			done <- true
 		}(done, eventResults)
