@@ -176,7 +176,7 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 							}
 							sheetRow[colHeaders[colNo-1]] = vTime.Format("2006-01-02")
 							rowValue = vTime.Format("2006-01-02")
-						} else if field.GetDatatype() == "number" && !isNum {
+						} else if field.GetDatatype() == "number" && !isNum && rowValue != nil {
 							if rowValue.(string) == "" {
 								rowValue = nil
 								sheetRow[colHeaders[colNo-1]] = rowValue
@@ -241,5 +241,6 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 		}
 		readOutput[sheetName] = sheetData
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint(readOutput))
 	return readOutput, nil
 }
