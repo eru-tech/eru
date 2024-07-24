@@ -26,6 +26,7 @@ var dateFormats = []string{
 	"02-Jan-06",       // Example: 31-Dec-1999
 	"2006-01-02T15:04:05-07:00",
 	"02-01-2006 15:04:05", //Example 31-12-1999  12:31:55
+	"02-01-2006 15:04",
 }
 
 type ExcelReadData struct {
