@@ -15,6 +15,16 @@ import (
 	"time"
 )
 
+var dateFormats = []string{
+	"01/02/2006",      // Example: 12/31/1999
+	"01-02-2006",      // Example: 12-31-1999
+	"2006-01-02",      // Example: 1999-12-31
+	"January 2, 2006", // Example: December 31, 1999
+	"2 January 2006",  // Example: 31 December 1999
+	"02-Jan-2006",     // Example: 31-Dec-1999
+	"2006-01-02T15:04:05-07:00",
+}
+
 type ExcelReadData struct {
 	ReadData
 	Sheets map[string]FileReadData `json:"sheets"`
@@ -102,7 +112,6 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 				}
 			}
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint(colHeaders))
 
 		if sheetObj.Columns == nil {
 			for colNo, _ := range rows[0] {
@@ -122,44 +131,40 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 			if rowNo+1 >= sheetObj.DataStartRow {
 				sheetRow := make(map[string]interface{})
 				for _, colNo := range cols {
-					colName, err := excelize.ColumnNumberToName(colNo)
-					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
-						errs = append(errs, err.Error())
-					}
-					cell := colName + strconv.Itoa(rowNo+1)
+
 					isNum := false
 					var rowValue interface{}
 					var rowValueF float64
 					field := schema.GetField(ctx, colHeaders[colNo-1])
-					styleID, styleErr := f.GetCellStyle(sheetName, cell)
-					if styleErr != nil {
-						logs.WithContext(ctx).Error(styleErr.Error())
-						errs = append(errs, styleErr.Error())
-					}
-					// Get the cell style details
-					style, err := f.GetStyle(styleID)
-					if err != nil {
-						logs.WithContext(ctx).Error(styleErr.Error())
-						errs = append(errs, styleErr.Error())
-					}
-					logs.WithContext(ctx).Info(fmt.Sprint("style of cell", cell, " is ", style.NumFmt))
-					// Get the cell type
-					_, err = f.GetCellType(sheetName, cell)
-					if err != nil {
-						logs.WithContext(ctx).Error(styleErr.Error())
-						errs = append(errs, styleErr.Error())
-					}
+
 					if len(row) > colNo-1 {
-						rowValueF, err = strconv.ParseFloat(row[colNo-1], 64)
-						if err != nil {
-							rowValue, err = strconv.ParseBool(row[colNo-1])
-							if err != nil {
+						if field.GetDatatype() == "date" {
+							formatMatched := false
+							for _, format := range dateFormats {
+								if dateValue, err := time.Parse(format, row[colNo-1]); err == nil {
+									logs.WithContext(ctx).Info(fmt.Sprint(dateValue))
+									rowValue = dateValue.Format("2006-01-02")
+									logs.WithContext(ctx).Info(fmt.Sprint(rowValue))
+									formatMatched = true
+									break
+								} else {
+									logs.WithContext(ctx).Error(err.Error())
+								}
+							}
+							if !formatMatched {
 								rowValue = row[colNo-1]
 							}
 						} else {
-							rowValue = rowValueF
-							isNum = true
+							rowValueF, err = strconv.ParseFloat(row[colNo-1], 64)
+							if err != nil {
+								rowValue, err = strconv.ParseBool(row[colNo-1])
+								if err != nil {
+									rowValue = row[colNo-1]
+								}
+							} else {
+								rowValue = rowValueF
+								isNum = true
+							}
 						}
 					} else {
 						rowValue = nil
@@ -167,6 +172,7 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 					sheetRow[colHeaders[colNo-1]] = rowValue
 
 					if field != nil {
+						logs.WithContext(ctx).Info(fmt.Sprint("field.GetDatatype() = ", field.GetDatatype(), " isNum = ", isNum, " rowValueF = ", rowValueF, " rowValue = ", rowValue))
 						if field.GetDatatype() == "date" && isNum {
 							var vTime time.Time
 							vTime, err = excelize.ExcelDateToTime(rowValueF, false)
@@ -241,6 +247,5 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 		}
 		readOutput[sheetName] = sheetData
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(readOutput))
 	return readOutput, nil
 }
