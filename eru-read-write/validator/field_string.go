@@ -51,7 +51,14 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 		return
 	}
 
-	if len(f.Values) > 0 {
+	if value == "" {
+		if f.Required {
+			errs = append(errs, fmt.Sprint("'", f.Name, "' cannot be blank"))
+		}
+		return
+	}
+
+	if len(f.Values) > 0 && value != "" {
 		vFound := false
 		logs.WithContext(ctx).Info(fmt.Sprint(f.Values))
 		logs.WithContext(ctx).Info(fmt.Sprint(value))

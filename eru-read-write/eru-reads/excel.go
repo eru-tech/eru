@@ -142,9 +142,7 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 							formatMatched := false
 							for _, format := range dateFormats {
 								if dateValue, err := time.Parse(format, row[colNo-1]); err == nil {
-									logs.WithContext(ctx).Info(fmt.Sprint(dateValue))
 									rowValue = dateValue.Format("2006-01-02")
-									logs.WithContext(ctx).Info(fmt.Sprint(rowValue))
 									formatMatched = true
 									break
 								} else {
@@ -172,7 +170,6 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 					sheetRow[colHeaders[colNo-1]] = rowValue
 
 					if field != nil {
-						logs.WithContext(ctx).Info(fmt.Sprint("field.GetDatatype() = ", field.GetDatatype(), " isNum = ", isNum, " rowValueF = ", rowValueF, " rowValue = ", rowValue))
 						if field.GetDatatype() == "date" && isNum {
 							var vTime time.Time
 							vTime, err = excelize.ExcelDateToTime(rowValueF, false)

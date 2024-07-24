@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
@@ -39,8 +38,6 @@ func (f *Field) GetDatatype() string {
 	return f.DataType
 }
 func (f *Field) ToEncode(ctx context.Context) bool {
-	logs.WithContext(ctx).Info(fmt.Sprint(f))
-	logs.WithContext(ctx).Info(fmt.Sprint(f.GetName()))
 	return f.Encode
 }
 
