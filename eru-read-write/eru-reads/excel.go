@@ -18,6 +18,7 @@ import (
 var dateFormats = []string{
 	"01/02/2006",      // Example: 12/31/1999
 	"01-02-2006",      // Example: 12-31-1999
+	"02.01.2006",      // Example: 31.12.1999
 	"2006-01-02",      // Example: 1999-12-31
 	"January 2, 2006", // Example: December 31, 1999
 	"2 January 2006",  // Example: 31 December 1999
