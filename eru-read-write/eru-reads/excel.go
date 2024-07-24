@@ -23,7 +23,9 @@ var dateFormats = []string{
 	"January 2, 2006", // Example: December 31, 1999
 	"2 January 2006",  // Example: 31 December 1999
 	"02-Jan-2006",     // Example: 31-Dec-1999
+	"02-Jan-06",       // Example: 31-Dec-1999
 	"2006-01-02T15:04:05-07:00",
+	"02-01-2006 15:04:05", //Example 31-12-1999  12:31:55
 }
 
 type ExcelReadData struct {
@@ -33,7 +35,6 @@ type ExcelReadData struct {
 
 func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (readOutput map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("WriteColumnar - Start")
-	logs.WithContext(ctx).Info(fmt.Sprint(erd.Sheets))
 	f, err := excelize.OpenReader(bytes.NewReader(readData), excelize.Options{
 		RawCellValue: true,
 	}, excelize.Options{
@@ -86,7 +87,6 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 		}
 		_ = rows
 		_ = sheetObj
-		logs.WithContext(ctx).Info(sheetName)
 
 		var cols []int
 		var colHeaders []string
@@ -102,7 +102,6 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 		} else {
 			for chNo, ch := range sheetObj.ColumnHeaders {
 				if ch == "" {
-					logs.WithContext(ctx).Info(fmt.Sprint(len(rows[sheetObj.HeaderRow]), " > ", chNo))
 					if len(rows[sheetObj.HeaderRow]) > chNo {
 						colHeaders = append(colHeaders, rows[sheetObj.HeaderRow][chNo])
 					} else {
@@ -146,9 +145,9 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 									rowValue = dateValue.Format("2006-01-02")
 									formatMatched = true
 									break
-								} else {
-									logs.WithContext(ctx).Error(err.Error())
-								}
+								} //else {
+								//logs.WithContext(ctx).Error(err.Error())
+								//}
 							}
 							if !formatMatched {
 								rowValue = row[colNo-1]
@@ -161,6 +160,8 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 									rowValue = row[colNo-1]
 								}
 							} else {
+								logs.WithContext(ctx).Info(fmt.Sprint(row[colNo-1]))
+								logs.WithContext(ctx).Info(fmt.Sprint(rowValueF))
 								rowValue = rowValueF
 								isNum = true
 							}
@@ -169,6 +170,7 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 						rowValue = nil
 					}
 					sheetRow[colHeaders[colNo-1]] = rowValue
+					logs.WithContext(ctx).Info(fmt.Sprint(field.GetName(), " ", field.GetDatatype(), " ", rowValue, " ", rowValueF, " ", big.NewFloat(rowValueF), " ", big.NewFloat(rowValueF).String()))
 
 					if field != nil {
 						if field.GetDatatype() == "date" && isNum {
@@ -228,8 +230,9 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 							}
 							sheetRow[colHeaders[colNo-1]] = b64.StdEncoding.EncodeToString([]byte(rowStr))
 						} else if field.GetDatatype() == "string" && isNum {
-							bigint := big.NewFloat(rowValueF)
-							rowValue = bigint.String()
+							//bigint := big.NewFloat(rowValueF)
+							//rowValue = bigint.String()
+							rowValue = fmt.Sprintf("%.f", rowValueF)
 							sheetRow[colHeaders[colNo-1]] = rowValue
 						}
 					}
