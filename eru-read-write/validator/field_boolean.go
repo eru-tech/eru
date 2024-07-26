@@ -35,8 +35,15 @@ func (f *BooleanField) Validate(ctx context.Context, v interface{}) (err error) 
 
 	value, ok := v.(bool)
 	if !ok {
-		errs = append(errs, fmt.Sprint("'", f.Name, "' has to be a boolean"))
-		return
+		valueStr := fmt.Sprint(v)
+		if valueStr == "Y" || valueStr == "1" {
+			value = true
+		} else if valueStr == "N" || valueStr == "0" {
+			value = false
+		} else {
+			errs = append(errs, fmt.Sprint("'", f.Name, "' has to be a boolean"))
+			return
+		}
 	}
 
 	if f.CheckValue && f.Value != value {

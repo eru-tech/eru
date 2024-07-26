@@ -24,6 +24,7 @@ var dateFormats = []string{
 	"2 January 2006",  // Example: 31 December 1999
 	"02-Jan-2006",     // Example: 31-Dec-1999
 	"02-Jan-06",       // Example: 31-Dec-1999
+	"2-Jan-06",
 	"2006-01-02T15:04:05-07:00",
 	"02-01-2006 15:04:05", //Example 31-12-1999  12:31:55
 	"02-01-2006 15:04",
@@ -152,7 +153,7 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 								//}
 							}
 							if !formatMatched {
-								rowValue = row[colNo-1]
+								rowValue = strings.TrimSpace(row[colNo-1])
 							}
 						} else {
 							rowValueF, err = strconv.ParseFloat(row[colNo-1], 64)
@@ -185,7 +186,7 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 							sheetRow[colHeaders[colNo-1]] = vTime.Format("2006-01-02")
 							rowValue = vTime.Format("2006-01-02")
 						} else if field.GetDatatype() == "number" && !isNum && rowValue != nil {
-							if rowValue.(string) == "" {
+							if strings.TrimSpace(rowValue.(string)) == "" {
 								rowValue = nil
 								sheetRow[colHeaders[colNo-1]] = rowValue
 							}
