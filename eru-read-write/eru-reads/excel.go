@@ -221,17 +221,21 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 							errs = append(errs, vErr.Error())
 						}
 						if field.ToEncode(ctx) {
-							rowBytes := []byte("")
-							rowBytes, err = json.Marshal(rowValue)
-							if err != nil {
-								errs = append(errs, err.Error())
+							if rowValue != nil {
+								rowBytes := []byte("")
+								rowBytes, err = json.Marshal(rowValue)
+								if err != nil {
+									errs = append(errs, err.Error())
+								}
+								rowStr := ""
+								rowStr, err = strconv.Unquote(string(rowBytes))
+								if err != nil {
+									errs = append(errs, err.Error())
+								}
+								sheetRow[colHeaders[colNo-1]] = b64.StdEncoding.EncodeToString([]byte(rowStr))
+							} else {
+								sheetRow[colHeaders[colNo-1]] = ""
 							}
-							rowStr := ""
-							rowStr, err = strconv.Unquote(string(rowBytes))
-							if err != nil {
-								errs = append(errs, err.Error())
-							}
-							sheetRow[colHeaders[colNo-1]] = b64.StdEncoding.EncodeToString([]byte(rowStr))
 						} else if field.GetDatatype() == "string" && isNum {
 							//bigint := big.NewFloat(rowValueF)
 							//rowValue = bigint.String()
