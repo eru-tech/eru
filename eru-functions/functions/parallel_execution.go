@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/jmoiron/sqlx"
 	"net/http"
 	"runtime/debug"
@@ -42,14 +41,16 @@ type FuncJob struct {
 	endFuncStepName string
 	started         bool
 	fromAsync       bool
+	inLoop          bool
 }
 
 type FuncResult struct {
-	job             FuncJob
-	response        *http.Response
-	responseVars    FuncTemplateVars
-	responseVarsMap map[string]FuncTemplateVars
-	responseErr     error
+	job                FuncJob
+	response           *http.Response
+	responseVars       FuncTemplateVars
+	responseVarsMap    map[string]FuncTemplateVars
+	responseErr        error
+	asyncFuncDataBatch []AsyncFuncData
 }
 
 type EventJob struct {
@@ -116,7 +117,7 @@ func allocate(ctx context.Context, req *http.Request, u string, vars *TemplateVa
 	close(jobs)
 }
 
-func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int, funcStepName string, endFuncStepName string, started bool, fromAsync bool) {
+func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int, funcStepName string, endFuncStepName string, started bool, fromAsync bool, inLoop bool) {
 	logs.WithContext(ctx).Debug("allocateFunc - Start")
 	defer func() {
 		if r := recover(); r != nil {
@@ -140,7 +141,7 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 		reqVarsI, _ := cloneInterface(ctx, reqVars)
 		reqVarsClone, _ := reqVarsI.(map[string]*TemplateVars)
 
-		funcJob := FuncJob{loopCounter, r, fs, reqVarsClone, resVarsClone, "", mainRouteName, funcThread, loopThread, "true", funcStepName, endFuncStepName, childStart, fromAsync}
+		funcJob := FuncJob{loopCounter, r, fs, reqVarsClone, resVarsClone, "", mainRouteName, funcThread, loopThread, "true", funcStepName, endFuncStepName, childStart, fromAsync, inLoop}
 		funcJobs <- funcJob
 		loopCounter++
 	}
@@ -173,31 +174,28 @@ func workerFunc(ctx context.Context, wg *sync.WaitGroup, funcJobs chan FuncJob, 
 	}()
 	for funcJob := range funcJobs {
 		//currentJob = funcJob
-		logs.WithContext(ctx).Info(fmt.Sprint("funcJob.mainRouteName from ", funcJob.funcStep.FuncKey, " is ", funcJob.mainRouteName))
 		if funcJob.mainRouteName == "" {
 			funcJob.mainRouteName = funcJob.funcStep.FuncKey
 		}
-		resp, funcVars, e := funcJob.funcStep.RunFuncStep(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.funcThread, funcJob.loopThread, funcJob.funcStepName, funcJob.endFuncStepName, funcJob.started, funcJob.fromAsync)
+		resp, funcVars, asyncFuncDataBatch, e := funcJob.funcStep.RunFuncStep(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.funcThread, funcJob.loopThread, funcJob.funcStepName, funcJob.endFuncStepName, funcJob.started, funcJob.fromAsync, funcJob.inLoop)
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print RunFuncStep error = ", e.Error()))
 		}
 		cloneFuncVarsI, _ := cloneInterface(ctx, funcVars)
 		cloneFuncVarsMap, _ := cloneFuncVarsI.(map[string]FuncTemplateVars)
-		output := FuncResult{funcJob, resp, FuncTemplateVars{}, cloneFuncVarsMap, e}
+		output := FuncResult{funcJob, resp, FuncTemplateVars{}, cloneFuncVarsMap, e, asyncFuncDataBatch}
 		funcResults <- output
 	}
 	wg.Done()
 }
 
-func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, loopArray []interface{}, asyncMessage string, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int, strCond string, funcStepName string, endFuncStepName string, started bool, fromAsync bool) {
+func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, loopArray []interface{}, asyncMessage string, funcJobs chan FuncJob, mainRouteName string, funcThread int, loopThread int, strCond string, funcStepName string, endFuncStepName string, started bool, fromAsync bool, inLoop bool) {
 	logs.WithContext(ctx).Debug("allocateFuncInner - Start")
 	defer func() {
 		if r := recover(); r != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in allocateFuncInner: ", r, " : ", string(debug.Stack())))
 		}
 	}()
-	logs.WithContext(ctx).Info(fmt.Sprint(loopArray))
-	logs.WithContext(ctx).Info(fmt.Sprint(fs.FuncKey))
 	loopCounter := 0
 	for loopCounter < len(loopArray) {
 		funcStep := fs
@@ -236,7 +234,7 @@ func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, req
 			}*/
 		}
 
-		funcJob := FuncJob{loopCounter, req, funcStep, reqVarsClone, resVarsClone, asyncMessage, mainRouteName, funcThread, loopThread, strCond, funcStepName, endFuncStepName, started, fromAsync}
+		funcJob := FuncJob{loopCounter, req, funcStep, reqVarsClone, resVarsClone, asyncMessage, mainRouteName, funcThread, loopThread, strCond, funcStepName, endFuncStepName, started, fromAsync, inLoop}
 		funcJobs <- funcJob
 		loopCounter++
 	}
@@ -275,14 +273,13 @@ func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan Func
 		}
 
 		//logs.WithContext(ctx).Info(fmt.Sprint("funcJob.funcStep.Route.TargetHosts = ", funcJob.funcStep.Route.TargetHosts))
-		resp, funcVars, e := funcJob.funcStep.RunFuncStepInner(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.asyncMessage, funcJob.funcThread, funcJob.loopThread, funcJob.strCond, funcJob.funcStepName, funcJob.endFuncStepName, funcJob.started, funcJob.fromAsync)
-		utils.PrintResponseBody(ctx, resp, "printing from workerFuncInner after RunFuncStepInner")
+		resp, funcVars, asyncFuncDataBatch, e := funcJob.funcStep.RunFuncStepInner(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.asyncMessage, funcJob.funcThread, funcJob.loopThread, funcJob.strCond, funcJob.funcStepName, funcJob.endFuncStepName, funcJob.started, funcJob.fromAsync, funcJob.inLoop)
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print RunFuncStepInner error = ", e.Error()))
 		}
 		cloneFuncVarsI, _ := cloneInterface(ctx, funcVars)
 		cloneFuncVars, _ := cloneFuncVarsI.(FuncTemplateVars)
-		output := FuncResult{funcJob, resp, cloneFuncVars, nil, e}
+		output := FuncResult{funcJob, resp, cloneFuncVars, nil, e, asyncFuncDataBatch}
 		funcResults <- output
 	}
 	wg.Done()

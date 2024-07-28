@@ -168,9 +168,11 @@ func (aws_sqs_event *AWS_SQS_Event) Poll(ctx context.Context) (eventMsgs []Event
 		return
 	}
 	for _, message := range msgResult.Messages {
+		logs.WithContext(ctx).Info(fmt.Sprint(*message.Body))
 		async_id, err := strconv.Unquote(*message.Body)
 		logs.WithContext(ctx).Info(fmt.Sprint(async_id))
 		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 		eventMsg := EventMsg{Msg: async_id, MsgIdentifer: *message.ReceiptHandle}

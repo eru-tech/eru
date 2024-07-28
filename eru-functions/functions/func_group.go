@@ -87,9 +87,11 @@ type FuncStep struct {
 	TransformRequestOutput string        `json:"transform_request_output"`
 	TransformResponse      string        `json:"transform_response"`
 	//IsPublic             bool                 `json:"is_public"`
-	RemoveParams RemoveParams         `json:"remove_params"`
-	FuncSteps    map[string]*FuncStep `json:"func_steps"`
-	FsDb         db.DbI               `json:"-"`
+	RemoveParams         RemoveParams         `json:"remove_params"`
+	FuncSteps            map[string]*FuncStep `json:"func_steps"`
+	FsDb                 db.DbI               `json:"-"`
+	RemoveRequestFields  []string             `json:"remove_request_fields"`
+	RemoveResponseFields []string             `json:"remove_response_fields"`
 }
 
 func (funcGroup *FuncGroup) Clone(ctx context.Context) (cloneFuncGroup *FuncGroup, err error) {
@@ -162,11 +164,11 @@ func (funcGroup *FuncGroup) Execute(ctx context.Context, request *http.Request, 
 	logs.WithContext(ctx).Debug("FuncGroup Execute - Start")
 	//reqVars := make(map[string]*TemplateVars)
 	//resVars := make(map[string]*TemplateVars)
-	response, funcVarsMap, err = RunFuncSteps(ctx, funcGroup.FuncSteps, request, reqVars, resVars, "", FuncThreads, LoopThreads, funcStepName, endFuncStepName, false, fromAsync)
+	response, funcVarsMap, _, err = RunFuncSteps(ctx, funcGroup.FuncSteps, request, reqVars, resVars, "", FuncThreads, LoopThreads, funcStepName, endFuncStepName, false, fromAsync, false)
 	return
 }
 
-func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, funcThreads int, loopThreads int, funcStepName string, endFuncStepName string, started bool, fromAsync bool) (response *http.Response, funcVarsMap map[string]FuncTemplateVars, err error) {
+func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, funcThreads int, loopThreads int, funcStepName string, endFuncStepName string, started bool, fromAsync bool, inLoop bool) (response *http.Response, funcVarsMap map[string]FuncTemplateVars, asyncFuncDataBatch []AsyncFuncData, err error) {
 	logs.WithContext(ctx).Debug("RunFuncSteps - Start")
 	funcVarsMap = make(map[string]FuncTemplateVars)
 	var responses []*http.Response
@@ -177,7 +179,7 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 	var funcJobs = make(chan FuncJob, 10)
 	var funcResults = make(chan FuncResult, 10)
 	//startTime := time.Now()
-	go allocateFunc(ctx, request, funcSteps, reqVars, resVars, funcJobs, mainRouteName, funcThreads, loopThreads, funcStepName, endFuncStepName, started, fromAsync)
+	go allocateFunc(ctx, request, funcSteps, reqVars, resVars, funcJobs, mainRouteName, funcThreads, loopThreads, funcStepName, endFuncStepName, started, fromAsync, inLoop)
 	done := make(chan bool)
 
 	go func(done chan bool, funcResults chan FuncResult) {
@@ -186,7 +188,6 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 				logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in RunFuncSteps: ", r))
 			}
 		}()
-
 		for res := range funcResults {
 			if res.response != nil {
 				if res.response.ContentLength > 0 {
@@ -194,6 +195,10 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 					responses = append(responses, res.response)
 				}
 			}
+			if res.asyncFuncDataBatch != nil {
+				asyncFuncDataBatch = append(asyncFuncDataBatch, res.asyncFuncDataBatch...)
+			}
+
 			for k, v := range res.responseVarsMap {
 				funcVarsMap[k] = v
 			}
@@ -237,14 +242,11 @@ func (funcStep *FuncStep) GetRouteName() (routeName string) {
 	return
 }
 
-func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, FuncThread int, LoopThread int, funcStepName string, endFuncStepName string, started bool, fromAsync bool) (response *http.Response, funcVarsMap map[string]FuncTemplateVars, err error) {
+func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, FuncThread int, LoopThread int, funcStepName string, endFuncStepName string, started bool, fromAsync bool, inLoop bool) (response *http.Response, funcVarsMap map[string]FuncTemplateVars, asyncFuncDataBatch []AsyncFuncData, err error) {
 	pspan := oteltrace.SpanFromContext(req.Context())
 	ctx, span := otel.Tracer(server_handlers.ServerName).Start(octx, funcStep.FuncKey, oteltrace.WithAttributes(attribute.String("requestID", req.Header.Get(server_handlers.RequestIdKey)), attribute.String("traceID", pspan.SpanContext().TraceID().String()), attribute.String("spanID", pspan.SpanContext().SpanID().String())))
 	defer span.End()
 	ctx = logs.NewContext(ctx, zap.String("funcStepName", funcStep.FuncKey))
-	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStep - Start : ", funcStep.FuncKey))
-	logs.WithContext(ctx).Info(fmt.Sprint("mainRouteName for ", funcStep.FuncKey, " is ", mainRouteName))
-	logs.WithContext(ctx).Info(fmt.Sprint(" *******************  ", funcStepName, "  **********************"))
 	req = req.WithContext(ctx)
 	request := req
 	var loopArray []interface{}
@@ -361,10 +363,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 
 				async_id := uuid.New().String()
 				msgId := ""
-				msgId, err = funcStep.AsyncEvent.Publish(ctx, async_id, funcStep.AsyncEvent)
-				if err != nil {
-					return
-				}
+
 				eventMsgBytes := []byte("")
 				_ = eventMsgBytes
 				eventMsgRequest := []byte("")
@@ -388,28 +387,42 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 					return
 				}
 
-				var insertQueries []*models.Queries
-				insertQueryFuncAsync := models.Queries{}
-				insertQueryFuncAsync.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC)
+				if inLoop {
+					asyncFuncData := AsyncFuncData{}
+					asyncFuncData.FuncName = funcStep.ParentFuncGroupName
+					asyncFuncData.FuncStepName = funcStep.FuncKey
+					asyncFuncData.AsyncId = async_id
+					asyncFuncData.EventMsg = *avars
+					asyncFuncData.EventRequest = requestStr
+					asyncFuncData.RequestId = string(eventMsgRequest)
+					asyncFuncData.EventId = msgId
+					asyncFuncDataBatch = append(asyncFuncDataBatch, asyncFuncData)
+				} else {
+					msgId, err = funcStep.AsyncEvent.Publish(ctx, async_id, funcStep.AsyncEvent)
+					if err != nil {
+						return
+					}
 
-				insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, async_id, msgId, funcStep.ParentFuncGroupName, funcStep.FuncKey, string(eventMsgBytes), string(eventMsgRequest), requestStr)
-				insertQueryFuncAsync.Rank = 1
-				insertQueries = append(insertQueries, &insertQueryFuncAsync)
-				_, insertOutputErr := eru_utils.ExecuteDbSave(ctx, funcStep.FsDb.GetConn(), insertQueries)
-				if insertOutputErr != nil {
-					err = insertOutputErr
-					logs.WithContext(ctx).Error(err.Error())
-					return
+					var insertQueries []*models.Queries
+					insertQueryFuncAsync := models.Queries{}
+					insertQueryFuncAsync.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC)
+
+					insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, async_id, msgId, funcStep.ParentFuncGroupName, funcStep.FuncKey, string(eventMsgBytes), string(eventMsgRequest), requestStr)
+					insertQueryFuncAsync.Rank = 1
+					insertQueries = append(insertQueries, &insertQueryFuncAsync)
+					logs.WithContext(ctx).Info("calling async insert from here")
+					_, insertOutputErr := eru_utils.ExecuteDbSave(ctx, funcStep.FsDb.GetConn(), insertQueries)
+					if insertOutputErr != nil {
+						err = insertOutputErr
+						logs.WithContext(ctx).Error(err.Error())
+						return
+					}
 				}
 				return
 			}
 
 			lerr := false
-			logs.WithContext(ctx).Info(fmt.Sprint(" fromAsync = ", fromAsync))
-			logs.WithContext(ctx).Info(fmt.Sprint(" funcStep.FuncKey = ", funcStep.FuncKey))
-			logs.WithContext(ctx).Info(fmt.Sprint(" funcStepName = ", funcStepName))
 			if (!fromAsync && funcStep.LoopVariable != "") || (fromAsync && funcStep.FuncKey != funcStepName && funcStep.LoopVariable != "") {
-				logs.WithContext(ctx).Info(fmt.Sprint("inside loop processing for ", funcStep.FuncKey))
 				loopArray, lerr = vars.LoopVars.([]interface{})
 				if !lerr {
 					err = errors.New("func loop variable is not an array")
@@ -421,9 +434,6 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 		}
 	}
 
-	logs.WithContext(ctx).Info(fmt.Sprint("len(loopArray) = ", len(loopArray)))
-	logs.WithContext(ctx).Info(fmt.Sprint("loopArray = ", loopArray))
-	logs.WithContext(ctx).Info(fmt.Sprint("started = ", started))
 	if len(loopArray) == 0 {
 		//dummy row added to create a job
 		loopArray = append(loopArray, make(map[string]interface{}))
@@ -436,7 +446,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 	//adding delay
 	time.Sleep(time.Duration(funcStep.Delay) * time.Millisecond)
 
-	go allocateFuncInner(ctx, request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs, mainRouteName, FuncThread, LoopThread, strCond, funcStepName, endFuncStepName, started, fromAsync)
+	go allocateFuncInner(ctx, request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs, mainRouteName, FuncThread, LoopThread, strCond, funcStepName, endFuncStepName, started, fromAsync, inLoop)
 	done := make(chan bool)
 	//go result(done,results,responses, trResVars,errs)
 	funcVarsMap = make(map[string]FuncTemplateVars)
@@ -447,6 +457,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 				logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in RunFuncStep: ", r))
 			}
 		}()
+		var asyncBatch []AsyncFuncData
 		for res := range results {
 			if res.response != nil {
 				responses = append(responses, res.response)
@@ -455,6 +466,18 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			if res.responseErr != nil {
 				errs = append(errs, res.responseErr)
 			}
+			if res.asyncFuncDataBatch != nil {
+				asyncBatch = append(asyncBatch, res.asyncFuncDataBatch...)
+			}
+			if len(asyncBatch) == 10 {
+				logs.WithContext(ctx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatch)))
+				err = funcStep.insertAsyncBatch(ctx, asyncBatch)
+				asyncBatch = nil
+			}
+		}
+		if len(asyncBatch) > 0 {
+			logs.WithContext(ctx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatch)))
+			err = funcStep.insertAsyncBatch(ctx, asyncBatch)
 		}
 		done <- true
 	}(done, results)
@@ -467,7 +490,6 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			noOfWorkers = len(loopArray)
 		}
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("creating loop workers count = ", noOfWorkers))
 	createWorkerPoolFuncInner(ctx, noOfWorkers, jobs, results)
 	<-done
 	response, err = clubResponses(ctx, responses, errs)
@@ -478,7 +500,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 
 	return
 }
-func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, asyncMsg string, funcThread int, loopThread int, strCond string, funcStepName string, endFuncStepName string, started bool, fromAsync bool) (response *http.Response, funcVars FuncTemplateVars, err error) {
+func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, asyncMsg string, funcThread int, loopThread int, strCond string, funcStepName string, endFuncStepName string, started bool, fromAsync bool, inLoop bool) (response *http.Response, funcVars FuncTemplateVars, asyncFuncDataBatch []AsyncFuncData, err error) {
 	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStepInner - Start : ", funcStep.FuncKey))
 	request := req
 	if started || funcStepName == "" || funcStepName == funcStep.FuncKey {
@@ -494,13 +516,11 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 			/////////////////////////
 			asyncMessage := ""
 			if (!fromAsync || (fromAsync && funcStepName != funcStep.FuncKey)) && funcStep.Async && funcStep.AsyncMessage != "" {
-				logs.WithContext(ctx).Info("inside inner async")
 				avars := &FuncTemplateVars{}
 				avars.Vars = reqVars[funcStep.FuncKey]
 				avars.ReqVars = reqVars
 				avars.ResVars = resVars
 				output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.AsyncMessage, avars, "json", funcStep.Route.TokenSecretKey)
-				logs.WithContext(ctx).Info(string(output))
 				if outputErr != nil {
 					err = outputErr
 					response = errorResponse(ctx, err.Error(), request)
@@ -523,13 +543,13 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 
 				async_id := uuid.New().String()
 				msgId := ""
-				logs.WithContext(ctx).Info(fmt.Sprint(funcStep.AsyncEvent))
-				msgId, err = funcStep.AsyncEvent.Publish(ctx, async_id, funcStep.AsyncEvent)
-				if err != nil {
-					return
-				}
-				eventMsgBytes := []byte("")
-				_ = eventMsgBytes
+
+				//msgId, err = funcStep.AsyncEvent.Publish(ctx, async_id, funcStep.AsyncEvent)
+				//if err != nil {
+				//	return
+				//}
+				//eventMsgBytes := []byte("")
+				//_ = eventMsgBytes
 				eventMsgRequest := []byte("")
 				if avars.Vars.Headers != nil {
 					requestId := avars.Vars.Headers["Request_id"]
@@ -546,25 +566,34 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 				}
 				requestStr := b64.StdEncoding.EncodeToString(requestBytes.Bytes())
 
-				eventMsgBytes, err = json.Marshal(avars)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-					return
-				}
+				//eventMsgBytes, err = json.Marshal(avars)
+				//if err != nil {
+				//	logs.WithContext(ctx).Error(err.Error())
+				//	return
+				//}
 
-				var insertQueries []*models.Queries
-				insertQueryFuncAsync := models.Queries{}
-				insertQueryFuncAsync.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC)
+				asyncFuncData := AsyncFuncData{}
+				asyncFuncData.FuncName = funcStep.ParentFuncGroupName
+				asyncFuncData.FuncStepName = funcStep.FuncKey
+				asyncFuncData.AsyncId = async_id
+				asyncFuncData.EventMsg = *avars
+				asyncFuncData.EventRequest = requestStr
+				asyncFuncData.RequestId = string(eventMsgRequest)
+				asyncFuncData.EventId = msgId
+				asyncFuncDataBatch = append(asyncFuncDataBatch, asyncFuncData)
+				//var insertQueries []*models.Queries
+				//insertQueryFuncAsync := models.Queries{}
+				//insertQueryFuncAsync.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC)
 
-				insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, async_id, msgId, funcStep.ParentFuncGroupName, funcStep.FuncKey, string(eventMsgBytes), string(eventMsgRequest), requestStr)
-				insertQueryFuncAsync.Rank = 1
-				insertQueries = append(insertQueries, &insertQueryFuncAsync)
-				_, insertOutputErr := eru_utils.ExecuteDbSave(ctx, funcStep.FsDb.GetConn(), insertQueries)
-				if insertOutputErr != nil {
-					err = insertOutputErr
-					logs.WithContext(ctx).Error(err.Error())
-					return
-				}
+				//insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, async_id, msgId, funcStep.ParentFuncGroupName, funcStep.FuncKey, string(eventMsgBytes), string(eventMsgRequest), requestStr)
+				//insertQueryFuncAsync.Rank = 1
+				//insertQueries = append(insertQueries, &insertQueryFuncAsync)
+				//_, insertOutputErr := eru_utils.ExecuteDbSave(ctx, funcStep.FsDb.GetConn(), insertQueries)
+				//if insertOutputErr != nil {
+				//	err = insertOutputErr
+				//	logs.WithContext(ctx).Error(err.Error())
+				//	return
+				//}
 				return
 			}
 			////////////////////////////
@@ -573,7 +602,12 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 			_ = routevars
 			subFuncVarsMap := map[string]FuncTemplateVars{}
 			if funcStep.FunctionName != "" {
-				response, subFuncVarsMap, err = RunFuncSteps(ctx, funcStep.FuncGroup.FuncSteps, request, reqVars, resVars, "", funcThread, loopThread, funcStep.FuncKey, "", started, fromAsync)
+				asyncInnerFuncData := []AsyncFuncData{}
+				_ = asyncInnerFuncData
+				response, subFuncVarsMap, asyncInnerFuncData, err = RunFuncSteps(ctx, funcStep.FuncGroup.FuncSteps, request, reqVars, resVars, "", funcThread, loopThread, funcStep.FuncKey, "", started, fromAsync, inLoop)
+				if asyncInnerFuncData != nil {
+					asyncFuncDataBatch = append(asyncFuncDataBatch, asyncInnerFuncData...)
+				}
 				for _, v := range subFuncVarsMap {
 					for kk, vv := range v.ResVars {
 						resVars[fmt.Sprint(funcStep.FuncKey, ".", kk)] = vv
@@ -583,7 +617,6 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 					}
 				}
 			} else {
-				eru_utils.PrintRequestBody(ctx, request, "printing request before funcStep.Route.Execute")
 				response, routevars, err = funcStep.Route.Execute(ctx, request, funcStep.Path, funcStep.Async, asyncMsg, reqVars[funcStep.FuncKey], loopThread)
 			}
 
@@ -614,7 +647,6 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 			if err == nil {
 				var trespErr error
 				var trVars *TemplateVars
-				logs.WithContext(ctx).Info(fmt.Sprint(resVars[funcStep.FuncKey]))
 				trVars, trespErr = funcStep.transformResponse(ctx, response, resVars[funcStep.FuncKey], reqVars, resVars)
 				if trespErr != nil {
 					err = trespErr
@@ -634,7 +666,16 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 
 	if len(funcStep.FuncSteps) > 0 && funcStep.FuncKey != endFuncStepName {
 		childFuncVarsMap := map[string]FuncTemplateVars{}
-		response, childFuncVarsMap, err = RunFuncSteps(ctx, funcStep.FuncSteps, request, reqVars, resVars, mainRouteName, funcThread, loopThread, funcStepName, endFuncStepName, started, fromAsync)
+
+		//remove unwanted fields from reqvars and resvars
+		err = removeFieldsFromTemplateVars(ctx, funcStep.RemoveRequestFields, reqVars)
+		err = removeFieldsFromTemplateVars(ctx, funcStep.RemoveResponseFields, resVars)
+
+		if funcStep.LoopVariable != "" {
+			inLoop = true
+		}
+		asyncChilFuncData := []AsyncFuncData{}
+		response, childFuncVarsMap, asyncChilFuncData, err = RunFuncSteps(ctx, funcStep.FuncSteps, request, reqVars, resVars, mainRouteName, funcThread, loopThread, funcStepName, endFuncStepName, started, fromAsync, inLoop)
 		for _, v := range childFuncVarsMap {
 			for kk, vv := range v.ResVars {
 				resVars[kk] = vv
@@ -643,12 +684,62 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 				reqVars[kk] = vv
 			}
 		}
+		if asyncChilFuncData != nil {
+			asyncFuncDataBatch = append(asyncFuncDataBatch, asyncChilFuncData...)
+		}
 	}
+
 	funcVars.ResVars = resVars
 	funcVars.ReqVars = reqVars
 	return
 }
+func (funcStep *FuncStep) insertAsyncBatch(ctx context.Context, asyncBatch []AsyncFuncData) (err error) {
+	logs.WithContext(ctx).Debug("insertAsyncBatch - Start")
+	var valueStrings []string
+	asyncIds := []string{}
+	for i, asyncFuncData := range asyncBatch {
+		asyncIds = append(asyncIds, asyncFuncData.AsyncId)
+		if i > 0 {
+			valueStrings = append(valueStrings, " (???,???,???,???,???,???,???) ")
+		}
+	}
+	stmt := INSERT_FUNC_ASYNC
+	if len(valueStrings) > 0 {
+		stmt = fmt.Sprint(stmt, " , ", strings.Join(valueStrings, ","))
+	}
 
+	var insertQueries []*models.Queries
+	insertQueryFuncAsync := models.Queries{}
+	insertQueryFuncAsync.Query = funcStep.FsDb.GetDbQuery(ctx, stmt)
+
+	batch_id := uuid.New().String()
+	for _, asyncFuncData := range asyncBatch {
+		asyncFuncData.EventId = batch_id
+		eventMsgBytes, eventErr := json.Marshal(asyncFuncData.EventMsg)
+		if eventErr != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, asyncFuncData.AsyncId, asyncFuncData.EventId, asyncFuncData.FuncName, asyncFuncData.FuncStepName, string(eventMsgBytes), asyncFuncData.RequestId, asyncFuncData.EventRequest)
+	}
+
+	insertQueryFuncAsync.Rank = 1
+	insertQueries = append(insertQueries, &insertQueryFuncAsync)
+	_, insertOutputErr := eru_utils.ExecuteDbSave(ctx, funcStep.FsDb.GetConn(), insertQueries)
+	if insertOutputErr != nil {
+		err = insertOutputErr
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	msgId := ""
+	_ = msgId
+	msgId, err = funcStep.AsyncEvent.Publish(ctx, strings.Join(asyncIds, ","), funcStep.AsyncEvent)
+	if err != nil {
+		return
+	}
+
+	return
+}
 func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, supressTemplateErrors bool, fromAsync bool, funcStepName string) (req *http.Request, vars *TemplateVars, err error) {
 	logs.WithContext(ctx).Debug("transformRequest - Start")
 	var tErrs []string
@@ -666,9 +757,6 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	vars.OrgBody = make(map[string]interface{})
 	vars.Params = make(map[string]interface{})
 	logs.WithContext(ctx).Info(fmt.Sprint("mainRouteName for ", funcStep.FuncKey, " = ", mainRouteName))
-	logs.WithContext(ctx).Info(fmt.Sprint(reqVars[mainRouteName] == nil))
-	logs.WithContext(ctx).Info(fmt.Sprint("fromAsync = ", fromAsync))
-	logs.WithContext(ctx).Info(fmt.Sprint("funcStepName = ", funcStepName))
 	if fromAsync && funcStep.FuncKey == funcStepName {
 		v, _ := cloneInterface(ctx, reqVars[funcStep.FuncKey])
 		vars = v.(*TemplateVars)
@@ -794,14 +882,12 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	}
 	//utils.PrintRequestBody(req, "printing request in transformRequest after processParams")
 	//next we process and transform request body only if it is not multipart and set it in request
-	logs.WithContext(ctx).Info(fmt.Sprint("funcStep.TransformRequest = ", funcStep.TransformRequest))
 	if funcStep.TransformRequest != "" {
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = vars
 		fvars.ResVars = resVars
 		fvars.ReqVars = reqVars
 		ot := "json"
-		logs.WithContext(ctx).Info(funcStep.TransformRequest)
 		if funcStep.TransformRequestOutput != "" {
 			ot = funcStep.TransformRequestOutput
 		}
@@ -810,7 +896,6 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		if oErr != nil {
 			tErrs = append(tErrs, oErr.Error())
 		}
-		logs.WithContext(ctx).Info(string(output))
 		if string(output) != "" {
 			err = json.Unmarshal(output, &vars.Body)
 			if err != nil {
@@ -850,7 +935,6 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 					tErrs = append(tErrs, thErr.Error())
 				}
 			}
-			logs.WithContext(ctx).Info(fmt.Sprint("string(output) = ", string(output)))
 			if string(output) != "" {
 				host, hErr := strconv.Unquote(string(output))
 				if hErr != nil {
@@ -867,8 +951,6 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 				}
 
 				hostPathArray := strings.Split(host, "/")
-				logs.WithContext(ctx).Info(fmt.Sprint("funcStep.Route.TargetHosts[rk].Host = ", funcStep.Route.TargetHosts[rk].Host))
-				logs.WithContext(ctx).Info(fmt.Sprint("hostPathArray = ", hostPathArray))
 				funcStep.Route.TargetHosts[rk].Host = hostPathArray[0]
 				if len(hostPathArray) > 1 {
 					funcStep.Route.RewriteUrl = fmt.Sprint("/", strings.Join(hostPathArray[1:], "/"))
@@ -889,7 +971,6 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 				tErrs = append(tErrs, apErr.Error())
 			}
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint("string(output) = ", string(output)))
 		if string(output) != "" {
 			path, pErr := strconv.Unquote(string(output))
 			if pErr != nil {
@@ -920,7 +1001,6 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 	if len(tErrs) > 0 && !supressTemplateErrors {
 		err = errors.New(strings.Join(tErrs, " ; "))
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(vars.LoopVar))
 	return req, vars, err
 }
 
@@ -928,7 +1008,6 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 	logs.WithContext(ctx).Debug("transformResponse - Start")
 	//utils.PrintResponseBody(response, "response printed from inside funcStep transformResponse")
 	vars = trResVars
-	logs.WithContext(ctx).Info(fmt.Sprint(vars))
 	for _, h := range funcStep.ResponseHeaders {
 		response.Header.Set(h.Key, h.Value)
 	}
@@ -971,7 +1050,6 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 			vars.Body = tempBody
 		}
 		vars.OrgBody = vars.Body
-		logs.WithContext(ctx).Info(fmt.Sprint(vars))
 		if funcStep.TransformResponse != "" {
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = vars

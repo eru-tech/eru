@@ -92,7 +92,6 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 	//Only request.clone does not work - need to handle multipart request as under
 
 	reqContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
-	logs.WithContext(ctx).Info(fmt.Sprint("reqContentType = ", reqContentType))
 	if reqContentType == multiPartForm {
 		logs.WithContext(ctx).Info("inside multiPartForm")
 		var reqBody bytes.Buffer
@@ -601,16 +600,10 @@ func clubResponses(ctx context.Context, responses []*http.Response, errs []error
 	if len(errs) > 0 {
 		logs.WithContext(ctx).Error(fmt.Sprint(errs))
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(len(responses)))
-	for _, rp := range responses {
-		utils.PrintResponseBody(ctx, rp, "printing from club repsonse loop")
-	}
+
 	if len(responses) > 0 {
-		logs.WithContext(ctx).Info(fmt.Sprint("inside ", len(responses)))
 		if responses[0] != nil {
-			logs.WithContext(ctx).Info(fmt.Sprint("inside responses[0]"))
 			reqContentType := strings.Split(responses[0].Header.Get("Content-type"), ";")[0]
-			logs.WithContext(ctx).Info(fmt.Sprint(reqContentType))
 			if reqContentType != applicationjson {
 				response = responses[0]
 				//if len(trResVars) == 1 {
@@ -623,7 +616,6 @@ func clubResponses(ctx context.Context, responses []*http.Response, errs []error
 			}
 		}
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(errs))
 	var errMsg []string
 	errorFound := false
 	for _, e := range errs {
@@ -681,14 +673,11 @@ func clubResponses(ctx context.Context, responses []*http.Response, errs []error
 	}
 	var rJsonArray []interface{}
 	statusCode := http.StatusOK
-	logs.WithContext(ctx).Info(fmt.Sprint("response count = ", len(responses)))
 	for _, rp := range responses {
 		if rp != nil {
-			logs.WithContext(ctx).Info(fmt.Sprint(rp.Body))
 			if rp.Body != nil {
 				var rJson interface{}
 				reqContentTypeCheck := strings.Split(rp.Header.Get("Content-type"), ";")[0]
-				logs.WithContext(ctx).Info(fmt.Sprint(reqContentTypeCheck))
 				if reqContentTypeCheck == applicationjson {
 					err = json.NewDecoder(rp.Body).Decode(&rJson)
 					if err != nil {
@@ -716,8 +705,6 @@ func clubResponses(ctx context.Context, responses []*http.Response, errs []error
 	if eee != nil {
 		return nil, eee
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("len(rJsonArray) = ", len(rJsonArray)))
-	logs.WithContext(ctx).Info(fmt.Sprint(rJsonArray))
 	if len(rJsonArray) == 0 {
 		respHeader.Set("Content-Type", applicationjson)
 		rJsonArrayBytes = []byte("{}")
@@ -789,4 +776,63 @@ func cloneInterface(ctx context.Context, i interface{}) (iClone interface{}, err
 		return
 	}
 	return iCloneI.Elem().Interface(), nil
+}
+
+func removeFieldsFromTemplateVars(ctx context.Context, fields []string, vars map[string]*TemplateVars) (err error) {
+	if fields != nil {
+		for _, f := range fields {
+			for k, _ := range vars {
+				//Body
+				if vars[k].Body != nil {
+					if bodyMap, bodyMapOk := vars[k].Body.(map[string]interface{}); bodyMapOk {
+						for kk, _ := range bodyMap {
+							if kk == f {
+								bodyMap[kk] = nil
+							}
+						}
+						vars[k].Body = bodyMap
+					}
+				}
+				//OrgBody
+				if vars[k].OrgBody != nil {
+					if bodyMap, bodyMapOk := vars[k].OrgBody.(map[string]interface{}); bodyMapOk {
+						for kk, _ := range bodyMap {
+							if kk == f {
+								bodyMap[kk] = nil
+							}
+						}
+						vars[k].OrgBody = bodyMap
+					}
+				}
+
+				//Body
+				if vars[k].Vars != nil {
+					if vars[k].Vars["Body"] != nil {
+						if bodyMap, bodyMapOk := vars[k].Vars["Body"].(map[string]interface{}); bodyMapOk {
+							for kk, _ := range bodyMap {
+								if kk == f {
+									bodyMap[kk] = nil
+								}
+							}
+							vars[k].Vars["Body"] = bodyMap
+						}
+					}
+
+					if vars[k].Vars["OrgBody"] != nil {
+						if bodyMap, bodyMapOk := vars[k].Vars["OrgBody"].(map[string]interface{}); bodyMapOk {
+							for kk, _ := range bodyMap {
+								if kk == f {
+									bodyMap[kk] = nil
+								}
+							}
+							vars[k].Vars["OrgBody"] = bodyMap
+						}
+					}
+
+				}
+
+			}
+		}
+	}
+	return
 }

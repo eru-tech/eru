@@ -382,11 +382,10 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.Fun
 }
 
 func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *functions.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI, tokenHeaderKey string, reqBody map[string]interface{}, fromAsync bool) (err error) {
-	logs.WithContext(ctx).Info(fmt.Sprint("loadRoutesForFunction - Start : ", funcStep.GetRouteName()))
+	logs.WithContext(ctx).Debug(fmt.Sprint("loadRoutesForFunction - Start : ", funcStep.GetRouteName()))
 	var errArray []string
 	r := functions.Route{}
 
-	logs.WithContext(ctx).Info(s.GetDbType())
 	funcStep.FsDb = db.GetDb(s.GetDbType())
 	funcStep.FsDb.SetConn(s.GetConn())
 	if funcStep.AsyncEventName != "" {
@@ -418,11 +417,9 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 		}
 
 		funcStep.FuncGroup = funcGroup
-		logs.WithContext(ctx).Info(fmt.Sprint("FuncGroup set for  ", funcStep.FunctionName, " :", funcStep.FuncGroup))
 
 	} else {
 		if funcStep.QueryName != "" {
-			logs.WithContext(ctx).Info(fmt.Sprint("making dummy route for query name ", funcStep.QueryName))
 			r.RouteName = funcStep.QueryName
 			r.Url = "/"
 			r.MatchType = "PREFIX"
@@ -658,7 +655,6 @@ func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyn
 	selectQueryFuncAsync := models.Queries{}
 	selectQueryFuncAsync.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SELECT_FUNC_ASYNC)
 	selectQueryFuncAsync.Vals = append(selectQueryFuncAsync.Vals, asyncId, asyncStatus, asyncStatus)
-	logs.WithContext(ctx).Info(fmt.Sprint(selectQueryFuncAsync.Vals))
 	selectQueryFuncAsync.Rank = 1
 	selectQueries = append(selectQueries, &selectQueryFuncAsync)
 	selectOutput, err := eru_utils.ExecuteDbSave(ctx, s.GetConn(), selectQueries)
@@ -784,107 +780,112 @@ func (ms *ModuleStore) ProcessEvents(ctx context.Context, projectId string, even
 		startTime := time.Now()
 		asyncStatus := "PROCESSED"
 		var asyncFuncData AsyncFuncData
-		logs.WithContext(ctx).Info("fetching event from db")
 		logs.WithContext(ctx).Info(fmt.Sprint(m.Msg, " ", aStatus))
 		failedCount := 0
 		processedCount := 0
-		asyncFuncData, err = ms.FetchAsyncEvent(ctx, m.Msg, aStatus, s)
-		if err != nil || asyncFuncData.AsyncId == "" {
-			failedCount = failedCount + 1
-			asyncStatus = "FAILED"
-			logs.WithContext(ctx).Error("event not found")
-		} else {
-			bodyMap := make(map[string]interface{})
-			eventResponseBytes := []byte("")
-			bodyMapOk := false
-			requestBytes := []byte("")
-			_ = requestBytes
-			requestBytes, err = b64.StdEncoding.DecodeString(asyncFuncData.EventRequest)
-			if err != nil {
+
+		msgArray := strings.Split(m.Msg, ",")
+		for _, async_id := range msgArray {
+			asyncFuncData, err = ms.FetchAsyncEvent(ctx, async_id, aStatus, s)
+			logs.WithContext(ctx).Info(fmt.Sprint("after fetch event  = ", asyncFuncData.AsyncId))
+			if err != nil || asyncFuncData.AsyncId == "" {
 				failedCount = failedCount + 1
 				asyncStatus = "FAILED"
-				logs.WithContext(ctx).Error("Function validation failed")
+				logs.WithContext(ctx).Error("event not found")
 			} else {
-				r := bufio.NewReader(bytes.NewBuffer(requestBytes))
-				if eventReq, err := http.ReadRequest(r); err != nil { // deserialize request
+				bodyMap := make(map[string]interface{})
+				eventResponseBytes := []byte("")
+				bodyMapOk := false
+				requestBytes := []byte("")
+				_ = requestBytes
+				requestBytes, err = b64.StdEncoding.DecodeString(asyncFuncData.EventRequest)
+				if err != nil {
 					failedCount = failedCount + 1
 					asyncStatus = "FAILED"
-					logs.WithContext(ctx).Error(err.Error())
-					logs.WithContext(ctx).Error("request deserialization failed")
+					logs.WithContext(ctx).Error("Function validation failed")
 				} else {
-					if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
-						logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
-					}
-					funcGroup, err := ms.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, strings.Split(eventReq.Host, ":")[0], eventReq.URL.Path, eventReq.Method, eventReq.Header, bodyMap, s, true)
-					if err != nil {
+					r := bufio.NewReader(bytes.NewBuffer(requestBytes))
+					if eventReq, err := http.ReadRequest(r); err != nil { // deserialize request
 						failedCount = failedCount + 1
 						asyncStatus = "FAILED"
-						logs.WithContext(ctx).Error("Function validation failed")
+						logs.WithContext(ctx).Error(err.Error())
+						logs.WithContext(ctx).Error("request deserialization failed")
 					} else {
-						reqBytes := []byte("")
-						reqBytes, err = b64.StdEncoding.DecodeString(asyncFuncData.EventRequest)
+						if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
+							logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
+						}
+						funcGroup, err := ms.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, strings.Split(eventReq.Host, ":")[0], eventReq.URL.Path, eventReq.Method, eventReq.Header, bodyMap, s, true)
 						if err != nil {
 							failedCount = failedCount + 1
 							asyncStatus = "FAILED"
-							logs.WithContext(ctx).Error("event request decoding failed")
+							logs.WithContext(ctx).Error("Function validation failed")
 						} else {
-							var newReq *http.Request
-							if newReq, err = http.ReadRequest(bufio.NewReader(bytes.NewReader(reqBytes))); err != nil { // deserialize request
-								failedCount = failedCount + 1
-								asyncStatus = "FAILED"
-								logs.WithContext(ctx).Error("event request deserialization failed")
-							}
-							reqVars := make(map[string]*functions.TemplateVars)
-							resVars := make(map[string]*functions.TemplateVars)
-							if asyncFuncData.EventMsg.ReqVars != nil {
-								reqVars = asyncFuncData.EventMsg.ReqVars
-							}
-							if asyncFuncData.EventMsg.ResVars != nil {
-								resVars = asyncFuncData.EventMsg.ResVars
-							}
-							response, funcVarsMap, err := funcGroup.Execute(ctx, newReq, FuncThreads, LoopThreads, asyncFuncData.FuncStepName, "", true, reqVars, resVars)
+							reqBytes := []byte("")
+							reqBytes, err = b64.StdEncoding.DecodeString(asyncFuncData.EventRequest)
 							if err != nil {
 								failedCount = failedCount + 1
 								asyncStatus = "FAILED"
-								logs.WithContext(ctx).Error(err.Error())
-								logs.WithContext(ctx).Error("Function execution failed")
+								logs.WithContext(ctx).Error("event request decoding failed")
 							} else {
-								responseBytes := []byte("")
-								responseBytes, err = io.ReadAll(response.Body)
-								if err != nil {
-									logs.WithContext(ctx).Error(err.Error())
+								var newReq *http.Request
+								if newReq, err = http.ReadRequest(bufio.NewReader(bytes.NewReader(reqBytes))); err != nil { // deserialize request
 									failedCount = failedCount + 1
 									asyncStatus = "FAILED"
+									logs.WithContext(ctx).Error("event request deserialization failed")
+								}
+								reqVars := make(map[string]*functions.TemplateVars)
+								resVars := make(map[string]*functions.TemplateVars)
+								if asyncFuncData.EventMsg.ReqVars != nil {
+									reqVars = asyncFuncData.EventMsg.ReqVars
+								}
+								if asyncFuncData.EventMsg.ResVars != nil {
+									resVars = asyncFuncData.EventMsg.ResVars
+								}
+								response, funcVarsMap, err := funcGroup.Execute(ctx, newReq, FuncThreads, LoopThreads, asyncFuncData.FuncStepName, "", true, reqVars, resVars)
+								if err != nil {
+									failedCount = failedCount + 1
+									asyncStatus = "FAILED"
+									logs.WithContext(ctx).Error(err.Error())
+									logs.WithContext(ctx).Error("Function execution failed")
 								} else {
-									response.Body = io.NopCloser(bytes.NewBuffer(responseBytes))
-									responseStr := string(responseBytes)
-									eventResponse := make(map[string]interface{})
-									eventResponse["response"] = responseStr
-									eventResponse["func_vars"] = funcVarsMap
-									eventResponseBytes, err = json.Marshal(eventResponse)
+									responseBytes := []byte("")
+									responseBytes, err = io.ReadAll(response.Body)
 									if err != nil {
 										logs.WithContext(ctx).Error(err.Error())
 										failedCount = failedCount + 1
 										asyncStatus = "FAILED"
 									} else {
-										logs.WithContext(ctx).Info(fmt.Sprint(response))
-										eru_utils.PrintResponseBody(ctx, response, "printing response from async handler")
-										processedCount = processedCount + 1
+										response.Body = io.NopCloser(bytes.NewBuffer(responseBytes))
+										responseStr := string(responseBytes)
+										eventResponse := make(map[string]interface{})
+										eventResponse["response"] = responseStr
+										eventResponse["func_vars"] = funcVarsMap
+										eventResponseBytes, err = json.Marshal(eventResponse)
+										if err != nil {
+											logs.WithContext(ctx).Error(err.Error())
+											failedCount = failedCount + 1
+											asyncStatus = "FAILED"
+										} else {
+											logs.WithContext(ctx).Info(fmt.Sprint(response))
+											eru_utils.PrintResponseBody(ctx, response, "printing response from async handler")
+											processedCount = processedCount + 1
+										}
 									}
 								}
+								defer func() {
+									if response != nil {
+										response.Body.Close()
+									}
+								}()
 							}
-							defer func() {
-								if response != nil {
-									response.Body.Close()
-								}
-							}()
 						}
 					}
 				}
+				_ = s.UpdateAsyncEvent(ctx, async_id, asyncStatus, string(eventResponseBytes), s)
 			}
-			_ = s.UpdateAsyncEvent(ctx, m.Msg, asyncStatus, string(eventResponseBytes), s)
-			_ = event.DeleteMessage(ctx, m.MsgIdentifer)
 		}
+		logs.WithContext(ctx).Info(fmt.Sprint("Delete msg called for ", m.Msg))
+		_ = event.DeleteMessage(ctx, m.MsgIdentifer)
 		endTime := time.Now()
 		diff := endTime.Sub(startTime)
 		logs.WithContext(ctx).Info(fmt.Sprint("total time taken for message processing for job ", jcnt, " of ", cnt, " and msg ", i, " is ", diff.Seconds(), "seconds"))

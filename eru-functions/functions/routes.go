@@ -249,8 +249,6 @@ func (route *Route) Validate(ctx context.Context, host string, url string, metho
 	//	logs.WithContext(ctx).Error(err.Error())
 	//	return
 	//}
-	logs.WithContext(ctx).Info(fmt.Sprint(strings.Split(url, route.RouteName)))
-	logs.WithContext(ctx).Info(route.Url)
 	if route.MatchType == MatchTypePrefix && !strings.HasPrefix(strings.ToUpper(strings.Split(url, route.RouteName)[1]), strings.ToUpper(route.Url)) {
 		err = errors.New("URL Prefix mismatch")
 		logs.WithContext(ctx).Error(err.Error())
