@@ -20,6 +20,7 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -185,7 +186,7 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 	go func(done chan bool, funcResults chan FuncResult) {
 		defer func() {
 			if r := recover(); r != nil {
-				logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in RunFuncSteps: ", r))
+				logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in RunFuncSteps: ", r, " : ", string(debug.Stack())))
 			}
 		}()
 		for res := range funcResults {
@@ -454,7 +455,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 	go func(done chan bool, results chan FuncResult) {
 		defer func() {
 			if r := recover(); r != nil {
-				logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in RunFuncStep: ", r))
+				logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in RunFuncStep: ", r, " : ", string(debug.Stack())))
 			}
 		}()
 		var asyncBatch []AsyncFuncData

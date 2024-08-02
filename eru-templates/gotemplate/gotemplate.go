@@ -611,7 +611,11 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 		switch ck {
 		case "$in":
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
-				return eruutils.ImplContains(cvArray, recordValue), nil
+				if rArray, rArrayOk := recordValue.([]interface{}); rArrayOk {
+					return eruutils.ImplArrayContains(cvArray, rArray), nil
+				} else {
+					return eruutils.ImplContains(cvArray, recordValue), nil
+				}
 			} else {
 				err = errors.New("$in operator requires an array")
 				logs.WithContext(ctx).Error(err.Error())
@@ -619,7 +623,11 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 			}
 		case "$nin":
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
-				return !(eruutils.ImplContains(cvArray, recordValue)), nil
+				if rArray, rArrayOk := recordValue.([]interface{}); rArrayOk {
+					return !(eruutils.ImplArrayContains(cvArray, rArray)), nil
+				} else {
+					return !(eruutils.ImplContains(cvArray, recordValue)), nil
+				}
 			} else {
 				err = errors.New("$nin operator requires an array")
 				logs.WithContext(ctx).Error(err.Error())
