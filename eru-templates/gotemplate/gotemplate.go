@@ -668,12 +668,12 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				} else {
 					err = errors.New("$gt operator requires a number")
 					logs.WithContext(ctx).Error(err.Error())
-					return false, err
+					return false, nil
 				}
 			} else {
 				err = errors.New("$gt operator requires a number to compare")
 				logs.WithContext(ctx).Error(err.Error())
-				return false, err
+				return false, nil
 			}
 		case "$gte":
 			if rvF, rvFOk := recordValue.(float64); rvFOk {
@@ -682,7 +682,7 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				} else {
 					err = errors.New("$gte operator requires a number")
 					logs.WithContext(ctx).Error(err.Error())
-					return false, err
+					return false, nil
 				}
 			} else {
 				err = errors.New("$gte operator requires a number to compare")
@@ -696,12 +696,12 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				} else {
 					err = errors.New("$lt operator requires a number")
 					logs.WithContext(ctx).Error(err.Error())
-					return false, err
+					return false, nil
 				}
 			} else {
 				err = errors.New("$lt operator requires a number to compare")
 				logs.WithContext(ctx).Error(err.Error())
-				return false, err
+				return false, nil
 			}
 		case "$lte":
 			if rvF, rvFOk := recordValue.(float64); rvFOk {
@@ -710,12 +710,12 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				} else {
 					err = errors.New("$lte operator requires a number")
 					logs.WithContext(ctx).Error(err.Error())
-					return false, err
+					return false, nil
 				}
 			} else {
 				err = errors.New("$lte operator requires a number to compare")
 				logs.WithContext(ctx).Error(err.Error())
-				return false, err
+				return false, nil
 			}
 		case "$ne":
 			return !(eruutils.ImplCompare(cv, recordValue)), nil
