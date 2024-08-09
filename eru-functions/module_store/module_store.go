@@ -477,6 +477,9 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			logs.WithContext(ctx).Error(err.Error())
 			errArray = append(errArray, err.Error())
 		}
+		if fs.AsyncEvent != nil {
+			funcStep.AsyncEvent = fs.AsyncEvent
+		}
 	}
 	if len(errArray) > 0 {
 		return errors.New(strings.Join(errArray, " , "))
