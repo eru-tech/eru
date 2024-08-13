@@ -912,7 +912,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 			}
 		case "$lt":
 			if cvF, cvFOk := cv.(float64); cvFOk {
-				filterStr = fmt.Sprint(key, " <>> ", cvF)
+				filterStr = fmt.Sprint(key, " < ", cvF)
 				return filterStr, nil
 			} else {
 				err = errors.New("$lt operator requires a number")
