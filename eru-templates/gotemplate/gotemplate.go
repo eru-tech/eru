@@ -491,9 +491,10 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 			return jwt.CreateJWT(ctx, privateKeyStr, claimsMap)
 		},
 		"evalFilter": func(filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
-			logs.WithContext(ctx).Info("----------------------------------- evalFilter starting --------------------------------")
-			logs.WithContext(ctx).Info(fmt.Sprint(record))
 			return evalFilter(ctx, filter, record)
+		},
+		"makeFilter": func(filter map[string]interface{}) (silterStr string, err error) {
+			return makeFilter(ctx, filter)
 		},
 		"execTemplate": func(obj interface{}, templateString string, outputFormat string) (output interface{}, err error) {
 			goTmpl := GoTemplate{"subtemplate", templateString}
@@ -779,6 +780,218 @@ func evalOrFilter(ctx context.Context, filter []interface{}, record map[string]i
 	}
 	return
 }
+func makeFilter(ctx context.Context, filter map[string]interface{}) (filterStr string, err error) {
+	var filterStrArray []string
+	tempStr := ""
+	for k, v := range filter {
+		kk := fetchKey(k)
+		if kk == "$or" {
+			if vArray, vArrayOk := v.([]interface{}); vArrayOk {
+				tempStr, err = makeOrString(ctx, vArray)
+				filterStrArray = append(filterStrArray, tempStr)
+			} else {
+				err = errors.New("$or needs an array")
+				return "false", nil
+			}
+		} else {
+			if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
+				tempStr, err = makeFilterStr(ctx, kk, vMap)
+				filterStrArray = append(filterStrArray, tempStr)
+			} else if vF, vFOk := v.(float64); vFOk {
+				tempStr = fmt.Sprint(kk, " = ", vF)
+				filterStrArray = append(filterStrArray, tempStr)
+			} else {
+				tempStr = fmt.Sprint(kk, " = '", v, "'")
+				filterStrArray = append(filterStrArray, tempStr)
+			}
+		}
+	}
+	filterStr = strings.Join(filterStrArray, " and ")
+	filterStr = fmt.Sprint("(", filterStr, ")")
+	return filterStr, nil
+}
+func makeOrString(ctx context.Context, filter []interface{}) (orStr string, err error) {
+	orStr = ""
+	orOp := ""
+	filterStr := ""
+	for i, v := range filter {
+		if i > 0 {
+			orOp = " or "
+		}
+		if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
+			filterStr, err = makeFilter(ctx, vMap)
+		} else {
+			err = errors.New("$or needs array of objects")
+		}
+		orStr = fmt.Sprint(orStr, orOp, filterStr)
+	}
+	orStr = fmt.Sprint("(", orStr, ")")
+	return
+}
+
+func makeFilterStr(ctx context.Context, key string, cond map[string]interface{}) (filterStr string, err error) {
+	for ck, cv := range cond {
+		switch ck {
+		case "$in":
+			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
+				tempStr := ""
+				tempSep := ""
+				for i, v := range cvArray {
+					if i > 0 {
+						tempSep = ","
+					}
+					if vS, vSOk := v.(string); vSOk {
+						tempStr = fmt.Sprint(tempStr, tempSep, "'", vS, "'")
+					} else {
+						tempStr = fmt.Sprint(tempStr, tempSep, vS)
+					}
+				}
+				filterStr = fmt.Sprint(key, " in (", tempStr, ")")
+				return filterStr, nil
+			} else {
+				err = errors.New("$in operator requires an array")
+				logs.WithContext(ctx).Error(err.Error())
+				return "false", nil
+			}
+		case "$nin":
+			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
+				tempStr := ""
+				tempSep := ""
+				for i, v := range cvArray {
+					if i > 0 {
+						tempSep = ","
+					}
+					if vS, vSOk := v.(string); vSOk {
+						tempStr = fmt.Sprint(tempStr, tempSep, "'", vS, "'")
+					} else {
+						tempStr = fmt.Sprint(tempStr, tempSep, vS)
+					}
+				}
+				filterStr = fmt.Sprint(key, " not in (", tempStr, ")")
+				return filterStr, nil
+			} else {
+				err = errors.New("$nin operator requires an array")
+				logs.WithContext(ctx).Error(err.Error())
+				return "false", nil
+			}
+		case "$like":
+			if cvStr, cvStrOk := cv.(string); cvStrOk {
+				filterStr = fmt.Sprint(key, " like (%", cvStr, "%)")
+				return filterStr, nil
+			} else {
+				err = errors.New("$like operator requires a string")
+				logs.WithContext(ctx).Error(err.Error())
+				return "false", nil
+			}
+		case "$nlike":
+			if cvStr, cvStrOk := cv.(string); cvStrOk {
+				filterStr = fmt.Sprint(key, " not like (%", cvStr, "%)")
+				return filterStr, nil
+			} else {
+				err = errors.New("$nlike operator requires a string")
+				logs.WithContext(ctx).Error(err.Error())
+				return "false", nil
+			}
+		case "$gt":
+			if cvF, cvFOk := cv.(float64); cvFOk {
+				filterStr = fmt.Sprint(key, " > ", cvF)
+				return filterStr, nil
+			} else {
+				err = errors.New("$gt operator requires a number")
+				logs.WithContext(ctx).Error(err.Error())
+				return "false", nil
+			}
+		case "$gte":
+			if cvF, cvFOk := cv.(float64); cvFOk {
+				filterStr = fmt.Sprint(key, " >= ", cvF)
+				return filterStr, nil
+			} else {
+				err = errors.New("$gte operator requires a number")
+				logs.WithContext(ctx).Error(err.Error())
+				return "false", nil
+			}
+		case "$lt":
+			if cvF, cvFOk := cv.(float64); cvFOk {
+				filterStr = fmt.Sprint(key, " <>> ", cvF)
+				return filterStr, nil
+			} else {
+				err = errors.New("$lt operator requires a number")
+				logs.WithContext(ctx).Error(err.Error())
+				return "false", nil
+			}
+		case "$lte":
+			if cvF, cvFOk := cv.(float64); cvFOk {
+				filterStr = fmt.Sprint(key, " <= ", cvF)
+				return filterStr, nil
+			} else {
+				err = errors.New("$lte operator requires a number")
+				logs.WithContext(ctx).Error(err.Error())
+				return "false", nil
+			}
+		case "$ne":
+			if cvS, cvSOk := cv.(string); cvSOk {
+				filterStr = fmt.Sprint(key, " <> '", cvS, "'")
+			} else {
+				filterStr = fmt.Sprint(key, " <> ", cvS)
+			}
+			return filterStr, nil
+		case "$eq":
+			if cvS, cvSOk := cv.(string); cvSOk {
+				filterStr = fmt.Sprint(key, " = '", cvS, "'")
+			} else {
+				filterStr = fmt.Sprint(key, " = ", cvS)
+			}
+			return filterStr, nil
+		case "$jin":
+			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
+				tempStr := ""
+				tempSep := ""
+				for i, v := range cvArray {
+					if i > 0 {
+						tempSep = ","
+					}
+					if vS, vSOk := v.(string); vSOk {
+						tempStr = fmt.Sprint(tempStr, tempSep, "'", vS, "'")
+					} else {
+						tempStr = fmt.Sprint(tempStr, tempSep, vS)
+					}
+				}
+				filterStr = fmt.Sprint(key, " in (", tempStr, ")")
+				return filterStr, nil
+			} else {
+				err = errors.New("$jin operator requires an array")
+				logs.WithContext(ctx).Error(err.Error())
+				return "false", nil
+			}
+		case "$jnin":
+			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
+				tempStr := ""
+				tempSep := ""
+				for i, v := range cvArray {
+					if i > 0 {
+						tempSep = ","
+					}
+					if vS, vSOk := v.(string); vSOk {
+						tempStr = fmt.Sprint(tempStr, tempSep, "'", vS, "'")
+					} else {
+						tempStr = fmt.Sprint(tempStr, tempSep, vS)
+					}
+				}
+				filterStr = fmt.Sprint(key, " not in (", tempStr, ")")
+				return filterStr, nil
+			} else {
+				err = errors.New("$jnin operator requires an array")
+				logs.WithContext(ctx).Error(err.Error())
+				return "false", nil
+			}
+		default:
+			logs.WithContext(ctx).Info("operator not found")
+			return "false", nil
+		}
+	}
+	return
+}
+
 func excelToJson(ctx context.Context, fData string, sheetNames string, firstRowHeader string, headers string, mapKeys string) (fJson interface{}, err error) {
 	sheetNameArray := strings.Split(sheetNames, ",")
 	sheetHeadersArray := strings.Split(headers, ",")
