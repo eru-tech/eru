@@ -10,6 +10,7 @@ import (
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-read-write/eru_writes"
+	"sort"
 	"strings"
 )
 
@@ -36,7 +37,16 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 	}
 	var result map[string]interface{}
 	sr := ds.GetSqlMaker(datasource.DbName)
-	for k, v := range sqd.FinalVariables {
+
+	var keyList []string
+	for key, _ := range sqd.FinalVariables {
+		keyList = append(keyList, key)
+	}
+	sort.Strings(keyList)
+	logs.WithContext(ctx).Info(fmt.Sprint(keyList))
+	for _, k := range keyList {
+		v := sqd.FinalVariables[k]
+		logs.WithContext(ctx).Info(fmt.Sprint(k, " : ", v))
 		var str string
 		switch tp := v.(type) {
 		case []interface{}:
@@ -57,6 +67,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 					}
 				}
 				if isMap {
+					logs.WithContext(ctx).Info("inside isMap")
 					mapJ, mapJErr := json.Marshal(iArray)
 					if mapJErr != nil {
 						logs.WithContext(ctx).Error(mapJErr.Error())
@@ -75,8 +86,9 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 		}
 	}
 
-	for k, v := range sqd.FinalVariables {
-
+	for _, k := range keyList {
+		v := sqd.FinalVariables[k]
+		logs.WithContext(ctx).Info(fmt.Sprint(" ----- ", k, " : ", v))
 		//ignoring processing token variable
 		if k != module_model.RULEPREFIX_TOKEN {
 
@@ -102,6 +114,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 				}
 				break
 			case map[string]interface{}:
+				logs.WithContext(ctx).Info("inside map[string]interface{}")
 				strBytes, strBytesErr := json.Marshal(v)
 				err = strBytesErr
 				str = string(strBytes)

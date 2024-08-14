@@ -353,165 +353,55 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 		switch reflect.TypeOf(val).Kind() {
 		case reflect.Map:
 			var tempArray []string
-			//tempArray := make([]string, len(reflect.ValueOf(val).MapKeys()))
-			for _, v := range reflect.ValueOf(val).MapKeys() {
-				newVal := reflect.ValueOf(val).MapIndex(v).Interface()
-				if newVal != nil {
-					var valPrefix, valSuffix = "", ""
-					if reflect.TypeOf(newVal).Kind().String() == "string" {
-						if !strings.Contains(newVal.(string), ".") {
-							valPrefix = "'"
-							valSuffix = "'"
-						}
-						if strings.Contains(newVal.(string), "\\.") {
-							valPrefix = "'"
-							valSuffix = "'"
-							newVal = strings.Replace(newVal.(string), "\\.", ".", -1)
-						}
-					}
-					if v.String() == "$or" || v.String() == "or" {
-						if reflect.TypeOf(newVal).Kind().String() != "slice" {
-							errStr := "Error : or clause has single element"
-							logs.WithContext(ctx).Error(errStr)
-							return "", errStr
-						}
-						s := reflect.ValueOf(newVal)
-						innerTempArray := make([]string, s.Len())
-						for ii := 0; ii < s.Len(); ii++ {
-							innerTempArray[ii], err = processWhereClause(ctx, s.Index(ii).Interface(), v.String(), mainTableName, isJoinClause, jsonOp)
-							if err != "" {
-								return "", err
+			var keyList []string
+
+			for _, key := range reflect.ValueOf(val).MapKeys() {
+				keyList = append(keyList, key.Interface().(string))
+			}
+			sort.Strings(keyList)
+			logs.WithContext(ctx).Info(fmt.Sprint(keyList))
+			if valMap, valMapOk := val.(map[string]interface{}); !valMapOk {
+				err = "error in where clause - map keys are not strings"
+				logs.WithContext(ctx).Error(err)
+				return "false", err
+			} else {
+				//tempArray := make([]string, len(reflect.ValueOf(val).MapKeys()))
+				for _, v := range keyList {
+					newVal := valMap[v]
+					logs.WithContext(ctx).Info(fmt.Sprint(v, " : ", newVal))
+					if newVal != nil {
+						var valPrefix, valSuffix = "", ""
+						if reflect.TypeOf(newVal).Kind().String() == "string" {
+							if !strings.Contains(newVal.(string), ".") {
+								valPrefix = "'"
+								valSuffix = "'"
+							}
+							if strings.Contains(newVal.(string), "\\.") {
+								valPrefix = "'"
+								valSuffix = "'"
+								newVal = strings.Replace(newVal.(string), "\\.", ".", -1)
 							}
 						}
-						tempArray = append(tempArray, fmt.Sprint("( ", strings.Join(innerTempArray, " or "), " )"))
-					} else if v.String() == "json" {
-						logs.WithContext(ctx).Info(fmt.Sprint("json operator found for :", parentKey))
-						logs.WithContext(ctx).Info(fmt.Sprint(newVal))
-						str := ""
-						str, err = processWhereClause(ctx, newVal, "", parentKey, isJoinClause, true)
-						if str == "" {
-							logs.WithContext(ctx).Warn(fmt.Sprint("skipping whereclause for ", newVal, " as there is no value provided by user  : ", str))
-						} else {
-							tempArray = append(tempArray, str)
-						}
-						if err != "" {
-							logs.WithContext(ctx).Error(err)
-							return "", err
-						}
-					} else {
-						op := ""
-						switch v.String() {
-						case "$btw":
-							op = " between "
-						case "$gte":
-							op = " >= "
-						case "$lte":
-							op = " <= "
-						case "$gt":
-							op = " > "
-						case "$lt":
-							op = " < "
-						case "$eq":
-							op = " = "
-						case "$ne":
-							op = " <> "
-						case "$in":
-							op = " in "
-						case "$nin":
-							op = " not in "
-						case "$jin":
-							op = fmt.Sprint(" <@ ", module_model.MAKE_JSON_ARRAY_FN)
-						case "$jnin":
-							op = fmt.Sprint(" <@ ", module_model.MAKE_JSON_ARRAY_FN)
-						case "$like":
-							op = " like "
-						case "$nlike":
-							op = " not like "
-						default:
-							op = ""
-						}
-						switch v.String() {
-						case "$gte", "$lte", "$gt", "$lt", "$eq", "$ne":
-							valType := reflect.ValueOf(newVal).Kind()
-							logs.WithContext(ctx).Info(fmt.Sprint(valType.String()))
-							switch valType {
-							case reflect.Float64, reflect.Float32, reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
-								//TODO get casting from db specific syntax
-								parentKey = fmt.Sprint("(", parentKey, ")::numeric")
-							case reflect.Bool:
-								//TODO get casting from db specific syntax
-								parentKey = fmt.Sprint("(", parentKey, ")::boolean")
-							default:
-								//do nothing
+						if v == "$or" || v == "or" {
+							if reflect.TypeOf(newVal).Kind().String() != "slice" {
+								errStr := "Error : or clause has single element"
+								logs.WithContext(ctx).Error(errStr)
+								return "", errStr
 							}
+							s := reflect.ValueOf(newVal)
+							innerTempArray := make([]string, s.Len())
+							for ii := 0; ii < s.Len(); ii++ {
+								innerTempArray[ii], err = processWhereClause(ctx, s.Index(ii).Interface(), v, mainTableName, isJoinClause, jsonOp)
+								if err != "" {
+									return "", err
+								}
+							}
+							tempArray = append(tempArray, fmt.Sprint("( ", strings.Join(innerTempArray, " or "), " )"))
+						} else if v == "json" {
+							logs.WithContext(ctx).Info(fmt.Sprint("json operator found for :", parentKey))
 							logs.WithContext(ctx).Info(fmt.Sprint(newVal))
-							valTmp := reflect.ValueOf(newVal).String()
-							logs.WithContext(ctx).Info(fmt.Sprint(valTmp))
-							if strings.HasPrefix(valTmp, "FIELD_") {
-								valTmp = strings.Replace(valTmp, "FIELD_", "", -1)
-								valPrefix = ""
-								valSuffix = ""
-							}
-							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, fmt.Sprint(newVal), valSuffix))
-						case "$like", "$nlike":
-							tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, "%", reflect.ValueOf(newVal), "%", valSuffix))
-						case "$btw":
-							btwClause, ok := reflect.ValueOf(newVal).Interface().(map[string]interface{})
-							if !ok {
-								logs.WithContext(ctx).Warn("between clause is not a map")
-							}
-							preFix := "'"
-							//checking only from value to determine with values recevied are int/float to avoid adding single quote in sql
-							_, Interr := strconv.Atoi(btwClause["from"].(string))
-							if Interr == nil {
-								preFix = ""
-							}
-							if _, flErr := strconv.ParseFloat(btwClause["from"].(string), 64); flErr == nil {
-								preFix = ""
-							}
-							btwClauseStr := fmt.Sprint(preFix, btwClause["from"], preFix, " and ", preFix, btwClause["to"], preFix)
-							tempArray = append(tempArray, fmt.Sprint(parentKey, op, btwClauseStr))
-						case "$null":
-							nullValue := fmt.Sprint(reflect.ValueOf(newVal))
-							if nullValue == "true" {
-								tempArray = append(tempArray, fmt.Sprint(parentKey, " IS NULL "))
-							} else {
-								tempArray = append(tempArray, fmt.Sprint(parentKey, " IS NOT NULL "))
-							}
-						case "$in", "$nin", "$jin", "$jnin": //TODO to pass json variable aaray and check if the replaced array is passed as single string or string of values to sql
-							switch reflect.TypeOf(newVal).Kind() {
-							case reflect.String:
-								s := reflect.ValueOf(newVal)
-								if strings.HasPrefix(s.String(), "$") {
-
-								}
-							case reflect.Slice:
-								s := reflect.ValueOf(newVal)
-								temp := make([]string, s.Len())
-								for i := 0; i < s.Len(); i++ {
-									ss := s.Index(i).Interface()
-									if reflect.TypeOf(ss).Kind().String() == "string" {
-										temp[i] = fmt.Sprint("'", ss, "'")
-									} else {
-										temp[i] = fmt.Sprint(ss)
-									}
-								}
-								if v.String() == "$jnin" || v.String() == "$jin" {
-									parentKey = strings.Replace(parentKey, "->>", "->", -1)
-								}
-
-								str := fmt.Sprint(parentKey, op, "(", strings.Join(temp, " , "), ")")
-
-								if v.String() == "$jnin" {
-									str = fmt.Sprint(" not (", str, ") ")
-								}
-								tempArray = append(tempArray, str)
-							default:
-								logs.WithContext(ctx).Warn(fmt.Sprint("skipping $in, $nin, $jin and $jnin clause as it needs array as a value but received ", newVal))
-							}
-						default:
 							str := ""
-							str, err = processWhereClause(ctx, newVal, eru_utils.ReplaceUnderscoresWithDots(v.String()), mainTableName, isJoinClause, jsonOp)
+							str, err = processWhereClause(ctx, newVal, "", parentKey, isJoinClause, true)
 							if str == "" {
 								logs.WithContext(ctx).Warn(fmt.Sprint("skipping whereclause for ", newVal, " as there is no value provided by user  : ", str))
 							} else {
@@ -520,6 +410,130 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 							if err != "" {
 								logs.WithContext(ctx).Error(err)
 								return "", err
+							}
+						} else {
+							op := ""
+							switch v {
+							case "$btw":
+								op = " between "
+							case "$gte":
+								op = " >= "
+							case "$lte":
+								op = " <= "
+							case "$gt":
+								op = " > "
+							case "$lt":
+								op = " < "
+							case "$eq":
+								op = " = "
+							case "$ne":
+								op = " <> "
+							case "$in":
+								op = " in "
+							case "$nin":
+								op = " not in "
+							case "$jin":
+								op = fmt.Sprint(" <@ ", module_model.MAKE_JSON_ARRAY_FN)
+							case "$jnin":
+								op = fmt.Sprint(" <@ ", module_model.MAKE_JSON_ARRAY_FN)
+							case "$like":
+								op = " like "
+							case "$nlike":
+								op = " not like "
+							default:
+								op = ""
+							}
+							switch v {
+							case "$gte", "$lte", "$gt", "$lt", "$eq", "$ne":
+								valType := reflect.ValueOf(newVal).Kind()
+								logs.WithContext(ctx).Info(fmt.Sprint(valType.String()))
+								switch valType {
+								case reflect.Float64, reflect.Float32, reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
+									//TODO get casting from db specific syntax
+									parentKey = fmt.Sprint("(", parentKey, ")::numeric")
+								case reflect.Bool:
+									//TODO get casting from db specific syntax
+									parentKey = fmt.Sprint("(", parentKey, ")::boolean")
+								default:
+									//do nothing
+								}
+								logs.WithContext(ctx).Info(fmt.Sprint(newVal))
+								valTmp := reflect.ValueOf(newVal).String()
+								logs.WithContext(ctx).Info(fmt.Sprint(valTmp))
+								if strings.HasPrefix(valTmp, "FIELD_") {
+									valTmp = strings.Replace(valTmp, "FIELD_", "", -1)
+									valPrefix = ""
+									valSuffix = ""
+								}
+								tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, fmt.Sprint(newVal), valSuffix))
+							case "$like", "$nlike":
+								tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, "%", reflect.ValueOf(newVal), "%", valSuffix))
+							case "$btw":
+								btwClause, ok := reflect.ValueOf(newVal).Interface().(map[string]interface{})
+								if !ok {
+									logs.WithContext(ctx).Warn("between clause is not a map")
+								}
+								preFix := "'"
+								//checking only from value to determine with values recevied are int/float to avoid adding single quote in sql
+								_, Interr := strconv.Atoi(btwClause["from"].(string))
+								if Interr == nil {
+									preFix = ""
+								}
+								if _, flErr := strconv.ParseFloat(btwClause["from"].(string), 64); flErr == nil {
+									preFix = ""
+								}
+								btwClauseStr := fmt.Sprint(preFix, btwClause["from"], preFix, " and ", preFix, btwClause["to"], preFix)
+								tempArray = append(tempArray, fmt.Sprint(parentKey, op, btwClauseStr))
+							case "$null":
+								nullValue := fmt.Sprint(reflect.ValueOf(newVal))
+								if nullValue == "true" {
+									tempArray = append(tempArray, fmt.Sprint(parentKey, " IS NULL "))
+								} else {
+									tempArray = append(tempArray, fmt.Sprint(parentKey, " IS NOT NULL "))
+								}
+							case "$in", "$nin", "$jin", "$jnin": //TODO to pass json variable aaray and check if the replaced array is passed as single string or string of values to sql
+								switch reflect.TypeOf(newVal).Kind() {
+								case reflect.String:
+									s := reflect.ValueOf(newVal)
+									if strings.HasPrefix(s.String(), "$") {
+
+									}
+								case reflect.Slice:
+									s := reflect.ValueOf(newVal)
+									temp := make([]string, s.Len())
+									for i := 0; i < s.Len(); i++ {
+										ss := s.Index(i).Interface()
+										if reflect.TypeOf(ss).Kind().String() == "string" {
+											temp[i] = fmt.Sprint("'", ss, "'")
+										} else {
+											temp[i] = fmt.Sprint(ss)
+										}
+									}
+									if v == "$jnin" || v == "$jin" {
+										parentKey = strings.Replace(parentKey, "->>", "->", -1)
+									}
+
+									str := fmt.Sprint(parentKey, op, "(", strings.Join(temp, " , "), ")")
+
+									if v == "$jnin" {
+										str = fmt.Sprint(" not (", str, ") ")
+									}
+									tempArray = append(tempArray, str)
+								default:
+									logs.WithContext(ctx).Warn(fmt.Sprint("skipping $in, $nin, $jin and $jnin clause as it needs array as a value but received ", newVal))
+								}
+							default:
+								str := ""
+								str, err = processWhereClause(ctx, newVal, eru_utils.ReplaceUnderscoresWithDots(v), mainTableName, isJoinClause, jsonOp)
+								if str == "" {
+									logs.WithContext(ctx).Warn(fmt.Sprint("skipping whereclause for ", newVal, " as there is no value provided by user  : ", str))
+								} else {
+									tempArray = append(tempArray, str)
+								}
+								if err != "" {
+									logs.WithContext(ctx).Error(err)
+									return "", err
+								}
 							}
 						}
 					}

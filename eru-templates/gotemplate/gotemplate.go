@@ -493,8 +493,8 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 		"evalFilter": func(filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
 			return evalFilter(ctx, filter, record)
 		},
-		"makeFilter": func(filter map[string]interface{}) (silterStr string, err error) {
-			return makeFilter(ctx, filter)
+		"makeFilter": func(filter string, jsonKey string) (silterStr string, err error) {
+			return makeFilter(ctx, filter, jsonKey)
 		},
 		"execTemplate": func(obj interface{}, templateString string, outputFormat string) (output interface{}, err error) {
 			goTmpl := GoTemplate{"subtemplate", templateString}
@@ -780,14 +780,26 @@ func evalOrFilter(ctx context.Context, filter []interface{}, record map[string]i
 	}
 	return
 }
-func makeFilter(ctx context.Context, filter map[string]interface{}) (filterStr string, err error) {
+func makeFilter(ctx context.Context, inPutfilterStr string, jsonKey string) (filterStr string, err error) {
+	filter := make(map[string]interface{})
+	err = json.Unmarshal([]byte(inPutfilterStr), &filter)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return "false", nil
+	}
+	return makeFilterFromMap(ctx, filter, jsonKey)
+}
+func makeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonKey string) (filterStr string, err error) {
 	var filterStrArray []string
 	tempStr := ""
 	for k, v := range filter {
 		kk := fetchKey(k)
+		if jsonKey != "" {
+			kk = fmt.Sprint(jsonKey, "->>'", kk, "'")
+		}
 		if kk == "$or" {
 			if vArray, vArrayOk := v.([]interface{}); vArrayOk {
-				tempStr, err = makeOrString(ctx, vArray)
+				tempStr, err = makeOrString(ctx, vArray, jsonKey)
 				filterStrArray = append(filterStrArray, tempStr)
 			} else {
 				err = errors.New("$or needs an array")
@@ -807,10 +819,13 @@ func makeFilter(ctx context.Context, filter map[string]interface{}) (filterStr s
 		}
 	}
 	filterStr = strings.Join(filterStrArray, " and ")
-	filterStr = fmt.Sprint("(", filterStr, ")")
+	if filterStr != "" {
+		filterStr = fmt.Sprint("(", filterStr, ")")
+	}
 	return filterStr, nil
 }
-func makeOrString(ctx context.Context, filter []interface{}) (orStr string, err error) {
+
+func makeOrString(ctx context.Context, filter []interface{}, jsonKey string) (orStr string, err error) {
 	orStr = ""
 	orOp := ""
 	filterStr := ""
@@ -819,7 +834,7 @@ func makeOrString(ctx context.Context, filter []interface{}) (orStr string, err 
 			orOp = " or "
 		}
 		if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
-			filterStr, err = makeFilter(ctx, vMap)
+			filterStr, err = makeFilterFromMap(ctx, vMap, jsonKey)
 		} else {
 			err = errors.New("$or needs array of objects")
 		}
