@@ -775,6 +775,89 @@ func UpdateUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
+func EditUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("UpdateUserHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		updateUserReq := json.NewDecoder(r.Body)
+		updateUserReq.DisallowUnknownFields()
+		updateUserObj := make(map[string]interface{})
+		//storageObj := new(storage.Storage)
+		if err := updateUserReq.Decode(&updateUserObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		identity := auth.Identity{}
+		userAttributes := make(map[string]interface{})
+		userId := ""
+		if userAttributesObj, ok := updateUserObj["attributes"]; !ok {
+			rtErr := errors.New("attributes missing in request body")
+			logs.WithContext(r.Context()).Error(rtErr.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
+			return
+		} else {
+			if userAttributes, ok = userAttributesObj.(map[string]interface{}); !ok {
+				rtErr := errors.New("incorrect post body")
+				logs.WithContext(r.Context()).Error(rtErr.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
+				return
+			}
+		}
+		if userIdObj, ok := updateUserObj["id"]; !ok {
+			rtErr := errors.New("id missing in request body")
+			logs.WithContext(r.Context()).Error(rtErr.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
+			return
+		} else {
+			if userId, ok = userIdObj.(string); !ok {
+				rtErr := errors.New("incorrect post body")
+				logs.WithContext(r.Context()).Error(rtErr.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": rtErr})
+				return
+			}
+		}
+
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+
+		}
+
+		identity.Attributes = userAttributes
+		identity.Id = userId
+
+		var tokens interface{}
+		tokens, err = authObjI.UpdateUser(r.Context(), identity, userId, nil)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(tokens)
+		return
+	}
+}
+
 func ChangePasswordHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ChangePasswordHandler - Start")

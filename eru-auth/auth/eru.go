@@ -259,10 +259,19 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 	var userTraitsArray []string
 	userAttrs := make(map[string]interface{})
 	var queries []*models.Queries
-	tokenAttributes, tokenErr := getTokenAttributes(ctx, token)
-
-	if tokenErr {
-		return LoginSuccess{}, errors.New("User not found")
+	tokenAttributes := make(map[string]interface{})
+	tokenErr := false
+	if token != nil {
+		tokenAttributes, tokenErr = getTokenAttributes(ctx, token)
+		if tokenErr {
+			return LoginSuccess{}, errors.New("User not found")
+		}
+	} else {
+		identityObj, iErr := eruAuth.getUserInfo(ctx, identity.Id)
+		if iErr != nil {
+			return LoginSuccess{}, errors.New("getUserInfo failed")
+		}
+		tokenAttributes = identityObj.Attributes
 	}
 
 	for k, v := range tokenAttributes {
