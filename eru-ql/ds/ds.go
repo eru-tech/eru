@@ -23,8 +23,8 @@ import (
 	"time"
 )
 
-var blockedWords = []string{"SELECT ", "SELECT*", "INSERT ", "UPDATE ", "DELETE FROM ", "CREATE ", "DROP ", "ALTER ", "TRUNCATE ", "RENAME ", "GRANT ", "REVOKE ", "COMMIT ", "ROLLBACK ", "SAVEPOINT "}
-var blockedRegex = []string{"OR[ ]*'", "AND[ ]*'"}
+var blockedWords = []string{"SELECT ", "SELECT*", "INSERT ", "UPDATE ", "DELETE FROM ", "CREATE ", "DROP ", "ALTER ", "TRUNCATE ", "RENAME ", "REVOKE ", "COMMIT ", "ROLLBACK ", "SAVEPOINT "}
+var blockedRegex = []string{"OR[ ]*'", "AND[ ]*'", "GRANT\\s+\\w+\\s+ON"}
 
 type tablesInQuery struct {
 	name   string
