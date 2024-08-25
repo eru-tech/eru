@@ -43,16 +43,13 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 		keyList = append(keyList, key)
 	}
 	sort.Strings(keyList)
-	logs.WithContext(ctx).Info(fmt.Sprint(keyList))
 	for _, k := range keyList {
 		v := sqd.FinalVariables[k]
-		logs.WithContext(ctx).Info(fmt.Sprint(k, " : ", v))
 		var str string
 		switch tp := v.(type) {
 		case []interface{}:
 			isMap := false
 			if iArray, ok := v.([]interface{}); ok {
-				logs.WithContext(ctx).Info(fmt.Sprint(iArray))
 				for i, strText := range iArray {
 					isMap = false
 					sep := ""
@@ -67,7 +64,6 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 					}
 				}
 				if isMap {
-					logs.WithContext(ctx).Info("inside isMap")
 					mapJ, mapJErr := json.Marshal(iArray)
 					if mapJErr != nil {
 						logs.WithContext(ctx).Error(mapJErr.Error())
@@ -88,7 +84,6 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 
 	for _, k := range keyList {
 		v := sqd.FinalVariables[k]
-		logs.WithContext(ctx).Info(fmt.Sprint(" ----- ", k, " : ", v))
 		//ignoring processing token variable
 		if k != module_model.RULEPREFIX_TOKEN {
 
@@ -114,7 +109,6 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 				}
 				break
 			case map[string]interface{}:
-				logs.WithContext(ctx).Info("inside map[string]interface{}")
 				strBytes, strBytesErr := json.Marshal(v)
 				err = strBytesErr
 				str = string(strBytes)

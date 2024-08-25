@@ -1022,31 +1022,38 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 				return err
 			}
 			for prj, repoJson := range prjRepo {
-				var repoObj map[string]*json.RawMessage
-				err = json.Unmarshal(*repoJson, &repoObj)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-					return err
-				}
-				var repoType string
-				if _, rtOk := repoObj["repo_type"]; rtOk {
-					err = json.Unmarshal(*repoObj["repo_type"], &repoType)
+				if repoJson != nil {
+					logs.WithContext(ctx).Info("here")
+					var repoObj map[string]*json.RawMessage
+					err = json.Unmarshal(*repoJson, &repoObj)
 					if err != nil {
 						logs.WithContext(ctx).Error(err.Error())
 						return err
 					}
-					repoI := repos.GetRepo(repoType)
-					err = repoI.MakeFromJson(ctx, repoJson)
-					if err == nil {
-						err = msi.SaveRepo(ctx, prj, repoI, msi, false)
+					logs.WithContext(ctx).Info("here1")
+					var repoType string
+					if _, rtOk := repoObj["repo_type"]; rtOk {
+						logs.WithContext(ctx).Info("here2")
+						err = json.Unmarshal(*repoObj["repo_type"], &repoType)
 						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+							return err
+						}
+						repoI := repos.GetRepo(repoType)
+						err = repoI.MakeFromJson(ctx, repoJson)
+						if err == nil {
+							err = msi.SaveRepo(ctx, prj, repoI, msi, false)
+							if err != nil {
+								return err
+							}
+						} else {
 							return err
 						}
 					} else {
-						return err
+						logs.WithContext(ctx).Info("ignoring repo as repo type not found")
 					}
 				} else {
-					logs.WithContext(ctx).Info("ignoring repo as repo type not found")
+					logs.WithContext(ctx).Info(fmt.Sprint("repo not defined for projct ", prj))
 				}
 			}
 		} else {
