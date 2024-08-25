@@ -577,8 +577,6 @@ func ImplCompare[T comparable](s T, e T) bool {
 
 func GetNestedFieldValue(ctx context.Context, data interface{}, fieldPath string) (interface{}, error) {
 	logs.WithContext(ctx).Debug("GetNestedFieldValue - Start")
-	logs.WithContext(ctx).Info(fmt.Sprint(data))
-	logs.WithContext(ctx).Info(fmt.Sprint(fieldPath))
 	fields := strings.Split(fieldPath, ".")
 	val := reflect.ValueOf(data)
 	for _, field := range fields {
