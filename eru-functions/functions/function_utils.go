@@ -207,7 +207,8 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 			return nil, err
 		}
 		output = []byte(strings.TrimSuffix(buffer.String(), "\n"))
-		if len(string(output)) < 100 {
+		logs.WithContext(ctx).Info(fmt.Sprint("len(string(output)) = ", len(string(output))))
+		if len(string(output)) < 1000 {
 			logs.WithContext(ctx).Info(fmt.Sprint("output ===== ", string(output)))
 		}
 
