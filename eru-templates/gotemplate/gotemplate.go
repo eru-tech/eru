@@ -794,9 +794,6 @@ func makeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonK
 	tempStr := ""
 	for k, v := range filter {
 		kk := fetchKey(k)
-		if jsonKey != "" {
-			kk = fmt.Sprint(jsonKey, "->>'", kk, "'")
-		}
 		if kk == "$or" {
 			if vArray, vArrayOk := v.([]interface{}); vArrayOk {
 				tempStr, err = makeOrString(ctx, vArray, jsonKey)
@@ -806,6 +803,9 @@ func makeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonK
 				return "false", nil
 			}
 		} else {
+			if jsonKey != "" {
+				kk = fmt.Sprint(jsonKey, "->>'", kk, "'")
+			}
 			if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
 				tempStr, err = makeFilterStr(ctx, kk, vMap)
 				filterStrArray = append(filterStrArray, tempStr)
