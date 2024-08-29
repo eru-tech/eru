@@ -29,8 +29,8 @@ var LoopThreads = 3
 var EventThreads = 3
 
 const (
-	SELECT_FUNC_ASYNC = "update erufunctions_async set async_status='IN PROGRESS', processed_date=now() where async_id = ??? and (async_status=??? or 'ALL'=???) returning async_id, event_id, func_group_name func_name, func_step_name,  event_msg, event_request, request_id"
-	UPDATE_FUNC_ASYNC = "update erufunctions_async set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
+	SELECT_FUNC_ASYNC = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ('{\"ReqVars\",\"'||b.func_step_name||'\",\"LoopVar\"}')::text[] , a.loop_var::jsonb),'{\"Vars\",\"LoopVar\"}',a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
+	UPDATE_FUNC_ASYNC = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
 )
 
 type StoreHolder struct {

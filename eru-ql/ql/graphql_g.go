@@ -359,7 +359,6 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 				keyList = append(keyList, key.Interface().(string))
 			}
 			sort.Strings(keyList)
-			logs.WithContext(ctx).Info(fmt.Sprint(keyList))
 			if valMap, valMapOk := val.(map[string]interface{}); !valMapOk {
 				err = "error in where clause - map keys are not strings"
 				logs.WithContext(ctx).Error(err)

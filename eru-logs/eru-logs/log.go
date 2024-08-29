@@ -64,3 +64,8 @@ func WithContext(ctx context.Context) *zap.Logger {
 		return Logger
 	}
 }
+
+func Sprintify(l ...interface{}) string {
+	Logger.Info(fmt.Sprint(l))
+	return fmt.Sprint(l)[0:1000]
+}

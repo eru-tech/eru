@@ -273,7 +273,7 @@ func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan Func
 		}
 
 		//logs.WithContext(ctx).Info(fmt.Sprint("funcJob.funcStep.Route.TargetHosts = ", funcJob.funcStep.Route.TargetHosts))
-		resp, funcVars, asyncFuncDataBatch, e := funcJob.funcStep.RunFuncStepInner(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.asyncMessage, funcJob.funcThread, funcJob.loopThread, funcJob.strCond, funcJob.funcStepName, funcJob.endFuncStepName, funcJob.started, funcJob.fromAsync, funcJob.inLoop)
+		resp, funcVars, asyncFuncDataBatch, e := funcJob.funcStep.RunFuncStepInner(ctx, funcJob.request, funcJob.reqVars, funcJob.resVars, funcJob.mainRouteName, funcJob.asyncMessage, funcJob.funcThread, funcJob.loopThread, funcJob.strCond, funcJob.funcStepName, funcJob.endFuncStepName, funcJob.started, funcJob.fromAsync, funcJob.inLoop, funcJob.id)
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print RunFuncStepInner error = ", e.Error()))
 		}
