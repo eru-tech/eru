@@ -14,8 +14,10 @@ import (
 	"github.com/eru-tech/eru/eru-functions/module_model"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/eru-tech/eru/eru-store/store"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
+	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"reflect"
@@ -29,8 +31,8 @@ var LoopThreads = 3
 var EventThreads = 3
 
 const (
-	SELECT_FUNC_ASYNC = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ('{\"ReqVars\",\"'||b.func_step_name||'\",\"LoopVar\"}')::text[] , a.loop_var::jsonb),'{\"Vars\",\"LoopVar\"}',a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
 	UPDATE_FUNC_ASYNC = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
+	SELECT_FUNC_ASYNC = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ('{\\\"ReqVars\\\",\\\"'||b.func_step_name||'\\\",\\\"LoopVar\\\"}')::text[] , a.loop_var::jsonb),'{\\\"Vars\\\",\\\"LoopVar\\\"}',a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
 )
 
 type StoreHolder struct {
@@ -776,19 +778,23 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 	}
 }
 
-func (ms *ModuleStore) ProcessEvents(ctx context.Context, projectId string, eventMsgs []events.EventMsg, event events.EventI, s ModuleStoreI, cnt int, jcnt int) (err error) {
-	logs.WithContext(ctx).Debug("ProcessEvents - Start")
+func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eventMsgs []events.EventMsg, event events.EventI, s ModuleStoreI, cnt int, jcnt int) (err error) {
+	logs.WithContext(nctx).Debug("ProcessEvents - Start")
 	aStatus := "PENDING"
 	for i, m := range eventMsgs {
 		startTime := time.Now()
 		asyncStatus := "PROCESSED"
 		var asyncFuncData AsyncFuncData
-		logs.WithContext(ctx).Info(fmt.Sprint(m.Msg, " ", aStatus))
+		logs.WithContext(nctx).Info(fmt.Sprint(m.Msg, " ", aStatus))
 		failedCount := 0
 		processedCount := 0
 
 		msgArray := strings.Split(m.Msg, ",")
 		for _, async_id := range msgArray {
+			startTimeaid := time.Now()
+			ctx := context.WithoutCancel(nctx)
+			ctx = logs.NewContext(ctx, zap.String(server_handlers.RequestIdKey, async_id))
+
 			asyncFuncData, err = ms.FetchAsyncEvent(ctx, async_id, aStatus, s)
 			logs.WithContext(ctx).Info(fmt.Sprint("after fetch event  = ", asyncFuncData.AsyncId))
 			if err != nil || asyncFuncData.AsyncId == "" {
@@ -814,6 +820,7 @@ func (ms *ModuleStore) ProcessEvents(ctx context.Context, projectId string, even
 						logs.WithContext(ctx).Error(err.Error())
 						logs.WithContext(ctx).Error("request deserialization failed")
 					} else {
+						eventReq = eventReq.WithContext(logs.NewContext(ctx, zap.String(server_handlers.RequestIdKey, async_id)))
 						if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
 							logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
 						}
@@ -823,75 +830,80 @@ func (ms *ModuleStore) ProcessEvents(ctx context.Context, projectId string, even
 							asyncStatus = "FAILED"
 							logs.WithContext(ctx).Error("Function validation failed")
 						} else {
-							reqBytes := []byte("")
+							/*reqBytes := []byte("")
 							reqBytes, err = b64.StdEncoding.DecodeString(asyncFuncData.EventRequest)
 							if err != nil {
 								failedCount = failedCount + 1
 								asyncStatus = "FAILED"
 								logs.WithContext(ctx).Error("event request decoding failed")
 							} else {
-								var newReq *http.Request
-								if newReq, err = http.ReadRequest(bufio.NewReader(bytes.NewReader(reqBytes))); err != nil { // deserialize request
-									failedCount = failedCount + 1
-									asyncStatus = "FAILED"
-									logs.WithContext(ctx).Error("event request deserialization failed")
-								}
-								reqVars := make(map[string]*functions.TemplateVars)
-								resVars := make(map[string]*functions.TemplateVars)
-								if asyncFuncData.EventMsg.ReqVars != nil {
-									reqVars = asyncFuncData.EventMsg.ReqVars
-								}
-								if asyncFuncData.EventMsg.ResVars != nil {
-									resVars = asyncFuncData.EventMsg.ResVars
-								}
-								response, funcVarsMap, err := funcGroup.Execute(ctx, newReq, FuncThreads, LoopThreads, asyncFuncData.FuncStepName, "", true, reqVars, resVars)
+
+							var newReq *http.Request
+							if newReq, err = http.ReadRequest(bufio.NewReader(bytes.NewReader(reqBytes))); err != nil { // deserialize request
+								failedCount = failedCount + 1
+								asyncStatus = "FAILED"
+								logs.WithContext(ctx).Error("event request deserialization failed")
+							}
+							*/
+							reqVars := make(map[string]*functions.TemplateVars)
+							resVars := make(map[string]*functions.TemplateVars)
+							if asyncFuncData.EventMsg.ReqVars != nil {
+								reqVars = asyncFuncData.EventMsg.ReqVars
+							}
+							if asyncFuncData.EventMsg.ResVars != nil {
+								resVars = asyncFuncData.EventMsg.ResVars
+							}
+							response, funcVarsMap, err := funcGroup.Execute(ctx, eventReq, FuncThreads, LoopThreads, asyncFuncData.FuncStepName, "", true, reqVars, resVars)
+							if err != nil {
+								failedCount = failedCount + 1
+								asyncStatus = "FAILED"
+								logs.WithContext(ctx).Error(err.Error())
+								logs.WithContext(ctx).Error("Function execution failed")
+							} else {
+								responseBytes := []byte("")
+								responseBytes, err = io.ReadAll(response.Body)
 								if err != nil {
+									logs.WithContext(ctx).Error(err.Error())
 									failedCount = failedCount + 1
 									asyncStatus = "FAILED"
-									logs.WithContext(ctx).Error(err.Error())
-									logs.WithContext(ctx).Error("Function execution failed")
 								} else {
-									responseBytes := []byte("")
-									responseBytes, err = io.ReadAll(response.Body)
+									response.Body = io.NopCloser(bytes.NewBuffer(responseBytes))
+									responseStr := string(responseBytes)
+									eventResponse := make(map[string]interface{})
+									eventResponse["response"] = responseStr
+									eventResponse["func_vars"] = funcVarsMap
+									eventResponseBytes, err = json.Marshal(eventResponse)
 									if err != nil {
 										logs.WithContext(ctx).Error(err.Error())
 										failedCount = failedCount + 1
 										asyncStatus = "FAILED"
 									} else {
-										response.Body = io.NopCloser(bytes.NewBuffer(responseBytes))
-										responseStr := string(responseBytes)
-										eventResponse := make(map[string]interface{})
-										eventResponse["response"] = responseStr
-										eventResponse["func_vars"] = funcVarsMap
-										eventResponseBytes, err = json.Marshal(eventResponse)
-										if err != nil {
-											logs.WithContext(ctx).Error(err.Error())
-											failedCount = failedCount + 1
-											asyncStatus = "FAILED"
-										} else {
-											logs.WithContext(ctx).Info(fmt.Sprint(response))
-											eru_utils.PrintResponseBody(ctx, response, "printing response from async handler")
-											processedCount = processedCount + 1
-										}
+										logs.WithContext(ctx).Info(fmt.Sprint(response))
+										eru_utils.PrintResponseBody(ctx, response, "printing response from async handler")
+										processedCount = processedCount + 1
 									}
 								}
-								defer func() {
-									if response != nil {
-										response.Body.Close()
-									}
-								}()
 							}
+							defer func() {
+								if response != nil {
+									response.Body.Close()
+								}
+							}()
+							//}
 						}
 					}
 				}
 				_ = s.UpdateAsyncEvent(ctx, async_id, asyncStatus, string(eventResponseBytes), s)
 			}
+			endTimeaid := time.Now()
+			diffaid := endTimeaid.Sub(startTimeaid)
+			logs.WithContext(ctx).Info(fmt.Sprint("total time taken for asyncid ", async_id, " is ", diffaid.Seconds(), "seconds"))
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint("Delete msg called for ", m.Msg))
-		_ = event.DeleteMessage(ctx, m.MsgIdentifer)
+		logs.WithContext(nctx).Info(fmt.Sprint("Delete msg called for ", m.Msg))
+		_ = event.DeleteMessage(nctx, m.MsgIdentifer)
 		endTime := time.Now()
 		diff := endTime.Sub(startTime)
-		logs.WithContext(ctx).Info(fmt.Sprint("total time taken for message processing for job ", jcnt, " of ", cnt, " and msg ", i, " is ", diff.Seconds(), "seconds"))
+		logs.WithContext(nctx).Info(fmt.Sprint("total time taken for message processing for job ", jcnt, " of ", cnt, " and msg ", i, " is ", diff.Seconds(), "seconds"))
 	}
 	return
 }

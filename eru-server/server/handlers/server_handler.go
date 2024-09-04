@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/mux"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -43,6 +44,25 @@ func EnvHandler(s store.StoreI) http.HandlerFunc {
 		env_value := os.Getenv(env)
 		FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{env: env_value})
+	}
+}
+
+func StateHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("StateHandler - Start")
+		type serviceState struct {
+			NumCPU       int
+			NumGoroutine int
+			Mem          runtime.MemStats
+		}
+		serviceStateObj := serviceState{}
+
+		serviceStateObj.NumCPU = runtime.NumCPU()
+		serviceStateObj.NumGoroutine = runtime.NumGoroutine()
+		runtime.ReadMemStats(&serviceStateObj.Mem)
+
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"service_state": serviceStateObj})
 	}
 }
 
