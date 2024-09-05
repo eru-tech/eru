@@ -126,24 +126,30 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 	}()
 	loopCounter := 0
 	for fk, fs := range funcSteps {
+		//logs.FileLogger.Info(fmt.Sprint("parallel_execution allocateFunc started for ", fk))
 		childStart := false
 		fs.FuncKey = fk
+		reqVarsClone := reqVars
+		resVarsClone := resVars
+		r := req
+		var rErr error
 		if started || fk == funcStepName || funcStepName == "" {
 			childStart = true
-		}
-		r, rErr := CloneRequest(ctx, req)
-		if rErr != nil {
-			logs.WithContext(ctx).Error(rErr.Error())
-		}
-		resVarsI, _ := cloneInterface(ctx, resVars)
-		resVarsClone, _ := resVarsI.(map[string]*TemplateVars)
 
-		reqVarsI, _ := cloneInterface(ctx, reqVars)
-		reqVarsClone, _ := reqVarsI.(map[string]*TemplateVars)
+			r, rErr = CloneRequest(ctx, req)
+			if rErr != nil {
+				logs.WithContext(ctx).Error(rErr.Error())
+			}
+			resVarsI, _ := cloneInterface(ctx, resVars)
+			resVarsClone, _ = resVarsI.(map[string]*TemplateVars)
 
+			reqVarsI, _ := cloneInterface(ctx, reqVars)
+			reqVarsClone, _ = reqVarsI.(map[string]*TemplateVars)
+		}
 		funcJob := FuncJob{loopCounter, r, fs, reqVarsClone, resVarsClone, "", mainRouteName, funcThread, loopThread, "true", funcStepName, endFuncStepName, childStart, fromAsync, inLoop}
 		funcJobs <- funcJob
 		loopCounter++
+		//logs.FileLogger.Info(fmt.Sprint("parallel_execution allocateFunc ended for ", fs.FuncKey))
 	}
 	close(funcJobs)
 }
@@ -174,6 +180,7 @@ func workerFunc(ctx context.Context, wg *sync.WaitGroup, funcJobs chan FuncJob, 
 	}()
 	for funcJob := range funcJobs {
 		//currentJob = funcJob
+		//	logs.FileLogger.Info(fmt.Sprint("parallel_execution workerFunc started for ", funcJob.funcStep.FuncKey))
 		if funcJob.mainRouteName == "" {
 			funcJob.mainRouteName = funcJob.funcStep.FuncKey
 		}
@@ -181,10 +188,17 @@ func workerFunc(ctx context.Context, wg *sync.WaitGroup, funcJobs chan FuncJob, 
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print RunFuncStep error = ", e.Error()))
 		}
-		cloneFuncVarsI, _ := cloneInterface(ctx, funcVars)
-		cloneFuncVarsMap, _ := cloneFuncVarsI.(map[string]FuncTemplateVars)
+
+		cloneFuncVarsMap := funcVars
+
+		if funcJob.started {
+			cloneFuncVarsI, _ := cloneInterface(ctx, funcVars)
+			cloneFuncVarsMap, _ = cloneFuncVarsI.(map[string]FuncTemplateVars)
+		}
+
 		output := FuncResult{funcJob, resp, FuncTemplateVars{}, cloneFuncVarsMap, e, asyncFuncDataBatch}
 		funcResults <- output
+		//	logs.FileLogger.Info(fmt.Sprint("parallel_execution workerFunc ended for ", funcJob.funcStep.FuncKey))
 	}
 	wg.Done()
 }
@@ -196,25 +210,30 @@ func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, req
 			logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in allocateFuncInner: ", r, " : ", string(debug.Stack())))
 		}
 	}()
+
 	loopCounter := 0
+	logs.WithContext(ctx).Info(fmt.Sprint("len(loopArray) for ", fs.FuncKey, " is ", len(loopArray)))
 	for loopCounter < len(loopArray) {
+		//	logs.FileLogger.Info(fmt.Sprint("parallel_execution allocateFuncInner started for ", fs.FuncKey))
 		funcStep := fs
-		var funcStepErr error
-		reqVarsI, _ := cloneInterface(ctx, reqVars)
-		reqVarsClone, _ := reqVarsI.(map[string]*TemplateVars)
-
-		resVarsI, _ := cloneInterface(ctx, resVars)
-		resVarsClone, _ := resVarsI.(map[string]*TemplateVars)
-
-		if len(loopArray) > 1 {
-			funcStep, funcStepErr = fs.Clone(ctx)
-			if funcStepErr != nil {
-				logs.WithContext(ctx).Error(funcStepErr.Error())
-				return
-			}
-		}
-
+		reqVarsClone := reqVars
+		resVarsClone := resVars
 		if funcStep.FuncKey == funcStepName || started || funcStepName == "" {
+			logs.WithContext(ctx).Info(fmt.Sprint("inside allocateFuncInner lopp for ", funcStep.FuncKey))
+			var funcStepErr error
+			reqVarsI, _ := cloneInterface(ctx, reqVars)
+			reqVarsClone, _ = reqVarsI.(map[string]*TemplateVars)
+
+			resVarsI, _ := cloneInterface(ctx, resVars)
+			resVarsClone, _ = resVarsI.(map[string]*TemplateVars)
+
+			if len(loopArray) > 1 {
+				funcStep, funcStepErr = fs.Clone(ctx)
+				if funcStepErr != nil {
+					logs.WithContext(ctx).Error(funcStepErr.Error())
+					return
+				}
+			}
 
 			if reqVarsClone[funcStep.GetRouteName()] == nil {
 				reqVarsClone[funcStep.GetRouteName()] = &TemplateVars{}
@@ -237,6 +256,8 @@ func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, req
 		funcJob := FuncJob{loopCounter, req, funcStep, reqVarsClone, resVarsClone, asyncMessage, mainRouteName, funcThread, loopThread, strCond, funcStepName, endFuncStepName, started, fromAsync, inLoop}
 		funcJobs <- funcJob
 		loopCounter++
+		//	logs.FileLogger.Info(fmt.Sprint("parallel_execution allocateFuncInner ended for ", fs.FuncKey))
+
 	}
 	close(funcJobs)
 }
@@ -266,7 +287,10 @@ func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan Func
 			wg.Done()
 		}
 	}()
+
 	for funcJob := range funcJobs {
+		//	logs.FileLogger.Info(fmt.Sprint("parallel_execution workerFuncInner started for ", funcJob.funcStep.FuncKey))
+
 		//currentJob = funcJob
 		if funcJob.mainRouteName == "" {
 			funcJob.mainRouteName = funcJob.funcStep.FuncKey
@@ -277,10 +301,15 @@ func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan Func
 		if e != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("print RunFuncStepInner error = ", e.Error()))
 		}
-		cloneFuncVarsI, _ := cloneInterface(ctx, funcVars)
-		cloneFuncVars, _ := cloneFuncVarsI.(FuncTemplateVars)
+
+		cloneFuncVars := funcVars
+		if funcJob.started {
+			cloneFuncVarsI, _ := cloneInterface(ctx, funcVars)
+			cloneFuncVars, _ = cloneFuncVarsI.(FuncTemplateVars)
+		}
 		output := FuncResult{funcJob, resp, cloneFuncVars, nil, e, asyncFuncDataBatch}
 		funcResults <- output
+		//logs.FileLogger.Info(fmt.Sprint("parallel_execution workerFuncInner ended for ", funcJob.funcStep.FuncKey))
 	}
 	wg.Done()
 }

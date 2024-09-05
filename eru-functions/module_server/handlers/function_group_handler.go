@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func WfHandler(s module_store.ModuleStoreI) http.HandlerFunc {
@@ -87,8 +88,11 @@ func WfHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Info("AsyncFuncHandler - Start")
+		//logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler started "))
 		// Close the body of the request
 		//TODO to add request body close in all handlers across projects
+		startTime := time.Now()
+		endTime := time.Now()
 		defer r.Body.Close()
 		ctx := context.WithValue(r.Context(), "allowed_origins", server_handlers.AllowedOrigins)
 		ctx = context.WithValue(ctx, "origin", r.Header.Get("Origin"))
@@ -98,14 +102,15 @@ func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		eventName := vars["eventname"]
 		eventId := vars["eventid"]
-		logs.WithContext(ctx).Info(fmt.Sprint(vars))
-		logs.WithContext(ctx).Info(eventId)
 		eventI, err := s.FetchEvent(r.Context(), projectId, eventName)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "event not found"})
 			return
 		}
+		endTime = time.Now()
+		diff := endTime.Sub(startTime)
+		logs.WithContext(r.Context()).Info(fmt.Sprint("total time taken for is FetchEvent ", diff.Milliseconds(), "seconds"))
 		var eventMsgs []events.EventMsg
 		if eventId == "" {
 			logs.WithContext(ctx).Info("polling events")
@@ -128,9 +133,8 @@ func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		for _, m := range eventMsgs {
 			asyncStatus := "PROCESSED"
 			var asyncFuncData module_store.AsyncFuncData
-			logs.WithContext(ctx).Info("fetching event from db")
-			logs.WithContext(ctx).Info(fmt.Sprint(m.Msg, " ", aStatus))
 			asyncFuncData, err = s.FetchAsyncEvent(ctx, m.Msg, aStatus, s)
+			//	logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler for FetchAsyncEvent "))
 			if err != nil || asyncFuncData.AsyncId == "" {
 				failedCount = failedCount + 1
 				asyncStatus = "FAILED"
@@ -143,6 +147,7 @@ func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 					logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
 				}
 				funcGroup, err := s.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, host, url, r.Method, r.Header, bodyMap, s, true)
+				//	logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler for GetAndValidateFunc"))
 				if err != nil {
 					failedCount = failedCount + 1
 					asyncStatus = "FAILED"
@@ -169,7 +174,9 @@ func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						if asyncFuncData.EventMsg.ResVars != nil {
 							resVars = asyncFuncData.EventMsg.ResVars
 						}
+						//logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler Before funcGroup.Execute "))
 						response, funcVarsMap, err := funcGroup.Execute(ctx, newReq, module_store.FuncThreads, module_store.LoopThreads, asyncFuncData.FuncStepName, "", true, reqVars, resVars)
+						//logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler After funcGroup.Execute "))
 						if err != nil {
 							failedCount = failedCount + 1
 							asyncStatus = "FAILED"
@@ -207,12 +214,17 @@ func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						}()
 					}
 				}
+				//	logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler Before UpdateAsyncEvent "))
 				_ = s.UpdateAsyncEvent(ctx, m.Msg, asyncStatus, string(eventResponseBytes), s)
+				//		logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler After UpdateAsyncEvent "))
 				_ = eventI.DeleteMessage(ctx, m.MsgIdentifer)
+				//		logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler After DeleteMessage "))
+
 			}
 		}
 		server_handlers.FormatResponse(w, http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"processed": processedCount, "failed": failedCount})
+		//logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler ended "))
 		return
 	}
 }

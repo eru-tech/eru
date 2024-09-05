@@ -11,6 +11,8 @@ import (
 
 var Logger *zap.Logger
 
+//var FileLogger *zap.Logger
+
 func LogInit(serviceName string) {
 	logLevel := os.Getenv("LOG_LEVEL")
 	if logLevel == "" {
@@ -48,6 +50,40 @@ func LogInit(serviceName string) {
 	defer undo()
 
 	defer Logger.Sync()
+
+	/*fileLogConfig := []byte(fmt.Sprint(`{
+	       "level" :"`, logLevel, `",
+	       "encoding": "json",
+	       "outputPaths":["stdout","func_profile.log"],
+	       "errorOutputPaths":["stderr"],
+	 	   "initialFields": {"service": "`, serviceName, `"},
+	       "encoderConfig": {
+	           "messageKey":"msg",
+	           "timeKey":"ts"
+	       }
+	   }`))
+
+		var fileZapConfig zap.Config
+
+		if err := json.Unmarshal(fileLogConfig, &fileZapConfig); err != nil {
+			panic(err)
+		}
+		fileZapConfig.EncoderConfig.EncodeTime = zapcore.TimeEncoderOfLayout("2006-01-02 15:04:05.000")
+		fileZapConfig.EncoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
+
+		var fileErr error
+		FileLogger, fileErr = fileZapConfig.Build()
+		if fileErr != nil {
+			panic(fileErr)
+		}
+		fileundo := zap.ReplaceGlobals(FileLogger)
+		defer fileundo()
+
+		defer Logger.Sync()
+		defer FileLogger.Sync()
+
+	*/
+
 }
 
 func NewContext(ctx context.Context, fields ...zap.Field) context.Context {

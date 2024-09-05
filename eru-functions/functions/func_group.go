@@ -171,6 +171,8 @@ func (funcGroup *FuncGroup) Execute(ctx context.Context, request *http.Request, 
 
 func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, funcThreads int, loopThreads int, funcStepName string, endFuncStepName string, started bool, fromAsync bool, inLoop bool) (response *http.Response, funcVarsMap map[string]FuncTemplateVars, asyncFuncDataBatch []AsyncFuncData, err error) {
 	logs.WithContext(ctx).Debug("RunFuncSteps - Start")
+	//logs.FileLogger.Info(fmt.Sprint("RunFuncSteps started "))
+
 	funcVarsMap = make(map[string]FuncTemplateVars)
 	var responses []*http.Response
 	var errs []error
@@ -222,7 +224,10 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 	//endTime := time.Now()
 	//diff := endTime.Sub(startTime)
 	//logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
+	//logs.FileLogger.Info(fmt.Sprint("RunFuncSteps before clubResponses "))
 	response, err = clubResponses(ctx, responses, errs)
+	//logs.FileLogger.Info(fmt.Sprint("RunFuncSteps after clubResponses "))
+
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprint(err.Error()))
 	}
@@ -244,6 +249,7 @@ func (funcStep *FuncStep) GetRouteName() (routeName string) {
 }
 
 func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, FuncThread int, LoopThread int, funcStepName string, endFuncStepName string, started bool, fromAsync bool, inLoop bool) (response *http.Response, funcVarsMap map[string]FuncTemplateVars, asyncFuncDataBatch []AsyncFuncData, err error) {
+	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep started for ", funcStep.FuncKey))
 	pspan := oteltrace.SpanFromContext(req.Context())
 	ctx, span := otel.Tracer(server_handlers.ServerName).Start(octx, funcStep.FuncKey, oteltrace.WithAttributes(attribute.String("requestID", req.Header.Get(server_handlers.RequestIdKey)), attribute.String("traceID", pspan.SpanContext().TraceID().String()), attribute.String("spanID", pspan.SpanContext().SpanID().String())))
 	defer span.End()
@@ -444,12 +450,12 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 
 	var jobs = make(chan FuncJob, 10)
 	var results = make(chan FuncResult, 10)
-	startTime := time.Now()
 
 	//adding delay
 	time.Sleep(time.Duration(funcStep.Delay) * time.Millisecond)
-
+	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep before allocateFuncInner for ", funcStep.FuncKey))
 	go allocateFuncInner(ctx, request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs, mainRouteName, FuncThread, LoopThread, strCond, funcStepName, endFuncStepName, started, fromAsync, inLoop)
+	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep after allocateFuncInner for ", funcStep.FuncKey))
 	done := make(chan bool)
 	//go result(done,results,responses, trResVars,errs)
 	funcVarsMap = make(map[string]FuncTemplateVars)
@@ -493,23 +499,31 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			noOfWorkers = len(loopArray)
 		}
 	}
+	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep before createWorkerPoolFuncInner for ", funcStep.FuncKey))
 	createWorkerPoolFuncInner(ctx, noOfWorkers, jobs, results)
 	<-done
+	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep after createWorkerPoolFuncInner for ", funcStep.FuncKey))
 	response, err = clubResponses(ctx, responses, errs)
-	endTime := time.Now()
-	diff := endTime.Sub(startTime)
-	logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
-	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStep - End : ", funcStep.FuncKey))
+	//	logs.FileLogger.Info(fmt.Sprint("RunFuncStep after clubResponses for ", funcStep.FuncKey))
 
+	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStep - End : ", funcStep.FuncKey))
+	//	logs.FileLogger.Info(fmt.Sprint("RunFuncStep ended for ", funcStep.FuncKey))
 	return
 }
 func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Request, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars, mainRouteName string, asyncMsg string, funcThread int, loopThread int, strCond string, funcStepName string, endFuncStepName string, started bool, fromAsync bool, inLoop bool, loopConter int) (response *http.Response, funcVars FuncTemplateVars, asyncFuncDataBatch []AsyncFuncData, err error) {
 	logs.WithContext(ctx).Info(fmt.Sprint("RunFuncStepInner - Start : ", funcStep.FuncKey))
+	//logs.FileLogger.Info(fmt.Sprint("RunFuncStepInner started for ", funcStep.FuncKey))
 	request := req
 	if started || funcStepName == "" || funcStepName == funcStep.FuncKey {
 		if strCond == "true" {
+			startTime := time.Now()
 			if funcStep.LoopVariable != "" && (!fromAsync || (fromAsync && funcStepName != funcStep.FuncKey)) {
 				request, _, err = funcStep.transformRequest(ctx, req, reqVars, resVars, mainRouteName, false, fromAsync, funcStepName)
+
+				endTime := time.Now()
+				diff := endTime.Sub(startTime)
+				logs.WithContext(ctx).Info(fmt.Sprint("total time taken for RunFuncStepInner transformRequest 1 ", funcStep.FuncKey, " ", diff.Seconds(), "seconds"))
+
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					return
@@ -524,6 +538,10 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 				avars.ReqVars = reqVars
 				avars.ResVars = resVars
 				output, outputErr := processTemplate(ctx, funcStep.FuncKey, funcStep.AsyncMessage, avars, "json", funcStep.Route.TokenSecretKey)
+				endTime := time.Now()
+				diff := endTime.Sub(startTime)
+				logs.WithContext(ctx).Info(fmt.Sprint("total time taken for RunFuncStepInner processTemplate AsyncMessage ", funcStep.FuncKey, " ", diff.Seconds(), "seconds"))
+
 				if outputErr != nil {
 					err = outputErr
 					response = errorResponse(ctx, err.Error(), request)
@@ -609,7 +627,16 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 			if funcStep.FunctionName != "" {
 				asyncInnerFuncData := []AsyncFuncData{}
 				_ = asyncInnerFuncData
+				endTime := time.Now()
+				diff := endTime.Sub(startTime)
+				logs.WithContext(ctx).Info(fmt.Sprint("total time taken for RunFuncStepInner before inner function RunFuncSteps  ", funcStep.FuncKey, " ", diff.Milliseconds(), "seconds"))
+
 				response, subFuncVarsMap, asyncInnerFuncData, err = RunFuncSteps(ctx, funcStep.FuncGroup.FuncSteps, request, reqVars, resVars, "", funcThread, loopThread, funcStep.FuncKey, "", started, fromAsync, inLoop)
+
+				endTime = time.Now()
+				diff = endTime.Sub(startTime)
+				logs.WithContext(ctx).Info(fmt.Sprint("total time taken for RunFuncStepInner after inner function RunFuncSteps  ", funcStep.FuncKey, " ", diff.Milliseconds(), "seconds"))
+
 				if asyncInnerFuncData != nil {
 					asyncFuncDataBatch = append(asyncFuncDataBatch, asyncInnerFuncData...)
 				}
@@ -622,7 +649,16 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 					}
 				}
 			} else {
+				endTime := time.Now()
+				diff := endTime.Sub(startTime)
+				logs.WithContext(ctx).Info(fmt.Sprint("total time taken for RunFuncStepInner before route execute  ", funcStep.FuncKey, " ", diff.Milliseconds(), "seconds"))
+
 				response, routevars, err = funcStep.Route.Execute(ctx, request, funcStep.Path, funcStep.Async, asyncMsg, reqVars[funcStep.FuncKey], loopThread)
+
+				endTime = time.Now()
+				diff = endTime.Sub(startTime)
+				logs.WithContext(ctx).Info(fmt.Sprint("total time taken for RunFuncStepInner after route execute ", funcStep.FuncKey, " ", diff.Milliseconds(), "seconds"))
+
 			}
 
 			resVars[funcStep.GetRouteName()] = routevars
@@ -696,6 +732,7 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 
 	funcVars.ResVars = resVars
 	funcVars.ReqVars = reqVars
+	//logs.FileLogger.Info(fmt.Sprint("RunFuncStepInner ended for ", funcStep.FuncKey))
 	return
 }
 func (funcStep *FuncStep) insertAsyncBatch(ctx context.Context, asyncBatch []AsyncFuncData) (err error) {
