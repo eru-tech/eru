@@ -154,9 +154,8 @@ func DecryptCBC(ctx context.Context, cipherText []byte, bKey []byte, bIV []byte)
 	return bPlaintext, nil
 }
 
-func Encrypt(ctx context.Context, plainBytes []byte, aesKeyStr string) (encryptedBytes []byte, err error) {
+func Encrypt(ctx context.Context, plainBytes []byte, key []byte) (encryptedBytes []byte, err error) {
 	logs.WithContext(ctx).Debug("Encrypt - Start")
-	key := []byte(aesKeyStr)
 	block, err := caes.NewCipher(key)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -172,9 +171,8 @@ func Encrypt(ctx context.Context, plainBytes []byte, aesKeyStr string) (encrypte
 	return
 }
 
-func Decrypt(ctx context.Context, encryptedBytes []byte, aesKeyStr string) (decryptedBytes []byte, err error) {
+func Decrypt(ctx context.Context, encryptedBytes []byte, key []byte) (decryptedBytes []byte, err error) {
 	logs.WithContext(ctx).Debug("Encrypt - Start")
-	key, _ := hex.DecodeString(aesKeyStr)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return

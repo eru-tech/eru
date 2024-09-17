@@ -9,7 +9,6 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-read-write/validator"
 	"github.com/xuri/excelize/v2"
-	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -81,7 +80,6 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 		}
 
 		var sheetData []map[string]interface{}
-		logs.WithContext(ctx).Info(fmt.Sprint(sheetName))
 		rows, rowsErr := f.GetRows(sheetName)
 		if rowsErr != nil {
 			err = rowsErr
@@ -163,8 +161,6 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 									rowValue = row[colNo-1]
 								}
 							} else {
-								logs.WithContext(ctx).Info(fmt.Sprint(row[colNo-1]))
-								logs.WithContext(ctx).Info(fmt.Sprint(rowValueF))
 								rowValue = rowValueF
 								isNum = true
 							}
@@ -173,7 +169,6 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 						rowValue = nil
 					}
 					sheetRow[colHeaders[colNo-1]] = rowValue
-					logs.WithContext(ctx).Info(fmt.Sprint(field.GetName(), " ", field.GetDatatype(), " ", rowValue, " ", rowValueF, " ", big.NewFloat(rowValueF), " ", big.NewFloat(rowValueF).String()))
 
 					if field != nil {
 						if field.GetDatatype() == "date" && isNum {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"reflect"
 	"strings"
 )
 
@@ -50,9 +49,6 @@ func (f *ArrayField) Validate(ctx context.Context, v interface{}) (err error) {
 		for _, rval := range value {
 			vFound := false
 			for _, val := range f.Values {
-				logs.WithContext(ctx).Info(fmt.Sprint(reflect.TypeOf(rval)))
-				logs.WithContext(ctx).Info(fmt.Sprint(reflect.TypeOf(val)))
-				logs.WithContext(ctx).Info(fmt.Sprint(rval == val))
 				if rval == val {
 					vFound = true
 					break

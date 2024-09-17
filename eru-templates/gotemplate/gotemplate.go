@@ -88,6 +88,13 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 			strJ, err := json.Marshal(j)
 			return len(strJ), err
 		},
+		"aesEncryptGCM": func(pb []byte, k []byte) ([]byte, error) {
+			dst, err := eruaes.Encrypt(ctx, pb, k)
+			return dst, err
+		},
+		"aesDecryptGCM": func(eb []byte, k []byte) ([]byte, error) {
+			return eruaes.Decrypt(ctx, eb, k)
+		},
 		"aesEncryptECB": func(pb []byte, k []byte) ([]byte, error) {
 			dst, err := eruaes.EncryptECB(ctx, pb, k)
 			return dst, err
@@ -891,7 +898,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 			}
 		case "$like":
 			if cvStr, cvStrOk := cv.(string); cvStrOk {
-				filterStr = fmt.Sprint(key, " like (%", cvStr, "%)")
+				filterStr = fmt.Sprint(key, " like '%", cvStr, "%'")
 				return filterStr, nil
 			} else {
 				err = errors.New("$like operator requires a string")
@@ -900,7 +907,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 			}
 		case "$nlike":
 			if cvStr, cvStrOk := cv.(string); cvStrOk {
-				filterStr = fmt.Sprint(key, " not like (%", cvStr, "%)")
+				filterStr = fmt.Sprint(key, " not like '%", cvStr, "%'")
 				return filterStr, nil
 			} else {
 				err = errors.New("$nlike operator requires a string")

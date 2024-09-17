@@ -78,7 +78,6 @@ func (f *DateField) Validate(ctx context.Context, v interface{}) (err error) {
 	adErr := false
 	wd := value.Weekday()
 	for _, ad := range f.AllowDays {
-		logs.WithContext(ctx).Info(fmt.Sprint(ad))
 		adErr = true
 		switch ad {
 		case "Sun":
