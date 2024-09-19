@@ -451,8 +451,6 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 	var jobs = make(chan FuncJob, 10)
 	var results = make(chan FuncResult, 10)
 
-	//adding delay
-	time.Sleep(time.Duration(funcStep.Delay) * time.Millisecond)
 	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep before allocateFuncInner for ", funcStep.FuncKey))
 	go allocateFuncInner(ctx, request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs, mainRouteName, FuncThread, LoopThread, strCond, funcStepName, endFuncStepName, started, fromAsync, inLoop)
 	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep after allocateFuncInner for ", funcStep.FuncKey))
@@ -624,6 +622,10 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 			routevars := &TemplateVars{}
 			_ = routevars
 			subFuncVarsMap := map[string]FuncTemplateVars{}
+
+			//adding delay
+			time.Sleep(time.Duration(funcStep.Delay) * time.Millisecond)
+
 			if funcStep.FunctionName != "" {
 				asyncInnerFuncData := []AsyncFuncData{}
 				_ = asyncInnerFuncData
