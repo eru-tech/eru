@@ -634,7 +634,7 @@ func (ms *ModuleStore) ExcelToJson(ctx context.Context, projectId string, file m
 }
 
 func (ms *ModuleStore) BytesToJson(ctx context.Context, projectId string, f []byte, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (jsonObj []map[string]interface{}, err error) {
-	logs.WithContext(ctx).Info("bytesToJson - Start")
+	logs.WithContext(ctx).Debug("bytesToJson - Start")
 
 	mimetype.SetLimit(2000)
 	fMime := mimetype.Detect(f)
@@ -655,7 +655,6 @@ func (ms *ModuleStore) BytesToJson(ctx context.Context, projectId string, f []by
 				}
 			}
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint(sheets))
 		erd := eru_reads.ExcelReadData{Sheets: sheets}
 		jsonDataObj, jsonErr := erd.ReadAsJson(ctx, f)
 		if jsonErr != nil {

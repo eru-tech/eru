@@ -153,6 +153,8 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 							if !formatMatched {
 								rowValue = strings.TrimSpace(row[colNo-1])
 							}
+						} else if field.GetDatatype() == "string" {
+							rowValue = row[colNo-1]
 						} else {
 							rowValueF, err = strconv.ParseFloat(row[colNo-1], 64)
 							if err != nil {
@@ -251,4 +253,15 @@ func (erd *ExcelReadData) ReadAsJson(ctx context.Context, readData []byte) (read
 		readOutput[sheetName] = sheetData
 	}
 	return readOutput, nil
+}
+
+// Function to convert column number to column name
+func columnNumberToName(n int) string {
+	columnName := ""
+	for n > 0 {
+		n--
+		columnName = string('A'+(n%26)) + columnName
+		n /= 26
+	}
+	return columnName
 }
