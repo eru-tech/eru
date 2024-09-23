@@ -249,6 +249,12 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 			}
 			return d, errors.New("not an array")
 		},
+		"is_array": func(arr interface{}) (r bool) {
+			if _, oOk := arr.([]interface{}); oOk {
+				return true
+			}
+			return false
+		},
 		"getMapPointerValue": func(orgMap map[string]*interface{}, key string) (d interface{}, err error) {
 			d = make(map[string]interface{})
 			ok := false
