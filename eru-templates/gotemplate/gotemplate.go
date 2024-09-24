@@ -509,6 +509,9 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 		"makeFilter": func(filter string, jsonKey string) (silterStr string, err error) {
 			return makeFilter(ctx, filter, jsonKey)
 		},
+		"makeParentFilter": func(filter string, jsonKey string, parentPrefix string) (silterStr string, err error) {
+			return makeParentFilter(ctx, filter, jsonKey, parentPrefix)
+		},
 		"execTemplate": func(obj interface{}, templateString string, outputFormat string) (output interface{}, err error) {
 			goTmpl := GoTemplate{"subtemplate", templateString}
 			return goTmpl.Execute(ctx, obj, outputFormat)
@@ -800,34 +803,51 @@ func makeFilter(ctx context.Context, inPutfilterStr string, jsonKey string) (fil
 		logs.WithContext(ctx).Error(err.Error())
 		return "false", nil
 	}
-	return makeFilterFromMap(ctx, filter, jsonKey)
+	return makeFilterFromMap(ctx, filter, jsonKey, "")
 }
-func makeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonKey string) (filterStr string, err error) {
+func makeParentFilter(ctx context.Context, inPutfilterStr string, jsonKey string, parentPrefix string) (filterStr string, err error) {
+	filter := make(map[string]interface{})
+	err = json.Unmarshal([]byte(inPutfilterStr), &filter)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return "false", nil
+	}
+	return makeFilterFromMap(ctx, filter, jsonKey, parentPrefix)
+}
+
+func makeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonKey string, parentPrefix string) (filterStr string, err error) {
 	var filterStrArray []string
 	tempStr := ""
 	for k, v := range filter {
 		kk := fetchKey(k)
 		if kk == "$or" {
 			if vArray, vArrayOk := v.([]interface{}); vArrayOk {
-				tempStr, err = makeOrString(ctx, vArray, jsonKey)
+				tempStr, err = makeOrString(ctx, vArray, jsonKey, parentPrefix)
 				filterStrArray = append(filterStrArray, tempStr)
 			} else {
 				err = errors.New("$or needs an array")
 				return "false", nil
 			}
 		} else {
-			if jsonKey != "" {
-				kk = fmt.Sprint(jsonKey, "->>'", kk, "'")
+			include := false
+
+			if parentPrefix == "" || strings.HasPrefix(kk, parentPrefix) {
+				include = true
 			}
-			if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
-				tempStr, err = makeFilterStr(ctx, kk, vMap)
-				filterStrArray = append(filterStrArray, tempStr)
-			} else if vF, vFOk := v.(float64); vFOk {
-				tempStr = fmt.Sprint(kk, " = ", vF)
-				filterStrArray = append(filterStrArray, tempStr)
-			} else {
-				tempStr = fmt.Sprint(kk, " = '", v, "'")
-				filterStrArray = append(filterStrArray, tempStr)
+			if include {
+				if jsonKey != "" {
+					kk = fmt.Sprint(jsonKey, "->>'", kk, "'")
+				}
+				if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
+					tempStr, err = makeFilterStr(ctx, kk, vMap)
+					filterStrArray = append(filterStrArray, tempStr)
+				} else if vF, vFOk := v.(float64); vFOk {
+					tempStr = fmt.Sprint(kk, " = ", vF)
+					filterStrArray = append(filterStrArray, tempStr)
+				} else {
+					tempStr = fmt.Sprint(kk, " = '", v, "'")
+					filterStrArray = append(filterStrArray, tempStr)
+				}
 			}
 		}
 	}
@@ -838,7 +858,7 @@ func makeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonK
 	return filterStr, nil
 }
 
-func makeOrString(ctx context.Context, filter []interface{}, jsonKey string) (orStr string, err error) {
+func makeOrString(ctx context.Context, filter []interface{}, jsonKey string, parentPrefix string) (orStr string, err error) {
 	orStr = ""
 	orOp := ""
 	filterStr := ""
@@ -847,13 +867,17 @@ func makeOrString(ctx context.Context, filter []interface{}, jsonKey string) (or
 			orOp = " or "
 		}
 		if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
-			filterStr, err = makeFilterFromMap(ctx, vMap, jsonKey)
+			filterStr, err = makeFilterFromMap(ctx, vMap, jsonKey, parentPrefix)
 		} else {
 			err = errors.New("$or needs array of objects")
 		}
-		orStr = fmt.Sprint(orStr, orOp, filterStr)
+		if filterStr != "" {
+			orStr = fmt.Sprint(orStr, orOp, filterStr)
+		}
 	}
-	orStr = fmt.Sprint("(", orStr, ")")
+	if orStr != "" {
+		orStr = fmt.Sprint("(", orStr, ")")
+	}
 	return
 }
 
