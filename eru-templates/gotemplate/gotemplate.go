@@ -833,6 +833,7 @@ func makeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonK
 
 			if parentPrefix == "" || strings.HasPrefix(kk, parentPrefix) {
 				include = true
+				kk = strings.Replace(kk, parentPrefix, "", -1)
 			}
 			if include {
 				if jsonKey != "" {
