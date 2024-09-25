@@ -512,6 +512,9 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 		"makeParentFilter": func(filter string, jsonKey string, parentPrefix string) (silterStr string, err error) {
 			return makeParentFilter(ctx, filter, jsonKey, parentPrefix)
 		},
+		"fetch_filter_keys": func(filter string, parentPrefix string) (filterKeys []string, err error) {
+			return fetchFilterKeys(ctx, filter, parentPrefix)
+		},
 		"execTemplate": func(obj interface{}, templateString string, outputFormat string) (output interface{}, err error) {
 			goTmpl := GoTemplate{"subtemplate", templateString}
 			return goTmpl.Execute(ctx, obj, outputFormat)
@@ -792,6 +795,51 @@ func evalOrFilter(ctx context.Context, filter []interface{}, record map[string]i
 		logs.WithContext(ctx).Info(fmt.Sprint(result))
 		if result {
 			return true, nil
+		}
+	}
+	return
+}
+
+func fetchFilterKeys(ctx context.Context, inPutfilterStr string, parentPrefix string) (filterKeys []string, err error) {
+	filter := make(map[string]interface{})
+	err = json.Unmarshal([]byte(inPutfilterStr), &filter)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return fetchFilterKeysFromMap(ctx, filter, parentPrefix)
+}
+func fetchFilterKeysFromMap(ctx context.Context, filter map[string]interface{}, parentPrefix string) (filterKeys []string, err error) {
+	var tempStr []string
+	for k, v := range filter {
+		kk := fetchKey(k)
+		if kk == "$or" {
+			if vArray, vArrayOk := v.([]interface{}); vArrayOk {
+				tempStr, err = fetchOrFilterKeys(ctx, vArray, parentPrefix)
+				filterKeys = append(filterKeys, tempStr...)
+			} else {
+				err = errors.New("$or needs an array")
+				return
+			}
+		} else {
+			if parentPrefix == "" || strings.HasPrefix(kk, parentPrefix) {
+				kk = strings.Replace(kk, parentPrefix, "", -1)
+				filterKeys = append(filterKeys, kk)
+			}
+		}
+	}
+	return
+}
+func fetchOrFilterKeys(ctx context.Context, filter []interface{}, parentPrefix string) (orKeys []string, err error) {
+	var tmpKeys []string
+	for _, v := range filter {
+		if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
+			tmpKeys, err = fetchFilterKeysFromMap(ctx, vMap, parentPrefix)
+			if len(tmpKeys) > 0 {
+				orKeys = append(orKeys, tmpKeys...)
+			}
+		} else {
+			err = errors.New("$or needs array of objects")
 		}
 	}
 	return
