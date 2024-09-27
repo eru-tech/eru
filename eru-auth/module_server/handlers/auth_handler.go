@@ -132,6 +132,119 @@ func LoginApiHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		return
 	}
 }
+func GetTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("GetTokensHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		fetchTokenFromReq := json.NewDecoder(r.Body)
+
+		fetchTokenFromReq.DisallowUnknownFields()
+		type fetchToken struct {
+			Code string `json:"code" eru:"required"`
+		}
+		var fetchTokenObj fetchToken
+
+		if err := fetchTokenFromReq.Decode(&fetchTokenObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err := utils.ValidateStruct(r.Context(), fetchTokenObj, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+		}
+
+		loginSuccess, err := authObjI.GetTokens(r.Context(), fetchTokenObj.Code)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(loginSuccess)
+		return
+	}
+}
+
+func GenerateTempCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("GenerateTempCodeHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		fetchTokenFromReq := json.NewDecoder(r.Body)
+
+		fetchTokenFromReq.DisallowUnknownFields()
+		type fetchToken struct {
+			Id    string `json:"id" eru:"required"`
+			Token string `json:"token" eru:"required"`
+		}
+		var fetchTokenObj fetchToken
+
+		if err := fetchTokenFromReq.Decode(&fetchTokenObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err := utils.ValidateStruct(r.Context(), fetchTokenObj, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+		}
+
+		code, err := authObjI.GenerateTempCode(r.Context(), fetchTokenObj.Id, fetchTokenObj.Token)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"code": code})
+		return
+	}
+}
+
 func FetchTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("FetchTokensHandler - Start")

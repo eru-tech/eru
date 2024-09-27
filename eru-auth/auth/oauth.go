@@ -226,24 +226,13 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 		strTokenEmail = tokenEmail.(string)
 	}
 
-	var output []map[string]interface{}
-	var outputErr error
-	query := models.Queries{}
-	query.Query = oAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY_SUB)
-	query.Vals = append(query.Vals, sub)
-	query.Vals = append(query.Vals, strTokenEmail)
-	output, outputErr = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), query)
-	if outputErr != nil {
-		err = outputErr
-		logs.WithContext(ctx).Error(err.Error())
-		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+	identity, err = oAuth.getIdpUser(ctx, sub, strTokenEmail, idToken)
+	if err != nil {
+		return
 	}
-	if identity.Attributes == nil {
-		identity.Attributes = make(map[string]interface{})
-	}
-	logs.WithContext(ctx).Info(fmt.Sprint(output))
+
 	//creating Just-In-Time user if not found in eru database
-	if len(output) == 0 {
+	if identity.Id == "" {
 		if oAuth.Hooks.USRR != "" {
 			_, hookErr := triggerHook(ctx, oAuth.Hooks.USRR, projectId, tokenMap)
 			if hookErr != nil {
@@ -256,50 +245,13 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 		}
 
 		//execute query again
-		output, outputErr = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), query)
-		if outputErr != nil {
-			err = outputErr
-			logs.WithContext(ctx).Error(err.Error())
-			return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+		identity, err = oAuth.getIdpUser(ctx, sub, strTokenEmail, idToken)
+		if err != nil {
+			return
 		}
 
 	}
-	identity.Id = output[0]["identity_id"].(string)
-	if output[0]["is_active"].(bool) {
-		identity.Status = "ACTIVE"
-	} else {
-		identity.Status = "INACTIVE"
-	}
-	identity.AuthDetails = IdentityAuth{}
-	if traitsMap, traitsMapOk := output[0]["traits"].(*map[string]interface{}); traitsMapOk {
-		for k, v := range *traitsMap {
-			identity.Attributes[k] = v
-		}
-	}
-	if attrMap, attrMapOk := output[0]["attributes"].(*map[string]interface{}); attrMapOk {
-		for k, v := range *attrMap {
-			identity.Attributes[k] = v
-		}
-	}
 
-	idTokenToSave := []byte(idToken)
-	if oAuth.KmsId != "" {
-		idTokenToSave, err = oAuth.KmsKey.Encrypt(ctx, idTokenToSave)
-	}
-	idTokenToSaveStr := b64.StdEncoding.EncodeToString(idTokenToSave)
-
-	idptoken_query := models.Queries{}
-	idptoken_query.Query = oAuth.AuthDb.GetDbQuery(ctx, UPDATE_IDP_TOKEN)
-	idptoken_query.Vals = append(idptoken_query.Vals, idTokenToSaveStr)
-	idptoken_query.Vals = append(idptoken_query.Vals, identity.Id)
-	_, outputErr = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), idptoken_query)
-	if outputErr != nil {
-		err = outputErr
-		logs.WithContext(ctx).Error(err.Error())
-		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
-	}
-
-	identity.Attributes["idp_token"] = idTokenToSaveStr
 	if withTokens {
 		eruTokens, eruTokensErr := oAuth.makeTokens(ctx, identity)
 		return identity, eruTokens, eruTokensErr
@@ -440,4 +392,109 @@ func (oAuth *OAuth) Register(ctx context.Context, registerUser RegisterUser, pro
 		logs.WithContext(ctx).Info("SWEF hook not defined")
 	}
 	return identity, tokens, nil
+}
+
+func (oAuth *OAuth) getIdpUser(ctx context.Context, userId string, userEmail string, idToken string) (identity Identity, err error) {
+	var output []map[string]interface{}
+	var outputErr error
+	query := models.Queries{}
+	query.Query = oAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY_SUB)
+	query.Vals = append(query.Vals, userId)
+	query.Vals = append(query.Vals, userEmail)
+	output, outputErr = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), query)
+	if outputErr != nil {
+		err = outputErr
+		logs.WithContext(ctx).Error(err.Error())
+		return Identity{}, errors.New("something went wrong - please try again")
+	}
+	if identity.Attributes == nil {
+		identity.Attributes = make(map[string]interface{})
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(output))
+	if len(output) > 0 {
+		identity.Id = output[0]["identity_id"].(string)
+		if output[0]["is_active"].(bool) {
+			identity.Status = "ACTIVE"
+		} else {
+			identity.Status = "INACTIVE"
+		}
+		identity.AuthDetails = IdentityAuth{}
+		if traitsMap, traitsMapOk := output[0]["traits"].(*map[string]interface{}); traitsMapOk {
+			for k, v := range *traitsMap {
+				identity.Attributes[k] = v
+			}
+		}
+		if attrMap, attrMapOk := output[0]["attributes"].(*map[string]interface{}); attrMapOk {
+			for k, v := range *attrMap {
+				identity.Attributes[k] = v
+			}
+		}
+
+		idTokenToSave := []byte(idToken)
+		if oAuth.KmsId != "" {
+			idTokenToSave, err = oAuth.KmsKey.Encrypt(ctx, idTokenToSave)
+		}
+		idTokenToSaveStr := b64.StdEncoding.EncodeToString(idTokenToSave)
+
+		idptoken_query := models.Queries{}
+		idptoken_query.Query = oAuth.AuthDb.GetDbQuery(ctx, UPDATE_IDP_TOKEN)
+		idptoken_query.Vals = append(idptoken_query.Vals, idTokenToSaveStr)
+		idptoken_query.Vals = append(idptoken_query.Vals, identity.Id)
+		_, outputErr = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), idptoken_query)
+		if outputErr != nil {
+			err = outputErr
+			logs.WithContext(ctx).Error(err.Error())
+			return Identity{}, errors.New("something went wrong - please try again")
+		}
+
+		identity.Attributes["idp_token"] = idTokenToSaveStr
+	}
+	return
+}
+func (oAuth *OAuth) GetTokens(ctx context.Context, code string) (res interface{}, err error) {
+
+	query := models.Queries{}
+	query.Query = oAuth.AuthDb.GetDbQuery(ctx, SELECT_TEMP_CODE)
+	query.Vals = append(query.Vals, code)
+	output, outputErr := utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), query)
+	if outputErr != nil {
+		err = outputErr
+		logs.WithContext(ctx).Error(err.Error())
+		return Identity{}, err
+	}
+	identity := Identity{}
+	if len(output) > 0 {
+		id := output[0]["identity_id"].(string)
+		token := output[0]["idp_token"].(string)
+		identity, err = oAuth.getIdpUser(ctx, id, "", token)
+		if identity.Id != "" {
+			idptoken_query := models.Queries{}
+			idptoken_query.Query = oAuth.AuthDb.GetDbQuery(ctx, DELETE_TEMP_CODE)
+			idptoken_query.Vals = append(idptoken_query.Vals, code)
+			_, err = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), idptoken_query)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				//just print and continue
+			}
+			return oAuth.makeTokens(ctx, identity)
+		} else {
+			return res, errors.New("user not found")
+		}
+	}
+	return res, errors.New("invalid code")
+}
+
+func (oAuth *OAuth) GenerateTempCode(ctx context.Context, id string, idpToken string) (code string, err error) {
+	code = uuid.New().String()
+	idptoken_query := models.Queries{}
+	idptoken_query.Query = oAuth.AuthDb.GetDbQuery(ctx, INSERT_TEMP_CODE)
+	idptoken_query.Vals = append(idptoken_query.Vals, id)
+	idptoken_query.Vals = append(idptoken_query.Vals, code)
+	idptoken_query.Vals = append(idptoken_query.Vals, idpToken)
+	_, err = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), idptoken_query)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return "", errors.New("invalid code")
+	}
+	return
 }

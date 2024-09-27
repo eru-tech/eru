@@ -39,6 +39,9 @@ const (
 	DELETE_IDENTITY                   = "delete from eruauth_identities where identity_id= ???"
 	ERU_LOGIN_FALLBACK                = "with i as (select c.config->>'hashed_password' hp, a.* , case when is_active=true then 'Active' else 'Inactive' end status from eruauth_identities a inner join eruauth_identity_credentials b on a.identity_id=b.identity_id and lower(b.identity_credential) = lower(???) inner join ory_identity_credentials c on a.identity_id=c.identity_id::text left join eruauth_identity_passwords d ON d.identity_id = a.identity_id where d.identity_id is null) select crypt(???,hp) = hp pmatch, i.* from i"
 	UPDATE_IDP_TOKEN                  = "update eruauth_identities set idp_token = ??? where identity_id= ???"
+	INSERT_TEMP_CODE                  = "insert into eruauth_temp_codes (identity_id,temp_code,idp_token) values (???,???,???) on conflict ON CONSTRAINT unique_identity_id_tc do update set temp_code=EXCLUDED.temp_code, created_date=CURRENT_TIMESTAMP"
+	SELECT_TEMP_CODE                  = "select * from eruauth_temp_codes where temp_code = ??? and created_date + (5 * interval '1 minute') >= LOCALTIMESTAMP"
+	DELETE_TEMP_CODE                  = "delete from eruauth_temp_codes where temp_code = ??? "
 )
 
 type EruAuth struct {

@@ -33,6 +33,8 @@ type AuthI interface {
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
 	GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error)
 	FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error)
+	GetTokens(ctx context.Context, code string) (res interface{}, err error)
+	GenerateTempCode(ctx context.Context, id string, idpToken string) (code string, err error)
 	LoginApi(ctx context.Context, refresh_token string, userId string) (res interface{}, err error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) (err error)
 	PerformPreSaveTask(ctx context.Context) (err error)
@@ -198,6 +200,12 @@ func (auth *Auth) GetAuthDb() (authDbI AuthDbI) {
 }
 
 func (auth *Auth) GetUrl(ctx context.Context, state string) (url string, oAuthParams OAuthParams, err error) {
+	err = errors.New("GetUrl Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
+func (auth *Auth) GenerateTempCode(ctx context.Context, id string, idpToken string) (code string, err error) {
 	err = errors.New("GetUrl Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
@@ -432,6 +440,13 @@ func (auth *Auth) GetUser(ctx context.Context, userId string) (identity Identity
 }
 
 func (auth *Auth) UpdateUser(ctx context.Context, identityToUpdate Identity, userId string, token map[string]interface{}) (tokens interface{}, err error) {
+	err = errors.New("UpdateUser Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return nil, err
+}
+
+func (auth *Auth) GetTokens(ctx context.Context, code string) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("GetTokens - Start")
 	err = errors.New("UpdateUser Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err
