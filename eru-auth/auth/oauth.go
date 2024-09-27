@@ -466,7 +466,7 @@ func (oAuth *OAuth) GetTokens(ctx context.Context, code string) (res interface{}
 	if len(output) > 0 {
 		id := output[0]["identity_id"].(string)
 		token := output[0]["idp_token"].(string)
-		identity, err = oAuth.getIdpUser(ctx, id, "", token)
+		identity, err = oAuth.getIdpUser(ctx, id, id, token)
 		if identity.Id != "" {
 			idptoken_query := models.Queries{}
 			idptoken_query.Query = oAuth.AuthDb.GetDbQuery(ctx, DELETE_TEMP_CODE)
