@@ -629,7 +629,7 @@ func evalFilter(ctx context.Context, filter map[string]interface{}, record map[s
 func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue interface{}) (result bool, err error) {
 	for ck, cv := range cond {
 		switch ck {
-		case "$in":
+		case "$in", "$inc":
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				if rArray, rArrayOk := recordValue.([]interface{}); rArrayOk {
 					return eruutils.ImplArrayContains(cvArray, rArray), nil
@@ -637,11 +637,11 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 					return eruutils.ImplContains(cvArray, recordValue), nil
 				}
 			} else {
-				err = errors.New("$in operator requires an array")
+				err = errors.New("$in and $inc operators requires an array")
 				logs.WithContext(ctx).Error(err.Error())
 				return false, err
 			}
-		case "$nin":
+		case "$nin", "$ninc":
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				if rArray, rArrayOk := recordValue.([]interface{}); rArrayOk {
 					return !(eruutils.ImplArrayContains(cvArray, rArray)), nil
@@ -649,7 +649,7 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 					return !(eruutils.ImplContains(cvArray, recordValue)), nil
 				}
 			} else {
-				err = errors.New("$nin operator requires an array")
+				err = errors.New("$nin and $ninc operators requires an array")
 				logs.WithContext(ctx).Error(err.Error())
 				return false, err
 			}
@@ -933,7 +933,7 @@ func makeOrString(ctx context.Context, filter []interface{}, jsonKey string, par
 func makeFilterStr(ctx context.Context, key string, cond map[string]interface{}) (filterStr string, err error) {
 	for ck, cv := range cond {
 		switch ck {
-		case "$in":
+		case "$in", "$inc":
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				tempStr := ""
 				tempSep := ""
@@ -950,11 +950,11 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 				filterStr = fmt.Sprint(key, " in (", tempStr, ")")
 				return filterStr, nil
 			} else {
-				err = errors.New("$in operator requires an array")
+				err = errors.New("$in and $inc operators requires an array")
 				logs.WithContext(ctx).Error(err.Error())
 				return "false", nil
 			}
-		case "$nin":
+		case "$nin", "$ninc":
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				tempStr := ""
 				tempSep := ""
@@ -971,7 +971,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 				filterStr = fmt.Sprint(key, " not in (", tempStr, ")")
 				return filterStr, nil
 			} else {
-				err = errors.New("$nin operator requires an array")
+				err = errors.New("$nin and $ninc operators requires an array")
 				logs.WithContext(ctx).Error(err.Error())
 				return "false", nil
 			}

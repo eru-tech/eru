@@ -431,6 +431,10 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 								op = " in "
 							case "$nin":
 								op = " not in "
+							case "$inc":
+								op = " in "
+							case "$ninc":
+								op = " not in "
 							case "$jin":
 								op = fmt.Sprint(" <@ ", module_model.MAKE_JSON_ARRAY_FN)
 							case "$jnin":
@@ -490,7 +494,7 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 								} else {
 									tempArray = append(tempArray, fmt.Sprint(parentKey, " IS NOT NULL "))
 								}
-							case "$in", "$nin", "$jin", "$jnin": //TODO to pass json variable aaray and check if the replaced array is passed as single string or string of values to sql
+							case "$inc", "$ninc", "$in", "$nin", "$jin", "$jnin": //TODO to pass json variable aaray and check if the replaced array is passed as single string or string of values to sql
 								switch reflect.TypeOf(newVal).Kind() {
 								case reflect.String:
 									s := reflect.ValueOf(newVal)
@@ -519,7 +523,7 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 									}
 									tempArray = append(tempArray, str)
 								default:
-									logs.WithContext(ctx).Warn(fmt.Sprint("skipping $in, $nin, $jin and $jnin clause as it needs array as a value but received ", newVal))
+									logs.WithContext(ctx).Warn(fmt.Sprint("skipping $inc, $ninc, $in, $nin, $jin and $jnin clause as it needs array as a value but received ", newVal))
 								}
 							default:
 								str := ""
