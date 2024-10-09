@@ -113,6 +113,7 @@ type SqlMakerI interface {
 	GetBlockedRegex() []string
 	VerifyForBlockedWords(ctx context.Context, key string, val interface{}, realSqr SqlMakerI) (err error)
 	GetMakeJsonArrayFn() (string, error)
+	MakeJsonColumn(jsonField string, jsonKey string) string
 	//CreateConn() error
 }
 
@@ -125,6 +126,9 @@ func (sqr *SqlMaker) GetBlockedRegex() []string {
 
 func (sqr *SqlMaker) GetMakeJsonArrayFn() (string, error) {
 	return "", errors.New("GetMakeJsonArrayFn not implemented")
+}
+func (sqr *SqlMaker) MakeJsonColumn(jsonField string, jsonKey string) string {
+	return ""
 }
 
 func (sqr *SqlMaker) VerifyForBlockedWords(ctx context.Context, key string, valI interface{}, realSqr SqlMakerI) (err error) {

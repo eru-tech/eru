@@ -1023,17 +1023,14 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 			}
 			for prj, repoJson := range prjRepo {
 				if repoJson != nil {
-					logs.WithContext(ctx).Info("here")
 					var repoObj map[string]*json.RawMessage
 					err = json.Unmarshal(*repoJson, &repoObj)
 					if err != nil {
 						logs.WithContext(ctx).Error(err.Error())
 						return err
 					}
-					logs.WithContext(ctx).Info("here1")
 					var repoType string
 					if _, rtOk := repoObj["repo_type"]; rtOk {
-						logs.WithContext(ctx).Info("here2")
 						err = json.Unmarshal(*repoObj["repo_type"], &repoType)
 						if err != nil {
 							logs.WithContext(ctx).Error(err.Error())

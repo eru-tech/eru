@@ -27,6 +27,7 @@ func (pr *PostgresSqlMaker) GetBlockedRegex() []string {
 func (pr *PostgresSqlMaker) GetMakeJsonArrayFn() (string, error) {
 	return "jsonb_build_array", nil
 }
+
 func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string {
 	logs.WithContext(ctx).Debug("GetPreparedQueryPlaceholder - Start")
 	var rowArray []string
@@ -146,7 +147,9 @@ func (pr *PostgresSqlMaker) CheckMe(ctx context.Context) {
 	logs.WithContext(ctx).Info("I am PostgresSqlMaker")
 	pr.ChildChange = "changed by PostgresSqlMaker"
 }
-
+func (pr *PostgresSqlMaker) MakeJsonColumn(jsonField string, jsonKey string) string {
+	return fmt.Sprint(jsonField, "->>'", jsonKey, "'")
+}
 func (pr *PostgresSqlMaker) AddLimitSkipClause(ctx context.Context, query string, limit int, skip int, globalLimit int) (newQuery string) {
 	logs.WithContext(ctx).Debug("AddLimitSkipClause - Start")
 	if limit > 0 {

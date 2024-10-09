@@ -108,10 +108,10 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(ctx context.Context, sel ast.Selection,
 	sqlCols := SQLCols{}
 	if field.SelectionSet == nil {
 		var tmpSelSet []ast.Selection
-		sqlCols, _ = sqlObj.processColumnList(ctx, tmpSelSet, sqlObj.MainTableName, vars, 0, 0, datasource, s)
+		sqlCols, _ = sqlObj.processColumnList(ctx, tmpSelSet, sqlObj.MainTableName, vars, 0, 0, datasource, s, sqlMaker)
 		sqlCols.ColWithAlias = append(sqlCols.ColWithAlias, " * ")
 	} else {
-		sqlCols, _ = sqlObj.processColumnList(ctx, field.SelectionSet.Selections, sqlObj.MainTableName, vars, 0, 0, datasource, s)
+		sqlCols, _ = sqlObj.processColumnList(ctx, field.SelectionSet.Selections, sqlObj.MainTableName, vars, 0, 0, datasource, s, sqlMaker)
 	}
 	sqlObj.Columns = sqlCols
 	err = sqlObj.MakeQuery(ctx, sqlMaker, withColAlias)
@@ -119,8 +119,9 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(ctx context.Context, sel ast.Selection,
 	return err
 }
 
-func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selection, tableName string, vars map[string]interface{}, level int, sublevel int, datasource *module_model.DataSource, s module_store.ModuleStoreI) (sqlCols SQLCols, err string) {
+func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selection, tableName string, vars map[string]interface{}, level int, sublevel int, datasource *module_model.DataSource, s module_store.ModuleStoreI, sqlMaker ds.SqlMakerI) (sqlCols SQLCols, err string) {
 	logs.WithContext(ctx).Debug("processColumnList - Start")
+
 	if sqlObj.queryLevel < level {
 		sqlObj.queryLevel = level
 	}
@@ -143,12 +144,72 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 	if len(sqlObj.tables[level]) == sublevel {
 		sqlObj.tables[level] = append(sqlObj.tables[level], tiq)
 	}
-
+	var newSel []ast.Selection
 	for _, va := range sel {
+		field := va.(*ast.Field)
+		colStr := field.Name.Value
+		if strings.HasPrefix(colStr, "VAR_") {
+			rv, rvErr := replaceVariableValue(ctx, strings.Replace(field.Name.Value, "VAR_", "", -1), vars)
+			if rvErr != nil {
+				logs.WithContext(ctx).Error(rvErr.Error())
+				newSel = append(newSel, va)
+				//return SQLCols{}, rvErr.Error()
+			} else {
+				colStrArray := strings.Split(rv.(string), ",")
+				for _, str := range colStrArray {
+					n := ast.Name{field.Kind, field.Loc, str}
+					f := ast.Field{field.Kind, field.Loc, field.Alias, &n, field.Arguments, field.Directives, field.SelectionSet}
+					newSel = append(newSel, &f)
+				}
+			}
+		} else {
+			fv := field.Name.Value
+			if len(field.Arguments) > 0 {
+				for _, a := range field.Arguments {
+					switch a.Name.Value {
+					case "fields":
+						v, err := ParseAstValue(ctx, a.Value, vars)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+						}
+						colStrArray := strings.Split(v.(string), ",")
+						for _, cs := range colStrArray {
+							csArray := strings.Split(cs, ":")
+							cs_a := ""
+							cs_c := ""
+							if len(csArray) > 1 {
+								cs_a = csArray[0]
+								cs_c = csArray[1]
+							} else {
+								cs_a = csArray[0]
+								cs_c = csArray[0]
+							}
+							jc := sqlMaker.MakeJsonColumn(fv, cs_c)
+							n := ast.Name{field.Kind, field.Loc, jc}
+							al := ast.Name{field.Kind, field.Loc, fmt.Sprint(cs_a)}
+							f := ast.Field{field.Kind, field.Loc, &al, &n, field.Arguments, field.Directives, field.SelectionSet}
+							if jc != "" {
+								newSel = append(newSel, &f)
+							}
+						}
+					default:
+						//do nothing
+					}
+				}
+			} else {
+				newSel = append(newSel, va)
+			}
+		}
+	}
+
+	for _, va := range newSel {
 		joinFound := false
 		colProcessed := false
 		field := va.(*ast.Field)
-		temp1 := strings.Split(field.Name.Value, "___")
+		colStr := field.Name.Value
+		logs.WithContext(ctx).Info(fmt.Sprint(colStr))
+
+		temp1 := strings.Split(colStr, "___")
 		var temp2 []string
 		var colSchemaName, colTableName, colName string
 		if len(temp1) > 1 {
@@ -165,7 +226,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 				colName = temp2[0]
 			}
 		} else {
-			temp2 = strings.Split(field.Name.Value, "__")
+			temp2 = strings.Split(colStr, "__")
 			if len(temp2) > 1 {
 				colTableName = temp2[0]
 				colName = temp2[1]
@@ -192,7 +253,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 		cName := ""
 		if field.Alias == nil {
 			alias = fmt.Sprint(" \"L", level, "~~", sublevel, "**", field.Name.Value, "\" ") // TODO to add aggregate in column name"_", d.Name.Value,
-			cName = field.Name.Value
+			cName = colStr
 			//alias1 = fmt.Sprint(" ",alias)
 		} else {
 			alias = fmt.Sprint(" \"L", level, "~~", sublevel, "**", field.Alias.Value, "\" ")
@@ -254,7 +315,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 			tiq.Nested = true
 			sqlObj.tables[level][sublevel] = tiq
 			sqlChildCols := SQLCols{}
-			sqlChildCols, err = sqlObj.processColumnList(ctx, field.SelectionSet.Selections, colTableName, vars, level+1, mySublevel, datasource, s)
+			sqlChildCols, err = sqlObj.processColumnList(ctx, field.SelectionSet.Selections, colTableName, vars, level+1, mySublevel, datasource, s, sqlMaker)
 			sqlCols.ColNames = append(sqlCols.ColNames, sqlChildCols.ColNames...)
 			sqlCols.ColWithAlias = append(sqlCols.ColWithAlias, sqlChildCols.ColWithAlias...)
 			sqlCols.GroupClause = append(sqlCols.GroupClause, sqlChildCols.GroupClause...)
