@@ -10,6 +10,7 @@ import (
 	"fmt"
 	sprig "github.com/Masterminds/sprig/v3"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
+	eruhmac "github.com/eru-tech/eru/eru-crypto/hmac"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
 	erumd5 "github.com/eru-tech/eru/eru-crypto/md5"
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
@@ -141,6 +142,9 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 				return nil, err
 			}
 			return aesObj.Key, nil
+		},
+		"hmac": func(b string, secret string) []byte {
+			return eruhmac.Hmac([]byte(b), secret)
 		},
 		"shaHash": func(b string, bits int) (string, error) {
 			switch bits {
