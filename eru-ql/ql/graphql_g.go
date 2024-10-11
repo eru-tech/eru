@@ -192,8 +192,9 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 								newSel = append(newSel, &f)
 							}
 						}
+						break
 					default:
-						//do nothing
+						newSel = append(newSel, va)
 					}
 				}
 			} else {
