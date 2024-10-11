@@ -287,6 +287,32 @@ func RouteRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
+func FuncValidateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FuncValidateHandler - Start")
+
+		funcFromReq := json.NewDecoder(r.Body)
+		funcFromReq.DisallowUnknownFields()
+
+		var funcObj functions.FuncGroup
+		if err := funcFromReq.Decode(&funcObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err := utils.ValidateStruct(r.Context(), funcObj, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("function config for ", funcObj.FuncGroupName, " validated successfully")})
+		return
+	}
+}
 func FuncSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("FuncSaveHandler - Start")

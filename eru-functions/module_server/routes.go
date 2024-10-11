@@ -21,6 +21,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/route/remove/{routename}").HandlerFunc(module_handlers.RouteRemoveHandler(sh.Store))
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/save").HandlerFunc(module_handlers.FuncSaveHandler(sh.Store))
+	storeRouter.Methods(http.MethodPost).Path("/func/validate").HandlerFunc(module_handlers.FuncValidateHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/func/remove/{funcname}").HandlerFunc(module_handlers.FuncRemoveHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run").HandlerFunc(module_handlers.FuncRunHandler(sh.Store))
 
