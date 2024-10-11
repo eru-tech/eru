@@ -43,9 +43,9 @@ type AsyncFuncData struct {
 }
 
 type FuncGroup struct {
-	FuncCategoryName   string               `json:"func_category_name"`
-	FuncGroupName      string               `json:"func_group_name"`
-	FuncSteps          map[string]*FuncStep `json:"func_steps"`
+	FuncCategoryName   string               `json:"func_category_name" eru:"required"`
+	FuncGroupName      string               `json:"func_group_name" eru:"required"`
+	FuncSteps          map[string]*FuncStep `json:"func_steps" `
 	TokenSecretKey     string               `json:"-"`
 	ResponseStatusCode int                  `json:"response_status_code"`
 }

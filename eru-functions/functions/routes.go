@@ -90,10 +90,10 @@ type RemoveParams struct {
 }
 
 type TargetHost struct {
-	Host       string `json:"host"`
+	Host       string `json:"host" eru:"required"`
 	Port       string `json:"port"`
-	Method     string `json:"method"`
-	Scheme     string `json:"scheme"`
+	Method     string `json:"method" eru:"required"`
+	Scheme     string `json:"scheme" eru:"required"`
 	Allocation int64  `json:"allocation"`
 }
 
