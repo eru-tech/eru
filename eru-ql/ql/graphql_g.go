@@ -574,6 +574,7 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 											temp[i] = fmt.Sprint(ss)
 										}
 									}
+									//TODO to make this from db specific syntax
 									if v == "$jnin" || v == "$jin" {
 										parentKey = strings.Replace(parentKey, "->>", "->", -1)
 									}
