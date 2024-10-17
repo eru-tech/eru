@@ -1061,7 +1061,8 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 						tempStr = fmt.Sprint(tempStr, tempSep, vS)
 					}
 				}
-				filterStr = fmt.Sprint(key, " in (", tempStr, ")")
+				key = strings.Replace(key, "->>", "->", -1)
+				filterStr = fmt.Sprint(key, "  <@ jsonb_build_array (", tempStr, ")")
 				return filterStr, nil
 			} else {
 				err = errors.New("$jin operator requires an array")
@@ -1082,7 +1083,8 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 						tempStr = fmt.Sprint(tempStr, tempSep, vS)
 					}
 				}
-				filterStr = fmt.Sprint(key, " not in (", tempStr, ")")
+				key = strings.Replace(key, "->>", "->", -1)
+				filterStr = fmt.Sprint(" not (", key, " <@ jsonb_build_array (", tempStr, "))")
 				return filterStr, nil
 			} else {
 				err = errors.New("$jnin operator requires an array")
