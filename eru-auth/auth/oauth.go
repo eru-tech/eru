@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	auth_utils "github.com/eru-tech/eru/eru-auth/utils"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
@@ -34,6 +35,7 @@ type OAuthConfig struct {
 	SsoBaseUrl          string      `json:"sso_base_url" eru:"required"`
 	TokenUrl            string      `json:"token_url" eru:"required"`
 	JwkUrl              string      `json:"jwk_url"`
+	CheckSum            string      `json:"checksum"`
 	Identifiers         Identifiers `json:"identifiers"`
 	TokenKey            string      `json:"token_key"`
 }
@@ -120,6 +122,27 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 		glLoginFormBody["redirect_uri"] = oAuth.OAuthConfig.RedirectURI
 	}
 
+	if oAuth.OAuthConfig.CheckSum != "" {
+		e := reflect.ValueOf(&oAuth.OAuthConfig).Elem()
+
+		OAuthConfigMap := make(map[string]interface{})
+		for i := 0; i < e.NumField(); i++ {
+			k := e.Type().Field(i).Name
+			kTag := e.Type().Field(i).Tag.Get("json")
+			if kTag != "" {
+				k = kTag
+			}
+			OAuthConfigMap[k] = e.Field(i).Interface()
+		}
+		OAuthConfigMap["authorization_token"] = loginPostBody.IdpCode
+		cs, csErr := auth_utils.ExecuteTemplate(ctx, "oauth_checksum", oAuth.OAuthConfig.CheckSum, OAuthConfigMap, "string")
+		if csErr != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("error in checksum template : ", csErr.Error()))
+			return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+		}
+		glLoginFormBody["checksum"] = string(cs)
+	}
+
 	if loginPostBody.IdpCode != "" {
 		if oAuth.OAuthConfig.CodeKey == "" {
 			glLoginFormBody["code"] = loginPostBody.IdpCode
@@ -129,6 +152,7 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 
 	}
 	glLoginFormBody["grant_type"] = "authorization_code"
+
 	var loginErr error
 	var loginRes interface{}
 
@@ -167,7 +191,7 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 			if subStr, subStrOk := subI.(string); subStrOk {
 				sub = subStr
 			} else {
-				logs.WithContext(ctx).Error("idp_sub could not be retrieved from IDP response")
+				logs.WithContext(ctx).Warn("idp_sub could not be retrieved from IDP response")
 			}
 		}
 	} else {
