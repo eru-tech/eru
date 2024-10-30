@@ -882,7 +882,7 @@ func makeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonK
 			}
 		} else {
 			include := false
-
+			isJson := false
 			if parentPrefix == "" || strings.HasPrefix(kk, parentPrefix) {
 				include = true
 				kk = strings.Replace(kk, parentPrefix, "", -1)
@@ -890,11 +890,15 @@ func makeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonK
 			if include {
 				if jsonKey != "" {
 					kk = fmt.Sprint(jsonKey, "->>'", kk, "'")
+					isJson = true
 				}
 				if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
-					tempStr, err = makeFilterStr(ctx, kk, vMap)
+					tempStr, err = makeFilterStr(ctx, kk, vMap, isJson)
 					filterStrArray = append(filterStrArray, tempStr)
 				} else if vF, vFOk := v.(float64); vFOk {
+					if isJson {
+						kk = fmt.Sprint("(", kk, ")::numeric")
+					}
 					tempStr = fmt.Sprint(kk, " = ", vF)
 					filterStrArray = append(filterStrArray, tempStr)
 				} else {
@@ -934,13 +938,21 @@ func makeOrString(ctx context.Context, filter []interface{}, jsonKey string, par
 	return
 }
 
-func makeFilterStr(ctx context.Context, key string, cond map[string]interface{}) (filterStr string, err error) {
+func makeFilterStr(ctx context.Context, key string, cond map[string]interface{}, isJson bool) (filterStr string, err error) {
 	for ck, cv := range cond {
 		switch ck {
 		case "$in", "$inc":
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				tempStr := ""
 				tempSep := ""
+
+				if len(cvArray) > 0 && isJson {
+					if _, vFOk := cvArray[0].(float64); vFOk {
+						key = fmt.Sprint("(", key, ")::numeric")
+					} else if _, vBOk := cvArray[0].(bool); vBOk {
+						key = fmt.Sprint("(", key, ")::bool")
+					}
+				}
 				for i, v := range cvArray {
 					if i > 0 {
 						tempSep = ","
@@ -962,6 +974,13 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				tempStr := ""
 				tempSep := ""
+				if len(cvArray) > 0 && isJson {
+					if _, vFOk := cvArray[0].(float64); vFOk {
+						key = fmt.Sprint("(", key, ")::numeric")
+					} else if _, vBOk := cvArray[0].(bool); vBOk {
+						key = fmt.Sprint("(", key, ")::bool")
+					}
+				}
 				for i, v := range cvArray {
 					if i > 0 {
 						tempSep = ","
@@ -999,6 +1018,9 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 			}
 		case "$gt":
 			if cvF, cvFOk := cv.(float64); cvFOk {
+				if isJson {
+					key = fmt.Sprint("(", key, ")::numeric")
+				}
 				filterStr = fmt.Sprint(key, " > ", cvF)
 				return filterStr, nil
 			} else {
@@ -1008,6 +1030,9 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 			}
 		case "$gte":
 			if cvF, cvFOk := cv.(float64); cvFOk {
+				if isJson {
+					key = fmt.Sprint("(", key, ")::numeric")
+				}
 				filterStr = fmt.Sprint(key, " >= ", cvF)
 				return filterStr, nil
 			} else {
@@ -1017,6 +1042,9 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 			}
 		case "$lt":
 			if cvF, cvFOk := cv.(float64); cvFOk {
+				if isJson {
+					key = fmt.Sprint("(", key, ")::numeric")
+				}
 				filterStr = fmt.Sprint(key, " < ", cvF)
 				return filterStr, nil
 			} else {
@@ -1026,6 +1054,9 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 			}
 		case "$lte":
 			if cvF, cvFOk := cv.(float64); cvFOk {
+				if isJson {
+					key = fmt.Sprint("(", key, ")::numeric")
+				}
 				filterStr = fmt.Sprint(key, " <= ", cvF)
 				return filterStr, nil
 			} else {
@@ -1034,6 +1065,15 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 				return "false", nil
 			}
 		case "$ne":
+			if _, cvFOk := cv.(float64); cvFOk {
+				if isJson {
+					key = fmt.Sprint("(", key, ")::numeric")
+				}
+			} else if _, cvBOk := cv.(bool); cvBOk {
+				if isJson {
+					key = fmt.Sprint("(", key, ")::bool")
+				}
+			}
 			if cvS, cvSOk := cv.(string); cvSOk {
 				filterStr = fmt.Sprint(key, " <> '", cvS, "'")
 			} else {
@@ -1041,6 +1081,15 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 			}
 			return filterStr, nil
 		case "$eq":
+			if _, cvFOk := cv.(float64); cvFOk {
+				if isJson {
+					key = fmt.Sprint("(", key, ")::numeric")
+				}
+			} else if _, cvBOk := cv.(bool); cvBOk {
+				if isJson {
+					key = fmt.Sprint("(", key, ")::bool")
+				}
+			}
 			if cvS, cvSOk := cv.(string); cvSOk {
 				filterStr = fmt.Sprint(key, " = '", cvS, "'")
 			} else {
@@ -1051,6 +1100,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				tempStr := ""
 				tempSep := ""
+
 				for i, v := range cvArray {
 					if i > 0 {
 						tempSep = ","
@@ -1062,7 +1112,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 					}
 				}
 				key = strings.Replace(key, "->>", "->", -1)
-				filterStr = fmt.Sprint(key, "  <@ jsonb_build_array (", tempStr, ")")
+				filterStr = fmt.Sprint(key, "  ?| array[", tempStr, "]")
 				return filterStr, nil
 			} else {
 				err = errors.New("$jin operator requires an array")
@@ -1073,6 +1123,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				tempStr := ""
 				tempSep := ""
+
 				for i, v := range cvArray {
 					if i > 0 {
 						tempSep = ","
@@ -1084,7 +1135,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{})
 					}
 				}
 				key = strings.Replace(key, "->>", "->", -1)
-				filterStr = fmt.Sprint(" not (", key, " <@ jsonb_build_array (", tempStr, "))")
+				filterStr = fmt.Sprint(" not (", key, " ?| array[", tempStr, "])")
 				return filterStr, nil
 			} else {
 				err = errors.New("$jnin operator requires an array")

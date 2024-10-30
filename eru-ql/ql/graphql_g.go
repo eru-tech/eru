@@ -498,9 +498,9 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 							case "$ninc":
 								op = " not in "
 							case "$jin":
-								op = fmt.Sprint(" <@ ", module_model.MAKE_JSON_ARRAY_FN)
+								op = module_model.MAKE_JSON_ARRAY_FN
 							case "$jnin":
-								op = fmt.Sprint(" <@ ", module_model.MAKE_JSON_ARRAY_FN)
+								op = module_model.MAKE_JSON_ARRAY_FN
 							case "$like":
 								op = " like "
 							case "$nlike":
@@ -574,12 +574,14 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 											temp[i] = fmt.Sprint(ss)
 										}
 									}
+									str := ""
 									//TODO to make this from db specific syntax
 									if v == "$jnin" || v == "$jin" {
 										parentKey = strings.Replace(parentKey, "->>", "->", -1)
+										str = fmt.Sprint(parentKey, op, "[", strings.Join(temp, " , "), "]")
+									} else {
+										str = fmt.Sprint(parentKey, op, "(", strings.Join(temp, " , "), ")")
 									}
-
-									str := fmt.Sprint(parentKey, op, "(", strings.Join(temp, " , "), ")")
 
 									if v == "$jnin" {
 										str = fmt.Sprint(" not (", str, ") ")

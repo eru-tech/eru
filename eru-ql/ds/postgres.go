@@ -25,7 +25,7 @@ func (pr *PostgresSqlMaker) GetBlockedRegex() []string {
 	return append(blockedRegex, dbBlockedRegex...)
 }
 func (pr *PostgresSqlMaker) GetMakeJsonArrayFn() (string, error) {
-	return "jsonb_build_array", nil
+	return "?| array", nil
 }
 
 func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string {
