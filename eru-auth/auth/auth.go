@@ -428,7 +428,9 @@ func (auth *Auth) getUserInfo(ctx context.Context, id string) (identity Identity
 
 	if traits, traitsOk := loginOutput[0]["traits"].(*map[string]interface{}); traitsOk {
 		for k, v := range *traits {
-			identity.Attributes[k] = v
+			if v != "" {
+				identity.Attributes[k] = v
+			}
 		}
 	}
 	return
