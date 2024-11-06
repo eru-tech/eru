@@ -346,6 +346,7 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		allow := vars["allow"]
 		logs.WithContext(r.Context()).Info(projectId)
 		logs.WithContext(r.Context()).Info(authName)
+		logs.WithContext(r.Context()).Info(fmt.Sprint("allow = ", allow))
 		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
