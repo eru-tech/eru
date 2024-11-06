@@ -304,7 +304,6 @@ func triggerHook(ctx context.Context, functionName string, projectId string, fun
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
 	headers.Set("Content-Length", strconv.Itoa(0))
-	headers.Set("request_id", ctx.Value("request_id").(string))
 	logs.WithContext(ctx).Info(fmt.Sprint(srcfUrl.String()))
 	logs.WithContext(ctx).Info(fmt.Sprint(headers))
 	logs.WithContext(ctx).Info(fmt.Sprint(funcBody))
