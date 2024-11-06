@@ -96,10 +96,6 @@ func (oAuth *OAuth) GetUrl(ctx context.Context, state string) (urlStr string, oA
 
 func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
 	logs.WithContext(ctx).Debug("Login - Start")
-	if 1 == 1 {
-		logs.WithContext(ctx).Error(fmt.Sprint("error in checksum template : "))
-		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
-	}
 	idToken := ""
 	sub := ""
 	lMap := make(map[string]interface{})
@@ -480,7 +476,6 @@ func (oAuth *OAuth) getIdpUser(ctx context.Context, userId string, userEmail str
 	return
 }
 func (oAuth *OAuth) GetTokens(ctx context.Context, code string) (res interface{}, err error) {
-
 	query := models.Queries{}
 	query.Query = oAuth.AuthDb.GetDbQuery(ctx, SELECT_TEMP_CODE)
 	query.Vals = append(query.Vals, code)
