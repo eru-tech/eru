@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	INSERT_PKCE_EVENT   = "insert into eruauth_pkce_events (pkce_event_id,code_verifier,code_challenge,request_id,nonce,url) values ($1,$2,$3,$4,$5,$6)"
-	SELECT_PKCE_EVENT   = "select * from eruauth_pkce_events where request_id = $1"
-	SELECT_IDENTITY_SUB = "select * from eruauth_identities where identity_provider_id = $1"
+	INSERT_PKCE_EVENT = "insert into eruauth_pkce_events (pkce_event_id,code_verifier,code_challenge,request_id,nonce,url) values ($1,$2,$3,$4,$5,$6)"
+	SELECT_PKCE_EVENT = "select * from eruauth_pkce_events where request_id = $1"
+	//SELECT_IDENTITY_SUB = "select * from eruauth_identities where identity_provider_id = $1"
 )
 
 var Erufuncbaseurl = "http://localhost:8083"

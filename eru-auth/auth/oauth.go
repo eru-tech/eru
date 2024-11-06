@@ -203,6 +203,8 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	tokenMap := make(map[string]interface{})
 	tokenMapOk := false
 	strTokenEmail := ""
+	strTokenMobile := ""
+	strTokenUserName := ""
 	nonce := ""
 
 	if idToken != "" && oAuth.OAuthConfig.JwkUrl != "" {
@@ -249,8 +251,14 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	if tokenEmail, tokenEmailOk := tokenMap[oAuth.OAuthConfig.Identifiers.Email.IdpMapper]; tokenEmailOk {
 		strTokenEmail = tokenEmail.(string)
 	}
+	if tokenMobile, tokenMobileOk := tokenMap[oAuth.OAuthConfig.Identifiers.Mobile.IdpMapper]; tokenMobileOk {
+		strTokenMobile = tokenMobile.(string)
+	}
+	if tokenUserName, tokenUserNameOk := tokenMap[oAuth.OAuthConfig.Identifiers.Username.IdpMapper]; tokenUserNameOk {
+		strTokenUserName = tokenUserName.(string)
+	}
 
-	identity, err = oAuth.getIdpUser(ctx, sub, strTokenEmail, idToken)
+	identity, err = oAuth.getIdpUser(ctx, sub, strTokenEmail, strTokenMobile, strTokenUserName, idToken)
 	if err != nil {
 		return
 	}
@@ -267,9 +275,8 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 			logs.WithContext(ctx).Error(fmt.Sprint("USRR hook not defined"))
 			return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
 		}
-
 		//execute query again
-		identity, err = oAuth.getIdpUser(ctx, sub, strTokenEmail, idToken)
+		identity, err = oAuth.getIdpUser(ctx, sub, strTokenEmail, strTokenMobile, strTokenUserName, idToken)
 		if err != nil {
 			return
 		}
@@ -418,13 +425,16 @@ func (oAuth *OAuth) Register(ctx context.Context, registerUser RegisterUser, pro
 	return identity, tokens, nil
 }
 
-func (oAuth *OAuth) getIdpUser(ctx context.Context, userId string, userEmail string, idToken string) (identity Identity, err error) {
+func (oAuth *OAuth) getIdpUser(ctx context.Context, userId string, userEmail string, userMobile string, userName string, idToken string) (identity Identity, err error) {
 	var output []map[string]interface{}
 	var outputErr error
 	query := models.Queries{}
 	query.Query = oAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY_SUB)
 	query.Vals = append(query.Vals, userId)
 	query.Vals = append(query.Vals, userEmail)
+	query.Vals = append(query.Vals, userMobile)
+	query.Vals = append(query.Vals, userName)
+
 	output, outputErr = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), query)
 	if outputErr != nil {
 		err = outputErr
@@ -489,7 +499,7 @@ func (oAuth *OAuth) GetTokens(ctx context.Context, code string) (res interface{}
 	if len(output) > 0 {
 		id := output[0]["identity_id"].(string)
 		token := output[0]["idp_token"].(string)
-		identity, err = oAuth.getIdpUser(ctx, id, id, token)
+		identity, err = oAuth.getIdpUser(ctx, id, id, id, id, token)
 		if identity.Id != "" {
 			idptoken_query := models.Queries{}
 			idptoken_query.Query = oAuth.AuthDb.GetDbQuery(ctx, DELETE_TEMP_CODE)
