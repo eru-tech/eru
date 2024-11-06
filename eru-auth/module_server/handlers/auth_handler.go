@@ -343,10 +343,8 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authName := vars["authname"]
-		allow := vars["allow"]
 		logs.WithContext(r.Context()).Info(projectId)
 		logs.WithContext(r.Context()).Info(authName)
-		logs.WithContext(r.Context()).Info(fmt.Sprint("allow = ", allow))
 		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -392,9 +390,6 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		loginPostBody.Nonce = msParams.Nonce
 		logs.WithContext(r.Context()).Info(fmt.Sprint("before login = ", loginPostBody))
 
-		if allow == "" && authName == "wealthy" {
-			loginPostBody.IdpCode = ""
-		}
 		res, tokens, err := authObjI.Login(ctx, loginPostBody, projectId, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
