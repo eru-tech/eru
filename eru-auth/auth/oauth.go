@@ -310,11 +310,12 @@ func (oAuth *OAuth) Register(ctx context.Context, registerUser RegisterUser, pro
 	var insertQueries []*models.Queries
 	identity.Id = uuid.New().String()
 
+	userTraits.EmailVerified = true //for sso, consider email as verified if received from IDP
+	identity.Attributes["email_verified"] = userTraits.EmailVerified
 	if oAuth.OAuthConfig.Identifiers.Email.Enable {
 		userTraits.Email = registerUser.Email
-		userTraits.EmailVerified = true //for sso, consider email as verified if received from IDP
+
 		identity.Attributes["email"] = userTraits.Email
-		identity.Attributes["email_verified"] = userTraits.EmailVerified
 
 		if registerUser.Email != "" {
 			identifierFound = true
@@ -328,11 +329,12 @@ func (oAuth *OAuth) Register(ctx context.Context, registerUser RegisterUser, pro
 			requiredIdentifiers = append(requiredIdentifiers, "email")
 		}
 	}
+
+	userTraits.MobileVerified = true //for sso, consider mobile as verified if received from IDP
+	identity.Attributes["mobile_verified"] = userTraits.MobileVerified
 	if oAuth.OAuthConfig.Identifiers.Mobile.Enable {
 		userTraits.Mobile = registerUser.Mobile
-		userTraits.MobileVerified = true //for sso, consider mobile as verified if received from IDP
 		identity.Attributes["mobile"] = userTraits.Mobile
-		identity.Attributes["mobile_verified"] = userTraits.MobileVerified
 		if registerUser.Mobile != "" {
 			identifierFound = true
 			insertQueryIcMobile := models.Queries{}
