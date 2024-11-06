@@ -96,9 +96,7 @@ func (oAuth *OAuth) GetUrl(ctx context.Context, state string) (urlStr string, oA
 
 func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
 	logs.WithContext(ctx).Debug("Login - Start")
-	if 1 == 1 {
-		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
-	}
+
 	idToken := ""
 	sub := ""
 	lMap := make(map[string]interface{})
