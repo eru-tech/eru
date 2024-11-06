@@ -266,6 +266,7 @@ func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, proj
 	//creating Just-In-Time user if not found in eru database
 	if identity.Id == "" {
 		if oAuth.Hooks.USRR != "" {
+			logs.WithContext(ctx).Info(fmt.Sprint(tokenMap))
 			_, hookErr := triggerHook(ctx, oAuth.Hooks.USRR, projectId, tokenMap)
 			if hookErr != nil {
 				logs.WithContext(ctx).Error(fmt.Sprint("error while executing USRR hook :", hookErr.Error()))
