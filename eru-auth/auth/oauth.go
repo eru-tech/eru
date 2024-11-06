@@ -513,12 +513,18 @@ func (oAuth *OAuth) GetTokens(ctx context.Context, code string) (res interface{}
 }
 
 func (oAuth *OAuth) GenerateTempCode(ctx context.Context, id string, tokens map[string]interface{}) (code string, err error) {
+	tokenBytes, tokenBytesErr := json.Marshal(tokens)
+	if tokenBytesErr != nil {
+		err = tokenBytesErr
+		logs.WithContext(ctx).Error(err.Error())
+		return "", errors.New("something went wrong - please try again")
+	}
 	code = uuid.New().String()
 	idptoken_query := models.Queries{}
 	idptoken_query.Query = oAuth.AuthDb.GetDbQuery(ctx, INSERT_TEMP_CODE)
 	idptoken_query.Vals = append(idptoken_query.Vals, id)
 	idptoken_query.Vals = append(idptoken_query.Vals, code)
-	idptoken_query.Vals = append(idptoken_query.Vals, tokens)
+	idptoken_query.Vals = append(idptoken_query.Vals, string(tokenBytes))
 	_, err = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), idptoken_query)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
