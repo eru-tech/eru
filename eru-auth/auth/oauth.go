@@ -498,35 +498,25 @@ func (oAuth *OAuth) GetTokens(ctx context.Context, code string) (res interface{}
 		logs.WithContext(ctx).Error(err.Error())
 		return Identity{}, err
 	}
-	identity := Identity{}
+
 	if len(output) > 0 {
-		id := output[0]["identity_id"].(string)
-		token := output[0]["idp_token"].(string)
-		identity, err = oAuth.getIdpUser(ctx, id, id, id, id, token)
-		if identity.Id != "" {
-			idptoken_query := models.Queries{}
-			idptoken_query.Query = oAuth.AuthDb.GetDbQuery(ctx, DELETE_TEMP_CODE)
-			idptoken_query.Vals = append(idptoken_query.Vals, code)
-			_, err = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), idptoken_query)
-			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
-				//just print and continue
-			}
-			return oAuth.makeTokens(ctx, identity)
+		if tokens, tokensOk := output[0]["tokens"].(map[string]string); !tokensOk {
+			logs.WithContext(ctx).Error("identity_id not found in GetTokens")
+			return res, errors.New("something went wrong - please try again")
 		} else {
-			return res, errors.New("user not found")
+			return tokens, nil
 		}
 	}
 	return res, errors.New("invalid code")
 }
 
-func (oAuth *OAuth) GenerateTempCode(ctx context.Context, id string, idpToken string) (code string, err error) {
+func (oAuth *OAuth) GenerateTempCode(ctx context.Context, id string, tokens map[string]string) (code string, err error) {
 	code = uuid.New().String()
 	idptoken_query := models.Queries{}
 	idptoken_query.Query = oAuth.AuthDb.GetDbQuery(ctx, INSERT_TEMP_CODE)
 	idptoken_query.Vals = append(idptoken_query.Vals, id)
 	idptoken_query.Vals = append(idptoken_query.Vals, code)
-	idptoken_query.Vals = append(idptoken_query.Vals, idpToken)
+	idptoken_query.Vals = append(idptoken_query.Vals, tokens)
 	_, err = utils.ExecuteDbFetch(ctx, oAuth.AuthDb.GetConn(), idptoken_query)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())

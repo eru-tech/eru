@@ -199,8 +199,8 @@ func GenerateTempCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		fetchTokenFromReq.DisallowUnknownFields()
 		type fetchToken struct {
-			Id    string `json:"id" eru:"required"`
-			Token string `json:"token" eru:"required"`
+			Id     string            `json:"id" eru:"required"`
+			Tokens map[string]string `json:"tokens" eru:"required"`
 		}
 		var fetchTokenObj fetchToken
 
@@ -233,7 +233,7 @@ func GenerateTempCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		code, err := authObjI.GenerateTempCode(r.Context(), fetchTokenObj.Id, fetchTokenObj.Token)
+		code, err := authObjI.GenerateTempCode(r.Context(), fetchTokenObj.Id, fetchTokenObj.Tokens)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
