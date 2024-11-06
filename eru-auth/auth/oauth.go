@@ -502,7 +502,7 @@ func (oAuth *OAuth) GetTokens(ctx context.Context, code string) (res interface{}
 	}
 
 	if len(output) > 0 {
-		if tokens, tokensOk := output[0]["tokens"].(map[string]string); !tokensOk {
+		if tokens, tokensOk := output[0]["tokens"].(map[string]interface{}); !tokensOk {
 			logs.WithContext(ctx).Error("identity_id not found in GetTokens")
 			return res, errors.New("something went wrong - please try again")
 		} else {
@@ -512,7 +512,7 @@ func (oAuth *OAuth) GetTokens(ctx context.Context, code string) (res interface{}
 	return res, errors.New("invalid code")
 }
 
-func (oAuth *OAuth) GenerateTempCode(ctx context.Context, id string, tokens map[string]string) (code string, err error) {
+func (oAuth *OAuth) GenerateTempCode(ctx context.Context, id string, tokens map[string]interface{}) (code string, err error) {
 	code = uuid.New().String()
 	idptoken_query := models.Queries{}
 	idptoken_query.Query = oAuth.AuthDb.GetDbQuery(ctx, INSERT_TEMP_CODE)

@@ -34,7 +34,7 @@ type AuthI interface {
 	GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error)
 	FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error)
 	GetTokens(ctx context.Context, code string) (res interface{}, err error)
-	GenerateTempCode(ctx context.Context, id string, tokens map[string]string) (code string, err error)
+	GenerateTempCode(ctx context.Context, id string, tokens map[string]interface{}) (code string, err error)
 	LoginApi(ctx context.Context, refresh_token string, userId string) (res interface{}, err error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) (err error)
 	PerformPreSaveTask(ctx context.Context) (err error)
@@ -205,7 +205,7 @@ func (auth *Auth) GetUrl(ctx context.Context, state string) (url string, oAuthPa
 	return
 }
 
-func (auth *Auth) GenerateTempCode(ctx context.Context, id string, tokens map[string]string) (code string, err error) {
+func (auth *Auth) GenerateTempCode(ctx context.Context, id string, tokens map[string]interface{}) (code string, err error) {
 	err = errors.New("GetUrl Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return

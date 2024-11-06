@@ -199,8 +199,8 @@ func GenerateTempCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		fetchTokenFromReq.DisallowUnknownFields()
 		type fetchToken struct {
-			Id     string            `json:"id" eru:"required"`
-			Tokens map[string]string `json:"tokens" eru:"required"`
+			Id     string                 `json:"id" eru:"required"`
+			Tokens map[string]interface{} `json:"tokens" eru:"required"`
 		}
 		var fetchTokenObj fetchToken
 
