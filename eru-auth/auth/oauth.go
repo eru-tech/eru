@@ -433,6 +433,18 @@ func (oAuth *OAuth) Register(ctx context.Context, registerUser RegisterUser, pro
 func (oAuth *OAuth) getIdpUser(ctx context.Context, userId string, userEmail string, userMobile string, userName string, idToken string) (identity Identity, err error) {
 	var output []map[string]interface{}
 	var outputErr error
+	if userId == "" {
+		userId = "xx"
+	}
+	if userEmail == "" {
+		userEmail = "xx"
+	}
+	if userMobile == "" {
+		userMobile = "xx"
+	}
+	if userName == "" {
+		userName = "xx"
+	}
 	query := models.Queries{}
 	query.Query = oAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY_SUB)
 	query.Vals = append(query.Vals, userId)

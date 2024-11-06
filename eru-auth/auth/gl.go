@@ -136,6 +136,10 @@ func (glAuth *GlAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 		query := models.Queries{}
 		query.Query = glAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY_SUB)
 		query.Vals = append(query.Vals, sub)
+		query.Vals = append(query.Vals, sub)
+		query.Vals = append(query.Vals, sub)
+		query.Vals = append(query.Vals, sub)
+
 		if tokenEmail, tokenEmailOk := tokenMap[glAuth.GlConfig.Identifiers.Email.IdpMapper]; tokenEmailOk {
 			query.Vals = append(query.Vals, tokenEmail)
 		} else {

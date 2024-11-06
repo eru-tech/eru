@@ -144,6 +144,9 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 		query := models.Queries{}
 		query.Query = msAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY_SUB)
 		query.Vals = append(query.Vals, sub)
+		query.Vals = append(query.Vals, sub)
+		query.Vals = append(query.Vals, sub)
+		query.Vals = append(query.Vals, sub)
 		if tokenEmail, tokenEmailOk := tokenMap[msAuth.MsConfig.Identifiers.Email.IdpMapper]; tokenEmailOk {
 			query.Vals = append(query.Vals, tokenEmail)
 		} else {
