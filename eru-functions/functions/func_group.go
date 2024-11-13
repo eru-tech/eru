@@ -43,11 +43,12 @@ type AsyncFuncData struct {
 }
 
 type FuncGroup struct {
-	FuncCategoryName   string               `json:"func_category_name" eru:"required"`
-	FuncGroupName      string               `json:"func_group_name" eru:"required"`
-	FuncSteps          map[string]*FuncStep `json:"func_steps" `
-	TokenSecretKey     string               `json:"-"`
-	ResponseStatusCode int                  `json:"response_status_code"`
+	FuncCategoryName    string               `json:"func_category_name" eru:"required"`
+	FuncGroupName       string               `json:"func_group_name" eru:"required"`
+	FuncSteps           map[string]*FuncStep `json:"func_steps" `
+	TokenSecretKey      string               `json:"-"`
+	ResponseStatusCode  int                  `json:"response_status_code"`
+	ResponseContentType string               `json:"response_content_type"`
 }
 
 type FuncTemplateVars struct {

@@ -283,24 +283,23 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		reqVars := make(map[string]*functions.TemplateVars)
 		resVars := make(map[string]*functions.TemplateVars)
-		response, funcVarsMap, err := funcGroup.Execute(ctx, r, module_store.FuncThreads, module_store.LoopThreads, funcStepName, endfuncStepName, false, reqVars, resVars)
+		response, _, err := funcGroup.Execute(ctx, r, module_store.FuncThreads, module_store.LoopThreads, funcStepName, endfuncStepName, false, reqVars, resVars)
 		if err != nil {
 			server_handlers.FormatResponse(w, errStatusCode)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-		for k, v := range funcVarsMap {
-			logs.WithContext(ctx).Info(fmt.Sprint(k))
-			logs.WithContext(ctx).Info(fmt.Sprint(v))
-
-		}
 		defer response.Body.Close()
+
 		if response.StatusCode >= 300 && response.StatusCode <= 399 {
 			http.Redirect(w, r, response.Header.Get("Location"), response.StatusCode)
 		} else {
-
 			for k, v := range response.Header {
 				w.Header()[k] = v
+			}
+			if funcGroup.ResponseContentType != "" {
+				w.Header().Del("Content-Type")
+				w.Header().Set("Content-Type", funcGroup.ResponseContentType)
 			}
 			respStatusCode := response.StatusCode
 			logs.WithContext(r.Context()).Info(fmt.Sprint(respStatusCode))
@@ -309,6 +308,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 			logs.WithContext(r.Context()).Info(fmt.Sprint(respStatusCode))
 			w.WriteHeader(respStatusCode)
+
 			_, err = io.Copy(w, response.Body)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
@@ -316,6 +316,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
 			}
+			logs.WithContext(ctx).Info(fmt.Sprint(w.Header()))
 			return
 		}
 	}
@@ -382,17 +383,13 @@ func SFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		reqVars := bodyMap.ReqVars
 		resVars := bodyMap.ResVars
-		response, funcVarsMap, err := funcGroup.Execute(ctx, r, module_store.FuncThreads, module_store.LoopThreads, funcStepName, endfuncStepName, false, reqVars, resVars)
+		response, _, err := funcGroup.Execute(ctx, r, module_store.FuncThreads, module_store.LoopThreads, funcStepName, endfuncStepName, false, reqVars, resVars)
 		if err != nil {
 			server_handlers.FormatResponse(w, errStatusCode)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-		for k, v := range funcVarsMap {
-			logs.WithContext(ctx).Info(fmt.Sprint(k))
-			logs.WithContext(ctx).Info(fmt.Sprint(v))
 
-		}
 		defer response.Body.Close()
 		if response.StatusCode >= 300 && response.StatusCode <= 399 {
 			http.Redirect(w, r, response.Header.Get("Location"), response.StatusCode)
@@ -401,6 +398,10 @@ func SFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			for k, v := range response.Header {
 				w.Header()[k] = v
 			}
+			if funcGroup.ResponseContentType != "" {
+				w.Header().Del("Content-Type")
+				w.Header().Set("Content-Type", funcGroup.ResponseContentType)
+			}
 			respStatusCode := response.StatusCode
 			logs.WithContext(r.Context()).Info(fmt.Sprint(respStatusCode))
 			if funcGroup.ResponseStatusCode > 0 {
@@ -408,6 +409,7 @@ func SFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 			logs.WithContext(r.Context()).Info(fmt.Sprint(respStatusCode))
 			w.WriteHeader(respStatusCode)
+
 			_, err = io.Copy(w, response.Body)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
