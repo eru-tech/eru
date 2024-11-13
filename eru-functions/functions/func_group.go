@@ -57,36 +57,37 @@ type FuncTemplateVars struct {
 }
 
 type FuncStep struct {
-	Condition              string        `json:"condition"`
-	ConditionFailMessage   string        `json:"condition_fail_message"`
-	ConditionFailAction    string        `json:"condition_fail_action"`
-	Delay                  int64         `json:"delay"`
-	Async                  bool          `json:"async"`
-	AsyncMessage           string        `json:"async_message"`
-	AsyncEventName         string        `json:"async_event"`
-	AsyncEvent             events.EventI `json:"-"`
-	LoopVariable           string        `json:"loop_variable"`
-	LoopInParallel         bool          `json:"loop_in_parallel"`
-	RouteName              string        `json:"route_name"`
-	FunctionName           string        `json:"function_name"`
-	QueryName              string        `json:"query_name"`
-	QueryOutput            string        `json:"query_output"`
-	QueryOutputEncode      bool          `json:"query_output_encode"`
-	Api                    TargetHost    `json:"api"`
-	ApiPath                string        `json:"api_path"`
-	Path                   string        `json:"path"`
-	Route                  Route         `json:"-"`
-	FuncKey                string        `json:"-"`
-	ParentFuncGroupName    string        `json:"-"`
-	FuncGroup              FuncGroup     `json:"-"`
-	RequestHeaders         []Headers     `json:"request_headers"`
-	QueryParams            []Headers     `json:"query_params"`
-	FormData               []Headers     `json:"form_data"`
-	FileData               []FilePart    `json:"file_data"`
-	ResponseHeaders        []Headers     `json:"response_headers"`
-	TransformRequest       string        `json:"transform_request"`
-	TransformRequestOutput string        `json:"transform_request_output"`
-	TransformResponse      string        `json:"transform_response"`
+	Condition               string        `json:"condition"`
+	ConditionFailMessage    string        `json:"condition_fail_message"`
+	ConditionFailAction     string        `json:"condition_fail_action"`
+	Delay                   int64         `json:"delay"`
+	Async                   bool          `json:"async"`
+	AsyncMessage            string        `json:"async_message"`
+	AsyncEventName          string        `json:"async_event"`
+	AsyncEvent              events.EventI `json:"-"`
+	LoopVariable            string        `json:"loop_variable"`
+	LoopInParallel          bool          `json:"loop_in_parallel"`
+	RouteName               string        `json:"route_name"`
+	FunctionName            string        `json:"function_name"`
+	QueryName               string        `json:"query_name"`
+	QueryOutput             string        `json:"query_output"`
+	QueryOutputEncode       bool          `json:"query_output_encode"`
+	Api                     TargetHost    `json:"api"`
+	ApiPath                 string        `json:"api_path"`
+	Path                    string        `json:"path"`
+	Route                   Route         `json:"-"`
+	FuncKey                 string        `json:"-"`
+	ParentFuncGroupName     string        `json:"-"`
+	FuncGroup               FuncGroup     `json:"-"`
+	RequestHeaders          []Headers     `json:"request_headers"`
+	QueryParams             []Headers     `json:"query_params"`
+	FormData                []Headers     `json:"form_data"`
+	FileData                []FilePart    `json:"file_data"`
+	ResponseHeaders         []Headers     `json:"response_headers"`
+	TransformRequest        string        `json:"transform_request"`
+	TransformRequestOutput  string        `json:"transform_request_output"`
+	TransformResponse       string        `json:"transform_response"`
+	TransformResponseOutput string        `json:"transform_response_output"`
 	//IsPublic             bool                 `json:"is_public"`
 	RemoveParams         RemoveParams         `json:"remove_params"`
 	FuncSteps            map[string]*FuncStep `json:"func_steps"`
@@ -1126,7 +1127,12 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 			fvars.ResVars = resVars
 			fvars.ReqVars = reqVars
 
-			output, err := processTemplate(ctx, funcStep.FuncKey, funcStep.TransformResponse, fvars, "json", funcStep.Route.TokenSecretKey)
+			ot := "json"
+			if funcStep.TransformResponseOutput != "" {
+				ot = funcStep.TransformResponseOutput
+			}
+			logs.WithContext(ctx).Info(ot)
+			output, err := processTemplate(ctx, funcStep.FuncKey, funcStep.TransformResponse, fvars, ot, funcStep.Route.TokenSecretKey)
 			if err != nil {
 				return &TemplateVars{}, err
 			}
