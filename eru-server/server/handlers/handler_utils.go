@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/rs/cors"
@@ -19,8 +20,9 @@ func MakeCorsObject() *cors.Cors {
 	return cors.New(cors.Options{
 		AllowCredentials: true,
 		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Original-Endpoint"},
 		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
+			logs.WithContext(context.Background()).Info("xxx")
 			dn := strings.Split(s, "//")[1]
 			logs.Logger.Info(fmt.Sprint("dn = ", dn))
 			if AllowedOrigins == "" {
@@ -35,8 +37,22 @@ func MakeCorsObject() *cors.Cors {
 			}
 			return false
 		},
-		//AllowedOrigins: []string{"127.0.0.1"},
-		//Debug: true,
+		//AllowedOrigins: origins,
+		Debug: false,
+		//ExposedHeaders: []string{"Authorization", "Content-Type"},
+	})
+}
+
+func AllowCorsObject() *cors.Cors {
+	return cors.New(cors.Options{
+		AllowCredentials: true,
+		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Original-Endpoint"},
+		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
+			return true
+		},
+		//AllowedOrigins: []string{"*"},
+		Debug: false,
 		//ExposedHeaders: []string{"Authorization", "Content-Type"},
 	})
 }

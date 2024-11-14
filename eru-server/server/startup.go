@@ -21,6 +21,10 @@ func Launch(serverRouter *mux.Router, port string) {
 	handlers.AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
 	logs.Logger.Info(fmt.Sprint("AllowedOrigins = ", handlers.AllowedOrigins))
 	corsObj := handlers.MakeCorsObject()
+	corsObjAllow := handlers.AllowCorsObject()
+
+	rr := otelhttp.NewHandler(corsObjAllow.Handler(requestIdMiddleWare(otelMiddleWare(serverRouter))), handlers.ServerName)
+	http.Handle("/x/", rr)
 	r := otelhttp.NewHandler(corsObj.Handler(requestIdMiddleWare(otelMiddleWare(serverRouter))), handlers.ServerName)
 	http.Handle("/", r)
 	logs.Logger.Info(fmt.Sprint("Starting server ", handlers.ServerName, " on ", port))
