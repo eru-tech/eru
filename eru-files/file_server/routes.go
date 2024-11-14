@@ -39,7 +39,7 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/{storagename}/download").HandlerFunc(file_handlers.FileDownloadHandler(sh.Store))
 	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/{storagename}/downloadb64").HandlerFunc(file_handlers.FileDownloadHandlerB64(sh.Store))
 	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/{storagename}/downloadunzip").HandlerFunc(file_handlers.FileDownloadHandlerUnzip(sh.Store))
-
+	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/stringtofile").HandlerFunc(file_handlers.StringToFileHandler(sh.Store))
 	fileRouter.Methods(http.MethodPost).Path("/exceltojson").HandlerFunc(file_handlers.ExcelToJsonHandler(sh.Store))
 	fileRouter.Methods(http.MethodPost).Path("/exceltojsonb64").HandlerFunc(file_handlers.ExcelToJsonB64Handler(sh.Store))
 	//fileRouter.Methods(http.MethodPost).Path("/exceltojsonurl").HandlerFunc(file_handlers.ExcelToJsonUrlHandler(sh.Store))

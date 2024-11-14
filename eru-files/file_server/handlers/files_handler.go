@@ -26,6 +26,34 @@ const (
 	multiPartForm = "multipart/form-data"
 )
 
+func StringToFileHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		logs.WithContext(r.Context()).Debug("StringToFileHandler - Start")
+
+		strFileReq := json.NewDecoder(r.Body)
+		strFileReq.DisallowUnknownFields()
+
+		type stringToFile struct {
+			Str      string `json:"str"`
+			FileType string `json:"file_type"`
+			FileName string `json:"file_name"`
+		}
+
+		strFileObj := stringToFile{}
+		if err := strFileReq.Decode(&strFileObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", strFileObj.FileType)
+		w.Header().Set("Content-Disposition", fmt.Sprint("attachment; filename=", strFileObj.FileName))
+		_, _ = io.Copy(w, bytes.NewReader([]byte(strFileObj.Str)))
+	}
+}
+
 func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()

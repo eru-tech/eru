@@ -1132,7 +1132,7 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 			if funcStep.TransformResponseOutput != "" {
 				ot = funcStep.TransformResponseOutput
 			}
-			logs.WithContext(ctx).Info(ot)
+
 			output, err := processTemplate(ctx, funcStep.FuncKey, funcStep.TransformResponse, fvars, ot, funcStep.Route.TokenSecretKey)
 			if err != nil {
 				return &TemplateVars{}, err
