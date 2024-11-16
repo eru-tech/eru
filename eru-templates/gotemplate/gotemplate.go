@@ -143,6 +143,13 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 			}
 			return aesObj.Key, nil
 		},
+		"generate_rsa_keypair": func(bits int) (interface{}, error) {
+			rsaObj, err := erursa.GenerateKeyPair(ctx, bits)
+			if err != nil {
+				return nil, err
+			}
+			return rsaObj, nil
+		},
 		"hmac": func(b string, secret string) []byte {
 			return eruhmac.Hmac([]byte(b), secret)
 		},
@@ -505,7 +512,7 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 			return strings.Index(s, c)
 		},
 		"new_jwt": func(privateKeyStr string, claimsMap map[string]interface{}) (tokenString string, err error) {
-			return jwt.CreateJWT(ctx, privateKeyStr, claimsMap)
+			return jwt.CreateJWT(ctx, privateKeyStr, claimsMap, nil)
 		},
 		"evalFilter": func(filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
 			return evalFilter(ctx, filter, record)
