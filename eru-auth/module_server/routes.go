@@ -70,5 +70,5 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	authRouter.Methods(http.MethodGet).PathPrefix("/{authname}/getssourl").HandlerFunc(module_handlers.GetSsoUrlHandler(sh.Store))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/register").HandlerFunc(module_handlers.RegisterHandler(sh.Store))
 	authRouter.Methods(http.MethodDelete).PathPrefix("/{authname}/removeidentity").HandlerFunc(module_handlers.RemoveIdentityHandler(sh.Store))
-	authRouter.Methods(http.MethodGet).Path("/.well-known/jwks.json").HandlerFunc(module_handlers.JWKHandler(sh.Store))
+	authRouter.Methods(http.MethodGet).Path("/.well-known/jwks.json/{kid}").HandlerFunc(module_handlers.JWKHandler(sh.Store))
 }

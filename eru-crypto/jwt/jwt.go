@@ -61,7 +61,11 @@ func DecryptTokenJWK(ctx context.Context, strToken string, jwkurl string) (objTo
 		//	default:
 		//		return nil, fmt.Errorf("invalid token algorithm (%s) provided", secret.Alg)
 		//	}
-		key, err := FetchKeyJWK(ctx, token.Header["kid"].(string), jwkurl)
+		kid := ""
+		if kidStr, kidOk := token.Header["kid"].(string); kidOk {
+			kid = kidStr
+		}
+		key, err := FetchKeyJWK(ctx, kid, jwkurl)
 		return key, err
 	})
 
