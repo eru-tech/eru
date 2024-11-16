@@ -2,12 +2,16 @@ package module_store
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
 	"github.com/eru-tech/eru/eru-auth/module_model"
+	erujwt "github.com/eru-tech/eru/eru-crypto/jwt"
+	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
+	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
 	"github.com/google/uuid"
@@ -18,6 +22,9 @@ import (
 const (
 	INSERT_PKCE_EVENT = "insert into eruauth_pkce_events (pkce_event_id,code_verifier,code_challenge,request_id,nonce,url) values ($1,$2,$3,$4,$5,$6)"
 	SELECT_PKCE_EVENT = "select * from eruauth_pkce_events where request_id = $1"
+	INSERT_API_TOKEN  = "insert into eruauth_api_tokens (api_token_id,identity_id,project_id,api_token_hash,api_token_name,api_token) values ($1,$2,$3,$4,$5,$6)"
+	UPDATE_API_TOKEN  = "update eruauth_api_tokens set api_token_status='INACTIVE' , updated_date=CURRENT_TIMESTAMP where api_token_id=$1"
+	SELECT_API_TOKEN  = "select api_token_id, project_id, identity_id, api_token_name, api_token, api_token_hash, api_token_status from eruauth_api_tokens where identity_id=$1"
 	//SELECT_IDENTITY_SUB = "select * from eruauth_identities where identity_provider_id = $1"
 )
 
@@ -45,6 +52,14 @@ type ModuleStoreI interface {
 	SavePkceEvent(ctx context.Context, msParams auth.OAuthParams, s ModuleStoreI) (err error)
 	GetPkceEvent(ctx context.Context, requestId string, s ModuleStoreI) (msParams auth.OAuthParams, err error)
 	SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error
+
+	SaveKid(ctx context.Context, kid string, projectId string, realStore ModuleStoreI, persist bool) (erursa.RsaKeyPair, error)
+	RemoveKid(ctx context.Context, kid string, projectId string, realStore ModuleStoreI) error
+	GetKid(ctx context.Context, projectId string, kid string, s ModuleStoreI) (erursa.RsaKeyPair, error)
+	SaveApiToken(ctx context.Context, identity_id string, kid string, projectId string, token_header map[string]interface{}, token_claims map[string]interface{}, tokenName string, realStore ModuleStoreI) (string, error)
+	RevokeApiToken(ctx context.Context, token_id string, realStore ModuleStoreI) (err error)
+	GetApiTokens(ctx context.Context, identity_id string, realStore ModuleStoreI) (tokens module_model.ApiToken, err error)
+	FetchJWKKeys(ctx context.Context, projectId string, kid string, realStore ModuleStoreI) (jwk []erursa.JWK, err error)
 }
 
 type ModuleStore struct {
@@ -129,6 +144,7 @@ func (ms *ModuleStore) GetExtendedProjectConfig(ctx context.Context, projectId s
 		ePrj.MessageTemplates = prj.MessageTemplates
 		ePrj.Gateways = prj.Gateways
 		ePrj.Auth = prj.Auth
+		ePrj.Kids = prj.Kids
 		return ePrj, nil
 	} else {
 		err = errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
@@ -436,6 +452,7 @@ func (ms *ModuleStore) SavePkceEvent(ctx context.Context, msParams auth.OAuthPar
 	logs.WithContext(ctx).Debug("SavePkceEvent - Start")
 	s.GetMutex().Lock()
 	defer s.GetMutex().Unlock()
+
 	var queries []store.Queries
 	query := store.Queries{}
 	query.Query = INSERT_PKCE_EVENT
@@ -443,11 +460,7 @@ func (ms *ModuleStore) SavePkceEvent(ctx context.Context, msParams auth.OAuthPar
 	vals = append(vals, uuid.New().String(), msParams.CodeVerifier, msParams.CodeChallenge, msParams.ClientRequestId, msParams.Nonce, msParams.Url)
 	query.Vals = vals
 	queries = append(queries, query)
-
-	logs.WithContext(ctx).Info(fmt.Sprint(vals))
-
-	output, err := s.ExecuteDbSave(ctx, queries)
-	logs.WithContext(ctx).Info(fmt.Sprint(output))
+	_, err = s.ExecuteDbSave(ctx, queries)
 	if err != nil {
 		logs.WithContext(ctx).Info(err.Error())
 	}
@@ -498,4 +511,212 @@ func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string
 	ms.Projects[projectId].ProjectSettings = projectSettings
 	logs.WithContext(ctx).Info("SaveStore called from SaveProjectSettings")
 	return realStore.SaveStore(ctx, projectId, "", realStore)
+}
+
+func (ms *ModuleStore) SaveKid(ctx context.Context, kid string, projectId string, realStore ModuleStoreI, persist bool) (erursa.RsaKeyPair, error) {
+	logs.WithContext(ctx).Debug("SaveKid - Start")
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
+
+	prj, err := ms.GetProjectConfig(ctx, projectId)
+	if err != nil {
+		return erursa.RsaKeyPair{}, err
+	}
+	if _, kidOk := prj.Kids[kid]; kidOk {
+		err = errors.New(fmt.Sprint("kid ", kid, " already exists"))
+		logs.WithContext(ctx).Info(err.Error())
+		return erursa.RsaKeyPair{}, err
+	}
+	rsaKeyPair, rsaErr := erursa.GenerateKeyPair(ctx, 2048)
+	if rsaErr != nil {
+		err = errors.New(fmt.Sprint("RSA key generation failed"))
+		logs.WithContext(ctx).Info(err.Error())
+		return erursa.RsaKeyPair{}, err
+	}
+	rsaKeyPairMap := make(map[string]string)
+	rsaKeyPairMap["private_key"] = rsaKeyPair.PrivateKey
+	rsaKeyPairMap["public_key"] = rsaKeyPair.PublicKey
+	err = realStore.SetSmValue(ctx, projectId, kid, rsaKeyPairMap)
+	if err != nil {
+		logs.WithContext(ctx).Info(err.Error())
+		err = errors.New(fmt.Sprint("RSA key could not be saved"))
+		return erursa.RsaKeyPair{}, err
+	}
+	err = prj.AddKid(ctx, kid)
+	if err != nil {
+		return erursa.RsaKeyPair{}, err
+	}
+	if persist == true {
+		err = realStore.SaveStore(ctx, projectId, "", realStore)
+		if err != nil {
+			return erursa.RsaKeyPair{}, err
+		}
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(ms.Projects["processo"]))
+	return rsaKeyPair, nil
+}
+func (ms *ModuleStore) RemoveKid(ctx context.Context, kid string, projectId string, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveKid - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
+	if prg, ok := ms.Projects[projectId]; ok {
+		if _, kOk := prg.Kids[kid]; kOk {
+			err = prg.RemoveKid(ctx, kid)
+			if err != nil {
+				return err
+			}
+			err = realStore.UnsetSmValue(ctx, projectId, kid, "public_key")
+			if err != nil {
+				err = errors.New(fmt.Sprint("Kid public key ", kid, " could not be removed"))
+				logs.WithContext(ctx).Info(err.Error())
+				return err
+			}
+			err = realStore.UnsetSmValue(ctx, projectId, kid, "private_key")
+			if err != nil {
+				err = errors.New(fmt.Sprint("Kid private key ", kid, " could not be removed"))
+				logs.WithContext(ctx).Info(err.Error())
+				return err
+			}
+		} else {
+			err = errors.New(fmt.Sprint("Kid ", kid, " does not exists"))
+			logs.WithContext(ctx).Info(err.Error())
+			return err
+		}
+	} else {
+		err = errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		logs.WithContext(ctx).Info(err.Error())
+		return err
+	}
+	return realStore.SaveStore(ctx, projectId, "", realStore)
+}
+
+func (ms *ModuleStore) SaveApiToken(ctx context.Context, identity_id string, kid string, projectId string, token_header map[string]interface{}, token_claims map[string]interface{}, tokenName string, realStore ModuleStoreI) (string, error) {
+	logs.WithContext(ctx).Debug("SaveApiToken - Start")
+
+	rsaKeyPair, err := ms.GetKid(ctx, kid, projectId, realStore)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		rsaKeyPair, err = ms.SaveKid(ctx, kid, projectId, realStore, true)
+	}
+	jwt, err := erujwt.CreateJWT(ctx, rsaKeyPair.PrivateKey, token_claims, token_header)
+	if err != nil {
+		logs.WithContext(ctx).Info(err.Error())
+		err = errors.New(fmt.Sprint("Something went wrong, Please try again."))
+		return "", err
+	}
+	var queries []store.Queries
+	query := store.Queries{}
+	query.Query = INSERT_API_TOKEN
+	var vals []interface{}
+	jwtHash := hex.EncodeToString(erusha.NewSHA512([]byte(jwt)))
+	jwtStr := fmt.Sprint(jwt[:20], "xxxxxxxxxx")
+	vals = append(vals, uuid.New().String(), identity_id, projectId, jwtHash, tokenName, jwtStr)
+	query.Vals = vals
+	queries = append(queries, query)
+	_, err = realStore.ExecuteDbSave(ctx, queries)
+	if err != nil {
+		logs.WithContext(ctx).Info(err.Error())
+		err = errors.New(fmt.Sprint("Something went wrong, Please try again."))
+		return "", err
+	}
+	return jwt, nil
+}
+
+func (ms *ModuleStore) RevokeApiToken(ctx context.Context, token_id string, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("RevokeApiToken - Start")
+	var queries []store.Queries
+	query := store.Queries{}
+	query.Query = UPDATE_API_TOKEN
+	var vals []interface{}
+	vals = append(vals, token_id)
+	query.Vals = vals
+	queries = append(queries, query)
+	_, err = realStore.ExecuteDbSave(ctx, queries)
+	if err != nil {
+		logs.WithContext(ctx).Info(err.Error())
+		err = errors.New(fmt.Sprint("Something went wrong, Please try again."))
+		return err
+	}
+	return
+}
+
+func (ms *ModuleStore) GetApiTokens(ctx context.Context, identity_id string, realStore ModuleStoreI) (tokens module_model.ApiToken, err error) {
+	logs.WithContext(ctx).Debug("RevokeApiToken - Start")
+	query := store.Queries{}
+	query.Query = SELECT_API_TOKEN
+	var vals []interface{}
+	vals = append(vals, identity_id)
+	query.Vals = vals
+	output, err := realStore.ExecuteDbFetch(ctx, query)
+	if len(output) > 0 {
+		tokens.TokenId = output[0]["api_token_id"].(string)
+		tokens.IdentityId = output[0]["identity_id"].(string)
+		tokens.Token = output[0]["api_token"].(string)
+		tokens.TokenName = output[0]["api_token_name"].(string)
+		tokens.TokenStatus = output[0]["api_token_status"].(string)
+	}
+	if err != nil {
+		logs.WithContext(ctx).Info(err.Error())
+	}
+	return
+}
+
+func (ms *ModuleStore) GetKid(ctx context.Context, kid string, projectId string, realStore ModuleStoreI) (rsakeyPair erursa.RsaKeyPair, err error) {
+	logs.WithContext(ctx).Debug("RemoveKid - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
+	if prg, ok := ms.Projects[projectId]; ok {
+		if _, kOk := prg.Kids[kid]; kOk {
+			publickKeyStr := ""
+			privateKeyStr := ""
+			strOk := false
+			publickKey, publickKeyErr := realStore.GetSmValue(ctx, projectId, kid, "public_key", false)
+			if publickKeyErr != nil {
+				logs.WithContext(ctx).Info(publickKeyErr.Error())
+				err = errors.New(fmt.Sprint("Kid public key ", kid, " was not found"))
+				return erursa.RsaKeyPair{}, err
+			}
+			privateKey, privateKeyErr := realStore.GetSmValue(ctx, projectId, kid, "private_key", false)
+			if privateKeyErr != nil {
+				logs.WithContext(ctx).Info(privateKeyErr.Error())
+				err = errors.New(fmt.Sprint("Kid private key ", kid, " was not found"))
+				return erursa.RsaKeyPair{}, err
+			}
+			if publickKeyStr, strOk = publickKey.(string); !strOk {
+				err = errors.New(fmt.Sprint("Kid public key ", kid, " is not a string"))
+				logs.WithContext(ctx).Info(err.Error())
+				return erursa.RsaKeyPair{}, err
+			}
+			if privateKeyStr, strOk = privateKey.(string); !strOk {
+				err = errors.New(fmt.Sprint("Kid private key ", kid, " is not a string"))
+				logs.WithContext(ctx).Info(err.Error())
+				return erursa.RsaKeyPair{}, err
+			}
+			return erursa.RsaKeyPair{PublicKey: publickKeyStr, PrivateKey: privateKeyStr}, nil
+		} else {
+			err = errors.New(fmt.Sprint("Kid ", kid, " does not exists"))
+			logs.WithContext(ctx).Info(err.Error())
+			return erursa.RsaKeyPair{}, err
+		}
+
+	} else {
+		err = errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		logs.WithContext(ctx).Info(err.Error())
+		return erursa.RsaKeyPair{}, err
+	}
+}
+
+func (ms *ModuleStore) FetchJWKKeys(ctx context.Context, projectId string, kid string, realStore ModuleStoreI) (jwks []erursa.JWK, err error) {
+	rsakeyPair, err := ms.GetKid(ctx, kid, projectId, realStore)
+	if err != nil {
+		return
+	}
+	jwk, err := erursa.RsaPublicKeyToJWK(ctx, rsakeyPair.PublicKey, kid)
+	if err != nil {
+		return
+	}
+	jwks = append(jwks, jwk)
+	return
 }

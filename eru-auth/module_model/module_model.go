@@ -39,9 +39,19 @@ type Project struct {
 	MessageTemplates map[string]MessageTemplate  `json:"message_templates"`
 	Auth             map[string]auth.AuthI       `json:"auth"`
 	ProjectSettings  ProjectSettings             `json:"project_settings"`
+	Kids             map[string]string           `json:"kids"`
 }
 type ProjectSettings struct {
 	ClaimsKey string `json:"claims_key" eru:"required"`
+	KidKey    string `json:"kid_key" eru:"required"`
+}
+type ApiToken struct {
+	TokenId     string `json:"kid"`
+	IdentityId  string `json:"user_id"`
+	TokenHash   string `json:"token_hash"`
+	Token       string `json:"token"`
+	TokenName   string `json:"token_name"`
+	TokenStatus string `json:"token_status"`
 }
 
 /*
@@ -85,7 +95,21 @@ func (prj *Project) AddGateway(ctx context.Context, gatewayObjI gateway.GatewayI
 	prj.Gateways[gKey] = gatewayObjI
 	return nil
 }
-
+func (prj *Project) AddKid(ctx context.Context, kid string) error {
+	logs.WithContext(ctx).Debug("AddKid - Start")
+	if prj.Kids == nil {
+		prj.Kids = make(map[string]string)
+	}
+	logs.WithContext(ctx).Info("addding kid")
+	prj.Kids[kid] = kid
+	logs.WithContext(ctx).Info(fmt.Sprint(prj.Kids))
+	return nil
+}
+func (prj *Project) RemoveKid(ctx context.Context, kid string) error {
+	logs.WithContext(ctx).Debug("RemoveKid - Start")
+	delete(prj.Kids, kid)
+	return nil
+}
 func (prj *Project) AddAuth(ctx context.Context, authType string, authObjI auth.AuthI) error {
 	logs.WithContext(ctx).Debug("AddAuth - Start")
 	prj.Auth[authType] = authObjI
@@ -206,7 +230,17 @@ func (ePrj *ExtendedProject) UnmarshalJSON(b []byte) error {
 			ePrj.Variables = vars
 		}
 	}
-
+	var kids map[string]string
+	if _, ok := ePrjMap["kids"]; ok {
+		if ePrjMap["kids"] != nil {
+			err = json.Unmarshal(*ePrjMap["kids"], &kids)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			ePrj.Kids = kids
+		}
+	}
 	var mt map[string]MessageTemplate
 	if _, ok := ePrjMap["message_templates"]; ok {
 		if ePrjMap["message_templates"] != nil {

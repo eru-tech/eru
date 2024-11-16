@@ -6,16 +6,26 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"strings"
 )
 
 type RsaKeyPair struct {
 	PrivateKey string `json:"private_key" eru:"required"`
 	PublicKey  string `json:"public_key" eru:"required"`
 	Bits       int    `json:"bits" eru:"required"`
+}
+type JWK struct {
+	USE string `json:"use"`
+	KTY string `json:"kty"`
+	KID string `json:"kid"`
+	ALG string `json:"alg"`
+	N   string `json:"n"`
+	E   string `json:"e"`
 }
 
 func GenerateKeyPair(ctx context.Context, bits int) (rsaKeyPair RsaKeyPair, err error) {
@@ -77,6 +87,14 @@ func EncryptWithCert(ctx context.Context, plainBytes []byte, publicCert string) 
 
 func EncryptWithKey(ctx context.Context, plainBytes []byte, publicKeyStr string) (encryptedBytes []byte, err error) {
 	logs.WithContext(ctx).Debug("EncryptWithKey - Start")
+	rsaPublicKey, err := StringToKey(ctx, publicKeyStr)
+	if err != nil {
+		return
+	}
+	return Encrypt(ctx, plainBytes, rsaPublicKey)
+}
+
+func StringToKey(ctx context.Context, publicKeyStr string) (rsaPublicKey *rsa.PublicKey, err error) {
 	block, _ := pem.Decode([]byte(publicKeyStr))
 	if block == nil {
 		err = errors.New("failed to parse PEM block containing the key")
@@ -84,13 +102,14 @@ func EncryptWithKey(ctx context.Context, plainBytes []byte, publicKeyStr string)
 		return
 	}
 	publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
-	rsaPublicKey, ok := publicKey.(*rsa.PublicKey)
+	ok := false
+	rsaPublicKey, ok = publicKey.(*rsa.PublicKey)
 	if !ok {
 		err = errors.New("Value returned from ParsePKIXPublicKey was not an RSA public key")
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	return Encrypt(ctx, plainBytes, rsaPublicKey)
+	return
 }
 
 func Encrypt(ctx context.Context, plainBytes []byte, rsaPublicKey *rsa.PublicKey) (encryptedBytes []byte, err error) {
@@ -135,4 +154,30 @@ func Decrypt(ctx context.Context, encryptedBytes []byte, privateKeyStr string) (
 		return
 	}
 	return
+}
+
+// Base64URL encodes a byte slice using the base64 URL encoding scheme.
+func base64URL(b []byte) string {
+	return strings.TrimRight(base64.URLEncoding.EncodeToString(b), "=")
+}
+
+// Convert RSA Public Key to JWK
+func RsaPublicKeyToJWK(ctx context.Context, publicKeyStr string, kid string) (jwk JWK, err error) {
+	rsaPublicKey, err := StringToKey(ctx, publicKeyStr)
+	if err != nil {
+		return
+	}
+	jwk = JWK{
+		KTY: "RSA",
+		USE: "sig",
+		N:   base64URL(rsaPublicKey.N.Bytes()),        // Modulus
+		E:   base64URL(bigIntToBytes(rsaPublicKey.E)), // Exponent
+		KID: kid,                                      // Key ID
+	}
+	return
+}
+
+// Convert big.Int to bytes
+func bigIntToBytes(i int) []byte {
+	return []byte{byte(i >> 24), byte(i >> 16), byte(i >> 8), byte(i)}
 }

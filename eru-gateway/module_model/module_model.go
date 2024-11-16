@@ -2,6 +2,7 @@ package module_model
 
 import (
 	"context"
+	"fmt"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
 	"github.com/eru-tech/eru/eru-store/store"
 )
@@ -23,6 +24,7 @@ type ModuleProjectI interface {
 type Authorizer struct {
 	AuthorizerName string   `json:"authorizer_name"`
 	TokenHeaderKey string   `json:"token_header_key"`
+	KidHeaderKey   string   `json:"kid_header_key"`
 	SecretAlgo     string   `json:"secret_algo"`
 	JwkUrl         string   `json:"jwk_url"`
 	Audience       []string `json:"audience"`
@@ -72,8 +74,12 @@ type ProjectSettings struct {
 	ClaimsKey string `json:"claims_key" eru:"required"`
 }
 
-func (authorizer Authorizer) VerifyToken(ctx context.Context, token string) (claims interface{}, err error) {
-	claims, err = jwt.DecryptTokenJWK(ctx, token, authorizer.JwkUrl)
+func (authorizer Authorizer) VerifyToken(ctx context.Context, token string, kid string) (claims interface{}, err error) {
+	jwkUrl := authorizer.JwkUrl
+	if kid != "" {
+		jwkUrl = fmt.Sprint(jwkUrl, "/", kid)
+	}
+	claims, err = jwt.DecryptTokenJWK(ctx, token, jwkUrl)
 	if err != nil {
 		return
 	}

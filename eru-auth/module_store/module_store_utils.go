@@ -216,6 +216,31 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 				}
 				p.MessageTemplates = messageTemplates
 			}
+
+			var ps module_model.ProjectSettings
+			if _, ok := prjObjs["project_settings"]; ok {
+				if prjObjs["project_settings"] != nil {
+					err = json.Unmarshal(*prjObjs["project_settings"], &ps)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return err
+					}
+					p.ProjectSettings = ps
+				}
+			}
+
+			var kids map[string]string
+			if _, ok := prjObjs["kids"]; ok {
+				if prjObjs["kids"] != nil {
+					err = json.Unmarshal(*prjObjs["kids"], &kids)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return err
+					}
+					p.Kids = kids
+				}
+			}
+
 			var gateways map[string]*json.RawMessage
 			if _, ok := prjObjs["gateways"]; ok {
 				err = json.Unmarshal(*prjObjs["gateways"], &gateways)

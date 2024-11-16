@@ -11,7 +11,6 @@ import (
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
-	gomail "gopkg.in/gomail.v2"
 	"net/http"
 )
 
@@ -223,6 +222,168 @@ func GatewayRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		return
 	}
 }
+func KidSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("KidSaveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+
+		kidFromReq := json.NewDecoder(r.Body)
+		kidFromReq.DisallowUnknownFields()
+
+		type kidStruct struct {
+			Kid string `json:"kid"`
+		}
+
+		var kidObj kidStruct
+		if err := kidFromReq.Decode(&kidObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		err := utils.ValidateStruct(r.Context(), kidObj, "")
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+			return
+		}
+
+		_, err = s.SaveKid(r.Context(), fmt.Sprint("ERUAUTH_KID_", kidObj.Kid), projectId, s, true)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("kid ", kidObj.Kid, " saved successfully")})
+		return
+	}
+}
+func KidRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("KidRemoveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		kid := vars["kid"]
+		err := s.RemoveKid(r.Context(), fmt.Sprint("ERUAUTH_KID_", kid), projectId, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			s.SaveStore(r.Context(), projectId, "", s)
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("kid ", kid, " removed successfully")})
+		}
+		return
+	}
+}
+
+func ApiTokenSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ApiTokenSaveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+
+		tokenFromReq := json.NewDecoder(r.Body)
+		tokenFromReq.DisallowUnknownFields()
+
+		type tokenStruct struct {
+			Kid          string                 `json:"kid" eru:"required"`
+			IdentityId   string                 `json:"user_id" eru:"required"`
+			TokenClaims  map[string]interface{} `json:"token_claims" eru:"required"`
+			TokenName    string                 `json:"token_name" eru:"required"`
+			TokenHeaders map[string]interface{} `json:"token_headers"`
+		}
+
+		var tokenObj tokenStruct
+		if err := tokenFromReq.Decode(&tokenObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		err := utils.ValidateStruct(r.Context(), tokenObj, "")
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+			return
+		}
+		jwt := ""
+		jwt, err = s.SaveApiToken(r.Context(), tokenObj.IdentityId, fmt.Sprint("ERUAUTH_KID_", tokenObj.Kid), projectId, tokenObj.TokenHeaders, tokenObj.TokenClaims, tokenObj.TokenName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"token": jwt})
+		return
+	}
+}
+func ApiTokenRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ApiTokenRemoveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tokenId := vars["token_id"]
+		err := s.RevokeApiToken(r.Context(), tokenId, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			s.SaveStore(r.Context(), projectId, "", s)
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("token ", tokenId, " revoked successfully")})
+		}
+		return
+	}
+}
+
+func JWKHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("JWKHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		kid := vars["kid"]
+
+		keys, err := s.FetchJWKKeys(r.Context(), projectId, kid, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			err = s.SaveStore(r.Context(), projectId, "", s)
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			}
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"keys": keys})
+		}
+		return
+	}
+}
+
+func ApiTokenListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ApiTokenListHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		identityId := vars["identity_id"]
+		tokens, err := s.GetApiTokens(r.Context(), identityId, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			s.SaveStore(r.Context(), projectId, "", s)
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"tokens": tokens})
+		}
+		return
+	}
+}
 
 func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -230,7 +391,6 @@ func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authType := ""
-		logs.WithContext(r.Context()).Info("one")
 		authFromReq := json.NewDecoder(r.Body)
 		authFromReq.DisallowUnknownFields()
 
@@ -250,7 +410,6 @@ func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 		authObj := auth.GetAuth(authType)
-		logs.WithContext(r.Context()).Info("two")
 		authJson, err := json.Marshal(authObjTmp)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -274,7 +433,6 @@ func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		err = s.SaveAuth(r.Context(), authObj, projectId, s, true)
-		logs.WithContext(r.Context()).Info("three")
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -288,39 +446,10 @@ func AuthSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("auth config ", authName, " saved successfully")})
 		}
-		logs.WithContext(r.Context()).Info("four")
 		return
 	}
 }
-func TestEmail(s module_store.ModuleStoreI) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		logs.WithContext(r.Context()).Debug("TestEmail - Start")
-		msg := gomail.NewMessage()
-		//msg.SetHeader("From", "altaf@smartvalues.co.in")
-		//msg.SetHeader("From", "altaf@eru-tech.com")
-		msg.SetHeader("From", "altaf.baradia@stayvista.com")
-		//msg.SetHeader("From", "altaf.baradia@artfine.in")
-		msg.SetHeader("To", "abaradia@gmail.com")
-		msg.SetHeader("Subject", "Hi")
-		msg.SetBody("text/html", "<b>This is the body of the mail</b>")
-		//msg.Attach("/home/User/cat.jpg")
 
-		//n := gomail.NewDialer("smtp.office365.com", 587, "altaf@smartvalues.co.in", "Smart@123")
-		//n := gomail.NewDialer("smtp.gmail.com", 587, "altaf.baradia@artfine.in", "Artfine@123")
-		n := gomail.NewDialer("hmail.smartvalues.co.in", 587, "info@hmail.smartvalues.co.in", "Info@123")
-
-		// Send the email
-		if err := n.DialAndSend(msg); err != nil {
-			logs.WithContext(r.Context()).Error(err.Error())
-			server_handlers.FormatResponse(w, 400)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			return
-		}
-		server_handlers.FormatResponse(w, 200)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": "Email Sent Successfully!"})
-
-	}
-}
 func AuthRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("AuthRemoveHandler - Start")

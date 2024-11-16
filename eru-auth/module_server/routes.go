@@ -36,7 +36,14 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove/gateway/{gatewayname}/{gatewaytype}/{channel}").HandlerFunc(module_handlers.GatewayRemoveHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save/auth").HandlerFunc(module_handlers.AuthSaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove/auth/{authname}").HandlerFunc(module_handlers.AuthRemoveHandler(sh.Store))
-	storeRouter.Methods(http.MethodPost).Path("/testemail").HandlerFunc(module_handlers.TestEmail(sh.Store))
+
+	storeRouter.Methods(http.MethodPost).Path("/{project}/save/kid").HandlerFunc(module_handlers.KidSaveHandler(sh.Store))
+	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove/kid/{kid}").HandlerFunc(module_handlers.KidRemoveHandler(sh.Store))
+
+	storeRouter.Methods(http.MethodPost).Path("/{project}/create/api_token").HandlerFunc(module_handlers.ApiTokenSaveHandler(sh.Store))
+	storeRouter.Methods(http.MethodDelete).Path("/{project}/revoke/api_token/{token_id}").HandlerFunc(module_handlers.ApiTokenRemoveHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/list/api_token/{identity_id}").HandlerFunc(module_handlers.ApiTokenListHandler(sh.Store))
+
 	storeRouter.Methods(http.MethodPost).Path("/{project}/settings/save").HandlerFunc(module_handlers.ProjectSetingsSaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/func/list").HandlerFunc(module_handlers.ProjectFunctionListHandler(sh.Store))
 
@@ -63,5 +70,5 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	authRouter.Methods(http.MethodGet).PathPrefix("/{authname}/getssourl").HandlerFunc(module_handlers.GetSsoUrlHandler(sh.Store))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/register").HandlerFunc(module_handlers.RegisterHandler(sh.Store))
 	authRouter.Methods(http.MethodDelete).PathPrefix("/{authname}/removeidentity").HandlerFunc(module_handlers.RemoveIdentityHandler(sh.Store))
-
+	authRouter.Methods(http.MethodGet).Path("/.well-known/jwks.json").HandlerFunc(module_handlers.JWKHandler(sh.Store))
 }
