@@ -45,7 +45,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 			logs.WithContext(r.Context()).Info(token)
 			logs.WithContext(r.Context()).Info(r.Header.Get(authorizer.KidHeaderKey))
-			claims, err := authorizer.VerifyToken(r.Context(), r.Header.Get(authorizer.TokenHeaderKey), r.Header.Get(authorizer.KidHeaderKey))
+			claims, err := authorizer.VerifyToken(r.Context(), r.Header.Get(authorizer.TokenHeaderKey), fmt.Sprint("ERUAUTH_KID_", r.Header.Get(authorizer.KidHeaderKey)))
 			logs.WithContext(r.Context()).Info(fmt.Sprint(claims))
 			if err != nil {
 				server_handlers.FormatResponse(w, http.StatusUnauthorized)
