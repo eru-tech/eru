@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
 )
 
@@ -79,6 +80,7 @@ func (authorizer Authorizer) VerifyToken(ctx context.Context, token string, kid 
 	if kid != "" {
 		jwkUrl = fmt.Sprint(jwkUrl, "/", kid)
 	}
+	logs.WithContext(ctx).Info(jwkUrl)
 	claims, err = jwt.DecryptTokenJWK(ctx, token, jwkUrl)
 	if err != nil {
 		return

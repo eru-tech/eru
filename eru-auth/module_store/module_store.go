@@ -58,7 +58,7 @@ type ModuleStoreI interface {
 	GetKid(ctx context.Context, projectId string, kid string, s ModuleStoreI) (erursa.RsaKeyPair, error)
 	SaveApiToken(ctx context.Context, identity_id string, kid string, projectId string, token_header map[string]interface{}, token_claims map[string]interface{}, tokenName string, realStore ModuleStoreI) (string, error)
 	RevokeApiToken(ctx context.Context, token_id string, realStore ModuleStoreI) (err error)
-	GetApiTokens(ctx context.Context, identity_id string, realStore ModuleStoreI) (tokens module_model.ApiToken, err error)
+	GetApiTokens(ctx context.Context, identity_id string, realStore ModuleStoreI) (tokens []module_model.ApiToken, err error)
 	FetchJWKKeys(ctx context.Context, projectId string, kid string, realStore ModuleStoreI) (jwk []erursa.JWK, err error)
 }
 
@@ -642,7 +642,7 @@ func (ms *ModuleStore) RevokeApiToken(ctx context.Context, token_id string, real
 	return
 }
 
-func (ms *ModuleStore) GetApiTokens(ctx context.Context, identity_id string, realStore ModuleStoreI) (tokens module_model.ApiToken, err error) {
+func (ms *ModuleStore) GetApiTokens(ctx context.Context, identity_id string, realStore ModuleStoreI) (tokens []module_model.ApiToken, err error) {
 	logs.WithContext(ctx).Debug("RevokeApiToken - Start")
 	query := store.Queries{}
 	query.Query = SELECT_API_TOKEN
@@ -651,11 +651,15 @@ func (ms *ModuleStore) GetApiTokens(ctx context.Context, identity_id string, rea
 	query.Vals = vals
 	output, err := realStore.ExecuteDbFetch(ctx, query)
 	if len(output) > 0 {
-		tokens.TokenId = output[0]["api_token_id"].(string)
-		tokens.IdentityId = output[0]["identity_id"].(string)
-		tokens.Token = output[0]["api_token"].(string)
-		tokens.TokenName = output[0]["api_token_name"].(string)
-		tokens.TokenStatus = output[0]["api_token_status"].(string)
+		for i, _ := range output {
+			token := module_model.ApiToken{}
+			token.TokenId = output[i]["api_token_id"].(string)
+			token.IdentityId = output[i]["identity_id"].(string)
+			token.Token = output[i]["api_token"].(string)
+			token.TokenName = output[i]["api_token_name"].(string)
+			token.TokenStatus = output[i]["api_token_status"].(string)
+			tokens = append(tokens, token)
+		}
 	}
 	if err != nil {
 		logs.WithContext(ctx).Info(err.Error())
