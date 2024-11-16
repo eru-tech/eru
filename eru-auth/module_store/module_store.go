@@ -713,7 +713,7 @@ func (ms *ModuleStore) GetKid(ctx context.Context, kid string, projectId string,
 }
 
 func (ms *ModuleStore) FetchJWKKeys(ctx context.Context, projectId string, kid string, realStore ModuleStoreI) (jwks []erursa.JWK, err error) {
-	rsakeyPair, err := ms.GetKid(ctx, kid, projectId, realStore)
+	rsakeyPair, err := ms.GetKid(ctx, fmt.Sprint("ERUAUTH_KID_", kid), projectId, realStore)
 	if err != nil {
 		return
 	}
