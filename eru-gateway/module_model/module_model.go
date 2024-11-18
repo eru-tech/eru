@@ -6,6 +6,8 @@ import (
 	"github.com/eru-tech/eru/eru-crypto/jwt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"net/http"
 )
 
 type StoreCompare struct {
@@ -28,6 +30,10 @@ type Authorizer struct {
 	KidHeaderKey   string   `json:"kid_header_key"`
 	SecretAlgo     string   `json:"secret_algo"`
 	JwkUrl         string   `json:"jwk_url"`
+	TokenUrl       string   `json:"token_url"`
+	TokenUrlKey    string   `json:"token_url_key"`
+	TokenKey       string   `json:"token_key"`
+	TokenJwkUrl    string   `json:"token_jwk_url"`
 	Audience       []string `json:"audience"`
 	Issuer         []string `json:"issuer"`
 }
@@ -85,5 +91,33 @@ func (authorizer Authorizer) VerifyToken(ctx context.Context, token string, kid 
 	if err != nil {
 		return
 	}
+	logs.WithContext(ctx).Info(authorizer.TokenUrl)
+	if authorizer.TokenUrl != "" {
+		headers := http.Header{}
+		headers.Set("Content-Type", "application/json")
+		postBody := make(map[string]string)
+		postBody[authorizer.TokenUrlKey] = token
+		hookRes, _, _, _, hookErr := utils.CallHttp(ctx, http.MethodPost, authorizer.TokenUrl, headers, nil, nil, nil, postBody)
+		if hookErr != nil {
+			err = hookErr
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		logs.WithContext(ctx).Info(fmt.Sprint(hookRes))
+		if hookResMap, hookResMapOk := hookRes.(map[string]interface{}); hookResMapOk {
+			tokenJwkUrl := authorizer.TokenJwkUrl
+			if claimsToken, claimsTokenOk := hookResMap[authorizer.TokenKey].(string); claimsTokenOk {
+				claims, err = jwt.DecryptTokenJWK(ctx, claimsToken, tokenJwkUrl)
+				if err != nil {
+					return
+				}
+			} else {
+				logs.WithContext(ctx).Warn("claimsToken is not a string")
+			}
+		} else {
+			logs.WithContext(ctx).Warn("hookRes is not a map")
+		}
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(claims))
 	return
 }

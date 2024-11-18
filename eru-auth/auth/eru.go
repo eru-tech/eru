@@ -42,6 +42,7 @@ const (
 	INSERT_TEMP_CODE                  = "insert into eruauth_temp_codes (identity_id,temp_code,tokens) values (???,???,???) on conflict ON CONSTRAINT unique_identity_id_tc do update set temp_code=EXCLUDED.temp_code, created_date=CURRENT_TIMESTAMP"
 	SELECT_TEMP_CODE                  = "select * from eruauth_temp_codes where temp_code = ??? and created_date + (5 * interval '1 minute') >= LOCALTIMESTAMP"
 	DELETE_TEMP_CODE                  = "delete from eruauth_temp_codes where temp_code = ??? "
+	SELECT_API_TOKEN_HASH             = "select 'Active' status, b.* from eruauth_api_tokens a inner join eruauth_identities b on a.identity_id=b.identity_id  where a.api_token_status='ACTIVE' and a.project_id =$1 and a.api_token_hash=$2"
 )
 
 type EruAuth struct {
@@ -782,4 +783,39 @@ func (eruAuth *EruAuth) Logout(ctx context.Context, req *http.Request) (res inte
 	}
 
 	return res, resStatusCode, err
+}
+func (eruAuth *EruAuth) ApiTokenToUserToken(ctx context.Context, projectId string, apiToken string) (identity Identity, loginSuccess LoginSuccess, err error) {
+
+	apiTokenHash := hex.EncodeToString(erusha.NewSHA512([]byte(apiToken)))
+	query := models.Queries{}
+	query.Query = eruAuth.AuthDb.GetDbQuery(ctx, SELECT_API_TOKEN_HASH)
+	query.Vals = append(query.Vals, projectId, apiTokenHash)
+	output, outputErr := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), query)
+	if outputErr != nil {
+		err = outputErr
+		logs.WithContext(ctx).Error(err.Error())
+		return Identity{}, LoginSuccess{}, err
+	}
+	identity = Identity{}
+	if len(output) > 0 {
+		identity.Id = output[0]["identity_id"].(string)
+		identity.Status = output[0]["status"].(string)
+		identity.Attributes = make(map[string]interface{})
+
+		if attrs, attrsOk := output[0]["attributes"].(*map[string]interface{}); attrsOk {
+			for k, v := range *attrs {
+				identity.Attributes[k] = v
+			}
+		}
+		if traits, traitsOk := output[0]["traits"].(*map[string]interface{}); traitsOk {
+			for k, v := range *traits {
+				identity.Attributes[k] = v
+			}
+		}
+
+		eruTokens, eruTokensErr := eruAuth.makeTokens(ctx, identity)
+		return identity, eruTokens, eruTokensErr
+
+	}
+	return
 }
