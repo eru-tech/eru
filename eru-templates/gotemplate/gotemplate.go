@@ -908,6 +908,23 @@ func makeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonK
 					}
 					tempStr = fmt.Sprint(kk, " = ", vF)
 					filterStrArray = append(filterStrArray, tempStr)
+				} else if vB, vBOk := v.(bool); vBOk {
+					if isJson {
+						kk = fmt.Sprint("(", kk, ")::bool")
+					}
+					tempStr = fmt.Sprint(kk, " = ", vB)
+					filterStrArray = append(filterStrArray, tempStr)
+				} else if vS, vSOk := v.(string); vSOk {
+					if vBB, bErr := strconv.ParseBool(vS); bErr == nil {
+						if isJson {
+							kk = fmt.Sprint("(", kk, ")::bool")
+						}
+						tempStr = fmt.Sprint(kk, " = ", vBB)
+						filterStrArray = append(filterStrArray, tempStr)
+					} else {
+						tempStr = fmt.Sprint(kk, " = '", v, "'")
+						filterStrArray = append(filterStrArray, tempStr)
+					}
 				} else {
 					tempStr = fmt.Sprint(kk, " = '", v, "'")
 					filterStrArray = append(filterStrArray, tempStr)
@@ -1031,9 +1048,8 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 				filterStr = fmt.Sprint(key, " > ", cvF)
 				return filterStr, nil
 			} else {
-				err = errors.New("$gt operator requires a number")
-				logs.WithContext(ctx).Error(err.Error())
-				return "false", nil
+				filterStr = fmt.Sprint(key, " > '", cv, "'")
+				return filterStr, nil
 			}
 		case "$gte":
 			if cvF, cvFOk := cv.(float64); cvFOk {
@@ -1043,9 +1059,8 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 				filterStr = fmt.Sprint(key, " >= ", cvF)
 				return filterStr, nil
 			} else {
-				err = errors.New("$gte operator requires a number")
-				logs.WithContext(ctx).Error(err.Error())
-				return "false", nil
+				filterStr = fmt.Sprint(key, " >= '", cv, "'")
+				return filterStr, nil
 			}
 		case "$lt":
 			if cvF, cvFOk := cv.(float64); cvFOk {
@@ -1055,9 +1070,8 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 				filterStr = fmt.Sprint(key, " < ", cvF)
 				return filterStr, nil
 			} else {
-				err = errors.New("$lt operator requires a number")
-				logs.WithContext(ctx).Error(err.Error())
-				return "false", nil
+				filterStr = fmt.Sprint(key, " < '", cv, "'")
+				return filterStr, nil
 			}
 		case "$lte":
 			if cvF, cvFOk := cv.(float64); cvFOk {
@@ -1067,9 +1081,8 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 				filterStr = fmt.Sprint(key, " <= ", cvF)
 				return filterStr, nil
 			} else {
-				err = errors.New("$lte operator requires a number")
-				logs.WithContext(ctx).Error(err.Error())
-				return "false", nil
+				filterStr = fmt.Sprint(key, " <= '", cv, "'")
+				return filterStr, nil
 			}
 		case "$ne":
 			if _, cvFOk := cv.(float64); cvFOk {
@@ -1084,7 +1097,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 			if cvS, cvSOk := cv.(string); cvSOk {
 				filterStr = fmt.Sprint(key, " <> '", cvS, "'")
 			} else {
-				filterStr = fmt.Sprint(key, " <> ", cvS)
+				filterStr = fmt.Sprint(key, " <> ", cv)
 			}
 			return filterStr, nil
 		case "$eq":
@@ -1100,7 +1113,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 			if cvS, cvSOk := cv.(string); cvSOk {
 				filterStr = fmt.Sprint(key, " = '", cvS, "'")
 			} else {
-				filterStr = fmt.Sprint(key, " = ", cvS)
+				filterStr = fmt.Sprint(key, " = ", cv)
 			}
 			return filterStr, nil
 		case "$jin":
@@ -1149,6 +1162,30 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 				logs.WithContext(ctx).Error(err.Error())
 				return "false", nil
 			}
+		case "$null":
+			v := "is null"
+			var b bool
+			if cvB, cvBOk := cv.(bool); cvBOk {
+				b = cvB
+			} else if cvS, cvSOk := cv.(string); cvSOk {
+				if cvSB, bErr := strconv.ParseBool(cvS); bErr == nil {
+					b = cvSB
+				} else {
+					return "false", nil
+				}
+			} else {
+				return "false", nil
+			}
+			if !b {
+				v = "is not null"
+			}
+			if isJson {
+				key = fmt.Sprint("(", key, ") ", v)
+			} else {
+				key = fmt.Sprint(key, " ", v)
+			}
+			filterStr = key
+			return filterStr, nil
 		default:
 			logs.WithContext(ctx).Info("operator not found")
 			return "false", nil
