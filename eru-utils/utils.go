@@ -240,13 +240,18 @@ func HTTPClientTransporter(rt http.RoundTripper) http.RoundTripper {
 
 func callHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("callHttp - Start")
-	reqBody, err := json.Marshal(postBody)
-
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+	req := &http.Request{}
+	if postBody != nil {
+		reqBody, reqBodyerr := json.Marshal(postBody)
+		if reqBodyerr != nil {
+			logs.WithContext(ctx).Error(reqBodyerr.Error())
+			return nil, reqBodyerr
+		}
+		req, err = http.NewRequest(method, url, bytes.NewBuffer(reqBody))
+	} else {
+		req, err = http.NewRequest(method, url, nil)
 	}
-	req, err := http.NewRequest(method, url, bytes.NewBuffer(reqBody))
+
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return
