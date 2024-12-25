@@ -64,7 +64,7 @@ type ModuleStoreI interface {
 	GenerateAesKey(ctx context.Context, projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (aesKey eruaes.AesKey, err error)
 	UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string, s ModuleStoreI) (docId string, err error)
 	UploadFileB64(ctx context.Context, projectId string, storageName string, file []byte, fileName string, docType string, fodlerPath string, s ModuleStoreI) (docId string, err error)
-	UploadFileFromUrl(ctx context.Context, projectId string, storageName string, url string, fileName string, docType string, fodlerPath string, fileType string, s ModuleStoreI) (docId string, err error)
+	UploadFileFromUrl(ctx context.Context, projectId string, storageName string, urlStr string, fileName string, docType string, fodlerPath string, fileType string, s ModuleStoreI) (docId string, err error)
 	DownloadFile(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (file []byte, mimeType string, err error)
 	DownloadFileAsJson(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (jsonData []map[string]interface{}, err error)
 	DownloadFileB64(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, err error)
@@ -274,10 +274,10 @@ func (ms *ModuleStore) UploadFileB64(ctx context.Context, projectId string, stor
 	return
 }
 
-func (ms *ModuleStore) UploadFileFromUrl(ctx context.Context, projectId string, storageName string, url string, fileName string, docType string, folderPath string, fileType string, s ModuleStoreI) (docId string, err error) {
+func (ms *ModuleStore) UploadFileFromUrl(ctx context.Context, projectId string, storageName string, urlStr string, fileName string, docType string, folderPath string, fileType string, s ModuleStoreI) (docId string, err error) {
 	logs.WithContext(ctx).Debug("UploadFileFromUrl - Start")
 	reqHeaders := http.Header{}
-	res, respHeaders, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, reqHeaders, nil, nil, nil, nil)
+	res, respHeaders, _, _, err := utils.CallHttp(ctx, http.MethodGet, urlStr, reqHeaders, nil, nil, nil, nil)
 	_ = res
 	if err != nil {
 		return "", err

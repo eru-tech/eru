@@ -114,7 +114,7 @@ type SqlMakerI interface {
 	VerifyForBlockedWords(ctx context.Context, key string, val interface{}, realSqr SqlMakerI) (err error)
 	GetMakeJsonArrayFn() (string, error)
 	MakeJsonColumn(jsonField string, jsonKey string) string
-	//CreateConn() error
+	SqlToAst(ctx context.Context, query string) string
 }
 
 func (sqr *SqlMaker) GetBlockedWords() []string {
@@ -193,6 +193,11 @@ func (sqr *SqlMaker) CreateConn(ctx context.Context, dataSource *module_model.Da
 
 func (sqr *SqlMaker) CheckMe(ctx context.Context) {
 	logs.WithContext(ctx).Info("I am SqlMaker")
+}
+
+func (sqr *SqlMaker) SqlToAst(ctx context.Context, query string) string {
+	logs.WithContext(ctx).Error("SqlToAst Not Implemented")
+	return ""
 }
 
 /*

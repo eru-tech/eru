@@ -142,6 +142,8 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 
 			res = append(res, result)
 		}
+	} else if sqd.OutputType == "ast" {
+		sr.SqlToAst(ctx, sqd.Query)
 	}
 	queryObjs = append(queryObjs, queryObj)
 	return res, queryObjs, err

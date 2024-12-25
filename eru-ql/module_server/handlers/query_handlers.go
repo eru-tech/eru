@@ -157,6 +157,100 @@ func ProjectMyQueryConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
+func ProjectMyQueryASTHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectMyQueryASTHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+		queryName := vars["queryname"]
+
+		projectSettings, err := s.GetProjectSettingsObject(r.Context(), projectID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		tokenObj := make(map[string]interface{})
+		tokenStr := r.Header.Get(projectSettings.ClaimsKey)
+		if tokenStr != "" {
+			err = json.Unmarshal([]byte(tokenStr), &tokenObj)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(fmt.Sprint("error while unmarshalling token claim : ", err.Error()))
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		}
+
+		postBody := make(map[string]interface{})
+
+		if err := json.NewDecoder(r.Body).Decode(&postBody); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			logs.WithContext(r.Context()).Error(err.Error())
+			return
+		}
+
+		datasources, err := s.GetDataSources(r.Context(), projectID)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		var res []map[string]interface{}
+		//var queries []string
+		myQuery, err := s.GetMyQuery(r.Context(), projectID, queryName)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			logs.WithContext(r.Context()).Error(err.Error())
+			return
+		}
+		// overwriting variables with same names
+		if myQuery.QueryName != "" {
+			qlInterface := ql.GetQL(myQuery.QueryType)
+			if qlInterface == nil {
+				server_handlers.FormatResponse(w, 400)
+				err = errors.New("Invalid Query Type")
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				logs.WithContext(r.Context()).Error(err.Error())
+				return
+			}
+			isPublic := false
+			isPublic, err = strconv.ParseBool(r.Header.Get("is_public"))
+			if err != nil {
+				// do nothing - silently execute with is_public as false
+			}
+			qlInterface.SetQLData(r.Context(), myQuery, postBody, false, tokenObj, isPublic, "ast")
+			res, _, err = qlInterface.Execute(r.Context(), projectID, datasources, s, "ast")
+			/*
+				if err != nil {
+					server_handlers.FormatResponse(w, 400)
+					json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+					logs.WithContext(r.Context()).Error(err.Error())
+					return
+				}
+			*/
+		} else {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": errors.New(fmt.Sprint("query ", queryName, " not found")).Error()})
+			return
+		}
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			if res == nil {
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		} else {
+			server_handlers.FormatResponse(w, 200)
+		}
+		_ = json.NewEncoder(w).Encode(res)
+		return
+	}
+}
+
 func ProjectMyQueryExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ProjectMyQueryExecuteHandler - Start")

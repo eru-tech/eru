@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/antlr4-go/antlr/v4"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	parser "github.com/eru-tech/eru/eru-ql/ds/parser"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -18,6 +20,28 @@ type PostgresSqlMaker struct {
 	SqlMaker
 }
 
+// Listener to traverse the parse tree
+type Listener struct {
+	*parser.BasePostgreSQLParserListener
+	Columns       []string
+	inFinalSelect bool // Flag to track if we're in the final SELECT
+}
+
+/*
+func (l *Listener) EnterSelectstmt(ctx *parser.Target) {
+	//fmt.Println(ctx.GetText())
+	// Check if this is the final SELECT (not part of a CTE)
+	if ctx.GetParent() != nil {
+		if _, ok := ctx.GetParent().(*par	ser); ok {
+			l.inFinalSelect = true
+		}
+	}
+}
+*/
+//func (l *Listener) EnterEveryRule(ctx antlr.ParserRuleContext) {
+//	fmt.Print(ctx.GetRuleIndex(), " : ", ctx.GetText())
+//}
+
 func (pr *PostgresSqlMaker) GetBlockedWords() []string {
 	return append(blockedWords, dbBlockedWords...)
 }
@@ -26,6 +50,45 @@ func (pr *PostgresSqlMaker) GetBlockedRegex() []string {
 }
 func (pr *PostgresSqlMaker) GetMakeJsonArrayFn() (string, error) {
 	return "?| array", nil
+}
+
+func (pr *PostgresSqlMaker) SqlToAst(ctx context.Context, query string) string {
+	logs.WithContext(ctx).Debug("SqlToAst - Start")
+	// Create an input stream
+	//query = "select * from abc a left join xyz b on 1=1"
+	is := antlr.NewInputStream(query)
+
+	// Create the lexer and token stream
+	lexer := parser.NewPostgreSQLLexer(is)
+	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+
+	// Create the parser
+	p := parser.NewPostgreSQLParser(stream)
+
+	// Parse the input (starting rule depends on your grammar, e.g., statement)
+	tree := p.Root()
+	//fmt.Println(tree.ToStringTree(nil, p))
+
+	// Walk the parse tree with a custom listener
+	listener := &Listener{}
+	antlr.ParseTreeWalkerDefault.Walk(listener, tree)
+
+	return ""
+}
+func extractTableNames(tree antlr.Tree) []string {
+	var tableNames []string
+
+	// Implement a visitor or iterate over tree nodes
+	switch ctx := tree.(type) {
+	case *parser.Table_Context:
+		tableNames = append(tableNames, ctx.GetText())
+	default:
+		for i := 0; i < tree.GetChildCount(); i++ {
+			tableNames = append(tableNames, extractTableNames(tree.GetChild(i))...)
+		}
+	}
+
+	return tableNames
 }
 
 func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string {
