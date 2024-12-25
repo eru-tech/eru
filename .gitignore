@@ -14,6 +14,7 @@
 #config
 config.json
 *.gitignore
+.gitignore
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
@@ -25,3 +26,4 @@ config.json
 /eru-files/setEnvVar.sh
 /eru-rules/setEnvVar.sh
 /eru-sample/
+/eru-functions/func_profile.log
