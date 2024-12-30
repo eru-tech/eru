@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/eru-tech/eru/eru-crypto/jwt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	models "github.com/eru-tech/eru/eru-models"
-	utils "github.com/eru-tech/eru/eru-utils"
-	"github.com/google/uuid"
 	"net/http"
 	"net/url"
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/eru-tech/eru/eru-crypto/jwt"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	models "github.com/eru-tech/eru/eru-models"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/uuid"
 )
 
 type GlAuth struct {
@@ -136,15 +137,14 @@ func (glAuth *GlAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 		query := models.Queries{}
 		query.Query = glAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY_SUB)
 		query.Vals = append(query.Vals, sub)
-		query.Vals = append(query.Vals, sub)
-		query.Vals = append(query.Vals, sub)
-		query.Vals = append(query.Vals, sub)
 
 		if tokenEmail, tokenEmailOk := tokenMap[glAuth.GlConfig.Identifiers.Email.IdpMapper]; tokenEmailOk {
 			query.Vals = append(query.Vals, tokenEmail)
 		} else {
 			query.Vals = append(query.Vals, "")
 		}
+		query.Vals = append(query.Vals, sub)
+		query.Vals = append(query.Vals, sub)
 
 		logs.WithContext(ctx).Info(fmt.Sprint(query.Vals))
 		output, outputErr := utils.ExecuteDbFetch(ctx, glAuth.AuthDb.GetConn(), query)

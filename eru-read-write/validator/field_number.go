@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"strings"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 type NumberField struct {
@@ -32,7 +33,7 @@ func (f *NumberField) Validate(ctx context.Context, v interface{}) (err error) {
 
 	if v == nil {
 		if f.Required {
-			errs = append(errs, fmt.Sprint("'", f.Name, "' cannot be blank"))
+			errs = append(errs, fmt.Sprint("'", f.Label, "' cannot be blank"))
 		}
 		return
 	}
@@ -41,24 +42,24 @@ func (f *NumberField) Validate(ctx context.Context, v interface{}) (err error) {
 	if !ok {
 		valueInt, valueIntok := v.(int)
 		if !valueIntok {
-			errs = append(errs, fmt.Sprint("'", f.Name, "' has to be a number"))
+			errs = append(errs, fmt.Sprint("'", f.Label, "' has to be a number"))
 			return
 		}
 		value = float64(valueInt)
 	}
 
 	if f.MinCheck && f.MinValue > value {
-		errs = append(errs, fmt.Sprint("minimum length of '", f.Name, "' has to be ", f.MinValue))
+		errs = append(errs, fmt.Sprint("minimum length of '", f.Label, "' has to be ", f.MinValue))
 	}
 	if f.MaxCheck && f.MaxValue < value {
-		errs = append(errs, fmt.Sprint("maximum length of '", f.Name, "' has to be ", f.MaxValue))
+		errs = append(errs, fmt.Sprint("maximum length of '", f.Label, "' has to be ", f.MaxValue))
 	}
 
 	if f.ValidateSign {
 		if f.IsPositive && value < 0 {
-			errs = append(errs, fmt.Sprint("positive value expected for '", f.Name, "'"))
+			errs = append(errs, fmt.Sprint("positive value expected for '", f.Label, "'"))
 		} else if !f.IsPositive && value > 0 {
-			errs = append(errs, fmt.Sprint("negative value expected for '", f.Name, "'"))
+			errs = append(errs, fmt.Sprint("negative value expected for '", f.Label, "'"))
 		}
 	}
 

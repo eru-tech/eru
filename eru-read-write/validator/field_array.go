@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"strings"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 type ArrayField struct {
@@ -27,20 +28,20 @@ func (f *ArrayField) Validate(ctx context.Context, v interface{}) (err error) {
 
 	if v == nil {
 		if f.Required {
-			errs = append(errs, fmt.Sprint("'", f.Name, "' cannot be blank"))
+			errs = append(errs, fmt.Sprint("'", f.Label, "' cannot be blank"))
 		}
 		return
 	}
 
 	value, ok := v.([]interface{})
 	if !ok {
-		errs = append(errs, fmt.Sprint("'", f.Name, "' has to be an array"))
+		errs = append(errs, fmt.Sprint("'", f.Label, "' has to be an array"))
 		return
 	}
 
 	if len(value) == 0 {
 		if f.Required {
-			errs = append(errs, fmt.Sprint("'", f.Name, "' cannot be blank"))
+			errs = append(errs, fmt.Sprint("'", f.Label, "' cannot be blank"))
 		}
 		return
 	}
@@ -59,7 +60,7 @@ func (f *ArrayField) Validate(ctx context.Context, v interface{}) (err error) {
 			}
 		}
 		if len(vFoundArray) > 0 {
-			errs = append(errs, fmt.Sprint("invalid value for field '", f.Name, "' : (", vFoundArray, ")"))
+			errs = append(errs, fmt.Sprint("invalid value for field '", f.Label, "' : (", vFoundArray, ")"))
 			return
 		}
 	}

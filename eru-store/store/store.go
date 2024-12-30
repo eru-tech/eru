@@ -5,6 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/eru-tech/eru/eru-cache/cache"
 	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -17,16 +22,13 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jmoiron/sqlx"
 	"github.com/tidwall/gjson"
-	"os"
-	"strings"
-	"sync"
-	"time"
 )
 
 type StoreI interface {
 	LoadStore(fp string, ms StoreI) (err error)
 	GetStoreByteArray(fp string) (b []byte, err error)
 	SaveStore(ctx context.Context, projectId string, fp string, ms StoreI) (err error)
+	SaveTenantStore(ctx context.Context, projectId string, tenantId string, fp string, tenantConfig interface{}) (err error)
 	SetDbType(dbtype string)
 	CreateConn() error
 	GetConn() *sqlx.DB
@@ -34,8 +36,12 @@ type StoreI interface {
 	ExecuteDbSave(ctx context.Context, queries []Queries) (output [][]map[string]interface{}, err error)
 	ExecuteDbFetch(ctx context.Context, query Queries) (output []map[string]interface{}, err error)
 	SetStoreTableName(tablename string)
+	SetStoreTenantTableName(tablename string)
 	GetStoreTableName() (tablename string)
+	GetStoreWithoutTenants(ctx context.Context, ms StoreI) (b []byte, err error)
+	GetStoreTenantTableName() (tablename string)
 	SetVars(ctx context.Context, variables map[string]Variables)
+	SetTenantVars(ctx context.Context, tenantVariables map[string]map[string]Variables)
 	SaveVar(ctx context.Context, projectId string, newVar Vars, s StoreI) (err error)
 	RemoveVar(ctx context.Context, projectId string, key string, s StoreI) (err error)
 	SaveEnvVar(ctx context.Context, projectId string, newEnvVar EnvVars, s StoreI) (err error)
@@ -43,7 +49,11 @@ type StoreI interface {
 	SaveSecret(ctx context.Context, projectId string, newSecret Secrets, s StoreI) (err error)
 	RemoveSecret(ctx context.Context, projectId string, key string, s StoreI) (err error)
 	FetchVars(ctx context.Context, projectId string) (variables Variables, err error)
+	FetchTenantVars(ctx context.Context, projectId string) (variables map[string]Variables, err error)
 	ReplaceVariables(ctx context.Context, projectId string, text []byte, varMap map[string]interface{}) (returnText []byte)
+	ReplaceTenantVariables(ctx context.Context, projectId string, tenantId string, text []byte) (returnText []byte)
+	SaveTenantSecret(ctx context.Context, projectId string, tenantId string, newSecret Secrets, s StoreI) (err error)
+	RemoveTenantSecret(ctx context.Context, projectId string, tenantId string, key string, s StoreI) (err error)
 	SaveRepo(ctx context.Context, projectId string, repo repos.RepoI, s StoreI, persist bool) (err error)
 	SaveRepoToken(ctx context.Context, projectId string, repo repos.RepoToken, s StoreI) (err error)
 	FetchRepo(ctx context.Context, projectId string) (repo repos.RepoI, err error)
@@ -81,6 +91,7 @@ type Store struct {
 	//Projects map[string]*model.Project //ProjectId is the key
 	mu                sync.RWMutex
 	Variables         map[string]Variables                `json:"variables"`
+	TenantVariables   map[string]map[string]Variables     `json:"tenant_variables"`
 	ProjectRepos      map[string]repos.RepoI              `json:"repos"`
 	ProjectRepoTokens map[string]repos.RepoToken          `json:"repo_token"`
 	SecretManager     map[string]sm.SmStoreI              `json:"secret_manager"`
@@ -210,7 +221,12 @@ func (store *Store) GetStoreByteArray(fp string) (b []byte, err error) {
 	return
 }
 
-func (store *Store) SaveStore(ctx context.Context, fp string, ms StoreI) (err error) {
+func (store *Store) SaveStore(ctx context.Context, projectId string, fp string, ms StoreI) (err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(context.Background()).Error(err.Error())
+	return
+}
+func (store *Store) SaveTenantStore(ctx context.Context, projectId string, tenantId string, fp string, tenantConfig interface{}) (err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(context.Background()).Error(err.Error())
 	return
@@ -247,10 +263,16 @@ func (store *Store) SetVars(ctx context.Context, variables map[string]Variables)
 	store.Variables = variables
 }
 
+func (store *Store) SetTenantVars(ctx context.Context, tenantVariables map[string]map[string]Variables) {
+	store.GetMutex().Lock()
+	defer store.GetMutex().Unlock()
+	store.TenantVariables = tenantVariables
+}
+
 func (store *Store) FetchVars(ctx context.Context, projectId string) (variables Variables, err error) {
 	logs.WithContext(ctx).Debug("FetchVars - Start")
 	if store.Variables == nil {
-		err = errors.New("No variables defined in store")
+		err = errors.New("no variables defined in store")
 		logs.WithContext(ctx).Error(err.Error())
 		return Variables{}, err
 	}
@@ -307,6 +329,22 @@ func (store *Store) RemoveVar(ctx context.Context, projectId string, key string,
 	}
 	delete(store.Variables[projectId].Vars, key)
 	err = s.SaveStore(ctx, projectId, "", s)
+	return
+}
+
+func (store *Store) FetchTenantVars(ctx context.Context, projectId string) (variables map[string]Variables, err error) {
+	logs.WithContext(ctx).Debug("FetchTenantVars - Start")
+	if store.TenantVariables == nil {
+		err = errors.New("no variables defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return map[string]Variables{}, err
+	}
+	ok := false
+	if variables, ok = store.TenantVariables[projectId]; !ok {
+		err = errors.New(fmt.Sprint("Variables not defined for project :", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+		return map[string]Variables{}, err
+	}
 	return
 }
 
@@ -385,7 +423,7 @@ func (store *Store) RemoveSecret(ctx context.Context, projectId string, key stri
 	s.GetMutex().Lock()
 	defer s.GetMutex().Unlock()
 	if store.Variables == nil {
-		err = errors.New("No variables defined in store")
+		err = errors.New("no variables defined in store")
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
@@ -404,6 +442,66 @@ func (store *Store) RemoveSecret(ctx context.Context, projectId string, key stri
 	return
 }
 
+func (store *Store) SaveTenantSecret(ctx context.Context, projectId string, tenantId string, newSecret Secrets, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveSecret - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
+
+	if store.TenantVariables == nil {
+		store.TenantVariables = make(map[string]map[string]Variables)
+	}
+
+	if _, vOk := store.TenantVariables[projectId]; !vOk {
+		logs.WithContext(ctx).Info(fmt.Sprint("making new variable object for project : ", projectId))
+		store.TenantVariables[projectId] = map[string]Variables{}
+	}
+	if _, tvOk := store.TenantVariables[projectId][tenantId]; !tvOk {
+		logs.WithContext(ctx).Info(fmt.Sprint("making new variable object for tenant : ", tenantId))
+		store.TenantVariables[projectId][tenantId] = Variables{}
+
+	}
+	tv := store.TenantVariables[projectId][tenantId]
+	logs.WithContext(ctx).Info(fmt.Sprint(tv))
+
+	if tv.Secrets == nil {
+		tv.Secrets = make(map[string]Secrets)
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(tv.Secrets))
+	tv.Secrets[newSecret.Key] = newSecret
+	store.TenantVariables[projectId][tenantId] = tv
+	err = s.SaveStore(ctx, projectId, "", s)
+	return
+}
+
+func (store *Store) RemoveTenantSecret(ctx context.Context, projectId string, tenantId string, key string, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveSecret - Start")
+	s.GetMutex().Lock()
+	defer s.GetMutex().Unlock()
+	if store.TenantVariables == nil {
+		err = errors.New("no variables defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	if _, ok := store.TenantVariables[projectId]; !ok {
+		err = errors.New(fmt.Sprint("Variables not defined for project :", projectId))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	if _, ok := store.TenantVariables[projectId][tenantId]; !ok {
+		err = errors.New(fmt.Sprint("Variables not defined for tenant :", tenantId))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	if _, ok := store.TenantVariables[projectId][tenantId].Secrets[key]; !ok {
+		err = errors.New(fmt.Sprint("Secret key not defined :", key))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	delete(store.TenantVariables[projectId][tenantId].Secrets, key)
+	err = s.SaveStore(ctx, projectId, "", s)
+	return
+}
+
 func (store *Store) SetDbType(dbtype string) {
 	//do nothing
 }
@@ -413,6 +511,14 @@ func (store *Store) SetStoreTableName(tablename string) {
 }
 
 func (store *Store) GetStoreTableName() (tablename string) {
+	return
+}
+
+func (store *Store) SetStoreTenantTableName(tablename string) {
+	//do nothing
+}
+
+func (store *Store) GetStoreTenantTableName() (tablename string) {
 	return
 }
 
@@ -456,6 +562,18 @@ func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text
 				textStr = strings.Replace(textStr, fmt.Sprint("$VAR_", k), vStr, -1)
 			}
 
+		}
+	}
+	return []byte(textStr)
+}
+func (store *Store) ReplaceTenantVariables(ctx context.Context, projectId string, tenantId string, text []byte) (returnText []byte) {
+	logs.WithContext(ctx).Debug("ReplaceTenantVariables - Start")
+	textStr := string(text)
+	if _, prjVarsOk := store.TenantVariables[projectId]; prjVarsOk {
+		if _, tenantVarsOk := store.TenantVariables[projectId][tenantId]; tenantVarsOk {
+			for k, v := range store.TenantVariables[projectId][tenantId].Secrets {
+				textStr = strings.Replace(textStr, fmt.Sprint("$SECRET_", k), v.Value, -1)
+			}
 		}
 	}
 	return []byte(textStr)
@@ -599,7 +717,7 @@ func (store *Store) LoadEnvValue(ctx context.Context, projectId string) (err err
 func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err error) {
 	logs.WithContext(ctx).Info("LoadSmValue - Start")
 	smFound := true
-
+	var smObjI interface{}
 	if store.Variables != nil {
 		for prjId, _ := range store.Variables {
 			if projectId == prjId || projectId == "" {
@@ -608,7 +726,7 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 				if _, prjVarsOk := store.Variables[prjId]; prjVarsOk {
 					if store.Variables[prjId].Secrets != nil {
 						if store.SecretManager == nil {
-							err = errors.New("No secret manager defined in store")
+							err = errors.New("no secret manager defined in store")
 							smFound = false
 							logs.WithContext(ctx).Error(err.Error())
 						} else if smObj, smObjOk := store.SecretManager[prjId]; !smObjOk {
@@ -620,6 +738,11 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 								result, resultErr := smObj.FetchSmValue(ctx)
 								if resultErr != nil {
 									smFound = false
+								}
+								smObjI, err = utils.CloneInterface(ctx, smObj)
+								if err != nil {
+									logs.WithContext(ctx).Error(err.Error())
+
 								}
 
 								if smFound {
@@ -647,7 +770,7 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 					logs.WithContext(ctx).Error(err.Error())
 				}
 				if !smFound {
-					logs.WithContext(ctx).Warn(fmt.Sprint("no secret manager found, trying to load from environment variables"))
+					logs.WithContext(ctx).Warn("no secret manager found, trying to load from environment variables")
 					for k, v := range store.Variables[prjId].Secrets {
 						v.Value = os.Getenv(k)
 						store.Variables[prjId].Secrets[k] = v
@@ -656,14 +779,40 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 			}
 		}
 	}
+
+	if smObjClone, smObjCloneOk := smObjI.(sm.SmStoreI); smObjCloneOk {
+		if store.TenantVariables != nil {
+			for prjId, _ := range store.TenantVariables {
+				if projectId == prjId || projectId == "" {
+					logs.WithContext(ctx).Info(fmt.Sprint("loading tenant secrets for :", prjId))
+					for tenantId, _ := range store.TenantVariables[prjId] {
+						smValues, err := smObjClone.GetSmValues(ctx, tenantId)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+							return err
+						}
+						for tsk := range store.TenantVariables[prjId][tenantId].Secrets {
+							if secretValue, secretOk := smValues[tsk]; secretOk {
+								v := store.TenantVariables[prjId][tenantId].Secrets[tsk]
+								v.Value = secretValue
+								store.TenantVariables[prjId][tenantId].Secrets[tsk] = v
+							}
+						}
+					}
+				}
+			}
+		}
+	} else {
+		logs.WithContext(ctx).Error("failed to clone secret manager")
+	}
+
 	return
 }
 
 func (store *Store) SetSmValue(ctx context.Context, projectId string, secretName string, secretValue map[string]string) (err error) {
 	logs.WithContext(ctx).Info("SetSmValue - Start")
-
 	if store.SecretManager == nil {
-		err = errors.New("No secret manager defined in store")
+		err = errors.New("no secret manager defined in store")
 		logs.WithContext(ctx).Error(err.Error())
 	} else if smObj, smObjOk := store.SecretManager[projectId]; !smObjOk {
 		err = errors.New(fmt.Sprint("Secret Manager not defined for project :", projectId))
@@ -685,9 +834,8 @@ func (store *Store) SetSmValue(ctx context.Context, projectId string, secretName
 
 func (store *Store) UnsetSmValue(ctx context.Context, projectId string, secretName string, secretKey string) (err error) {
 	logs.WithContext(ctx).Info("UnsetSmValue - Start")
-
 	if store.SecretManager == nil {
-		err = errors.New("No secret manager defined in store")
+		err = errors.New("no secret manager defined in store")
 		logs.WithContext(ctx).Error(err.Error())
 	} else if smObj, smObjOk := store.SecretManager[projectId]; !smObjOk {
 		err = errors.New(fmt.Sprint("Secret Manager not defined for project :", projectId))
@@ -1319,6 +1467,16 @@ func (store *Store) ValidateJSON(ctx context.Context, schema validator.Schema, d
 	}
 	jsonData = gjson.ParseBytes(dataBytes)
 	return schema.Validate(ctx, jsonData)
+}
+func (store *Store) GetStoreWithoutTenants(ctx context.Context, ms StoreI) (b []byte, err error) {
+	logs.WithContext(ctx).Debug("GetStoreByteArrayWithoutTenants - Start")
+	logs.WithContext(ctx).Info("calling default get store byte array without tenants")
+	b, err = json.Marshal(ms)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return
 }
 
 /*

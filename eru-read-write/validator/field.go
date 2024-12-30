@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
@@ -25,6 +26,7 @@ type FieldI interface {
 
 type Field struct {
 	Name     string `json:"name" eru:"required"`
+	Label    string `json:"label" eru:"required"`
 	Required bool   `json:"required" eru:"required"`
 	DataType string `json:"data_type" eru:"required"`
 	Encode   bool   `json:"encode"`

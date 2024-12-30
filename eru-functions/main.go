@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"runtime/debug"
+
 	"github.com/eru-tech/eru/eru-functions/module_server"
 	"github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eruotel "github.com/eru-tech/eru/eru-logs/eru-otel"
 	"github.com/eru-tech/eru/eru-server/server"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
-	"os"
-	"runtime/debug"
 )
 
 var port = "8083"
@@ -57,12 +58,12 @@ func main() {
 		logs.Logger.Error(e.Error())
 	}
 
-	for i := 0; i < module_store.EventThreads; i++ {
+	/* for i := 0; i < module_store.EventThreads; i++ {
 		err := sh.Store.FetchProjectEvents(context.Background(), sh.Store, i+1)
 		if err != nil {
 			logs.Logger.Error(err.Error())
 		}
-	}
+	} */
 
 	server.Launch(sr, port)
 }

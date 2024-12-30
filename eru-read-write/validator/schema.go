@@ -3,9 +3,10 @@ package validator
 import (
 	"context"
 	"encoding/json"
+	"strings"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/tidwall/gjson"
-	"strings"
 )
 
 type Schema struct {

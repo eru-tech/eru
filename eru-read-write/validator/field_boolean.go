@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"strings"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 type BooleanField struct {
@@ -28,7 +29,7 @@ func (f *BooleanField) Validate(ctx context.Context, v interface{}) (err error) 
 
 	if v == nil {
 		if f.Required {
-			errs = append(errs, fmt.Sprint("'", f.Name, "' cannot be blank"))
+			errs = append(errs, fmt.Sprint("'", f.Label, "' cannot be blank"))
 		}
 		return
 	}
@@ -41,13 +42,13 @@ func (f *BooleanField) Validate(ctx context.Context, v interface{}) (err error) 
 		} else if valueStr == "N" || valueStr == "0" {
 			value = false
 		} else {
-			errs = append(errs, fmt.Sprint("'", f.Name, "' has to be a boolean"))
+			errs = append(errs, fmt.Sprint("'", f.Label, "' has to be a boolean"))
 			return
 		}
 	}
 
 	if f.CheckValue && f.Value != value {
-		errs = append(errs, fmt.Sprint("invalid value for field '", f.Name, "'"))
+		errs = append(errs, fmt.Sprint("invalid value for field '", f.Label, "'"))
 	}
 
 	return

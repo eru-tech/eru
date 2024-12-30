@@ -7,15 +7,15 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/eru-tech/eru/eru-ai/module_server"
+	"github.com/eru-tech/eru/eru-ai/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eruotel "github.com/eru-tech/eru/eru-logs/eru-otel"
-	"github.com/eru-tech/eru/eru-ql/module_server"
-	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-server/server"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 )
 
-var port = "8087"
+var port = "8088"
 
 func main() {
 	defer func() {
@@ -24,7 +24,6 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-
 	module_server.SetServiceName()
 	logs.LogInit(server_handlers.ServerName)
 	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
@@ -40,8 +39,7 @@ func main() {
 			}
 		}()
 	}
-
-	envPort := os.Getenv("ERUQLPORT")
+	envPort := os.Getenv("ERUAIPORT")
 	if envPort != "" {
 		port = envPort
 	}
@@ -54,13 +52,6 @@ func main() {
 	sh := new(module_store.StoreHolder)
 	sh.Store = store
 	sr, _, e := server.Init(sh.Store)
-
-	logs.WithContext(context.Background()).Info("calling SetDataSourceConnections")
-	err := sh.Store.SetDataSourceConnections(context.Background(), sh.Store)
-	if err != nil {
-		logs.WithContext(context.Background()).Error(err.Error())
-	}
-
 	module_server.AddModuleRoutes(sr, sh)
 	if e != nil {
 		logs.Logger.Error(e.Error())

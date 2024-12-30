@@ -27,3 +27,5 @@ config.json
 /eru-rules/setEnvVar.sh
 /eru-sample/
 /eru-functions/func_profile.log
+.vscode/launch.json
+.vscode/tasks.json

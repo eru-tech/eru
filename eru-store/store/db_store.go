@@ -5,25 +5,27 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
 	"os"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 )
 
 type DbStore struct {
 	Store
-	DbType         string    `json:"db_type"`
-	UpdateTime     time.Time `json:"update_time"`
-	StoreTableName string    `json:"store_table_name"`
-	storeType      string
-	conStr         string
-	Con            *sqlx.DB `json:"-"`
-	ConStatus      bool     `json:"-"`
+	DbType               string    `json:"db_type"`
+	UpdateTime           time.Time `json:"update_time"`
+	StoreTableName       string    `json:"store_table_name"`
+	StoreTenantTableName string    `json:"store_tenant_table_name"`
+	storeType            string
+	conStr               string
+	Con                  *sqlx.DB `json:"-"`
+	ConStatus            bool     `json:"-"`
 }
 
 type Queries struct {
@@ -49,9 +51,15 @@ func (store *DbStore) GetDbType() string {
 func (store *DbStore) SetStoreTableName(tablename string) {
 	store.StoreTableName = strings.ToLower(tablename)
 }
+func (store *DbStore) SetStoreTenantTableName(tablename string) {
+	store.StoreTenantTableName = strings.ToLower(tablename)
+}
 
 func (store *DbStore) GetStoreTableName() (tablename string) {
 	return store.StoreTableName
+}
+func (store *DbStore) GetStoreTenantTableName() (tablename string) {
+	return store.StoreTenantTableName
 }
 
 func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
@@ -60,7 +68,7 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 	if dbString == "" {
 		dbString = getStoreDbPath()
 		if dbString == "" {
-			err := errors.New("No value found for environment variable STORE_DB_PATH")
+			err := errors.New("no value found for environment variable STORE_DB_PATH")
 			logs.Logger.Error(err.Error())
 			return nil, err
 		}
@@ -73,7 +81,13 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 	}
 	defer db.Close()
 	logs.Logger.Info(fmt.Sprint("db connection succesfull - fetch config from ", store.StoreTableName))
-	rows, err := db.Queryx(fmt.Sprint("select config, create_date from ", store.StoreTableName, " limit 1"))
+	loadQuery := fmt.Sprint("select config, create_date from ", store.StoreTableName, " limit 1")
+	if store.StoreTenantTableName != "" {
+		loadQuery = fmt.Sprint("with prj as (select b.*  from ", store.StoreTableName, " a, jsonb_each(config->'projects') b), pt as (select project_id, max(update_date) create_date, jsonb_object_agg(tenant_id,config) tenant_config from ", store.StoreTenantTableName, " group by project_id), fpt as (select max(create_date) create_date, jsonb_object_agg(a.key , a.value||jsonb_build_object('tenants',coalesce(b.tenant_config,'{}'::jsonb))) project_config from prj a left join pt b on a.key=b.project_id) select a.config||jsonb_build_object('projects',coalesce(b.project_config,'{}'::jsonb)) config, greatest(a.create_date,b.create_date) create_date from eruai_config a left join fpt b on 1=1")
+	}
+	logs.Logger.Info(loadQuery)
+	rows, err := db.Queryx(loadQuery)
+
 	if err != nil {
 		logs.Logger.Error(err.Error())
 		return nil, err
@@ -107,12 +121,18 @@ func (store *DbStore) LoadStore(dbString string, ms StoreI) (err error) {
 	}
 	logs.Logger.Info("Creating DB connection for Load DB store")
 	db, err := sqlx.Open(store.DbType, dbString)
-	defer db.Close()
 	if err != nil {
 		logs.Logger.Error(err.Error())
 		return err
 	}
-	rows, err := db.Queryx(fmt.Sprint("select * from ", store.StoreTableName, " limit 1"))
+	defer db.Close()
+	loadQuery := fmt.Sprint("select * from ", store.StoreTableName, " limit 1")
+	if store.StoreTenantTableName != "" {
+		loadQuery = fmt.Sprint("with prj as (select b.*  from ", store.StoreTableName, " a, jsonb_each(config->'projects') b), pt as (select project_id, max(update_date) create_date, jsonb_object_agg(tenant_id,config) tenant_config from ", store.StoreTenantTableName, " group by project_id), fpt as (select max(create_date) create_date, jsonb_object_agg(a.key , a.value||jsonb_build_object('tenants',coalesce(b.tenant_config,'{}'::jsonb))) project_config from prj a left join pt b on a.key=b.project_id) select a.config||jsonb_build_object('projects',coalesce(b.project_config,'{}'::jsonb)) config, greatest(a.create_date,b.create_date) create_date from eruai_config a left join fpt b on 1=1")
+	}
+
+	logs.Logger.Info(loadQuery)
+	rows, err := db.Queryx(loadQuery)
 	if err != nil {
 		logs.Logger.Error(err.Error())
 		return err
@@ -145,26 +165,31 @@ func (store *DbStore) LoadStore(dbString string, ms StoreI) (err error) {
 
 func (store *DbStore) SaveStore(ctx context.Context, projectId string, dbString string, ms StoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveStore - Start")
+
 	if dbString == "" {
 		dbString = getStoreDbPath()
 	}
 	logs.WithContext(ctx).Info("Creating DB connection for Save DB store")
 	db, err := sqlx.Open(store.DbType, dbString)
-	defer db.Close()
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
+	defer db.Close()
+
 	tx := db.MustBegin()
-	storeData, err := json.Marshal(ms)
+	//storeData, err := json.Marshal(ms)
+	storeData, err := ms.GetStoreWithoutTenants(context.Background(), ms)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		tx.Rollback()
 		return err
 	}
 	strStoreData := strings.Replace(string(storeData), "'", "''", -1)
-
 	query := fmt.Sprint("update ", store.StoreTableName, " set create_date=current_timestamp , config = '", strStoreData, "' returning create_date")
+	/* if store.StoreTenantTableName != "" {
+		query = fmt.Sprint("update ", store.StoreTableName, " x set create_date=current_timestamp , config = y.config from (with json_data as (select '", strStoreData, "'::jsonb as config) SELECT jsonb_set(config,'{projects}',(SELECT jsonb_object_agg(key,value - 'tenants') FROM jsonb_each(config->'projects') ) ) AS config FROM json_data) y where 1=1 returning x.create_date")
+	} */
 	stmt, err := tx.PreparexContext(ctx, query)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.PreparexContext : ", err.Error()))
@@ -205,6 +230,73 @@ func (store *DbStore) SaveStore(ctx context.Context, projectId string, dbString 
 			}
 		}
 	}
+	return nil
+}
+func (store *DbStore) SaveTenantStore(ctx context.Context, projectId string, tenantId string, dbString string, tenantConfig interface{}) (err error) {
+	logs.WithContext(ctx).Debug("SaveTenantStore - Start")
+	if dbString == "" {
+		dbString = getStoreDbPath()
+	}
+	logs.WithContext(ctx).Info("Creating DB connection for Save DB store")
+	db, err := sqlx.Open(store.DbType, dbString)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	defer db.Close()
+
+	tx := db.MustBegin()
+	storeData, err := json.Marshal(tenantConfig)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		tx.Rollback()
+		return err
+	}
+	strStoreData := strings.Replace(string(storeData), "'", "''", -1)
+
+	query := fmt.Sprint("INSERT INTO ", store.StoreTenantTableName, " (tenant_id,project_id,config) VALUES ('", tenantId, "','", projectId, "','", strStoreData, "') ON CONFLICT (tenant_id) DO UPDATE SET config = EXCLUDED.config, update_date=CURRENT_TIMESTAMP;")
+	stmt, err := tx.PreparexContext(ctx, query)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.PreparexContext : ", err.Error()))
+		tx.Rollback()
+		return err
+	}
+	rw, err := stmt.QueryxContext(ctx)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in stmt.QueryxContext : ", err.Error()))
+		tx.Rollback()
+		return err
+	}
+	for rw.Rows.Next() {
+		resDoc := make(map[string]interface{})
+		err = rw.MapScan(resDoc)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("Error in rw.MapScan : ", err.Error()))
+			tx.Rollback()
+			return err
+		}
+		store.UpdateTime = resDoc["create_date"].(time.Time)
+	}
+	err = tx.Commit()
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.Commit : ", err.Error()))
+		tx.Rollback()
+	}
+
+	//TODO: implement repo commit for tennat config changes
+
+	/* if store.ProjectRepos != nil {
+		if repo, repoOk := store.ProjectRepos[projectId]; repoOk {
+			if repo.GetAttribute("auto_commit").(bool) {
+				err = ms.CommitRepo(ctx, projectId, ms)
+				if err != nil {
+					logs.WithContext(ctx).Warn(fmt.Sprint("auto commit failed : ", err.Error()))
+				} else {
+					logs.WithContext(ctx).Info(fmt.Sprint("store changes successfully committed to repo for project : ", projectId))
+				}
+			}
+		}
+	} */
 	return nil
 }
 

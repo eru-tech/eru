@@ -3,18 +3,19 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
+	"runtime/debug"
+
 	"github.com/eru-tech/eru/eru-files/file_server"
 	"github.com/eru-tech/eru/eru-files/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eruotel "github.com/eru-tech/eru/eru-logs/eru-otel"
 	"github.com/eru-tech/eru/eru-server/server"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
-	"log"
-	"os"
-	"runtime/debug"
 )
 
-var port = "8082"
+var port = "9082"
 
 func main() {
 	defer func() {

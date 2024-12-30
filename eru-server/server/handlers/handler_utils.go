@@ -2,10 +2,11 @@ package handlers
 
 import (
 	"fmt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"github.com/rs/cors"
 	"net/http"
 	"strings"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/rs/cors"
 )
 
 func FormatResponse(w http.ResponseWriter, status int) {

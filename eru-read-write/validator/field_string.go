@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"regexp"
 	"strings"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 const (
@@ -37,7 +38,7 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 
 	if v == nil {
 		if f.Required {
-			errs = append(errs, fmt.Sprint("'", f.Name, "' cannot be blank"))
+			errs = append(errs, fmt.Sprint("'", f.Label, "' cannot be blank"))
 		}
 		return
 	}
@@ -47,13 +48,13 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 	case int, float64, string:
 		value = fmt.Sprintf("%v", vv)
 	default:
-		errs = append(errs, fmt.Sprint("'", f.Name, "' has to be a string"))
+		errs = append(errs, fmt.Sprint("'", f.Label, "' has to be a string"))
 		return
 	}
 
 	if value == "" {
 		if f.Required {
-			errs = append(errs, fmt.Sprint("'", f.Name, "' cannot be blank"))
+			errs = append(errs, fmt.Sprint("'", f.Label, "' cannot be blank"))
 		}
 		return
 	}
@@ -66,7 +67,7 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 			}
 		}
 		if !vFound {
-			errs = append(errs, fmt.Sprint("invalid value for field '", f.Name, "'"))
+			errs = append(errs, fmt.Sprint("invalid value for field '", f.Label, "'"))
 			return
 		}
 	}
@@ -74,14 +75,14 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 	if f.FormatCheck != "" {
 		r, rErr := regexp.Compile(f.FormatCheck)
 		if rErr != nil {
-			errs = append(errs, fmt.Sprint("invalid format checker for field '", f.Name, "'"))
+			errs = append(errs, fmt.Sprint("invalid format checker for field '", f.Label, "'"))
 			return
 		}
 
 		isValidFormat := r.MatchString(value)
 
 		if !isValidFormat {
-			errs = append(errs, fmt.Sprint("invalid string format for field '", f.Name, "'"))
+			errs = append(errs, fmt.Sprint("invalid string format for field '", f.Label, "'"))
 			return
 		}
 	}
@@ -90,17 +91,17 @@ func (f *StringField) Validate(ctx context.Context, v interface{}) (err error) {
 		switch f.LengthCheck {
 		case LengthCheckExact:
 			if f.Length != len(value) {
-				errs = append(errs, fmt.Sprint("length of '", f.Name, "' has to be ", f.Length))
+				errs = append(errs, fmt.Sprint("length of '", f.Label, "' has to be ", f.Length))
 			}
 			break
 		case LengthCheckMin:
 			if f.Length > len(value) {
-				errs = append(errs, fmt.Sprint("minimum length of '", f.Name, "' has to be ", f.Length))
+				errs = append(errs, fmt.Sprint("minimum length of '", f.Label, "' has to be ", f.Length))
 			}
 			break
 		case LengthCheckMax:
 			if f.Length < len(value) {
-				errs = append(errs, fmt.Sprint("maximum length of '", f.Name, "' has to be ", f.Length))
+				errs = append(errs, fmt.Sprint("maximum length of '", f.Label, "' has to be ", f.Length))
 			}
 			break
 		default:

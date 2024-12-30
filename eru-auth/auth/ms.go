@@ -5,17 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
+	"reflect"
+	"sort"
+	"strings"
+
 	"github.com/eru-tech/eru/eru-crypto/jwt"
 	erupkce "github.com/eru-tech/eru/eru-crypto/pkce"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
-	"net/http"
-	"net/url"
-	"reflect"
-	"sort"
-	"strings"
 )
 
 type MsAuth struct {
@@ -144,14 +145,15 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 		query := models.Queries{}
 		query.Query = msAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY_SUB)
 		query.Vals = append(query.Vals, sub)
-		query.Vals = append(query.Vals, sub)
-		query.Vals = append(query.Vals, sub)
-		query.Vals = append(query.Vals, sub)
 		if tokenEmail, tokenEmailOk := tokenMap[msAuth.MsConfig.Identifiers.Email.IdpMapper]; tokenEmailOk {
 			query.Vals = append(query.Vals, tokenEmail)
 		} else {
 			query.Vals = append(query.Vals, "")
 		}
+
+		query.Vals = append(query.Vals, sub)
+		query.Vals = append(query.Vals, sub)
+
 		output, outputErr := utils.ExecuteDbFetch(ctx, msAuth.AuthDb.GetConn(), query)
 		if outputErr != nil {
 			err = outputErr

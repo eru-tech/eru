@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+
 	"github.com/eru-tech/eru/eru-cache/cache"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
@@ -25,6 +26,8 @@ type SmStoreI interface {
 	SetSmValue(ctx context.Context, secretName string, secretJson map[string]string) (err error)
 	UnsetSmValue(ctx context.Context, secretName string, secretKey string) (err error)
 	GetSmValue(ctx context.Context, secretName string, secretKey string, forceFetch bool) (secretValue interface{}, err error)
+	GetSmValues(ctx context.Context, secretName string) (secretValues map[string]string, err error)
+
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	InitCache(ctx context.Context) error
 	GetCacheStore() cache.CacheStoreI
@@ -81,6 +84,11 @@ func (smStore *SmStore) UnsetSmValue(ctx context.Context, secretName string, sec
 }
 
 func (smStore *SmStore) GetSmValue(ctx context.Context, secretName string, secretKey string, forceFetch bool) (secretValue interface{}, err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+func (smStore *SmStore) GetSmValues(ctx context.Context, secretName string) (secretValues map[string]string, err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return

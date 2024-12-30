@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -329,6 +330,33 @@ func (awsSmStore *AwsSmStore) GetSmValue(ctx context.Context, secretName string,
 			err = errors.New("secret key not found in secret manager")
 			return nil, err
 		}
+	}
+	return
+}
+func (awsSmStore *AwsSmStore) GetSmValues(ctx context.Context, secretName string) (secretValues map[string]string, err error) {
+	logs.WithContext(ctx).Debug("GetSmValue - Start")
+
+	if awsSmStore.client == nil {
+		err = awsSmStore.Init(ctx)
+		if err != nil {
+			return
+		}
+	}
+
+	input := &secretsmanager.GetSecretValueInput{
+		SecretId:     aws.String(secretName),
+		VersionStage: aws.String("AWSCURRENT"), // VersionStage defaults to AWSCURRENT if unspecified
+	}
+
+	result, err := awsSmStore.client.GetSecretValue(ctx, input)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	err = json.Unmarshal([]byte(*result.SecretString), &secretValues)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
 	return
 }

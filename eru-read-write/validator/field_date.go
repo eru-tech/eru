@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"strings"
 	"time"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 type DateField struct {
@@ -32,13 +33,13 @@ func (f *DateField) Validate(ctx context.Context, v interface{}) (err error) {
 
 	if v == nil {
 		if f.Required {
-			errs = append(errs, fmt.Sprint("'", f.Name, "' cannot be blank"))
+			errs = append(errs, fmt.Sprint("'", f.Label, "' cannot be blank"))
 		}
 		return
 	}
 	if v.(string) == "" {
 		if f.Required {
-			errs = append(errs, fmt.Sprint("'", f.Name, "' cannot be blank"))
+			errs = append(errs, fmt.Sprint("'", f.Label, "' cannot be blank"))
 		}
 		return
 	}
@@ -46,7 +47,7 @@ func (f *DateField) Validate(ctx context.Context, v interface{}) (err error) {
 	var value time.Time
 	value, err = time.Parse("2006-01-02", v.(string))
 	if err != nil {
-		errs = append(errs, fmt.Sprint("'", f.Name, "' has to be a date"))
+		errs = append(errs, fmt.Sprint("'", f.Label, "' has to be a date"))
 		return
 	}
 
@@ -54,12 +55,12 @@ func (f *DateField) Validate(ctx context.Context, v interface{}) (err error) {
 
 	if f.MinCheck {
 		if valueDtMinErr != nil {
-			errs = append(errs, fmt.Sprint("'incorrect minvalue for field ", f.Name))
+			errs = append(errs, fmt.Sprint("'incorrect minvalue for field ", f.Label))
 			return
 		}
 
 		if valueDtMin.Sub(value) > 0 {
-			errs = append(errs, fmt.Sprint("minimum date for '", f.Name, "' has to be ", f.MinValue))
+			errs = append(errs, fmt.Sprint("minimum date for '", f.Label, "' has to be ", f.MinValue))
 		}
 	}
 
@@ -67,12 +68,12 @@ func (f *DateField) Validate(ctx context.Context, v interface{}) (err error) {
 		valueDtMax, valueDtMaxErr := time.Parse("2006-01-02", f.MaxValue)
 
 		if valueDtMaxErr != nil {
-			errs = append(errs, fmt.Sprint("'incorrect maxvalue for field ", f.Name))
+			errs = append(errs, fmt.Sprint("'incorrect maxvalue for field ", f.Label))
 			return
 		}
 
 		if valueDtMax.Sub(value) < 0 {
-			errs = append(errs, fmt.Sprint("maximum date of '", f.Name, "' has to be ", f.MaxValue))
+			errs = append(errs, fmt.Sprint("maximum date of '", f.Label, "' has to be ", f.MaxValue))
 		}
 	}
 	adErr := false
@@ -121,7 +122,7 @@ func (f *DateField) Validate(ctx context.Context, v interface{}) (err error) {
 		}
 	}
 	if adErr {
-		errs = append(errs, fmt.Sprint("invalid date value for '", f.Name))
+		errs = append(errs, fmt.Sprint("invalid date value for '", f.Label))
 	}
 	return
 }

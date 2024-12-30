@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/kinds"
-	"regexp"
 
 	//"github.com/graphql-go/graphql/language/ast"
 	//"github.com/graphql-go/graphql/language/kinds"

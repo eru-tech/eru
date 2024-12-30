@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"strings"
+
 	"github.com/antlr4-go/antlr/v4"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	parser "github.com/eru-tech/eru/eru-ql/ds/parser"
+
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"strings"
 )
 
 var dbBlockedWords = []string{"--"}

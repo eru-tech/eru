@@ -4,6 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"os"
+	"runtime"
+	"strconv"
+	"strings"
+
 	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-repos/repos"
@@ -11,11 +17,6 @@ import (
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
 	"github.com/gorilla/mux"
-	"net/http"
-	"os"
-	"runtime"
-	"strconv"
-	"strings"
 )
 
 var ServerName = "unkown"
@@ -341,6 +342,7 @@ func SetSmValueHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Info("SetSmValueHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		if projectId == "" {
 			projectId = "gateway"
 		}
@@ -354,6 +356,19 @@ func SetSmValueHandler(s store.StoreI) http.HandlerFunc {
 		smJson := json.NewDecoder(r.Body)
 		smJson.DisallowUnknownFields()
 		if err := smJson.Decode(&smMapObj); err == nil {
+			if tenantId != "" {
+				smMapObj.SecretName = tenantId
+				for k, v := range smMapObj.SecretValue {
+					sVar := store.Secrets{Key: k, Value: v}
+					err = s.SaveTenantSecret(r.Context(), projectId, tenantId, sVar, s)
+					if err != nil {
+						logs.WithContext(r.Context()).Info(err.Error())
+						FormatResponse(w, 400)
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+						return
+					}
+				}
+			}
 			err = s.SetSmValue(r.Context(), projectId, smMapObj.SecretName, smMapObj.SecretValue)
 			if err != nil {
 				logs.WithContext(r.Context()).Info(err.Error())
@@ -377,6 +392,7 @@ func GetSmValueHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("GetSmValueHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		if projectId == "" {
 			projectId = "gateway"
 		}
@@ -397,6 +413,9 @@ func GetSmValueHandler(s store.StoreI) http.HandlerFunc {
 		smJson := json.NewDecoder(r.Body)
 		smJson.DisallowUnknownFields()
 		if err := smJson.Decode(&smMapObj); err == nil {
+			if tenantId != "" {
+				smMapObj.SecretName = tenantId
+			}
 			secret_value, err = s.GetSmValue(r.Context(), projectId, smMapObj.SecretName, smMapObj.SecretKey, smMapObj.ForceDelete)
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
@@ -420,6 +439,7 @@ func UnsetSmValueHandler(s store.StoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Info("UnsetSmValueHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		if projectId == "" {
 			projectId = "gateway"
 		}
@@ -433,6 +453,16 @@ func UnsetSmValueHandler(s store.StoreI) http.HandlerFunc {
 		smJson := json.NewDecoder(r.Body)
 		smJson.DisallowUnknownFields()
 		if err := smJson.Decode(&smMapObj); err == nil {
+			if tenantId != "" {
+				smMapObj.SecretName = tenantId
+				err = s.RemoveTenantSecret(r.Context(), projectId, tenantId, smMapObj.SecretKey, s)
+				if err != nil {
+					logs.WithContext(r.Context()).Info(err.Error())
+					FormatResponse(w, 400)
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					return
+				}
+			}
 			err = s.UnsetSmValue(r.Context(), projectId, smMapObj.SecretName, smMapObj.SecretKey)
 			if err != nil {
 				logs.WithContext(r.Context()).Info(err.Error())

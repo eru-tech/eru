@@ -6,11 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	models "github.com/eru-tech/eru/eru-models"
-	"github.com/google/go-cmp/cmp"
-	"github.com/jmoiron/sqlx"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -19,6 +14,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	models "github.com/eru-tech/eru/eru-models"
+	"github.com/google/go-cmp/cmp"
+	"github.com/jmoiron/sqlx"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const (
@@ -602,4 +603,17 @@ func GetNestedFieldValue(ctx context.Context, data interface{}, fieldPath string
 		}
 	}
 	return val.Interface(), nil
+}
+
+func GetJsonSchemaObject(ctx context.Context, jsonSchema string) (map[string]interface{}, error) {
+	logs.WithContext(ctx).Debug("GetJsonSchemaObject - Start")
+	logs.WithContext(ctx).Info(fmt.Sprint(jsonSchema))
+	jsonSchemaMap := make(map[string]interface{})
+	err := json.Unmarshal([]byte(jsonSchema), &jsonSchemaMap)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(jsonSchemaMap))
+	return jsonSchemaMap, nil
 }

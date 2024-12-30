@@ -12,7 +12,6 @@ func GetSqlMaker(dbName string) SqlMakerI {
 		return nil
 		//do nothing
 	}
-	return nil
 }
 
 func GetDbType(dbName string) string {
@@ -24,5 +23,4 @@ func GetDbType(dbName string) string {
 	default:
 		return "unknown"
 	}
-	return ""
 }
