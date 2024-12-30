@@ -7,6 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"runtime/debug"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/eru-tech/eru/eru-db/db"
 	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -18,12 +25,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"io"
-	"net/http"
-	"runtime/debug"
-	"strconv"
-	"strings"
-	"time"
 )
 
 const (
@@ -713,6 +714,13 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 		childFuncVarsMap := map[string]FuncTemplateVars{}
 
 		//remove unwanted fields from reqvars and resvars
+		if funcStep.RemoveRequestFields != nil {
+			logs.WithContext(ctx).Info(fmt.Sprint("funcStep.RemoveRequestFields = for ", funcStep.FuncKey, " = ", funcStep.RemoveRequestFields))
+		}
+		if funcStep.RemoveResponseFields != nil {
+			logs.WithContext(ctx).Info(fmt.Sprint("funcStep.RemoveResponseFields = for ", funcStep.FuncKey, " = ", funcStep.RemoveResponseFields))
+		}
+
 		err = removeFieldsFromTemplateVars(ctx, funcStep.RemoveRequestFields, reqVars)
 		err = removeFieldsFromTemplateVars(ctx, funcStep.RemoveResponseFields, resVars)
 
