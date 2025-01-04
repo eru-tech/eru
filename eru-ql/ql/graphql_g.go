@@ -373,7 +373,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)
 				}
-				sqlObj.SecurityClause[colTableName], e = getTableSecurityRule(ctx, sqlObj.ProjectId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables)
+				sqlObj.SecurityClause[colTableName],_, e = getTableSecurityRule(ctx, sqlObj.ProjectId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables)
 				if e != nil {
 					logs.WithContext(ctx).Error(e.Error())
 					return SQLCols{}, e.Error()

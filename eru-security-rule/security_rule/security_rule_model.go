@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
-	"strings"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 )
 
 type CustomRule struct {
@@ -138,7 +140,11 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 	logs.WithContext(ctx).Debug("processTemplate - Start")
 	ruleValue := strings.SplitN(templateString, ".", 2)
 	if ruleValue[0] == "token" {
-		templateStr := fmt.Sprint("{{ .", ruleValue[1], " }}")
+		templateStr := ruleValue[1]
+		if !(strings.HasPrefix(ruleValue[1], "{{")) {
+			templateStr = fmt.Sprint("{{ .", ruleValue[1], " }}")
+		}
+		templateStr = eru_utils.ReplaceVariables(ctx, templateStr, vars)
 		goTmpl := gotemplate.GoTemplate{templateName, templateStr}
 		outputObj, err := goTmpl.Execute(ctx, vars["token"], outputType)
 		if err != nil {

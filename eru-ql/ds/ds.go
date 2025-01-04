@@ -115,7 +115,8 @@ type SqlMakerI interface {
 	VerifyForBlockedWords(ctx context.Context, key string, val interface{}, realSqr SqlMakerI) (err error)
 	GetMakeJsonArrayFn() (string, error)
 	MakeJsonColumn(jsonField string, jsonKey string) string
-	SqlToAst(ctx context.Context, query string) string
+	ExtractTableNames(ctx context.Context, query string) module_model.TablesInQuery
+	DefaultSchemaName() string
 }
 
 func (sqr *SqlMaker) GetBlockedWords() []string {
@@ -129,6 +130,9 @@ func (sqr *SqlMaker) GetMakeJsonArrayFn() (string, error) {
 	return "", errors.New("GetMakeJsonArrayFn not implemented")
 }
 func (sqr *SqlMaker) MakeJsonColumn(jsonField string, jsonKey string) string {
+	return ""
+}
+func (sqr *SqlMaker) DefaultSchemaName() string {
 	return ""
 }
 
@@ -196,9 +200,9 @@ func (sqr *SqlMaker) CheckMe(ctx context.Context) {
 	logs.WithContext(ctx).Info("I am SqlMaker")
 }
 
-func (sqr *SqlMaker) SqlToAst(ctx context.Context, query string) string {
-	logs.WithContext(ctx).Error("SqlToAst Not Implemented")
-	return ""
+func (sqr *SqlMaker) ExtractTableNames(ctx context.Context, query string) module_model.TablesInQuery {
+	logs.WithContext(ctx).Error("ExtractTableNames Not Implemented")
+	return module_model.TablesInQuery{}
 }
 
 /*
@@ -795,6 +799,11 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 
 func (sqr *SqlMaker) executeMutationQueriesinDB(ctx context.Context, query string, tableName string, datasource *module_model.DataSource, myself SqlMakerI, isNested bool, docNo int, idx int, vals []interface{}) (res []map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("executeMutationQueriesinDB - Start")
+	if len(query) > 1000 {
+		logs.WithContext(ctx).Info(query[:1000])
+	} else {
+		logs.WithContext(ctx).Info(query)
+	}
 	var errMsgs []string
 	if !isNested {
 		docNo = idx + 1 //to ensure error message always refer to parent document number

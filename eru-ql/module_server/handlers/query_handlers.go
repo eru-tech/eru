@@ -7,6 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"sync"
+	"time"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
@@ -16,11 +22,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
-	"io"
-	"net/http"
-	"strconv"
-	"sync"
-	"time"
 	//"../server"
 )
 

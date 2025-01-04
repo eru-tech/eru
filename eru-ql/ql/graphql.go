@@ -4,18 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"strconv"
+	"strings"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-read-write/eru_writes"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/kinds"
 	"github.com/graphql-go/graphql/language/parser"
 	"github.com/graphql-go/graphql/language/source"
-	"reflect"
-	"strconv"
-	"strings"
 )
 
 type GraphQLData struct {
@@ -96,6 +98,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 		//graphQLs := make([]ds.SqlMakerI, len(op.SelectionSet.Selections))
 		var result map[string]interface{}
 		var results []map[string]interface{}
+
 		for _, v := range op.Directives {
 			if v.Name.Value == "singleTxn" {
 				singleTxn = true
@@ -175,7 +178,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)
 				}
-				sqlObj.SecurityClause[sqlObj.MainTableName], err = getTableSecurityRule(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.FinalVariables)
+				sqlObj.SecurityClause[sqlObj.MainTableName], _, err = getTableSecurityRule(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.FinalVariables)
 				if err != nil {
 					errMsg = err.Error()
 					errFound = true
@@ -641,17 +644,37 @@ func (gqd *GraphQLData) setOverwriteDoc(ctx context.Context, projectId string, d
 	return
 }
 
-func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, vars map[string]interface{}) (ruleOutput string, err error) {
+func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, vars map[string]interface{}) (ruleOutput string, ruleJoinTables []string, err error) {
 	logs.WithContext(ctx).Debug("getTableSecurityRule - Start")
 	sr, err := s.GetTableSecurityRule(ctx, projectId, dbAlias, tableName)
 	if err != nil {
 		logs.WithContext(ctx).Info(err.Error())
 		err = errors.New(fmt.Sprint("TableSecurityRule not defined for ", tableName))
 		logs.WithContext(ctx).Info(err.Error())
-		return "", err
+		return "", make([]string, 0), err
 	}
 
 	if op == "query" {
+		for _, v := range sr.Select.CustomRule.AND {
+			tableNameParts := strings.Split(v.Variable1, ".")
+			ruleTableName := tableNameParts[0]
+			if len(tableNameParts) > 1 {
+				ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
+			}
+			if tableName != ruleTableName {
+				ruleJoinTables = append(ruleJoinTables, ruleTableName)
+			}
+		}
+		for _, v := range sr.Select.CustomRule.OR {
+			tableNameParts := strings.Split(v.Variable1, ".")
+			ruleTableName := tableNameParts[0]
+			if len(tableNameParts) > 1 {
+				ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
+			}
+			if tableName != ruleTableName {
+				ruleJoinTables = append(ruleJoinTables, ruleTableName)
+			}
+		}
 		ruleOutput, err = processSecurityRule(ctx, sr.Select, vars)
 	} else if op == "mutation" {
 		ruleOutput, err = processSecurityRule(ctx, sr.Insert, vars) //todo to change it as per query type
@@ -663,7 +686,7 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 	if err != nil {
 		err = errors.New(fmt.Sprint("SecurityRule failed : ", err.Error()))
 		logs.WithContext(ctx).Error(err.Error())
-		return "", err
+		return "", make([]string, 0), err
 	}
-	return
+	return ruleOutput, eru_utils.UniqueStrings(ruleJoinTables), nil
 }

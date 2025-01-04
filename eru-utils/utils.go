@@ -617,3 +617,25 @@ func GetJsonSchemaObject(ctx context.Context, jsonSchema string) (map[string]int
 	logs.WithContext(ctx).Info(fmt.Sprint(jsonSchemaMap))
 	return jsonSchemaMap, nil
 }
+func UniqueStrings(input []string) []string {
+	uniqueMap := make(map[string]struct{})
+	var uniqueList []string
+
+	for _, str := range input {
+		if _, exists := uniqueMap[str]; !exists {
+			uniqueMap[str] = struct{}{}          // Add to map to track uniqueness
+			uniqueList = append(uniqueList, str) // Add to the unique list
+		}
+	}
+
+	return uniqueList
+}
+
+func ReplaceVariables(ctx context.Context, str string, vars map[string]interface{}) (resStr string) {
+	logs.WithContext(ctx).Debug("ReplaceVariables - Start")
+	resStr = str
+	for k, v := range vars {
+		resStr = strings.Replace(resStr, "$"+k, fmt.Sprint(v), -1)
+	}
+	return
+}

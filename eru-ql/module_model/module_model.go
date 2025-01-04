@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
@@ -13,7 +15,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jmoiron/sqlx"
-	"time"
 )
 
 const (
@@ -32,6 +33,14 @@ const (
 	COLUMN_MASKING_HASH    = "hash"
 	MAKE_JSON_ARRAY_FN     = "$make_json_array_fn"
 )
+
+type TableInQuery struct {
+	TableName string
+	AliasName string
+}
+type TablesInQuery struct {
+	Tables map[string]TableInQuery
+}
 
 type ModuleProjectI interface {
 	CompareProject(ctx context.Context, compareProject ExtendedProject) (StoreCompare, error)

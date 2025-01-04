@@ -10,6 +10,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	parser "github.com/eru-tech/eru/eru-ql/ds/parser"
+	//eru_utils "github.com/eru-tech/eru/eru-utils"
 
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/jmoiron/sqlx"
@@ -30,17 +31,18 @@ type Listener struct {
 	inFinalSelect bool // Flag to track if we're in the final SELECT
 }
 
-/*
-func (l *Listener) EnterSelectstmt(ctx *parser.Target) {
+/* func (l *Listener) EnterColumnref(ctx *parser.ColumnrefContext) {
 	//fmt.Println(ctx.GetText())
 	// Check if this is the final SELECT (not part of a CTE)
 	if ctx.GetParent() != nil {
-		if _, ok := ctx.GetParent().(*par	ser); ok {
+		logs.WithContext(context.Background()).Info(fmt.Sprint(ctx.GetText()))
+		 if _, ok := ctx.GetParent().(*parser.Relation_expr_opt_aliasContext); ok {
 			l.inFinalSelect = true
+
 		}
 	}
-}
-*/
+} */
+
 //func (l *Listener) EnterEveryRule(ctx antlr.ParserRuleContext) {
 //	fmt.Print(ctx.GetRuleIndex(), " : ", ctx.GetText())
 //}
@@ -55,8 +57,8 @@ func (pr *PostgresSqlMaker) GetMakeJsonArrayFn() (string, error) {
 	return "?| array", nil
 }
 
-func (pr *PostgresSqlMaker) SqlToAst(ctx context.Context, query string) string {
-	logs.WithContext(ctx).Debug("SqlToAst - Start")
+func (pr *PostgresSqlMaker) ExtractTableNames(ctx context.Context, query string) module_model.TablesInQuery {
+	logs.WithContext(ctx).Debug("ExtractTableNames - Start")
 	// Create an input stream
 	//query = "select * from abc a left join xyz b on 1=1"
 	is := antlr.NewInputStream(query)
@@ -71,27 +73,102 @@ func (pr *PostgresSqlMaker) SqlToAst(ctx context.Context, query string) string {
 	// Parse the input (starting rule depends on your grammar, e.g., statement)
 	tree := p.Root()
 	//fmt.Println(tree.ToStringTree(nil, p))
-
+	fmt.Println(tree.GetStart().GetStart())
+	fmt.Println(tree.GetStop().GetStop())
+	//tables := extractTableNames(tree)
+	aliases := extractAliasNames(tree)
+	tablesInQuery := extractTableAliasNames(tree, query)
 	// Walk the parse tree with a custom listener
-	listener := &Listener{}
-	antlr.ParseTreeWalkerDefault.Walk(listener, tree)
+	//listener := &Listener{}
+	//antlr.ParseTreeWalkerDefault.Walk(listener, tree)
 
-	return ""
+	//var filteredArray []string
+	// Only keep table names that don't exist in aliases
+	for tableKey, table := range tablesInQuery.Tables {
+		aliasFound := false
+		for _, alias := range aliases {
+			if strings.TrimSpace(table.TableName) == strings.TrimSpace(alias) {
+				aliasFound = true
+				break
+			}
+		}
+		if aliasFound {
+			delete(tablesInQuery.Tables, tableKey)
+		}
+	}
+	//tables = eru_utils.UniqueStrings(filteredArray)
+	//logs.WithContext(ctx).Info(fmt.Sprint("Tables : ", tables))
+	return tablesInQuery
 }
-func extractTableNames(tree antlr.Tree) []string {
-	var tableNames []string
-
-	// Implement a visitor or iterate over tree nodes
+func (pr *PostgresSqlMaker) DefaultSchemaName() string {
+	return "public."
+}
+func extractTableNames(tree antlr.Tree) (tableNames []string) {
 	switch ctx := tree.(type) {
-	case *parser.Table_Context:
+	case *parser.Relation_exprContext:
 		tableNames = append(tableNames, ctx.GetText())
 	default:
 		for i := 0; i < tree.GetChildCount(); i++ {
 			tableNames = append(tableNames, extractTableNames(tree.GetChild(i))...)
 		}
 	}
-
 	return tableNames
+}
+func extractAliasNames(tree antlr.Tree) (aliases []string) {
+	switch ctx := tree.(type) {
+	case *parser.Common_table_exprContext:
+		aliases = append(aliases, strings.Split(ctx.GetText(), "as(")[0])
+	default:
+		for i := 0; i < tree.GetChildCount(); i++ {
+			aliases = append(aliases, extractAliasNames(tree.GetChild(i))...)
+		}
+	}
+	return aliases
+}
+
+func extractTableAliasNames(tree antlr.Tree, query string) (tablesInQuery module_model.TablesInQuery) {
+	tables := module_model.TableInQuery{}
+	tablesInQuery = module_model.TablesInQuery{Tables: make(map[string]module_model.TableInQuery)}
+	switch ctx := tree.(type) {
+	case *parser.Table_refContext:
+		startIndex := 0
+		stopIndex := 0
+		tn := ""
+		alias := ""
+		for _, v := range ctx.GetChildren() {
+			switch ctx1 := v.(type) {
+			case *parser.Relation_exprContext:
+				startIndex = ctx1.GetStart().GetStart()
+				stopIndex = ctx1.GetStop().GetStop() + 1
+				tn = ctx1.GetText()
+			case *parser.Alias_clauseContext:
+				stopIndex = ctx1.GetStop().GetStop() + 1
+				alias = ctx1.GetText()
+
+			default:
+				for i := 0; i < tree.GetChildCount(); i++ {
+					childTablesInQuery := extractTableAliasNames(tree.GetChild(i), query)
+					for k, v := range childTablesInQuery.Tables {
+						tablesInQuery.Tables[k] = v
+					}
+				}
+			}
+		}
+		if tn != "" {
+			orgText := query[startIndex:stopIndex]
+			tables.TableName = tn
+			tables.AliasName = alias
+			tablesInQuery.Tables[orgText] = tables
+		}
+	default:
+		for i := 0; i < tree.GetChildCount(); i++ {
+			childTablesInQuery := extractTableAliasNames(tree.GetChild(i), query)
+			for k, v := range childTablesInQuery.Tables {
+				tablesInQuery.Tables[k] = v
+			}
+		}
+	}
+	return
 }
 
 func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string {
