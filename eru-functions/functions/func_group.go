@@ -198,7 +198,6 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 			if res.response != nil {
 				if res.response.ContentLength > 0 {
 					logs.WithContext(ctx).Info(fmt.Sprint("adding response to array"))
-					fmt.Println(res.job.id)
 					responses = append(responses, res.response)
 				}
 			}
