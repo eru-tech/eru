@@ -198,6 +198,7 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 			if res.response != nil {
 				if res.response.ContentLength > 0 {
 					logs.WithContext(ctx).Info(fmt.Sprint("adding response to array"))
+					fmt.Println(res.job.id)
 					responses = append(responses, res.response)
 				}
 			}
@@ -1163,6 +1164,15 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 			response.Header.Set("Content-Length", strconv.Itoa(len(rb)))
 			response.ContentLength = int64(len(rb))
 		}
+	} else {
+		respBytes, respErr := io.ReadAll(response.Body)
+		if respErr != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("Error reading response body:", respErr.Error()))
+			return
+		}
+		response.Body = io.NopCloser(bytes.NewReader(respBytes))
+		response.Header.Set("Content-Length", strconv.Itoa(len(respBytes)))
+		response.ContentLength = int64(len(respBytes))
 	}
 
 	if funcStep.RemoveParams.ResponseHeaders != nil {
