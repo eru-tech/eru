@@ -10,6 +10,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	parser "github.com/eru-tech/eru/eru-ql/ds/parser"
+
 	//eru_utils "github.com/eru-tech/eru/eru-utils"
 
 	"github.com/eru-tech/eru/eru-ql/module_model"
@@ -57,7 +58,7 @@ func (pr *PostgresSqlMaker) GetMakeJsonArrayFn() (string, error) {
 	return "?| array", nil
 }
 
-func (pr *PostgresSqlMaker) ExtractTableNames(ctx context.Context, query string) module_model.TablesInQuery {
+func (pr *PostgresSqlMaker) ExtractTableNames(ctx context.Context, query string) (resTablesInQuery module_model.TablesInQuery) {
 	logs.WithContext(ctx).Debug("ExtractTableNames - Start")
 	// Create an input stream
 	//query = "select * from abc a left join xyz b on 1=1"
@@ -73,32 +74,32 @@ func (pr *PostgresSqlMaker) ExtractTableNames(ctx context.Context, query string)
 	// Parse the input (starting rule depends on your grammar, e.g., statement)
 	tree := p.Root()
 	//fmt.Println(tree.ToStringTree(nil, p))
-	fmt.Println(tree.GetStart().GetStart())
-	fmt.Println(tree.GetStop().GetStop())
+
 	//tables := extractTableNames(tree)
 	aliases := extractAliasNames(tree)
 	tablesInQuery := extractTableAliasNames(tree, query)
+	reaTablesInQuery := module_model.TablesInQuery{}
 	// Walk the parse tree with a custom listener
 	//listener := &Listener{}
 	//antlr.ParseTreeWalkerDefault.Walk(listener, tree)
 
 	//var filteredArray []string
 	// Only keep table names that don't exist in aliases
-	for tableKey, table := range tablesInQuery.Tables {
+	for _, table := range tablesInQuery.Tables {
 		aliasFound := false
 		for _, alias := range aliases {
-			if strings.TrimSpace(table.TableName) == strings.TrimSpace(alias) {
+			if strings.TrimSpace(table.Obj.TableName) == strings.TrimSpace(alias) {
 				aliasFound = true
 				break
 			}
 		}
-		if aliasFound {
-			delete(tablesInQuery.Tables, tableKey)
+		if !aliasFound {
+			reaTablesInQuery.Tables = append(reaTablesInQuery.Tables, table)
 		}
 	}
 	//tables = eru_utils.UniqueStrings(filteredArray)
 	//logs.WithContext(ctx).Info(fmt.Sprint("Tables : ", tables))
-	return tablesInQuery
+	return reaTablesInQuery
 }
 func (pr *PostgresSqlMaker) DefaultSchemaName() string {
 	return "public."
@@ -127,8 +128,8 @@ func extractAliasNames(tree antlr.Tree) (aliases []string) {
 }
 
 func extractTableAliasNames(tree antlr.Tree, query string) (tablesInQuery module_model.TablesInQuery) {
-	tables := module_model.TableInQuery{}
-	tablesInQuery = module_model.TablesInQuery{Tables: make(map[string]module_model.TableInQuery)}
+
+	tablesInQuery = module_model.TablesInQuery{}
 	switch ctx := tree.(type) {
 	case *parser.Table_refContext:
 		startIndex := 0
@@ -148,23 +149,42 @@ func extractTableAliasNames(tree antlr.Tree, query string) (tablesInQuery module
 			default:
 				for i := 0; i < tree.GetChildCount(); i++ {
 					childTablesInQuery := extractTableAliasNames(tree.GetChild(i), query)
-					for k, v := range childTablesInQuery.Tables {
-						tablesInQuery.Tables[k] = v
+					for _, v := range childTablesInQuery.Tables {
+						aliasFound := false
+						for _, vv := range tablesInQuery.Tables {
+							if vv.Obj.TableKey == v.Obj.TableKey {
+								aliasFound = true
+								break
+							}
+						}
+						if !aliasFound {
+							tablesInQuery.Tables = append(tablesInQuery.Tables, v)
+						}
 					}
 				}
 			}
 		}
 		if tn != "" {
-			orgText := query[startIndex:stopIndex]
-			tables.TableName = tn
-			tables.AliasName = alias
-			tablesInQuery.Tables[orgText] = tables
+			if alias == "" {
+				alias = tn
+			}
+			tableOrderedMap := module_model.OrderedTableMap{Alias: alias, Obj: module_model.TableInQuery{AliasName: alias, TableName: tn, TableKey: query[startIndex:stopIndex], TableKeyPrefix: query[startIndex-5 : startIndex], TableKeySuffix: query[stopIndex : stopIndex+5]}}
+			tablesInQuery.Tables = append(tablesInQuery.Tables, &tableOrderedMap)
 		}
 	default:
 		for i := 0; i < tree.GetChildCount(); i++ {
 			childTablesInQuery := extractTableAliasNames(tree.GetChild(i), query)
-			for k, v := range childTablesInQuery.Tables {
-				tablesInQuery.Tables[k] = v
+			for _, v := range childTablesInQuery.Tables {
+				aliasFound := false
+				for _, vv := range tablesInQuery.Tables {
+					if vv.Obj.TableKey == v.Obj.TableKey {
+						aliasFound = true
+						break
+					}
+				}
+				if !aliasFound {
+					tablesInQuery.Tables = append(tablesInQuery.Tables, v)
+				}
 			}
 		}
 	}

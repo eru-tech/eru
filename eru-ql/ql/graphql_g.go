@@ -4,17 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"github.com/eru-tech/eru/eru-ql/ds"
-	"github.com/eru-tech/eru/eru-ql/module_model"
-	"github.com/eru-tech/eru/eru-ql/module_store"
-	"github.com/eru-tech/eru/eru-utils"
-	"github.com/graphql-go/graphql/language/ast"
-	"github.com/graphql-go/graphql/language/kinds"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-ql/ds"
+	"github.com/eru-tech/eru/eru-ql/module_model"
+	"github.com/eru-tech/eru/eru-ql/module_store"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/graphql-go/graphql/language/ast"
+	"github.com/graphql-go/graphql/language/kinds"
 )
 
 type SQLObjectQ struct {
@@ -373,7 +374,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)
 				}
-				sqlObj.SecurityClause[colTableName],_, e = getTableSecurityRule(ctx, sqlObj.ProjectId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables)
+				sqlObj.SecurityClause[colTableName], _, e = getTableSecurityRule(ctx, sqlObj.ProjectId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables)
 				if e != nil {
 					logs.WithContext(ctx).Error(e.Error())
 					return SQLCols{}, e.Error()

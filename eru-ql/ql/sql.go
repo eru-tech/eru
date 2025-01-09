@@ -140,37 +140,43 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
 			}
-
 			res = append(res, result)
 		}
 	} else if sqd.OutputType == "ast" {
+		fmt.Println(sqd.Query)
 		tableNames := sr.ExtractTableNames(ctx, sqd.Query)
-		for tableKey, table := range tableNames.Tables {
-			if !(strings.Contains(table.TableName, ".")) {
-				table.TableName = fmt.Sprint(sr.DefaultSchemaName(), table.TableName)
-			}
-			sRulesStr, srJoins, srErr := getTableSecurityRule(ctx, projectId, sqd.DBAlias, table.TableName, s, "query", sqd.FinalVariables)
-			if srErr == nil {
-				q := fmt.Sprint("select ", table.TableName, ".* from ", table.TableName)
-				for _, srJoin := range srJoins {
-					tj, e := datasource.GetTableJoins(ctx, table.TableName, srJoin, make(map[string]string))
-					if e != nil {
-						logs.WithContext(ctx).Error(e.Error())
-						return nil, nil, e
-					}
-					onClause, er := processMapVariable(ctx, tj.GetOnClause(ctx), sqd.FinalVariables)
-					if er != nil {
-						logs.WithContext(ctx).Error(er.Error())
-						return
-					}
-					oc, _ := processWhereClause(ctx, onClause, "", table.TableName, true, false)
-					q = fmt.Sprint(q, " left join ", srJoin, " on ", oc)
+		sort.Sort(module_model.MapSorterTable(tableNames.Tables))
+
+		for _, table := range tableNames.Tables {
+			if !(strings.HasSuffix(table.Obj.TableName, "___ALL")) {
+				if !(strings.Contains(table.Obj.TableName, ".")) {
+					table.Obj.TableName = fmt.Sprint(sr.DefaultSchemaName(), table.Obj.TableName)
 				}
-				q = fmt.Sprint(q, " where ", sRulesStr)
-				sqd.Query = strings.Replace(sqd.Query, tableKey, fmt.Sprint("(", q, ") ", table.AliasName), -1)
+				sRulesStr, srJoins, srErr := getTableSecurityRule(ctx, projectId, sqd.DBAlias, table.Obj.TableName, s, "query", sqd.FinalVariables)
+				if srErr == nil {
+					q := fmt.Sprint("select  x.* from ", table.Obj.TableName, " x ")
+					for _, srJoin := range srJoins {
+						tj, e := datasource.GetTableJoins(ctx, table.Obj.TableName, srJoin, make(map[string]string))
+						if e != nil {
+							logs.WithContext(ctx).Error(e.Error())
+							return nil, nil, e
+						}
+						onClause, er := processMapVariable(ctx, tj.GetOnClause(ctx), sqd.FinalVariables)
+						if er != nil {
+							logs.WithContext(ctx).Error(er.Error())
+							return
+						}
+						oc, _ := processWhereClause(ctx, onClause, "", table.Obj.TableName, true, false)
+						q = fmt.Sprint(q, " left join ", srJoin, " on ", oc)
+					}
+					q = fmt.Sprint(q, " where ", sRulesStr)
+					sqd.Query = strings.Replace(sqd.Query, fmt.Sprint(table.Obj.TableKeyPrefix, table.Obj.TableKey, table.Obj.TableKeySuffix), fmt.Sprint(table.Obj.TableKeyPrefix, " (", q, ") ", table.Obj.AliasName, " ", table.Obj.TableKeySuffix), -1)
+				}
+			} else {
+				sqd.Query = strings.Replace(sqd.Query, table.Obj.TableName, strings.Replace(table.Obj.TableName, "___ALL", "", -1), -1)
 			}
 		}
-		res = append(res, map[string]interface{}{"ast": sqd.Query})
+		res = append(res, map[string]interface{}{"sql": sqd.Query, "ast": tableNames.Tables})
 	}
 	queryObjs = append(queryObjs, queryObj)
 	return res, queryObjs, err

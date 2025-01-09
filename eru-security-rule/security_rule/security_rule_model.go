@@ -12,6 +12,10 @@ import (
 	eru_utils "github.com/eru-tech/eru/eru-utils"
 )
 
+const (
+	MAKE_JSON_ARRAY_FN = "$make_json_array_fn"
+)
+
 type CustomRule struct {
 	AND []CustomRuleDetails `json:"and,omitempty"`
 	OR  []CustomRuleDetails `json:"or,omitempty"`
@@ -111,11 +115,20 @@ func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType stri
 	case "like":
 		op = " like "
 		break
+	case "nlike":
+		op = " not like "
+		break
 	case "eq_null":
 		op = " is null "
 		break
 	case "neq_null":
 		op = " is not null "
+		break
+	case "jin":
+		op = MAKE_JSON_ARRAY_FN
+		break
+	case "jnin":
+		op = MAKE_JSON_ARRAY_FN
 		break
 	default:
 		//do nothing

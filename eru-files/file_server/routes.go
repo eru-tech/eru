@@ -1,11 +1,12 @@
 package file_server
 
 import (
+	"net/http"
+
 	file_handlers "github.com/eru-tech/eru/eru-files/file_server/handlers"
 	"github.com/eru-tech/eru/eru-files/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
-	"net/http"
 )
 
 func SetServiceName() {
@@ -42,6 +43,7 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/stringtofile").HandlerFunc(file_handlers.StringToFileHandler(sh.Store))
 	fileRouter.Methods(http.MethodPost).Path("/exceltojson").HandlerFunc(file_handlers.ExcelToJsonHandler(sh.Store))
 	fileRouter.Methods(http.MethodPost).Path("/exceltojsonb64").HandlerFunc(file_handlers.ExcelToJsonB64Handler(sh.Store))
+	fileRouter.Methods(http.MethodPost).Path("/csvdatatojson").HandlerFunc(file_handlers.CsvDataToJsonHandler(sh.Store))
 	//fileRouter.Methods(http.MethodPost).Path("/exceltojsonurl").HandlerFunc(file_handlers.ExcelToJsonUrlHandler(sh.Store))
 	fileRouter.Methods(http.MethodPost).Path("/jsonvalidate").HandlerFunc(file_handlers.JsonValidatorHandler(sh.Store))
 }

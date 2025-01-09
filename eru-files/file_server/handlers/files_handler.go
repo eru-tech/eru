@@ -5,6 +5,10 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
 	"github.com/eru-tech/eru/eru-files/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_reads "github.com/eru-tech/eru/eru-read-write/eru-reads"
@@ -14,9 +18,6 @@ import (
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
 	"github.com/tidwall/gjson"
-	"io"
-	"net/http"
-	"strings"
 	//"github.com/aws/aws-sdk-go/aws/session"
 	//"github.com/aws/aws-sdk-go/service/s3"
 )
@@ -446,6 +447,50 @@ func ExcelToJsonHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			logs.WithContext(r.Context()).Error(fmt.Sprint("Could not parse form: %s", err))
 			return
 		}
+	}
+}
+func CsvDataToJsonHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		var err error
+
+		ufFromReq := json.NewDecoder(r.Body)
+		ufFromReq.DisallowUnknownFields()
+		type ufFromObj struct {
+			CsvData string `json:"csv_data"`
+		}
+		ufFromMap := ufFromObj{}
+
+		if err := ufFromReq.Decode(&ufFromMap); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		csvBytes, err := b64.StdEncoding.DecodeString(ufFromMap.CsvData)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "base64 decode failed"})
+			return
+		}
+
+		fdr := module_store.FileDownloadRequest{}
+		fdr.CsvAsJson = true
+
+		logs.WithContext(r.Context()).Info(fmt.Sprint(fdr))
+		fileJson, err := s.BytesToJson(r.Context(), projectId, csvBytes, fdr, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(fileJson)
+
+		return
 	}
 }
 

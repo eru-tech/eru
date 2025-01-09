@@ -15,7 +15,7 @@ import (
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 )
 
-var port = "9082"
+var port = "8082"
 
 func main() {
 	defer func() {

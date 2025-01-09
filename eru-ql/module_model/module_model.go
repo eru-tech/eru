@@ -35,11 +35,14 @@ const (
 )
 
 type TableInQuery struct {
-	TableName string
-	AliasName string
+	TableName      string
+	AliasName      string
+	TableKey       string
+	TableKeyPrefix string
+	TableKeySuffix string
 }
 type TablesInQuery struct {
-	Tables map[string]TableInQuery
+	Tables []*OrderedTableMap
 }
 
 type ModuleProjectI interface {
@@ -695,4 +698,21 @@ func (prj *ExtendedProject) CompareProject(ctx context.Context, compareProject E
 	}
 
 	return storeCompare, nil
+}
+
+type OrderedTableMap struct {
+	Alias string
+	Obj   TableInQuery
+}
+
+type MapSorterTable []*OrderedTableMap
+
+func (a MapSorterTable) Len() int {
+	return len(a)
+}
+func (a MapSorterTable) Swap(i, j int) {
+	a[i], a[j] = a[j], a[i]
+}
+func (a MapSorterTable) Less(i, j int) bool {
+	return a[i].Alias == ""
 }
