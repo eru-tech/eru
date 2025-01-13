@@ -195,7 +195,7 @@ func (qld *QLData) secureSQL(ctx context.Context, query string, projectId string
 				table.TableName = fmt.Sprint(sr.DefaultSchemaName(), table.TableName)
 			}
 			sRulesStr, srJoins, srErr := getTableSecurityRule(ctx, projectId, datasource.DbAlias, table.TableName, s, "query", qld.FinalVariables, table.TableName)
-			if srErr == nil {
+			if srErr == nil && sRulesStr != "" {
 				q := fmt.Sprint("select  ", table.TableName, ".* from ", table.TableName)
 				for _, srJoin := range srJoins {
 					tj, e := datasource.GetTableJoins(ctx, table.TableName, srJoin, make(map[string]string))
