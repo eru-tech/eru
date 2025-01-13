@@ -377,7 +377,10 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 				sqlObj.SecurityClause[colTableName], _, e = getTableSecurityRule(ctx, sqlObj.ProjectId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables, colTableName)
 				if e != nil {
 					logs.WithContext(ctx).Error(e.Error())
-					return SQLCols{}, e.Error()
+					//ignoring error if security rule not defined - simply execute without security rule
+					if !strings.Contains(e.Error(), "TableSecurityRule not defined for") {
+						return SQLCols{}, e.Error()
+					}
 				}
 				//if sqlObj.JoinClause == nil {
 				//	sqlObj.JoinClause = make(map[string]interface{})
