@@ -167,7 +167,12 @@ func extractTableAliasNames(tree antlr.Tree, query string) (tablesInQuery module
 			if alias == "" {
 				alias = tn
 			}
-			tablesInQuery.Tables = append(tablesInQuery.Tables, module_model.TableInQuery{AliasName: alias, TableName: tn, TableKey: query[startIndex:stopIndex], TableKeyPrefix: query[startIndex-5 : startIndex], TableKeySuffix: query[stopIndex : stopIndex+5]})
+			tmpStopIndex := stopIndex + 5
+			if tmpStopIndex > len(query) {
+				tmpStopIndex = len(query)
+			}
+
+			tablesInQuery.Tables = append(tablesInQuery.Tables, module_model.TableInQuery{AliasName: alias, TableName: tn, TableKey: query[startIndex:stopIndex], TableKeyPrefix: query[startIndex-5 : startIndex], TableKeySuffix: query[stopIndex:tmpStopIndex]})
 		}
 	default:
 		for i := 0; i < tree.GetChildCount(); i++ {
