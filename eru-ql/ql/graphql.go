@@ -2,6 +2,7 @@ package ql
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -13,6 +14,7 @@ import (
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-read-write/eru_writes"
+	"github.com/eru-tech/eru/eru-templates/gotemplate"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/kinds"
@@ -178,7 +180,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)
 				}
-				sqlObj.SecurityClause[sqlObj.MainTableName], _, err = getTableSecurityRule(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.FinalVariables)
+				sqlObj.SecurityClause[sqlObj.MainTableName], _, err = getTableSecurityRule(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.FinalVariables, sqlObj.MainTableName)
 				if err != nil {
 					errMsg = err.Error()
 					errFound = true
@@ -644,8 +646,10 @@ func (gqd *GraphQLData) setOverwriteDoc(ctx context.Context, projectId string, d
 	return
 }
 
-func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, vars map[string]interface{}) (ruleOutput string, ruleJoinTables []string, err error) {
+func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, vars map[string]interface{}, mainTableName string) (ruleOutput string, ruleJoinTables []string, err error) {
 	logs.WithContext(ctx).Debug("getTableSecurityRule - Start")
+	var templates []string
+	var ruleJoinChildTables []string
 	sr, err := s.GetTableSecurityRule(ctx, projectId, dbAlias, tableName)
 	if err != nil {
 		logs.WithContext(ctx).Info(err.Error())
@@ -653,31 +657,107 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 		logs.WithContext(ctx).Info(err.Error())
 		return "", make([]string, 0), err
 	}
-
+	//var ruleJoinChildTables []string
 	if op == "query" {
-		for _, v := range sr.Select.CustomRule.AND {
-			tableNameParts := strings.Split(v.Variable1, ".")
-			ruleTableName := tableNameParts[0]
-			if len(tableNameParts) > 1 {
-				ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
+
+		if sr.Select.IgnoreRecord != "" {
+			ignoreRecordBytes, irErr := processTemplate(ctx, "security_rule_ignore_record", sr.Select.IgnoreRecord, vars, "json", "", "")
+			if irErr != nil {
+				logs.WithContext(ctx).Error(irErr.Error())
+				return "", make([]string, 0), irErr
 			}
-			if tableName != ruleTableName {
-				ruleJoinTables = append(ruleJoinTables, ruleTableName)
+			ignoreRecord := make(map[string]interface{})
+			irErr = json.Unmarshal(ignoreRecordBytes, &ignoreRecord)
+			if irErr != nil {
+				logs.WithContext(ctx).Error(irErr.Error())
+				return "", make([]string, 0), irErr
+			}
+
+			evalStr, evalErr := gotemplate.EvalFilter(ctx, sr.Select.IgnoreFilter, ignoreRecord)
+			if evalErr != nil {
+				logs.WithContext(ctx).Error(evalErr.Error())
+				return "", make([]string, 0), evalErr
+			}
+			fmt.Println(evalStr)
+
+		}
+
+		for _, v := range sr.Select.CustomRule.AND {
+			if v.Template == "" {
+				tableNameParts := strings.Split(v.Variable1, ".")
+				if len(tableNameParts) == 1 {
+					tableNameParts = strings.Split(fmt.Sprint(mainTableName, ".", v.Variable1), ".")
+				}
+				ruleTableName := tableNameParts[0]
+				if len(tableNameParts) > 1 {
+					ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
+				}
+				if mainTableName != ruleTableName {
+					if !(v.Operator == "ex" || v.Operator == "nex") {
+						ruleJoinTables = append(ruleJoinTables, ruleTableName)
+					} else {
+						ruleJoinChildTables = append(ruleJoinChildTables, ruleTableName)
+					}
+				}
 			}
 		}
 		for _, v := range sr.Select.CustomRule.OR {
-			tableNameParts := strings.Split(v.Variable1, ".")
-			ruleTableName := tableNameParts[0]
-			if len(tableNameParts) > 1 {
-				ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
-			}
-			if tableName != ruleTableName {
-				ruleJoinTables = append(ruleJoinTables, ruleTableName)
+			if v.Template == "" {
+				tableNameParts := strings.Split(v.Variable1, ".")
+				if len(tableNameParts) == 1 {
+					tableNameParts = strings.Split(fmt.Sprint(mainTableName, ".", v.Variable1), ".")
+				}
+				ruleTableName := tableNameParts[0]
+				if len(tableNameParts) > 1 {
+					ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
+				}
+				if mainTableName != ruleTableName {
+					if !(v.Operator == "ex" || v.Operator == "nex") {
+						ruleJoinTables = append(ruleJoinTables, ruleTableName)
+					} else {
+						ruleJoinChildTables = append(ruleJoinChildTables, ruleTableName)
+					}
+				}
 			}
 		}
-		ruleOutput, err = processSecurityRule(ctx, sr.Select, vars)
+
+		ds, dsErr := s.GetDataSource(ctx, projectId, dbAlias)
+		if dsErr != nil {
+			logs.WithContext(ctx).Error(dsErr.Error())
+			return
+		}
+		ctjObjMap := make(map[string]string)
+		for _, ctj := range ruleJoinChildTables {
+			ctjObj, e := ds.GetTableJoins(ctx, mainTableName, ctj, make(map[string]string))
+			if e != nil {
+				logs.WithContext(ctx).Error(e.Error())
+				return
+			}
+			onClause, er := processMapVariable(ctx, ctjObj.GetOnClause(ctx), vars)
+			if er != nil {
+				logs.WithContext(ctx).Error(er.Error())
+				return
+			}
+			oc, _ := processWhereClause(ctx, onClause, "", mainTableName, true, false)
+			ctjObjMap[ctj] = oc
+		}
+
+		ruleOutput, templates, err = processSecurityRule(ctx, sr.Select, vars, mainTableName, ctjObjMap)
+
+		for _, t := range templates {
+			ro, rj, rerr := getTableSecurityRule(ctx, projectId, dbAlias, t, s, op, vars, tableName)
+			if rerr != nil {
+				logs.WithContext(ctx).Error(rerr.Error())
+				return
+			}
+			ruleJoinTables = append(ruleJoinTables, rj...)
+			ruleOutput = strings.Replace(ruleOutput, fmt.Sprint("$TEMPLATE_", t), ro, -1)
+		}
+		fmt.Println(ruleOutput)
+		fmt.Println(templates)
 	} else if op == "mutation" {
-		ruleOutput, err = processSecurityRule(ctx, sr.Insert, vars) //todo to change it as per query type
+		ruleOutput, templates, err = processSecurityRule(ctx, sr.Insert, vars, mainTableName, nil) //todo to change it as per query type
+		_ = templates
 	} else {
 		err = errors.New(fmt.Sprint("Invalid Query Type : ", op))
 		logs.WithContext(ctx).Info(err.Error())

@@ -55,7 +55,7 @@ func (pr *PostgresSqlMaker) GetBlockedRegex() []string {
 	return append(blockedRegex, dbBlockedRegex...)
 }
 func (pr *PostgresSqlMaker) GetMakeJsonArrayFn() (string, error) {
-	return "?| array", nil
+	return " ?| array ", nil
 }
 
 func (pr *PostgresSqlMaker) ExtractTableNames(ctx context.Context, query string) (resTablesInQuery module_model.TablesInQuery) {
@@ -88,7 +88,7 @@ func (pr *PostgresSqlMaker) ExtractTableNames(ctx context.Context, query string)
 	for _, table := range tablesInQuery.Tables {
 		aliasFound := false
 		for _, alias := range aliases {
-			if strings.TrimSpace(table.Obj.TableName) == strings.TrimSpace(alias) {
+			if strings.TrimSpace(table.TableName) == strings.TrimSpace(alias) {
 				aliasFound = true
 				break
 			}
@@ -152,7 +152,7 @@ func extractTableAliasNames(tree antlr.Tree, query string) (tablesInQuery module
 					for _, v := range childTablesInQuery.Tables {
 						aliasFound := false
 						for _, vv := range tablesInQuery.Tables {
-							if vv.Obj.TableKey == v.Obj.TableKey {
+							if vv.TableKey == v.TableKey {
 								aliasFound = true
 								break
 							}
@@ -168,8 +168,7 @@ func extractTableAliasNames(tree antlr.Tree, query string) (tablesInQuery module
 			if alias == "" {
 				alias = tn
 			}
-			tableOrderedMap := module_model.OrderedTableMap{Alias: alias, Obj: module_model.TableInQuery{AliasName: alias, TableName: tn, TableKey: query[startIndex:stopIndex], TableKeyPrefix: query[startIndex-5 : startIndex], TableKeySuffix: query[stopIndex : stopIndex+5]}}
-			tablesInQuery.Tables = append(tablesInQuery.Tables, &tableOrderedMap)
+			tablesInQuery.Tables = append(tablesInQuery.Tables, module_model.TableInQuery{AliasName: alias, TableName: tn, TableKey: query[startIndex:stopIndex], TableKeyPrefix: query[startIndex-5 : startIndex], TableKeySuffix: query[stopIndex : stopIndex+5]})
 		}
 	default:
 		for i := 0; i < tree.GetChildCount(); i++ {
@@ -177,7 +176,7 @@ func extractTableAliasNames(tree antlr.Tree, query string) (tablesInQuery module
 			for _, v := range childTablesInQuery.Tables {
 				aliasFound := false
 				for _, vv := range tablesInQuery.Tables {
-					if vv.Obj.TableKey == v.Obj.TableKey {
+					if vv.TableKey == v.TableKey {
 						aliasFound = true
 						break
 					}

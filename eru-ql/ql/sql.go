@@ -129,6 +129,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 	queryObj.Query = sqd.Query
 	queryObj.Cols = sqd.Cols
 	if sqd.ExecuteFlag {
+		sqd.Query = sqd.secureSQL(ctx, projectId, datasource, s, sr)
 		if sqd.OutputType == eru_writes.OutputTypeCsv || sqd.OutputType == eru_writes.OutputTypeExcel {
 			result, err = sr.ExecuteQueryForCsv(ctx, sqd.Query, datasource, "Results")
 			if err != nil {
@@ -143,41 +144,49 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			res = append(res, result)
 		}
 	} else if sqd.OutputType == "ast" {
-		fmt.Println(sqd.Query)
-		tableNames := sr.ExtractTableNames(ctx, sqd.Query)
-		sort.Sort(module_model.MapSorterTable(tableNames.Tables))
-
-		for _, table := range tableNames.Tables {
-			if !(strings.HasSuffix(table.Obj.TableName, "___ALL")) {
-				if !(strings.Contains(table.Obj.TableName, ".")) {
-					table.Obj.TableName = fmt.Sprint(sr.DefaultSchemaName(), table.Obj.TableName)
-				}
-				sRulesStr, srJoins, srErr := getTableSecurityRule(ctx, projectId, sqd.DBAlias, table.Obj.TableName, s, "query", sqd.FinalVariables)
-				if srErr == nil {
-					q := fmt.Sprint("select  x.* from ", table.Obj.TableName, " x ")
-					for _, srJoin := range srJoins {
-						tj, e := datasource.GetTableJoins(ctx, table.Obj.TableName, srJoin, make(map[string]string))
-						if e != nil {
-							logs.WithContext(ctx).Error(e.Error())
-							return nil, nil, e
-						}
-						onClause, er := processMapVariable(ctx, tj.GetOnClause(ctx), sqd.FinalVariables)
-						if er != nil {
-							logs.WithContext(ctx).Error(er.Error())
-							return
-						}
-						oc, _ := processWhereClause(ctx, onClause, "", table.Obj.TableName, true, false)
-						q = fmt.Sprint(q, " left join ", srJoin, " on ", oc)
-					}
-					q = fmt.Sprint(q, " where ", sRulesStr)
-					sqd.Query = strings.Replace(sqd.Query, fmt.Sprint(table.Obj.TableKeyPrefix, table.Obj.TableKey, table.Obj.TableKeySuffix), fmt.Sprint(table.Obj.TableKeyPrefix, " (", q, ") ", table.Obj.AliasName, " ", table.Obj.TableKeySuffix), -1)
-				}
-			} else {
-				sqd.Query = strings.Replace(sqd.Query, table.Obj.TableName, strings.Replace(table.Obj.TableName, "___ALL", "", -1), -1)
-			}
-		}
-		res = append(res, map[string]interface{}{"sql": sqd.Query, "ast": tableNames.Tables})
+		secureQuery := sqd.secureSQL(ctx, projectId, datasource, s, sr)
+		res = append(res, map[string]interface{}{"sql": secureQuery})
 	}
 	queryObjs = append(queryObjs, queryObj)
 	return res, queryObjs, err
+}
+
+func (sqd *SQLData) secureSQL(ctx context.Context, projectId string, datasource *module_model.DataSource, s module_store.ModuleStoreI, sr ds.SqlMakerI) (secureQuery string) {
+	tableNames := sr.ExtractTableNames(ctx, sqd.Query)
+	for _, table := range tableNames.Tables {
+		if !(strings.HasSuffix(table.TableName, "___ALL")) {
+			if !(strings.Contains(table.TableName, ".")) {
+				table.TableName = fmt.Sprint(sr.DefaultSchemaName(), table.TableName)
+			}
+			sRulesStr, srJoins, srErr := getTableSecurityRule(ctx, projectId, sqd.DBAlias, table.TableName, s, "query", sqd.FinalVariables, table.TableName)
+			if srErr == nil {
+				q := fmt.Sprint("select  ", table.TableName, ".* from ", table.TableName)
+				for _, srJoin := range srJoins {
+					tj, e := datasource.GetTableJoins(ctx, table.TableName, srJoin, make(map[string]string))
+					if e != nil {
+						logs.WithContext(ctx).Error(e.Error())
+						return
+					}
+					onClause, er := processMapVariable(ctx, tj.GetOnClause(ctx), sqd.FinalVariables)
+					if er != nil {
+						logs.WithContext(ctx).Error(er.Error())
+						return
+					}
+					oc, _ := processWhereClause(ctx, onClause, "", table.TableName, true, false)
+					q = fmt.Sprint(q, " left join ", srJoin, " on ", oc)
+				}
+				q = fmt.Sprint(q, " where ", sRulesStr)
+				makeJsonArrayFnKeyWord, err := sr.GetMakeJsonArrayFn()
+				if err != nil {
+					makeJsonArrayFnKeyWord = ""
+				}
+				sqd.Query = strings.Replace(sqd.Query, fmt.Sprint(table.TableKeyPrefix, table.TableKey, table.TableKeySuffix), fmt.Sprint(table.TableKeyPrefix, " (", q, ") ", table.AliasName, " ", table.TableKeySuffix), -1)
+				sqd.Query = strings.Replace(sqd.Query, module_model.MAKE_JSON_ARRAY_FN, makeJsonArrayFnKeyWord, -1)
+			}
+		} else {
+			sqd.Query = strings.Replace(sqd.Query, table.TableName, strings.Replace(table.TableName, "___ALL", "", -1), -1)
+		}
+	}
+	secureQuery = sqd.Query
+	return
 }

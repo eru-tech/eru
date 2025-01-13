@@ -85,7 +85,7 @@ type GraphqlResult struct {
 var DefaultDriverConfig = module_model.DriverConfig{10, 2, time.Hour}
 var DefaultOtherConfig = module_model.OtherDbConfig{1000, 60}
 var emptyCustomRule = security_rule.CustomRule{}
-var DefaultDbSecurityRules = module_model.SecurityRules{security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Deny", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Deny", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}, security_rule.SecurityRule{"Allow", emptyCustomRule}}
+var DefaultDbSecurityRules = module_model.SecurityRules{security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Deny", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Deny", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, false}
 
 type SqlMakerI interface {
 	GetReturnAlias(ctx context.Context) string

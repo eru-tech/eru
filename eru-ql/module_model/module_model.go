@@ -42,7 +42,7 @@ type TableInQuery struct {
 	TableKeySuffix string
 }
 type TablesInQuery struct {
-	Tables []*OrderedTableMap
+	Tables []TableInQuery
 }
 
 type ModuleProjectI interface {
@@ -190,14 +190,15 @@ type ColumnMasking struct {
 	}
 */
 type SecurityRules struct {
-	Create security_rule.SecurityRule `json:"create"`
-	Drop   security_rule.SecurityRule `json:"drop"`
-	Alter  security_rule.SecurityRule `json:"alter"`
-	Insert security_rule.SecurityRule `json:"insert"`
-	Update security_rule.SecurityRule `json:"update"`
-	Delete security_rule.SecurityRule `json:"delete"`
-	Select security_rule.SecurityRule `json:"select"`
-	Query  security_rule.SecurityRule `json:"query"`
+	Create     security_rule.SecurityRule `json:"create"`
+	Drop       security_rule.SecurityRule `json:"drop"`
+	Alter      security_rule.SecurityRule `json:"alter"`
+	Insert     security_rule.SecurityRule `json:"insert"`
+	Update     security_rule.SecurityRule `json:"update"`
+	Delete     security_rule.SecurityRule `json:"delete"`
+	Select     security_rule.SecurityRule `json:"select"`
+	Query      security_rule.SecurityRule `json:"query"`
+	IsTemplate bool                       `json:"is_template"`
 }
 type TransformRules struct {
 	TransformInput  TransformRule `json:"transform_input"`

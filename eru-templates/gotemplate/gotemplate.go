@@ -8,6 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"sort"
+	"strconv"
+	"strings"
+	"text/template"
+	"time"
+
 	sprig "github.com/Masterminds/sprig/v3"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
 	eruhmac "github.com/eru-tech/eru/eru-crypto/hmac"
@@ -21,12 +28,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
-	"math"
-	"sort"
-	"strconv"
-	"strings"
-	"text/template"
-	"time"
 )
 
 type GoTemplate struct {
@@ -515,7 +516,7 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 			return jwt.CreateJWT(ctx, privateKeyStr, claimsMap, nil)
 		},
 		"evalFilter": func(filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
-			return evalFilter(ctx, filter, record)
+			return EvalFilter(ctx, filter, record)
 		},
 		"makeFilter": func(filter string, jsonKey string) (silterStr string, err error) {
 			return makeFilter(ctx, filter, jsonKey)
@@ -602,10 +603,10 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err
 }
-func evalFilter(ctx context.Context, filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
+func EvalFilter(ctx context.Context, filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
 	for k, v := range filter {
 		kk := fetchKey(k)
-		if kk == "$or" {
+		if kk == "$or" || kk == "or" {
 			if vArray, vArrayOk := v.([]interface{}); vArrayOk {
 				result, err = evalOrFilter(ctx, vArray, record)
 				if !result {
@@ -640,7 +641,7 @@ func evalFilter(ctx context.Context, filter map[string]interface{}, record map[s
 func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue interface{}) (result bool, err error) {
 	for ck, cv := range cond {
 		switch ck {
-		case "$in", "$inc":
+		case "$in", "$inc", "in", "inc":
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				if rArray, rArrayOk := recordValue.([]interface{}); rArrayOk {
 					return eruutils.ImplArrayContains(cvArray, rArray), nil
@@ -652,7 +653,7 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				logs.WithContext(ctx).Error(err.Error())
 				return false, err
 			}
-		case "$nin", "$ninc":
+		case "$nin", "$ninc", "nin", "ninc":
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				if rArray, rArrayOk := recordValue.([]interface{}); rArrayOk {
 					return !(eruutils.ImplArrayContains(cvArray, rArray)), nil
@@ -664,7 +665,7 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				logs.WithContext(ctx).Error(err.Error())
 				return false, err
 			}
-		case "$like":
+		case "$like", "like":
 			if rvStr, rvStrOk := recordValue.(string); rvStrOk {
 				if cvStr, cvStrOk := cv.(string); cvStrOk {
 					return strings.Contains(rvStr, cvStr), nil
@@ -678,7 +679,7 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				logs.WithContext(ctx).Error(err.Error())
 				return false, err
 			}
-		case "$nlike":
+		case "$nlike", "nlike":
 			if rvStr, rvStrOk := recordValue.(string); rvStrOk {
 				if cvStr, cvStrOk := cv.(string); cvStrOk {
 					return !(strings.Contains(rvStr, cvStr)), nil
@@ -692,7 +693,7 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				logs.WithContext(ctx).Error(err.Error())
 				return false, err
 			}
-		case "$gt":
+		case "$gt", "gt":
 			if rvF, rvFOk := recordValue.(float64); rvFOk {
 				if cvF, cvFOk := cv.(float64); cvFOk {
 					return (rvF > cvF), nil
@@ -706,7 +707,7 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				logs.WithContext(ctx).Error(err.Error())
 				return false, nil
 			}
-		case "$gte":
+		case "$gte", "gte":
 			if rvF, rvFOk := recordValue.(float64); rvFOk {
 				if cvF, cvFOk := cv.(float64); cvFOk {
 					return (rvF >= cvF), nil
@@ -720,7 +721,7 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				logs.WithContext(ctx).Error(err.Error())
 				return false, err
 			}
-		case "$lt":
+		case "$lt", "lt":
 			if rvF, rvFOk := recordValue.(float64); rvFOk {
 				if cvF, cvFOk := cv.(float64); cvFOk {
 					return (rvF < cvF), nil
@@ -734,7 +735,7 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				logs.WithContext(ctx).Error(err.Error())
 				return false, nil
 			}
-		case "$lte":
+		case "$lte", "lte":
 			if rvF, rvFOk := recordValue.(float64); rvFOk {
 				if cvF, cvFOk := cv.(float64); cvFOk {
 					return (rvF <= cvF), nil
@@ -748,11 +749,11 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				logs.WithContext(ctx).Error(err.Error())
 				return false, nil
 			}
-		case "$ne":
+		case "$ne", "ne":
 			return !(eruutils.ImplCompare(cv, recordValue)), nil
-		case "$eq":
+		case "$eq", "eq":
 			return eruutils.ImplCompare(cv, recordValue), nil
-		case "$jin":
+		case "$jin", "jin":
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				if rArray, rArrayOk := recordValue.([]interface{}); rArrayOk {
 					return eruutils.ImplArrayContains(cvArray, rArray), nil
@@ -766,7 +767,7 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				logs.WithContext(ctx).Error(err.Error())
 				return false, err
 			}
-		case "$jnin":
+		case "$jnin", "jnin":
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				if rArray, rArrayOk := recordValue.([]interface{}); rArrayOk {
 					return eruutils.ImplArrayNotContains(cvArray, rArray), nil
@@ -798,7 +799,7 @@ func fetchKey(k string) (key string) {
 func evalOrFilter(ctx context.Context, filter []interface{}, record map[string]interface{}) (result bool, err error) {
 	for i, v := range filter {
 		if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
-			result, err = evalFilter(ctx, vMap, record)
+			result, err = EvalFilter(ctx, vMap, record)
 		} else {
 			err = errors.New("$or needs array of objects")
 		}

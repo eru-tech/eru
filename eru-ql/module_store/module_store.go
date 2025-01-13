@@ -689,7 +689,7 @@ func (ms *ModuleStore) SaveTableSecurity(ctx context.Context, projectId string, 
 	defer realStore.GetMutex().Unlock()
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
-			if _, ok := db.SchemaTables[tableName]; ok {
+			if _, ok := db.SchemaTables[tableName]; ok || securityRules.IsTemplate {
 				if db.SchemaTablesSecurity == nil {
 					db.SchemaTablesSecurity = make(map[string]module_model.SecurityRules)
 				}
@@ -829,16 +829,24 @@ func (ms *ModuleStore) GetTableSecurityRule(ctx context.Context, projectId strin
 	logs.WithContext(ctx).Debug("GetTableSecurityRule - Start")
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
-			if _, ok := db.SchemaTables[tableName]; ok {
-				securityRules = db.SchemaTablesSecurity[tableName]
-			} else if _, ok := prj.MyQueries[tableName]; ok {
-				securityRules.Query = prj.MyQueries[tableName].SecurityRule
+			if sr, srOk := db.SchemaTablesSecurity[tableName]; srOk {
+				securityRules = sr
 			} else {
-				err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
+				err = errors.New(fmt.Sprint("Security Rule not defined for  ", tableName))
+				return
+			}
+			if !securityRules.IsTemplate {
+				if _, ok := db.SchemaTables[tableName]; ok {
+					//do nothing
+				} else if _, ok := prj.MyQueries[tableName]; ok {
+					securityRules.Query = prj.MyQueries[tableName].SecurityRule
+				} else {
+					err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+					}
+					return securityRules, err
 				}
-				return securityRules, err
 			}
 		} else {
 			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))

@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
-	"strings"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 )
 
 type QLData struct {
@@ -100,7 +102,7 @@ func (qld *QLData) ProcessTransformRule(ctx context.Context, tr module_model.Tra
 	return
 }
 
-func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, vars map[string]interface{}) (outputStr string, err error) {
+func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, vars map[string]interface{}, mainTableName string, ctjMap map[string]string) (outputStr string, templates []string, err error) {
 	logs.WithContext(ctx).Debug("processSecurityRule - Start")
 	if sr.RuleType == module_model.RULETYPE_NONE {
 		err = errors.New("Security Rule Set to NONE")
@@ -110,7 +112,7 @@ func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, var
 		//do nothing
 		return
 	} else if sr.RuleType == module_model.RULETYPE_CUSTOM {
-		outputStr, err = sr.Stringify(ctx, vars, false)
+		outputStr, templates, err = sr.Stringify(ctx, vars, false, mainTableName,ctjMap)
 
 	}
 	return
@@ -126,6 +128,11 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		templateStr = ruleValue[0]
 	}
 	if ruleValue[0] == module_model.RULEPREFIX_TOKEN {
+		templateStr = ruleValue[1]
+		if !(strings.HasPrefix(ruleValue[1], "{{")) {
+			templateStr = fmt.Sprint("{{ .", ruleValue[1], " }}")
+		}
+		templateStr = eru_utils.ReplaceVariables(ctx, templateStr, vars)
 		return executeTemplate(ctx, templateName, templateStr, vars[module_model.RULEPREFIX_TOKEN], outputType)
 	} else if ruleValue[0] == module_model.RULEPREFIX_DOCS {
 		var docs []interface{}
