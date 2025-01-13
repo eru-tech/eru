@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"time"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
@@ -171,11 +173,14 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				}
 
 				err = gqd.getSqlForQuery(ctx, projectId, datasources, sqlObj.MainTableName, s, nil, gqd.IsPublic)
-				sqlObj.WithQuery = gqd.QueryObject[sqlObj.MainTableName].Query
-
+				startTime := time.Now()
+				sqlObj.WithQuery = gqd.secureSQL(ctx, gqd.QueryObject[sqlObj.MainTableName].Query, projectId, datasource, s, graphQLs[i])
+				endTime := time.Now()
+				logs.WithContext(ctx).Info(fmt.Sprint("Time taken for secureSQL for ", sqlObj.MainTableName, " : ", endTime.Sub(startTime).Seconds()))
 				if err != nil {
 					logs.WithContext(ctx).Info(err.Error())
 				}
+				logs.WithContext(ctx).Info(sqlObj.WithQuery)
 
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)

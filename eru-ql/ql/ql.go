@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
@@ -112,7 +113,7 @@ func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, var
 		//do nothing
 		return
 	} else if sr.RuleType == module_model.RULETYPE_CUSTOM {
-		outputStr, templates, err = sr.Stringify(ctx, vars, false, mainTableName,ctjMap)
+		outputStr, templates, err = sr.Stringify(ctx, vars, false, mainTableName, ctjMap)
 
 	}
 	return
@@ -184,5 +185,44 @@ func executeTemplate(ctx context.Context, templateName string, templateString st
 			return nil, err
 		}
 	}
+	return
+}
+func (qld *QLData) secureSQL(ctx context.Context, query string, projectId string, datasource *module_model.DataSource, s module_store.ModuleStoreI, sr ds.SqlMakerI) (secureQuery string) {
+	tableNames := sr.ExtractTableNames(ctx, query)
+	for _, table := range tableNames.Tables {
+		if !(strings.HasSuffix(table.TableName, "___ALL")) {
+			if !(strings.Contains(table.TableName, ".")) {
+				table.TableName = fmt.Sprint(sr.DefaultSchemaName(), table.TableName)
+			}
+			sRulesStr, srJoins, srErr := getTableSecurityRule(ctx, projectId, datasource.DbAlias, table.TableName, s, "query", qld.FinalVariables, table.TableName)
+			if srErr == nil {
+				q := fmt.Sprint("select  ", table.TableName, ".* from ", table.TableName)
+				for _, srJoin := range srJoins {
+					tj, e := datasource.GetTableJoins(ctx, table.TableName, srJoin, make(map[string]string))
+					if e != nil {
+						logs.WithContext(ctx).Error(e.Error())
+						return
+					}
+					onClause, er := processMapVariable(ctx, tj.GetOnClause(ctx), qld.FinalVariables)
+					if er != nil {
+						logs.WithContext(ctx).Error(er.Error())
+						return
+					}
+					oc, _ := processWhereClause(ctx, onClause, "", table.TableName, true, false)
+					q = fmt.Sprint(q, " left join ", srJoin, " on ", oc)
+				}
+				q = fmt.Sprint(q, " where ", sRulesStr)
+				makeJsonArrayFnKeyWord, err := sr.GetMakeJsonArrayFn()
+				if err != nil {
+					makeJsonArrayFnKeyWord = ""
+				}
+				query = strings.Replace(query, fmt.Sprint(table.TableKeyPrefix, table.TableKey, table.TableKeySuffix), fmt.Sprint(table.TableKeyPrefix, " (", q, ") ", table.AliasName, " ", table.TableKeySuffix), -1)
+				query = strings.Replace(query, module_model.MAKE_JSON_ARRAY_FN, makeJsonArrayFnKeyWord, -1)
+			}
+		} else {
+			query = strings.Replace(query, table.TableName, strings.Replace(table.TableName, "___ALL", "", -1), -1)
+		}
+	}
+	secureQuery = query
 	return
 }
