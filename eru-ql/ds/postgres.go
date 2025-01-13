@@ -33,7 +33,6 @@ type Listener struct {
 }
 
 /* func (l *Listener) EnterColumnref(ctx *parser.ColumnrefContext) {
-	//fmt.Println(ctx.GetText())
 	// Check if this is the final SELECT (not part of a CTE)
 	if ctx.GetParent() != nil {
 		logs.WithContext(context.Background()).Info(fmt.Sprint(ctx.GetText()))

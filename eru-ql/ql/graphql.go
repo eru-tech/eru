@@ -678,8 +678,9 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 				logs.WithContext(ctx).Error(evalErr.Error())
 				return "", make([]string, 0), evalErr
 			}
-			fmt.Println(evalStr)
-
+			if evalStr {
+				return "", nil, nil
+			}
 		}
 
 		for _, v := range sr.Select.CustomRule.AND {
@@ -753,8 +754,6 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 			ruleJoinTables = append(ruleJoinTables, rj...)
 			ruleOutput = strings.Replace(ruleOutput, fmt.Sprint("$TEMPLATE_", t), ro, -1)
 		}
-		fmt.Println(ruleOutput)
-		fmt.Println(templates)
 	} else if op == "mutation" {
 		ruleOutput, templates, err = processSecurityRule(ctx, sr.Insert, vars, mainTableName, nil) //todo to change it as per query type
 		_ = templates
