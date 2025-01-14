@@ -7,10 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"github.com/eru-tech/eru/eru-templates/gotemplate"
-	utils "github.com/eru-tech/eru/eru-utils"
-	"github.com/google/uuid"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -21,6 +17,11 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-templates/gotemplate"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/uuid"
 )
 
 //func fetchClaimsFromToken(ctx context.Context, strToken string, jwkUrl string) (claims interface{}, err error) {
@@ -266,6 +267,8 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 		for _, fl := range fileData {
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = vars
+			fvars.ResVars = resVars
+			fvars.ReqVars = reqVars
 			filename, errop := processTemplate(ctx, "filename", fl.FileName, fvars, "string", tokenSecretKey)
 			if errop != nil {
 				err = errop
@@ -277,6 +280,8 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 			}
 			f2vars := &FuncTemplateVars{}
 			f2vars.Vars = vars
+			f2vars.ResVars = resVars
+			f2vars.ReqVars = reqVars
 			filevarname, errop := processTemplate(ctx, "filevarname", fl.FileVarName, f2vars, "string", tokenSecretKey)
 			if errop != nil {
 				err = errop
@@ -288,6 +293,8 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 			}
 			f3vars := &FuncTemplateVars{}
 			f3vars.Vars = vars
+			f3vars.ResVars = resVars
+			f3vars.ReqVars = reqVars
 			filecontent, errop := processTemplate(ctx, "filecontent", fl.FileContent, f3vars, "string", tokenSecretKey)
 			if errop != nil {
 				err = errop

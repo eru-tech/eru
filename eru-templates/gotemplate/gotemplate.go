@@ -23,6 +23,7 @@ import (
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_writes "github.com/eru-tech/eru/eru-read-write/eru_writes"
 	"github.com/eru-tech/eru/eru-secret-manager/kms"
 	eruutils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/go-cmp/cmp"
@@ -536,6 +537,24 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 			kmsMap := kms.AwsKmsStore{KmsName: kmsId, KmsAlias: kmsAlias, Region: region, KmsStore: ksMap}
 			plainBytes, err := kmsMap.Decrypt(ctx, eStr)
 			return string(plainBytes), err
+		},
+		"jsonToCsvB64": func(mapObjs []interface{}, hasHeader bool) (csvStr string, err error) {
+			cwd := eru_writes.CsvWriteData{}
+			csvBytes, csvErr := cwd.MapToCsv(ctx, mapObjs, hasHeader)
+			if csvErr != nil {
+				logs.WithContext(ctx).Error(csvErr.Error())
+				return "", csvErr
+			}
+			return b64.StdEncoding.EncodeToString(csvBytes), nil
+		},
+		"jsonToCsv": func(mapObjs []interface{}, hasHeader bool) (csvStr string, err error) {
+			cwd := eru_writes.CsvWriteData{}
+			csvBytes, csvErr := cwd.MapToCsv(ctx, mapObjs, hasHeader)
+			if csvErr != nil {
+				logs.WithContext(ctx).Error(csvErr.Error())
+				return "", csvErr
+			}
+			return string(csvBytes), nil
 		},
 		"getObjDiff": func(a map[string]interface{}, b map[string]interface{}) (r map[string]interface{}, err error) {
 			r = make(map[string]interface{})
