@@ -1169,9 +1169,38 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 			logs.WithContext(ctx).Error(fmt.Sprint("Error reading response body:", respErr.Error()))
 			return
 		}
-		response.Body = io.NopCloser(bytes.NewReader(respBytes))
-		response.Header.Set("Content-Length", strconv.Itoa(len(respBytes)))
-		response.ContentLength = int64(len(respBytes))
+		tempBody := make(map[string]string)
+		tempBody["data"] = strings.TrimSpace(string(respBytes))
+		vars.Body = tempBody
+		vars.OrgBody = vars.Body
+		if funcStep.TransformResponse != "" {
+			fvars := &FuncTemplateVars{}
+			fvars.Vars = vars
+			fvars.ResVars = resVars
+			fvars.ReqVars = reqVars
+
+			ot := "json"
+			if funcStep.TransformResponseOutput != "" {
+				ot = funcStep.TransformResponseOutput
+			}
+
+			output, err := processTemplate(ctx, funcStep.FuncKey, funcStep.TransformResponse, fvars, ot, funcStep.Route.TokenSecretKey)
+			if err != nil {
+				return &TemplateVars{}, err
+			}
+			response.Body = io.NopCloser(bytes.NewBuffer(output))
+			response.Header.Set("Content-Length", strconv.Itoa(len(output)))
+			response.ContentLength = int64(len(output))
+			err = json.Unmarshal(output, &vars.Body)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return &TemplateVars{}, err
+			}
+		} else {
+			response.Body = io.NopCloser(bytes.NewReader(respBytes))
+			response.Header.Set("Content-Length", strconv.Itoa(len(respBytes)))
+			response.ContentLength = int64(len(respBytes))
+		}
 	}
 
 	if funcStep.RemoveParams.ResponseHeaders != nil {
