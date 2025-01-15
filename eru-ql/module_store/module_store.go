@@ -44,11 +44,12 @@ type ModuleStoreI interface {
 	UpdateSchemaTables(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error)
 	AddSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
 	SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]module_model.TableColsMetaData, realStore ModuleStoreI) (err error)
+	GetTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.SecurityRules, err error)
 	SaveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, securityRules module_model.SecurityRules, realStore ModuleStoreI) (err error)
+	RemoveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error)
 	SaveTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error)
 	SaveColumnMasking(ctx context.Context, projectId string, dbAlias string, tableName string, colName string, columnMasking module_model.ColumnMasking, realStore ModuleStoreI) (err error)
 	GetTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error)
-	GetTableSecurityRule(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.SecurityRules, err error)
 	DropSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error)
 	RemoveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
 	SaveMyQuery(ctx context.Context, projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule) error
@@ -722,6 +723,44 @@ func (ms *ModuleStore) SaveTableSecurity(ctx context.Context, projectId string, 
 	logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from SaveTableSecurity ", tableName))
 	return realStore.SaveStore(ctx, projectId, "", realStore)
 }
+
+func (ms *ModuleStore) RemoveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveTableSecurity - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
+	if prj, ok := ms.Projects[projectId]; ok {
+		if db, ok := prj.DataSources[dbAlias]; ok {
+			if _, ok := db.SchemaTablesSecurity[tableName]; ok {
+				delete(db.SchemaTablesSecurity, tableName)				
+			} else {
+				err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
+				return err
+			}
+		} else {
+			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			return err
+		}
+	} else {
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		return err
+	}
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from SaveTableSecurity ", tableName))
+	return realStore.SaveStore(ctx, projectId, "", realStore)
+}
+
 func (ms *ModuleStore) SaveColumnMasking(ctx context.Context, projectId string, dbAlias string, tableName string, colName string, columnMasking module_model.ColumnMasking, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveColumnMasking - Start")
 	realStore.GetMutex().Lock()
@@ -825,8 +864,8 @@ func (ms *ModuleStore) GetTableTransformation(ctx context.Context, projectId str
 	return
 }
 
-func (ms *ModuleStore) GetTableSecurityRule(ctx context.Context, projectId string, dbAlias string, tableName string) (securityRules module_model.SecurityRules, err error) {
-	logs.WithContext(ctx).Debug("GetTableSecurityRule - Start")
+func (ms *ModuleStore) GetTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string) (securityRules module_model.SecurityRules, err error) {
+	logs.WithContext(ctx).Debug("GetTableSecurity - Start")
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if sr, srOk := db.SchemaTablesSecurity[tableName]; srOk {

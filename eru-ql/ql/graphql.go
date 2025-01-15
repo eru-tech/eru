@@ -655,7 +655,7 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 	logs.WithContext(ctx).Debug("getTableSecurityRule - Start")
 	var templates []string
 	var ruleJoinChildTables []string
-	sr, err := s.GetTableSecurityRule(ctx, projectId, dbAlias, tableName)
+	sr, err := s.GetTableSecurity(ctx, projectId, dbAlias, tableName)
 	if err != nil {
 		logs.WithContext(ctx).Info(err.Error())
 		err = errors.New(fmt.Sprint("TableSecurityRule not defined for ", tableName))

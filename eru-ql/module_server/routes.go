@@ -1,11 +1,12 @@
 package module_server
 
 import (
+	"net/http"
+
 	module_handlers "github.com/eru-tech/eru/eru-ql/module_server/handlers"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
-	"net/http"
 )
 
 func SetServiceName() {
@@ -55,6 +56,8 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/{project}/datasource/schema/{dbalias}/savetable/{tablename}").HandlerFunc(module_handlers.ProjectDataSourceSchemaSaveTableHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/datasource/schema/{dbalias}/droptable/{tablename}").HandlerFunc(module_handlers.ProjectDataSourceSchemaDropTableHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/datasource/schema/{dbalias}/securetable/{tablename}").HandlerFunc(module_handlers.ProjectDataSourceSchemaSecureTableHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/datasource/schema/{dbalias}/securetable/{tablename}").HandlerFunc(module_handlers.ProjectDataSourceGetSecureTableHandler(sh.Store))
+	storeRouter.Methods(http.MethodDelete).Path("/{project}/datasource/schema/{dbalias}/securetable/{tablename}").HandlerFunc(module_handlers.ProjectDataSourceRemoveSecureTableHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/datasource/schema/{dbalias}/transformtable/{tablename}").HandlerFunc(module_handlers.ProjectDataSourceSchemaTransformTableHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/datasource/schema/{dbalias}/maskcolumn/{tablename}/{colname}").HandlerFunc(module_handlers.ProjectDataSourceSchemaMasColumnHandler(sh.Store))
 }

@@ -3,15 +3,16 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strings"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
-	"github.com/eru-tech/eru/eru-utils"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
-	"net/http"
-	"strings"
 	//"../server"
 )
 
@@ -371,6 +372,54 @@ func ProjectDataSourceSchemaMasColumnHandler(s module_store.ModuleStoreI) http.H
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("column masking for ", colName, " set successfully")})
 		}
 		return
+	}
+}
+
+func ProjectDataSourceRemoveSecureTableHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectDataSourceRemoveSecureTableHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		dbAlias := vars["dbalias"]
+		tableName := vars["tablename"]
+		tableName = strings.Replace(tableName, "___", ".", 1)
+
+		securityRulesFromReq := json.NewDecoder(r.Body)
+		securityRulesFromReq.DisallowUnknownFields()
+
+		err := s.RemoveTableSecurity(r.Context(), projectId, dbAlias, tableName, s)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Table Security for ", tableName, " removed successfully")})
+		}
+	}
+}
+
+func ProjectDataSourceGetSecureTableHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ProjectDataSourceGetSecureTableHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		dbAlias := vars["dbalias"]
+		tableName := vars["tablename"]
+		tableName = strings.Replace(tableName, "___", ".", 1)
+
+		securityRulesFromReq := json.NewDecoder(r.Body)
+		securityRulesFromReq.DisallowUnknownFields()
+
+		sr, err := s.GetTableSecurity(r.Context(), projectId, dbAlias, tableName)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(sr)
+		}
 	}
 }
 
