@@ -698,7 +698,7 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 				if len(tableNameParts) > 1 {
 					ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
 				}
-				if mainTableName != ruleTableName {
+				if mainTableName != ruleTableName && !strings.HasPrefix(ruleTableName, "token") {
 					if !(v.Operator == "ex" || v.Operator == "nex") {
 						ruleJoinTables = append(ruleJoinTables, ruleTableName)
 					} else {
@@ -717,7 +717,7 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 				if len(tableNameParts) > 1 {
 					ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
 				}
-				if mainTableName != ruleTableName {
+				if mainTableName != ruleTableName && !strings.HasPrefix(ruleTableName, "token") {
 					if !(v.Operator == "ex" || v.Operator == "nex") {
 						ruleJoinTables = append(ruleJoinTables, ruleTableName)
 					} else {

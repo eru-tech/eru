@@ -8,6 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"reflect"
+	"strings"
+	"time"
+
 	"github.com/eru-tech/eru/eru-db/db"
 	"github.com/eru-tech/eru/eru-events/events"
 	"github.com/eru-tech/eru/eru-functions/functions"
@@ -18,14 +24,10 @@ import (
 	"github.com/eru-tech/eru/eru-store/store"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"go.uber.org/zap"
-	"io"
-	"net/http"
-	"reflect"
-	"strings"
-	"time"
 )
 
 var Eruqlbaseurl = "http://localhost:8087"
+var Eruaibaseurl = "http://localhost:8088"
 var FuncThreads = 3
 var LoopThreads = 3
 var EventThreads = 3
@@ -462,6 +464,44 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			r.Condition = ""
 			r.OnError = "IGNORE"
 			r.TargetHosts = append(r.TargetHosts, funcStep.Api)
+		} else if funcStep.ToolName != "" {
+			r.RouteName = funcStep.ToolName
+			r.Url = "/"
+			r.MatchType = "PREFIX"
+
+			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/tool/", funcStep.ToolName)
+			tg := functions.TargetHost{}
+			tg.Method = "POST"
+			tmpSplit := strings.Split(Eruaibaseurl, "://")
+			tg.Host = Eruaibaseurl
+			tg.Scheme = "https"
+			if len(tmpSplit) > 0 {
+				tg.Scheme = tmpSplit[0]
+				tg.Host = tmpSplit[1]
+			}
+			tg.Allocation = 100
+			r.LoopVariable = ""
+			r.Condition = ""
+			r.TargetHosts = append(r.TargetHosts, tg)
+		} else if funcStep.AgentName != "" {
+			r.RouteName = funcStep.AgentName
+			r.Url = "/"
+			r.MatchType = "PREFIX"
+
+			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/agent/", funcStep.AgentName)
+			tg := functions.TargetHost{}
+			tg.Method = "POST"
+			tmpSplit := strings.Split(Eruaibaseurl, "://")
+			tg.Host = Eruaibaseurl
+			tg.Scheme = "https"
+			if len(tmpSplit) > 0 {
+				tg.Scheme = tmpSplit[0]
+				tg.Host = tmpSplit[1]
+			}
+			tg.Allocation = 100
+			r.LoopVariable = ""
+			r.Condition = ""
+			r.TargetHosts = append(r.TargetHosts, tg)
 		} else {
 			r, err = ms.GetAndValidateRoute(ctx, routeName, projectId, host, url, method, headers, s)
 			if err != nil {

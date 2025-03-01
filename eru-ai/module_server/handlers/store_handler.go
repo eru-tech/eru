@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"net/http"
 
+	agents "github.com/eru-tech/eru/eru-ai/agents"
+	agents_factory "github.com/eru-tech/eru/eru-ai/agents/agents_factory"
 	models "github.com/eru-tech/eru/eru-ai/models"
 	"github.com/eru-tech/eru/eru-ai/module_model"
 	"github.com/eru-tech/eru/eru-ai/module_store"
+	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
@@ -114,7 +117,7 @@ func ModelSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
-		llmName := ""
+		provider := ""
 		modelFromReq := json.NewDecoder(r.Body)
 		modelFromReq.DisallowUnknownFields()
 
@@ -125,16 +128,16 @@ func ModelSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		} else {
-			if ln, ok := modelObjTmp["llm_name"]; !ok {
+			if providerI, ok := modelObjTmp["provider"]; !ok {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": "missing field in object : llm_name"})
 				return
 			} else {
-				llmName = ln.(string)
+				provider = providerI.(string)
 			}
 		}
-		logs.WithContext(r.Context()).Info(fmt.Sprint(llmName))
-		modelObj := models.GetModel(llmName)
+		logs.WithContext(r.Context()).Info(fmt.Sprint(provider))
+		modelObj := models.GetModel(provider)
 		logs.WithContext(r.Context()).Info(fmt.Sprint(modelObj))
 		modelJson, err := json.Marshal(modelObjTmp)
 		if err != nil {
@@ -163,12 +166,12 @@ func ModelSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
 			server_handlers.FormatResponse(w, 200)
-			modelId, anErr := modelObj.GetAttribute(r.Context(), "model_id")
+			modelName, anErr := modelObj.GetAttribute(r.Context(), "model_name")
 			if anErr != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": anErr.Error()})
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("model ", modelId, " saved successfully")})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("model ", modelName, " saved successfully")})
 		}
 	}
 }
@@ -179,15 +182,248 @@ func ModelRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
-		modelId := vars["modelid"]
-		err := s.RemoveModel(r.Context(), modelId, projectId, tenantId, s)
+		modelName := vars["modelname"]
+		err := s.RemoveModel(r.Context(), modelName, projectId, tenantId, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
 			s.SaveStore(r.Context(), projectId, "", s)
 			server_handlers.FormatResponse(w, 200)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("model ", modelId, " removed successfully")})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("model ", modelName, " removed successfully")})
+		}
+	}
+}
+
+func AgentSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("AgentSaveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		agentType := ""
+		agentFromReq := json.NewDecoder(r.Body)
+		agentFromReq.DisallowUnknownFields()
+
+		var agentObjTmp map[string]interface{}
+		if err := agentFromReq.Decode(&agentObjTmp); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			if agentTypeI, ok := agentObjTmp["agent_type"]; !ok {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": "missing field in object : agent_type"})
+				return
+			} else {
+				agentType = agentTypeI.(string)
+			}
+		}
+		agentObj := agents_factory.GetAgent(agentType)
+		agentJson, err := json.Marshal(agentObjTmp)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		if err = json.Unmarshal(agentJson, &agentObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err = utils.ValidateStruct(r.Context(), agentObj, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+
+		err = s.SaveAgent(r.Context(), agentObj, projectId, tenantId, s, true)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			agentName, anErr := agentObj.GetAttribute(r.Context(), "agent_name")
+			if anErr != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": anErr.Error()})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("agent ", agentName, " saved successfully")})
+		}
+	}
+}
+
+func AgentRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("AgentRemoveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		agentName := vars["agentname"]
+		err := s.RemoveAgent(r.Context(), agentName, projectId, tenantId, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			s.SaveStore(r.Context(), projectId, "", s)
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("agent ", agentName, " removed successfully")})
+		}
+	}
+}
+
+func ToolSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ToolSaveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		toolType := ""
+		toolFromReq := json.NewDecoder(r.Body)
+		toolFromReq.DisallowUnknownFields()
+
+		var toolObjTmp map[string]interface{}
+		if err := toolFromReq.Decode(&toolObjTmp); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			if toolTypeI, ok := toolObjTmp["tool_type"]; !ok {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": "missing field in object : tool_type"})
+				return
+			} else {
+				toolType = toolTypeI.(string)
+			}
+		}
+		logs.WithContext(r.Context()).Info(fmt.Sprint(toolType))
+		toolObj := tools_factory.GetTool(toolType)
+		logs.WithContext(r.Context()).Info(fmt.Sprint(toolObj))
+		toolJson, err := json.Marshal(toolObjTmp)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		if err = json.Unmarshal(toolJson, &toolObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err = utils.ValidateStruct(r.Context(), toolObj, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+
+		err = s.SaveTool(r.Context(), toolObj, projectId, tenantId, s, true)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			toolName, _ := toolObj.GetAttribute(r.Context(), "tool_name")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("tool ", toolName, " saved successfully")})
+		}
+	}
+}
+
+func ToolRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ToolRemoveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		toolName := vars["toolname"]
+		err := s.RemoveTool(r.Context(), toolName, projectId, tenantId, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("tool ", toolName, " removed successfully")})
+		}
+	}
+}
+
+func AgentExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("AgentExecuteHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		agentName := vars["agentname"]
+		agent, err := s.GetAgent(r.Context(), projectId, tenantId, agentName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			agentParamsFromReq := json.NewDecoder(r.Body)
+			agentParamsFromReq.DisallowUnknownFields()
+
+			var agentMessage agents.AgentMessage
+			if err := agentParamsFromReq.Decode(&agentMessage); err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+			agentResult, err := agent.Execute(r.Context(), agentMessage)
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			} else {
+				server_handlers.FormatResponse(w, 200)
+				_ = json.NewEncoder(w).Encode(agentResult)
+			}
+		}
+	}
+}
+
+func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ToolExecuteHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		toolName := vars["toolname"]
+		tool, err := s.GetTool(r.Context(), projectId, tenantId, toolName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			toolParamsFromReq := json.NewDecoder(r.Body)
+			toolParamsFromReq.DisallowUnknownFields()
+
+			type tParams struct {
+				Params map[string]interface{} `json:"params"`
+			}
+
+			var toolParams tParams
+			if err := toolParamsFromReq.Decode(&toolParams); err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+			toolResult, err := tool.Execute(r.Context(), toolParams.Params)
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			} else {
+				server_handlers.FormatResponse(w, 200)
+				_ = json.NewEncoder(w).Encode(toolResult)
+			}
 		}
 	}
 }

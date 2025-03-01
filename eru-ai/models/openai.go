@@ -3,11 +3,14 @@ package model
 import (
 	"context"
 	"encoding/json"
+
+	//"errors"
 	"fmt"
 	"net/http"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_models "github.com/eru-tech/eru/eru-models"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -45,10 +48,10 @@ type ToolChoiceFunction struct {
 	Name string `json:"name" eru:"required"`
 }
 type ToolFunction struct {
-	Name        string                 `json:"name" eru:"required"`
-	Description string                 `json:"description" eru:"required"`
-	Parameters  map[string]interface{} `json:"parameters" eru:"required"`
-	Strict      bool                   `json:"strict"`
+	Name        string                `json:"name" eru:"required"`
+	Description string                `json:"description" eru:"required"`
+	Parameters  eru_models.JSONSchema `json:"parameters" eru:"required"`
+	Strict      bool                  `json:"strict"`
 }
 
 type OpenAIRequestToolChoice struct {
@@ -84,9 +87,10 @@ type OpenAIChatRequest struct {
 
 type OpenAIChatToolRequest struct {
 	OpenAIChatRequest
-	ToolChoice        OpenAIRequestToolChoice `json:"tool_choice"`
-	Tools             []OpenAIRequestTools    `json:"tools"`
-	ParallelToolCalls bool                    `json:"parallel_tool_calls"`
+	//ToolChoice        OpenAIRequestToolChoice `json:"tool_choice"`
+	ToolChoice        string               `json:"tool_choice"`
+	Tools             []OpenAIRequestTools `json:"tools"`
+	ParallelToolCalls bool                 `json:"parallel_tool_calls"`
 }
 
 type OpenAIChatAudioRequest struct {
@@ -218,6 +222,8 @@ func (openaiModel *OpenAIModel) MakeFromJson(ctx context.Context, rj *json.RawMe
 func (openaiModel *OpenAIModel) QueryModel(ctx context.Context, chatRequest ChatRequest) (queryResponse Message, err error) {
 	logs.WithContext(ctx).Debug("QueryModel - Start")
 	openAIChatRequest, err := openaiModel.makeOpenAIChatRequest(ctx, chatRequest)
+	//_, err = openaiModel.makeOpenAIChatRequest(ctx, chatRequest)
+
 	if err != nil {
 		return
 	}
@@ -234,7 +240,7 @@ func (openaiModel *OpenAIModel) QueryModel(ctx context.Context, chatRequest Chat
 func (openaiModel *OpenAIModel) makeOpenAIChatRequest(ctx context.Context, chatRequest ChatRequest) (openAIChatRequest OpenAIChatRequest, err error) {
 	logs.WithContext(ctx).Debug("makeOpenAIChatRequest - Start")
 	openAIChatRequest = OpenAIChatRequest{
-		Model:               openaiModel.ModelName,
+		Model:               openaiModel.LLMName,
 		N:                   1,
 		Temperature:         openaiModel.Temprature,
 		TopP:                1,
@@ -251,7 +257,7 @@ func (openaiModel *OpenAIModel) makeOpenAIChatRequest(ctx context.Context, chatR
 	}
 	return
 }
-func (openaiModel *OpenAIModel) makeOpenAIChatToolRequest(ctx context.Context, chatRequest ChatRequest) (openAIChatToolRequest OpenAIChatToolRequest, err error) {
+func (openaiModel *OpenAIModel) makeOpenAIChatToolRequestBC(ctx context.Context, chatRequest ChatRequest) (openAIChatToolRequest OpenAIChatToolRequest, err error) {
 	logs.WithContext(ctx).Debug("makeOpenAIChatToolRequest - Start")
 
 	jsonSchema := `{"properties":{"addresses":{"default":[],"items":{"type":"string"},"title":"Addresses","type":"array"},"contact_numbers":{"default":[],"items":{"type":"string"},"title":"Contact Numbers","type":"array"},"designation":{"anyOf":[{"type":"string"},{"type":"null"}],"default":null,"title":"Designation"},"emails":{"default":[],"items":{"type":"string"},"title":"Emails","type":"array"},"first_name":{"anyOf":[{"type":"string"},{"type":"null"}],"default":null,"title":"First Name"},"id":{"anyOf":[{"type":"integer"},{"type":"null"}],"default":null,"title":"Id"},"last_name":{"anyOf":[{"type":"string"},{"type":"null"}],"default":null,"title":"Last Name"},"middle_name":{"anyOf":[{"type":"string"},{"type":"null"}],"default":null,"title":"Middle Name"},"organization":{"anyOf":[{"type":"string"},{"type":"null"}],"default":null,"title":"Organization"},"salutation":{"anyOf":[{"type":"string"},{"type":"null"}],"default":null,"title":"Salutation"}},"required":[],"type":"object"}`
@@ -260,7 +266,7 @@ func (openaiModel *OpenAIModel) makeOpenAIChatToolRequest(ctx context.Context, c
 		return
 	}
 	tool := tools.Tool{
-		Name:         "BusinessCard",
+		ToolName:     "BusinessCard",
 		Description:  "Correctly extracted `BusinessCard` with all the required parameters with correct types",
 		SystemPrompt: "\nYou are a helpful JSON configuration generator to extract relevant fields from text pertaining to Business Cards. \nBusiness Cards usually will have entiites such as Salutation, First Name, Middle Name, Last Name, Addresses, Contact Numbers, Emails, Organization, Designation etc.\nIf  the user message is a greeting (unless the greeting contains details) like Hi, Hello, How are you, Thank you etc. then you need to return an error message  in the response (This is because the LLM won't be able to generate config).\n",
 		OutputSchema: jsonSchemaObject,
@@ -268,7 +274,7 @@ func (openaiModel *OpenAIModel) makeOpenAIChatToolRequest(ctx context.Context, c
 
 	openAIChatToolRequest = OpenAIChatToolRequest{
 		OpenAIChatRequest: OpenAIChatRequest{
-			Model:               openaiModel.ModelName,
+			Model:               openaiModel.LLMName,
 			N:                   1,
 			Temperature:         openaiModel.Temprature,
 			TopP:                1,
@@ -276,17 +282,18 @@ func (openaiModel *OpenAIModel) makeOpenAIChatToolRequest(ctx context.Context, c
 			MaxCompletionTokens: 150,
 			ServiceTier:         "auto",
 		},
-		ToolChoice: OpenAIRequestToolChoice{
+		ToolChoice: "auto",
+		/* ToolChoice: OpenAIRequestToolChoice{
 			Type: "function",
 			Function: ToolChoiceFunction{
-				Name: tool.Name,
+				Name: tool.ToolName,
 			},
-		},
+		}, */
 		Tools: []OpenAIRequestTools{
 			{
 				Type: "function",
 				Function: ToolFunction{
-					Name:        tool.Name,
+					Name:        tool.ToolName,
 					Description: tool.Description,
 					Parameters:  tool.OutputSchema,
 				},
@@ -296,7 +303,85 @@ func (openaiModel *OpenAIModel) makeOpenAIChatToolRequest(ctx context.Context, c
 	openAIChatToolRequest.Messages = append(openAIChatToolRequest.Messages, OpenAIRequestMessage{
 		Role:    "system",
 		Content: tool.SystemPrompt,
-		Name:    tool.Name,
+		Name:    tool.ToolName,
+	})
+	for _, message := range chatRequest.Messages {
+		openAIChatToolRequest.Messages = append(openAIChatToolRequest.Messages, OpenAIRequestMessage{
+			Role:    message.Role,
+			Content: message.Content,
+			Name:    message.Name,
+		})
+	}
+	return
+}
+
+func (openaiModel *OpenAIModel) makeOpenAIChatToolRequest(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (openAIChatToolRequest OpenAIChatToolRequest, err error) {
+	logs.WithContext(ctx).Debug("makeOpenAIChatToolRequest - Start")
+
+	//jsonSchema := `{"properties":{"addresses":{"default":[],"items":{"type":"string"},"title":"Addresses","type":"array"},"contact_numbers":{"default":[],"items":{"type":"string"},"title":"Contact Numbers","type":"array"},"designation":{"anyOf":[{"type":"string"},{"type":"null"}],"default":null,"title":"Designation"},"emails":{"default":[],"items":{"type":"string"},"title":"Emails","type":"array"},"first_name":{"anyOf":[{"type":"string"},{"type":"null"}],"default":null,"title":"First Name"},"id":{"anyOf":[{"type":"integer"},{"type":"null"}],"default":null,"title":"Id"},"last_name":{"anyOf":[{"type":"string"},{"type":"null"}],"default":null,"title":"Last Name"},"middle_name":{"anyOf":[{"type":"string"},{"type":"null"}],"default":null,"title":"Middle Name"},"organization":{"anyOf":[{"type":"string"},{"type":"null"}],"default":null,"title":"Organization"},"salutation":{"anyOf":[{"type":"string"},{"type":"null"}],"default":null,"title":"Salutation"}},"required":[],"type":"object"}`
+	//jsonSchemaObject, err := utils.GetJsonSchemaObject(ctx, jsonSchema)
+	//if err != nil {
+	//	return
+	//}
+	/* tool2 := tools.Tool{
+		ToolName:     "BusinessCard",
+		Description:  "Correctly extracted `BusinessCard` with all the required parameters with correct types",
+		SystemPrompt: "\nYou are a helpful JSON configuration generator to extract relevant fields from text pertaining to Business Cards. \nBusiness Cards usually will have entiites such as Salutation, First Name, Middle Name, Last Name, Addresses, Contact Numbers, Emails, Organization, Designation etc.\nIf  the user message is a greeting (unless the greeting contains details) like Hi, Hello, How are you, Thank you etc. then you need to return an error message  in the response (This is because the LLM won't be able to generate config).\n",
+		OutputSchema: eru_models.JSONSchema{
+			Type: "object",
+			Properties: map[string]eru_models.JSONSchema{
+				"name": {Type: "string"},
+			},
+			Required: []string{},
+		},
+	} */
+	var openAIRequestTools []OpenAIRequestTools
+	toolPrompt := ""
+	for _, tool := range tools {
+		toolNameI, _ := tool.GetAttribute(ctx, "tool_name")
+		toolDescriptionI, _ := tool.GetAttribute(ctx, "description")
+		toolParametersI, _ := tool.GetAttribute(ctx, "parameters")
+		toolSystemPromptI, _ := tool.GetAttribute(ctx, "system_prompt")
+		toolName := toolNameI.(string)
+		toolDescription := toolDescriptionI.(string)
+		toolParameters := toolParametersI.(eru_models.JSONSchema)
+
+		toolPrompt += fmt.Sprint("Tool prompt for Tool ", toolName, " is as follows :\n", toolSystemPromptI.(string))
+		reqTool := OpenAIRequestTools{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        toolName,
+				Description: toolDescription,
+				Parameters:  toolParameters,
+			},
+		}
+		openAIRequestTools = append(openAIRequestTools, reqTool)
+	}
+
+	openAIChatToolRequest = OpenAIChatToolRequest{
+		OpenAIChatRequest: OpenAIChatRequest{
+			Model:               openaiModel.LLMName,
+			N:                   1,
+			Temperature:         openaiModel.Temprature,
+			TopP:                1,
+			Modalities:          []string{"text"},
+			MaxCompletionTokens: 150,
+			ServiceTier:         "auto",
+		},
+
+		ToolChoice: "required",
+		/* ToolChoice: OpenAIRequestToolChoice{
+			Type: "function",
+			Function: ToolChoiceFunction{
+				Name: toolName,
+			},
+		}, */
+		Tools: openAIRequestTools,
+	}
+	openAIChatToolRequest.Messages = append(openAIChatToolRequest.Messages, OpenAIRequestMessage{
+		Role:    "system",
+		Content: fmt.Sprint(agentPrompt, "\n", toolPrompt),
+		Name:    agentName,
 	})
 	for _, message := range chatRequest.Messages {
 		openAIChatToolRequest.Messages = append(openAIChatToolRequest.Messages, OpenAIRequestMessage{
@@ -346,7 +431,7 @@ func (openaiModel *OpenAIModel) queryModelTool(ctx context.Context, chatToolRequ
 	reqHeader.Add("Authorization", "Bearer "+openaiModel.LLMSecret)
 	reqHeader.Add("Content-Type", "application/json")
 
-	logs.WithContext(ctx).Info(fmt.Sprint(chatToolRequest))
+	//logs.WithContext(ctx).Info(fmt.Sprint(chatToolRequest))
 	//response, respHeaders, respCookies, statusCode, err := utils.CallHttp(ctx, "POST", OpenAIApiUrl, reqHeader, nil, nil, nil, postBody)
 	response, _, _, _, err := utils.CallHttp(ctx, "POST", OpenAIApiUrl, reqHeader, nil, nil, nil, chatToolRequest)
 
@@ -372,9 +457,9 @@ func (openaiModel *OpenAIModel) queryModelTool(ctx context.Context, chatToolRequ
 	return
 }
 
-func (openaiModel *OpenAIModel) QueryModelWithTool(ctx context.Context, chatRequest ChatRequest, toolId string) (queryResponse JsonMessage, err error) {
+func (openaiModel *OpenAIModel) QueryModelWithTool(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (queryResponse JsonMessage, err error) {
 	logs.WithContext(ctx).Debug("QueryModelWithTool - Start")
-	openAIChatToolRequest, err := openaiModel.makeOpenAIChatToolRequest(ctx, chatRequest)
+	openAIChatToolRequest, err := openaiModel.makeOpenAIChatToolRequest(ctx, chatRequest, tools, agentName, agentPrompt)
 	if err != nil {
 		return
 	}
@@ -386,8 +471,9 @@ func (openaiModel *OpenAIModel) QueryModelWithTool(ctx context.Context, chatRequ
 	err = json.Unmarshal([]byte(openAIChatResponse.Choices[0].Message.ToolCalls[0].Function.Arguments), &outputJson)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		outputJson["raw"] = openAIChatResponse.Choices[0].Message.ToolCalls[0].Function.Arguments
+	outputJson["raw"] = openAIChatResponse.Choices[0].Message.ToolCalls[0].Function.Arguments
 	}
+	//outputJson["raw"] = openAIChatResponse
 	queryResponse = JsonMessage{
 		Content: outputJson,
 		Role:    "assistant",

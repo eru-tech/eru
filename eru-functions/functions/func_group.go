@@ -77,6 +77,9 @@ type FuncStep struct {
 	Api                     TargetHost    `json:"api"`
 	ApiPath                 string        `json:"api_path"`
 	Path                    string        `json:"path"`
+	ToolName                string        `json:"tool_name"`
+	AgentName               string        `json:"agent_name"`
+	TenantId                string        `json:"tenant_id"`
 	Route                   Route         `json:"-"`
 	FuncKey                 string        `json:"-"`
 	ParentFuncGroupName     string        `json:"-"`

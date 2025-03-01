@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_models "github.com/eru-tech/eru/eru-models"
 	models "github.com/eru-tech/eru/eru-models"
 	"github.com/google/go-cmp/cmp"
 	"github.com/jmoiron/sqlx"
@@ -601,14 +602,14 @@ func GetNestedFieldValue(ctx context.Context, data interface{}, fieldPath string
 	return val.Interface(), nil
 }
 
-func GetJsonSchemaObject(ctx context.Context, jsonSchema string) (map[string]interface{}, error) {
+func GetJsonSchemaObject(ctx context.Context, jsonSchema string) (eru_models.JSONSchema, error) {
 	logs.WithContext(ctx).Debug("GetJsonSchemaObject - Start")
 	logs.WithContext(ctx).Info(fmt.Sprint(jsonSchema))
-	jsonSchemaMap := make(map[string]interface{})
+	jsonSchemaMap := eru_models.JSONSchema{}
 	err := json.Unmarshal([]byte(jsonSchema), &jsonSchemaMap)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return eru_models.JSONSchema{}, err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint(jsonSchemaMap))
 	return jsonSchemaMap, nil

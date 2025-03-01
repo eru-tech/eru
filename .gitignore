@@ -29,3 +29,7 @@ config.json
 /eru-functions/func_profile.log
 .vscode/launch.json
 .vscode/tasks.json
+
+# windsurf rules
+.windsurfrules
+.gitignore

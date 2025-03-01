@@ -12,6 +12,7 @@ import (
 func SetServiceName() {
 	server_handlers.ServerName = "eru-ai"
 }
+
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	//store functions specific to files
@@ -23,11 +24,20 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodGet).Path("/project/list").HandlerFunc(module_handlers.ProjectListHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/config").HandlerFunc(module_handlers.ProjectConfigHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/save/model").HandlerFunc(module_handlers.ModelSaveHandler(sh.Store))
-	storeRouter.Methods(http.MethodDelete).Path("/{project}/{tenant}/remove/model/{modelid}").HandlerFunc(module_handlers.ModelRemoveHandler(sh.Store))
+	storeRouter.Methods(http.MethodDelete).Path("/{project}/{tenant}/remove/model/{modelname}").HandlerFunc(module_handlers.ModelRemoveHandler(sh.Store))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/save/agent").HandlerFunc(module_handlers.AgentSaveHandler(sh.Store))
+	storeRouter.Methods(http.MethodDelete).Path("/{project}/{tenant}/remove/agent/{agentname}").HandlerFunc(module_handlers.AgentRemoveHandler(sh.Store))
+
+	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/save/tool").HandlerFunc(module_handlers.ToolSaveHandler(sh.Store))
+	storeRouter.Methods(http.MethodDelete).Path("/{project}/{tenant}/remove/tool/{toolname}").HandlerFunc(module_handlers.ToolRemoveHandler(sh.Store))
+
 	storeRouter.Methods(http.MethodPost).Path("/{project}/settings/save").HandlerFunc(module_handlers.ProjectSetingsSaveHandler(sh.Store))
 
 	// functions for ai events
 	aiRouter := serverRouter.PathPrefix("/{project}").Subrouter()
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/{model}/query").HandlerFunc(module_handlers.ModelQueryHandler(sh.Store))
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/{model}/{tool}/query").HandlerFunc(module_handlers.ModelQueryHandler(sh.Store))
+	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/execute/tool/{toolname}").HandlerFunc(module_handlers.ToolExecuteHandler(sh.Store))
+	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/execute/agent/{agentname}").HandlerFunc(module_handlers.AgentExecuteHandler(sh.Store))
+
 }
