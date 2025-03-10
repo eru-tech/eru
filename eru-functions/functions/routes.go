@@ -6,14 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	//"github.com/eru-tech/eru/eru-crypto/jwt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	utils "github.com/eru-tech/eru/eru-utils"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	utils "github.com/eru-tech/eru/eru-utils"
 )
 
 const (
@@ -122,6 +124,7 @@ type TemplateVars struct {
 	LoopVars         interface{}
 	LoopVar          interface{}
 	Cookies          []*http.Cookie
+	ResponseStatus   int
 	//ReqVars map[string]*TemplateVars
 	//ResVars map[string]*TemplateVars
 }
@@ -723,6 +726,7 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 	logs.WithContext(ctx).Debug("transformResponse - Start : ")
 
 	trResVars = &TemplateVars{}
+	trResVars.ResponseStatus = response.StatusCode
 
 	logs.WithContext(ctx).Info(fmt.Sprint("route.Redirect for route ", route.RouteName, " is ", route.Redirect))
 	if route.Redirect {

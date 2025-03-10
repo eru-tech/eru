@@ -44,12 +44,13 @@ type AsyncFuncData struct {
 }
 
 type FuncGroup struct {
-	FuncCategoryName    string               `json:"func_category_name" eru:"required"`
-	FuncGroupName       string               `json:"func_group_name" eru:"required"`
-	FuncSteps           map[string]*FuncStep `json:"func_steps" `
-	TokenSecretKey      string               `json:"-"`
-	ResponseStatusCode  int                  `json:"response_status_code"`
-	ResponseContentType string               `json:"response_content_type"`
+	FuncCategoryName        string               `json:"func_category_name" eru:"required"`
+	FuncGroupName           string               `json:"func_group_name" eru:"required"`
+	FuncSteps               map[string]*FuncStep `json:"func_steps" `
+	TokenSecretKey          string               `json:"-"`
+	ResponseStatusCode      int                  `json:"response_status_code"`
+	ResponseStatusCondition string               `json:"response_status_condition"`
+	ResponseContentType     string               `json:"response_content_type"`
 }
 
 type FuncTemplateVars struct {
@@ -172,6 +173,22 @@ func (funcGroup *FuncGroup) Execute(ctx context.Context, request *http.Request, 
 	//reqVars := make(map[string]*TemplateVars)
 	//resVars := make(map[string]*TemplateVars)
 	response, funcVarsMap, _, err = RunFuncSteps(ctx, funcGroup.FuncSteps, request, reqVars, resVars, "", FuncThreads, LoopThreads, funcStepName, endFuncStepName, false, fromAsync, false)
+	if funcGroup.ResponseStatusCondition == "IGNORE" {
+		funcGroup.ResponseStatusCode = http.StatusOK
+	} else if funcGroup.ResponseStatusCondition == "ERROR" {
+		errFound := false
+		for _, v := range funcVarsMap {
+			if !errFound {
+				for _, vv := range v.ResVars {
+					if vv.ResponseStatus >= 400 {
+						funcGroup.ResponseStatusCode = vv.ResponseStatus
+						errFound = true
+						break
+					}
+				}
+			}
+		}
+	}
 	return
 }
 
