@@ -434,7 +434,22 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		logs.WithContext(r.Context()).Info(fmt.Sprint(loginPostBody))
 		msParams := auth.OAuthParams{}
-		if authName == "ms" {
+		pkceRequired := false
+		pkceRequiredI, pkceErr := authObjI.GetAttribute(ctx, "pkce")
+		if pkceErr != nil {
+			logs.WithContext(ctx).Error(pkceErr.Error())
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": pkceErr.Error()})
+			return
+		}
+		pkceRequired, ok := pkceRequiredI.(bool)
+		if !ok {
+			logs.WithContext(ctx).Error("pkceRequired is not a boolean")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "pkceRequired is not a boolean"})
+			return
+		}
+		if pkceRequired {
 			msParams, err = s.GetPkceEvent(ctx, loginPostBody.IdpRequestId, s)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)

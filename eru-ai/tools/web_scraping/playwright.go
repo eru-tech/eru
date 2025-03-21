@@ -255,7 +255,15 @@ func extractBodyContentPlaywright_v2(ctx context.Context, urlStr string, classNa
 	logs.WithContext(ctx).Info(fmt.Sprint(berr))
 	*/
 	for _, selector := range selectors {
-		locator := page.Locator(selector)
+		selectorStr := strings.TrimSpace(selector)
+		if strings.HasPrefix(selectorStr, "#") {
+			// For IDs, convert "#someId" to "[id^='someId']"
+			selectorStr = fmt.Sprintf("[id^='%s']", strings.TrimPrefix(selectorStr, "#"))
+		} else if strings.HasPrefix(selectorStr, ".") {
+			// For classes, convert ".someClass" to "[class^='someClass']"
+			selectorStr = fmt.Sprintf("[class^='%s']", strings.TrimPrefix(selectorStr, "."))
+		}
+		locator := page.Locator(selectorStr)
 
 		// Get count of elements
 		count, err := locator.Count()
@@ -444,7 +452,15 @@ func extractBodyContentPlaywright_v1(ctx context.Context, urlStr string, classNa
 	logs.WithContext(ctx).Info(fmt.Sprint(berr))
 	*/
 	for _, selector := range selectors {
-		locator := page.Locator(selector)
+		selectorStr := strings.TrimSpace(selector)
+		if strings.HasPrefix(selectorStr, "#") {
+			// For IDs, convert "#someId" to "[id^='someId']"
+			selectorStr = fmt.Sprintf("[id^='%s']", strings.TrimPrefix(selectorStr, "#"))
+		} else if strings.HasPrefix(selectorStr, ".") {
+			// For classes, convert ".someClass" to "[class^='someClass']"
+			selectorStr = fmt.Sprintf("[class^='%s']", strings.TrimPrefix(selectorStr, "."))
+		}
+		locator := page.Locator(selectorStr)
 
 		// Get count of elements
 		count, err := locator.Count()

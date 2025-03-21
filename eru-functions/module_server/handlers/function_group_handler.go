@@ -8,6 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/eru-tech/eru/eru-events/events"
 	"github.com/eru-tech/eru/eru-functions/functions"
 	"github.com/eru-tech/eru/eru-functions/module_store"
@@ -15,11 +21,6 @@ import (
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
-	"io"
-	"net/http"
-	"strconv"
-	"strings"
-	"time"
 )
 
 func WfHandler(s module_store.ModuleStoreI) http.HandlerFunc {
@@ -378,6 +379,19 @@ func SFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to decode request body"})
 				return
 			}
+
+			if bodyMap.Body == nil {
+				bodyMap.Body = make(map[string]interface{})
+			}
+
+			if bodyMap.ReqVars == nil {
+				bodyMap.ReqVars = make(map[string]*functions.TemplateVars)
+			}
+
+			if bodyMap.ResVars == nil {
+				bodyMap.ResVars = make(map[string]*functions.TemplateVars)
+			}
+
 			body, err := json.Marshal(bodyMap.Body)
 			if err != nil {
 				logs.WithContext(ctx).Error(fmt.Sprint("json.Marshal(vars.Body) error : ", err.Error()))
@@ -403,7 +417,7 @@ func SFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		reqVars := bodyMap.ReqVars
 		resVars := bodyMap.ResVars
-		response, _, err := funcGroup.Execute(ctx, r, module_store.FuncThreads, module_store.LoopThreads, funcStepName, endfuncStepName, false, reqVars, resVars)
+		response, varsMap, err := funcGroup.Execute(ctx, r, module_store.FuncThreads, module_store.LoopThreads, funcStepName, endfuncStepName, false, reqVars, resVars)
 		if err != nil {
 			server_handlers.FormatResponse(w, errStatusCode)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -423,20 +437,60 @@ func SFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				w.Header().Set("Content-Type", funcGroup.ResponseContentType)
 			}
 			respStatusCode := response.StatusCode
-			logs.WithContext(r.Context()).Info(fmt.Sprint(respStatusCode))
 			if funcGroup.ResponseStatusCode > 0 {
 				respStatusCode = funcGroup.ResponseStatusCode
 			}
-			logs.WithContext(r.Context()).Info(fmt.Sprint(respStatusCode))
+			responseBytes, err := io.ReadAll(response.Body)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				server_handlers.FormatResponse(w, errStatusCode)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			bodyMap := make(map[string]interface{})
+			err = json.Unmarshal(responseBytes, &bodyMap)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				server_handlers.FormatResponse(w, errStatusCode)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			responseData := reqBody{
+				ReqVars: map[string]*functions.TemplateVars{},
+				ResVars: map[string]*functions.TemplateVars{},
+				Body:    bodyMap,
+			}
+			// Get the first (and only) value from varsMap
+			for _, v := range varsMap {
+				responseData.ReqVars = v.ReqVars
+				responseData.ResVars = v.ResVars
+				break
+			}
+
+			jsonBytes, err := json.Marshal(responseData)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				server_handlers.FormatResponse(w, errStatusCode)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to serialize response"})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+
+			// Set content length for the JSON response
+			w.Header().Set("Content-Length", strconv.Itoa(len(jsonBytes)))
+
+			// Write status code
 			w.WriteHeader(respStatusCode)
 
-			_, err = io.Copy(w, response.Body)
+			// Write the JSON response
+			w.Write(jsonBytes)
+			/* _, err = io.Copy(w, response.Body)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
 				w.WriteHeader(errStatusCode)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
-			}
+			} */
 			return
 		}
 	}
