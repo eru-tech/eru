@@ -123,11 +123,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 	logs.WithContext(ctx).Debug("processTemplate - Start")
 	ruleValue := strings.SplitN(templateString, ".", 2)
 	templateStr := ""
-	if len(ruleValue) > 1 {
-		templateStr = ruleValue[1]
-	} else {
-		templateStr = ruleValue[0]
-	}
+
 	if ruleValue[0] == module_model.RULEPREFIX_TOKEN {
 		templateStr = ruleValue[1]
 		if !(strings.HasPrefix(ruleValue[1], "{{")) {
@@ -136,6 +132,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		templateStr = eru_utils.ReplaceVariables(ctx, templateStr, vars)
 		return executeTemplate(ctx, templateName, templateStr, vars[module_model.RULEPREFIX_TOKEN], outputType)
 	} else if ruleValue[0] == module_model.RULEPREFIX_DOCS {
+		templateStr = ruleValue[1]
 		var docs []interface{}
 		isArray := false
 
@@ -163,8 +160,8 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 			docs[i] = dd
 			outputBytes = nil
 		}
-	} else if ruleValue[0] == module_model.RULEPREFIX_NONE {
-		return executeTemplate(ctx, templateName, templateStr, vars, outputType)
+	} else {
+		return executeTemplate(ctx, templateName, templateString, vars, outputType)
 	}
 	return
 }
