@@ -351,8 +351,30 @@ func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_mod
 	}
 	//if sqlObj.MutationReturn.ReturnDoc { ### commented the conditional check to add returning clause - not we will always add
 	//TODO to bring back conditional check
-	if sqlObj.MutationReturn.ReturnDoc {
-		returningStr = fmt.Sprint(" RETURNING ", sqlObj.MutationReturn.ReturnFields)
+	returningColArray := strings.Split(sqlObj.MutationReturn.ReturnFields, ",")
+
+	joinColArray := make([]string, 0)
+	for _, v := range doc.TableJoins {
+		if v.Table1Name == tableName {
+			joinColArray = v.Table1Cols
+		} else {
+			joinColArray = v.Table2Cols
+		}
+	}
+	returnColMap := make(map[string]string)
+	for _, v := range returningColArray {
+		returnColMap[v] = v
+	}
+	for _, v := range joinColArray {
+		returnColMap[v] = v
+	}
+	returnColStr := ""
+	for k, _ := range returnColMap {
+		returnColStr = fmt.Sprint(returnColStr, k, ",")
+	}
+	returnColStr = strings.TrimSuffix(returnColStr, ",")
+	if sqlObj.MutationReturn.ReturnDoc || returnColStr != "" {
+		returningStr = fmt.Sprint(" RETURNING ", returnColStr)
 	}
 	//}
 	query := ""
