@@ -160,6 +160,9 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 			docs[i] = dd
 			outputBytes = nil
 		}
+	} else if ruleValue[0] == module_model.RULEPREFIX_NONE {
+		templateStr = ruleValue[1]
+		return executeTemplate(ctx, templateName, templateStr, vars, outputType)
 	} else {
 		return executeTemplate(ctx, templateName, templateString, vars, outputType)
 	}
