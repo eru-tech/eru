@@ -367,6 +367,11 @@ func SFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			ReqVars map[string]*functions.TemplateVars `json:"req_vars"`
 			ResVars map[string]*functions.TemplateVars `json:"res_vars"`
 		}
+		type resBody struct {
+			Body    interface{}                        `json:"body"`
+			ReqVars map[string]*functions.TemplateVars `json:"req_vars"`
+			ResVars map[string]*functions.TemplateVars `json:"res_vars"`
+		}
 
 		bodyMap := reqBody{}
 		if reqContentType == "application/json" && r.ContentLength > 0 {
@@ -447,27 +452,44 @@ func SFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
 			}
-			bodyMap := make(map[string]interface{})
-			err = json.Unmarshal(responseBytes, &bodyMap)
-			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
-				server_handlers.FormatResponse(w, errStatusCode)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-				return
-			}
-			responseData := reqBody{
+			responseData := resBody{
 				ReqVars: map[string]*functions.TemplateVars{},
 				ResVars: map[string]*functions.TemplateVars{},
 				Body:    bodyMap,
 			}
-			// Get the first (and only) value from varsMap
-			for _, v := range varsMap {
-				responseData.ReqVars = v.ReqVars
-				responseData.ResVars = v.ResVars
-				break
+			bodyMap := make(map[string]interface{})
+			bodyMapArray := make([]map[string]interface{}, 0)
+			err = json.Unmarshal(responseBytes, &bodyMap)
+			if err != nil {
+				err = json.Unmarshal(responseBytes, &bodyMapArray)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					server_handlers.FormatResponse(w, errStatusCode)
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+					return
+				}
+				responseData.Body = bodyMapArray
+			} else {
+				responseData.Body = bodyMap
 			}
 
-			jsonBytes, err := json.Marshal(responseData)
+			// Get the first (and only) value from varsMap
+			for _, v := range varsMap {
+				for kk, vv := range v.ReqVars {
+					responseData.ReqVars[kk] = vv
+				}
+				for kk, vv := range v.ResVars {
+					responseData.ResVars[kk] = vv
+				}
+			}
+
+			var finalResponseData interface{}
+			if funcStepName != "" || endfuncStepName != "" {
+				finalResponseData = responseData
+			} else {
+				finalResponseData = responseData.Body
+			}
+			jsonBytes, err := json.Marshal(finalResponseData)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
 				server_handlers.FormatResponse(w, errStatusCode)
@@ -600,6 +622,237 @@ func FuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				err := errors.New("function definition not found")
 				logs.WithContext(ctx).Error(err.Error())
 				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			}
+		}
+	}
+}
+
+func SFuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FuncRunHandler - Start")
+		ctx := context.WithValue(r.Context(), "allowed_origins", server_handlers.AllowedOrigins)
+		ctx = context.WithValue(ctx, "origin", r.Header.Get("Origin"))
+
+		host, url := extractHostUrl(r)
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		funcStepName := vars["funcstepname"]
+		endFuncStepName := vars["endfuncstepname"]
+
+		funcFromReq := json.NewDecoder(r.Body)
+		funcFromReq.DisallowUnknownFields()
+
+		var funcMap map[string]interface{}
+		type resBody struct {
+			Body    interface{}                        `json:"body"`
+			ReqVars map[string]*functions.TemplateVars `json:"req_vars"`
+			ResVars map[string]*functions.TemplateVars `json:"res_vars"`
+		}
+		if err := funcFromReq.Decode(&funcMap); err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			if funcJson, funcJsonOk := funcMap["func"]; funcJsonOk {
+				funcJsonBytes, funcJsonBytesErr := json.Marshal(funcJson)
+				if funcJsonBytesErr != nil {
+					server_handlers.FormatResponse(w, http.StatusBadRequest)
+					logs.WithContext(ctx).Error(funcJsonBytesErr.Error())
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": "function body could not be read from json"})
+					return
+				}
+				var funcObj functions.FuncGroup
+				funcObjD := json.NewDecoder(bytes.NewReader(funcJsonBytes))
+				funcObjD.DisallowUnknownFields()
+
+				if err = funcObjD.Decode(&funcObj); err == nil {
+					err = utils.ValidateStruct(ctx, funcObj, "")
+					if err != nil {
+						server_handlers.FormatResponse(w, 400)
+						json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+						return
+					}
+					type reqBody struct {
+						Body    map[string]interface{}             `json:"body"`
+						ReqVars map[string]*functions.TemplateVars `json:"req_vars"`
+						ResVars map[string]*functions.TemplateVars `json:"res_vars"`
+					}
+
+					bodyMap := reqBody{}
+
+					if rBody, rBodyOk := funcMap["body"]; rBodyOk {
+						rBodyBytes, rBodyBytesErr := json.Marshal(rBody)
+						if rBodyBytesErr != nil {
+							server_handlers.FormatResponse(w, http.StatusBadRequest)
+							logs.WithContext(ctx).Error(rBodyBytesErr.Error())
+							_ = json.NewEncoder(w).Encode(map[string]string{"error": "function body could not be read"})
+							return
+						}
+
+						reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
+
+						if reqContentType == "application/json" && r.ContentLength > 0 {
+
+							tmplBodyFromReq := json.NewDecoder(bytes.NewReader(rBodyBytes))
+							tmplBodyFromReq.DisallowUnknownFields()
+							if err := tmplBodyFromReq.Decode(&bodyMap); err != nil {
+								logs.WithContext(r.Context()).Error(fmt.Sprint("error decode request body : ", err.Error()))
+								server_handlers.FormatResponse(w, http.StatusBadRequest)
+								_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to decode request body"})
+								return
+							}
+
+							if bodyMap.Body == nil {
+								bodyMap.Body = make(map[string]interface{})
+							}
+
+							if bodyMap.ReqVars == nil {
+								bodyMap.ReqVars = make(map[string]*functions.TemplateVars)
+							}
+
+							if bodyMap.ResVars == nil {
+								bodyMap.ResVars = make(map[string]*functions.TemplateVars)
+							}
+							body, err := json.Marshal(bodyMap.Body)
+							if err != nil {
+								logs.WithContext(ctx).Error(fmt.Sprint("json.Marshal(vars.Body) error : ", err.Error()))
+								server_handlers.FormatResponse(w, http.StatusBadRequest)
+								_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to marshal request body"})
+								return
+							}
+							r.Body = io.NopCloser(bytes.NewReader(body))
+							r.Header.Set("Content-Length", strconv.Itoa(len(body)))
+							r.ContentLength = int64(len(body))
+						}
+					} else {
+						err = errors.New("function body not found")
+						logs.WithContext(ctx).Error(err.Error())
+						w.WriteHeader(http.StatusBadRequest)
+						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+					}
+
+					funcGroup, err := s.ValidateFunc(ctx, funcObj, projectId, host, url, r.Method, r.Header, bodyMap.Body, s, false)
+					if err != nil {
+						server_handlers.FormatResponse(w, http.StatusBadRequest)
+						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+						return
+					}
+					errStatusCode := http.StatusBadRequest
+					if funcGroup.ResponseStatusCode > 0 {
+						errStatusCode = funcGroup.ResponseStatusCode
+					}
+					reqVars := bodyMap.ReqVars
+					resVars := bodyMap.ResVars
+					if reqVars == nil {
+						reqVars = make(map[string]*functions.TemplateVars)
+					}
+					if resVars == nil {
+						resVars = make(map[string]*functions.TemplateVars)
+					}
+					response, varsMap, err := funcGroup.Execute(ctx, r, module_store.FuncThreads, module_store.LoopThreads, funcStepName, endFuncStepName, false, reqVars, resVars)
+					if err != nil {
+						server_handlers.FormatResponse(w, errStatusCode)
+						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+						return
+					}
+
+					defer response.Body.Close()
+					if response.StatusCode >= 300 && response.StatusCode <= 399 {
+						http.Redirect(w, r, response.Header.Get("Location"), response.StatusCode)
+					} else {
+
+						for k, v := range response.Header {
+							w.Header()[k] = v
+						}
+						if funcGroup.ResponseContentType != "" {
+							w.Header().Del("Content-Type")
+							w.Header().Set("Content-Type", funcGroup.ResponseContentType)
+						}
+						respStatusCode := response.StatusCode
+						if funcGroup.ResponseStatusCode > 0 {
+							respStatusCode = funcGroup.ResponseStatusCode
+						}
+
+						responseBytes, err := io.ReadAll(response.Body)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+							server_handlers.FormatResponse(w, errStatusCode)
+							_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+							return
+						}
+						responseData := resBody{
+							ReqVars: map[string]*functions.TemplateVars{},
+							ResVars: map[string]*functions.TemplateVars{},
+							Body:    bodyMap,
+						}
+						bodyMap := make(map[string]interface{})
+						bodyMapArray := make([]map[string]interface{}, 0)
+						err = json.Unmarshal(responseBytes, &bodyMap)
+						if err != nil {
+							err = json.Unmarshal(responseBytes, &bodyMapArray)
+							if err != nil {
+								logs.WithContext(ctx).Error(err.Error())
+								server_handlers.FormatResponse(w, errStatusCode)
+								_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+								return
+							}
+							responseData.Body = bodyMapArray
+						} else {
+							responseData.Body = bodyMap
+						}
+
+						for _, v := range varsMap {
+							for kk, vv := range v.ReqVars {
+								responseData.ReqVars[kk] = vv
+							}
+							for kk, vv := range v.ResVars {
+								responseData.ResVars[kk] = vv
+							}
+						}
+
+						var finalResponseData interface{}
+						if funcStepName != "" || endFuncStepName != "" {
+							finalResponseData = responseData
+						} else {
+							finalResponseData = responseData.Body
+						}
+						jsonBytes, err := json.Marshal(finalResponseData)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+							server_handlers.FormatResponse(w, errStatusCode)
+							_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to serialize response"})
+							return
+						}
+						w.Header().Set("Content-Type", "application/json")
+
+						// Set content length for the JSON response
+						w.Header().Set("Content-Length", strconv.Itoa(len(jsonBytes)))
+
+						// Write status code
+						w.WriteHeader(respStatusCode)
+						// Write the JSON response
+						w.Write(jsonBytes)
+						/* _, err = io.Copy(w, response.Body)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+							w.WriteHeader(errStatusCode)
+							_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+							return
+						} */
+						return
+					}
+				} else {
+					err := errors.New("function definition could not be read")
+					logs.WithContext(ctx).Error(err.Error())
+					server_handlers.FormatResponse(w, http.StatusBadRequest)
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				}
+			} else {
+				err := errors.New("function definition not found")
+				logs.WithContext(ctx).Error(err.Error())
+				server_handlers.FormatResponse(w, http.StatusBadRequest)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			}
 		}

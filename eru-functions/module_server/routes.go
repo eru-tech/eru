@@ -1,11 +1,12 @@
 package module_server
 
 import (
+	"net/http"
+
 	module_handlers "github.com/eru-tech/eru/eru-functions/module_server/handlers"
 	"github.com/eru-tech/eru/eru-functions/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
-	"net/http"
 )
 
 func SetServiceName() {
@@ -23,6 +24,8 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/save").HandlerFunc(module_handlers.FuncSaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/func/validate").HandlerFunc(module_handlers.FuncValidateHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/func/remove/{funcname}").HandlerFunc(module_handlers.FuncRemoveHandler(sh.Store))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run/{funcstepname}/{endfuncstepname}").HandlerFunc(module_handlers.SFuncRunHandler(sh.Store))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run/{funcstepname}").HandlerFunc(module_handlers.SFuncRunHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run").HandlerFunc(module_handlers.FuncRunHandler(sh.Store))
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/wf/save").HandlerFunc(module_handlers.WfSaveHandler(sh.Store))
