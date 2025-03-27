@@ -7,13 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
 	"github.com/eru-tech/eru/eru-crypto/jwt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"golang.org/x/oauth2"
-	"net/http"
-	"strings"
-	"time"
 )
 
 type LoginSuccess struct {
@@ -111,6 +112,7 @@ func (hydraConfig HydraConfig) GetUserInfo(ctx context.Context, access_token str
 	logs.WithContext(ctx).Debug("GetUserInfo - Start")
 	dummyMap := make(map[string]string)
 	headers := http.Header{}
+	headers.Add("Content-Type", "application/json")
 	headers.Add("Authorization", fmt.Sprint("Bearer ", access_token))
 	res, _, _, _, err := utils.CallHttp(ctx, "POST", fmt.Sprint(hydraConfig.GetPublicUrl(), "/userinfo"), headers, dummyMap, nil, dummyMap, dummyMap)
 	if err != nil {
