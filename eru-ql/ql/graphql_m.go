@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/graphql-go/graphql/language/ast"
-	"reflect"
-	"strings"
 )
 
 type SQLObjectM struct {
@@ -354,11 +355,13 @@ func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_mod
 	returningColArray := strings.Split(sqlObj.MutationReturn.ReturnFields, ",")
 
 	joinColArray := make([]string, 0)
-	for _, v := range doc.TableJoins {
-		if v.Table1Name == tableName {
-			joinColArray = v.Table1Cols
-		} else {
-			joinColArray = v.Table2Cols
+	if doc != nil {
+		for _, v := range doc.TableJoins {
+			if v.Table1Name == tableName {
+				joinColArray = v.Table1Cols
+			} else {
+				joinColArray = v.Table2Cols
+			}
 		}
 	}
 	returnColMap := make(map[string]string)
