@@ -455,23 +455,17 @@ func SFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			responseData := resBody{
 				ReqVars: map[string]*functions.TemplateVars{},
 				ResVars: map[string]*functions.TemplateVars{},
-				Body:    bodyMap,
+				Body:    interface{}(nil),
 			}
-			bodyMap := make(map[string]interface{})
-			bodyMapArray := make([]map[string]interface{}, 0)
-			err = json.Unmarshal(responseBytes, &bodyMap)
+			var resBodyI interface{}
+			err = json.Unmarshal(responseBytes, &resBodyI)
 			if err != nil {
-				err = json.Unmarshal(responseBytes, &bodyMapArray)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-					server_handlers.FormatResponse(w, errStatusCode)
-					_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-					return
-				}
-				responseData.Body = bodyMapArray
-			} else {
-				responseData.Body = bodyMap
+				logs.WithContext(ctx).Error(err.Error())
+				server_handlers.FormatResponse(w, errStatusCode)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
 			}
+			responseData.Body = resBodyI	
 
 			// Get the first (and only) value from varsMap
 			for _, v := range varsMap {
@@ -785,23 +779,17 @@ func SFuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						responseData := resBody{
 							ReqVars: map[string]*functions.TemplateVars{},
 							ResVars: map[string]*functions.TemplateVars{},
-							Body:    bodyMap,
+							Body:    interface{}(nil),
 						}
-						bodyMap := make(map[string]interface{})
-						bodyMapArray := make([]map[string]interface{}, 0)
-						err = json.Unmarshal(responseBytes, &bodyMap)
+						var resBodyI interface{}
+						err = json.Unmarshal(responseBytes, &resBodyI)
 						if err != nil {
-							err = json.Unmarshal(responseBytes, &bodyMapArray)
-							if err != nil {
 								logs.WithContext(ctx).Error(err.Error())
 								server_handlers.FormatResponse(w, errStatusCode)
 								_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 								return
-							}
-							responseData.Body = bodyMapArray
-						} else {
-							responseData.Body = bodyMap
 						}
+						responseData.Body = resBodyI
 
 						for _, v := range varsMap {
 							for kk, vv := range v.ReqVars {
