@@ -10,7 +10,10 @@ import (
 	"log/slog"
 	"mime/multipart"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
@@ -25,12 +28,12 @@ type AzureStorage struct {
 	Region         string `json:"region"`
 	BucketName     string `json:"bucket_name" eru:"required"`
 	Authentication string `json:"authentication" eru:"required"`
-	Key            string `json:"key" eru:"required"`
-	Secret         string `json:"secret" eru:"required"`
 	SubscriptionId string `json:"subscription_id" eru:"required"`
 	TenantId       string `json:"tenant_id" eru:"required"`
 	ClientId       string `json:"client_id"`
 	ClientSecret   string `json:"client_secret"`
+	ResourceGroup  string `json:"resource_group" eru:"required"`
+	session        azcore.TokenCredential
 }
 
 func (azureStorage *AzureStorage) GetAttribute(attributeName string) (attributeValue interface{}, err error) {
@@ -45,10 +48,24 @@ func (azureStorage *AzureStorage) GetAttribute(attributeName string) (attributeV
 		return azureStorage.KmsId, nil
 	case "bucket_name":
 		return azureStorage.BucketName, nil
+	case "subscription_id":
+		return azureStorage.SubscriptionId, nil
+	case "resource_group":
+		return azureStorage.ResourceGroup, nil
 	case "region":
 		return azureStorage.Region, nil
+	case "authentication":
+		return azureStorage.Authentication, nil
+	case "client_id":
+		return azureStorage.ClientId, nil
+	case "client_secret":
+		return azureStorage.ClientSecret, nil
+	case "tenant_id":
+		return azureStorage.TenantId, nil
+	case "session":
+		return azureStorage.session, nil
 	default:
-		return nil, errors.New("Attribute not found")
+		return nil, errors.New("attribute not found")
 	}
 }
 
@@ -59,7 +76,6 @@ func (azureStorage *AzureStorage) getServiceClient(connectionString string) (ser
 		logs.WithContext(context.Background()).Debug("Failed to connect with azure")
 		return
 	}
-
 	return serviceClient
 }
 
@@ -101,7 +117,31 @@ func (azureStorage *AzureStorage) CreateContainer(ctx context.Context, container
 	return containerClient, createContainerResponse, nil
 }
 func (azureStorage *AzureStorage) Init(ctx context.Context) (err error) {
+	logs.WithContext(ctx).Debug("Init - Start")
+	var cred azcore.TokenCredential
+	armstorage.NewAccountsClient(azureStorage.SubscriptionId, cred, nil)
 
+	if azureStorage.Authentication == AuthTypeSecret {
+		cred, err = azidentity.NewClientSecretCredential(azureStorage.TenantId, azureStorage.ClientId, azureStorage.ClientSecret, nil)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("failed to create client secret credential: %s", err.Error()))
+			return err
+		}
+	} else if azureStorage.Authentication == AuthTypeIAM {
+		logs.WithContext(ctx).Info("connecting Azure storage with IAM role")
+		cred, err = azidentity.NewDefaultAzureCredential(nil)
+		if err == nil {
+			// Test token acquisition to validate
+			_, err = cred.GetToken(ctx, policy.TokenRequestOptions{
+				Scopes: []string{"https://management.azure.com/.default"},
+			})
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("failed to get token: %s", err.Error()))
+				return err
+			}
+		}
+	}
+	azureStorage.session = cred
 	return nil
 }
 
@@ -215,7 +255,7 @@ func (azureStorage *AzureStorage) UploadFileB64(ctx context.Context, file []byte
 }
 
 func (azureStorage *AzureStorage) UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
-	slog.Info("UploadFile - Start")
+	logs.WithContext(ctx).Debug("UploadFile - Start")
 	connectionString := azureStorage.Authentication
 	containerName := folderPath
 	enc := ".enc"
@@ -224,8 +264,7 @@ func (azureStorage *AzureStorage) UploadFile(ctx context.Context, file multipart
 	docId = ksuid.New().String()
 
 	ctx = context.TODO()
-	slog.Info("UploadFile - Start")
-	logs.WithContext(ctx).Debug("UploadFile - Start")
+	
 
 	serviceClient := azureStorage.getServiceClient(connectionString)
 
@@ -376,13 +415,6 @@ func (azureStorage *AzureStorage) MakeFromJson(ctx context.Context, rj *json.Raw
 
 }
 
-func (azureStorage *AzureStorage) BucketExists(ctx context.Context) (exists bool, err error) {
-	// logs.WithContext(ctx).Debug("Checking BucketExists- Start")
-	// connectionString := azureStorage.Authentication
-	// serviceClient := azureStorage.getServiceClient(connectionString)
-	// _, err = serviceClient.ServiceClient().NewContainerClient(azureStorage.BucketName).GetProperties(context.Background(), nil)
-	return
-}
 func (azureStorage *AzureStorage) DeleteStorage(ctx context.Context, forceDelete bool, cloneStorage StorageI) (err error) {
 	connectionString := azureStorage.Authentication
 	containerName := azureStorage.BucketName
@@ -403,23 +435,106 @@ func (azureStorage *AzureStorage) DeleteStorage(ctx context.Context, forceDelete
 }
 
 func (azureStorage *AzureStorage) CreateStorage(ctx context.Context, cloneStorage StorageI, persist bool) (err error) {
-	// connectionString := azureStorage.Authentication
-	// containerName := "NewConatinerCreate1"
-	// ctx = context.TODO()
-	// logs.WithContext(ctx).Debug("Create Conatiner - Start")
+	logs.WithContext(ctx).Info("creating Azure session")
+	err = cloneStorage.Init(ctx)
+	if err != nil {
+		return
+	}
+	session, err := cloneStorage.GetAttribute("session")
+	if err != nil {
+		return
+	}
+	azureStorage.session = session.(azcore.TokenCredential)
 
-	// serviceClient := azureStorage.getServiceClient(connectionString)
+	subscriptionId, err := cloneStorage.GetAttribute("subscription_id")
+	if err != nil {
+		return
+	}
+	resourceGroup, err := cloneStorage.GetAttribute("resource_group")
+	if err != nil {
+		return
+	}
 
-	// _, err = serviceClient.CreateContainer(ctx, containerName, nil)
-	// if err != nil {
-	// 	logs.WithContext(ctx).Debug("Conatiner Created Successfully")
-	// 	return
-	// } else {
-	// 	logs.WithContext(ctx).Debug("Failed to create container")
-	// 	return err
+	if persist {
+		be := false
+		be, err = cloneStorage.BucketExists(ctx)
+		if err != nil {
+			return
+		}
 
-	// }
+		logs.WithContext(ctx).Info(fmt.Sprint("be = ", be))
+
+		if !be {
+			bn, _ := cloneStorage.GetAttribute("bucket_name")
+			logs.WithContext(ctx).Info(bn.(string))
+
+			storageClient, err := armstorage.NewAccountsClient(subscriptionId.(string), azureStorage.session, nil)
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("Failed to create storage client", err.Error()))
+				return err
+			}
+
+			skuName := armstorage.SKUNameStandardLRS
+			kind := armstorage.KindStorageV2
+			accessTier := armstorage.AccessTierHot
+			location := azureStorage.Region
+
+			pollerResp, err := storageClient.BeginCreate(
+				ctx,
+				resourceGroup.(string),
+				azureStorage.BucketName,
+				armstorage.AccountCreateParameters{
+					Location: &location,
+					SKU: &armstorage.SKU{
+						Name: &skuName,
+					},
+					Kind: &kind,
+					Properties: &armstorage.AccountPropertiesCreateParameters{
+						AccessTier: &accessTier,
+					},
+				},
+				nil,
+			)
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("Failed to start storage account creation: %v", err))
+				return err
+			}
+
+			_, err = pollerResp.PollUntilDone(ctx, nil)
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("Failed to complete storage account creation: %v", err))
+				return err
+			}
+		} else {
+			logs.WithContext(ctx).Info("skipping container creation in Azure as it already exists")
+		}
+	}
 	return
+}
+
+func (azureStorage *AzureStorage) BucketExists(ctx context.Context) (exists bool, err error) {
+	if azureStorage.session == nil {
+		logs.WithContext(ctx).Info("creating Azure session")
+		err = azureStorage.Init(ctx)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	storageClient, err := armstorage.NewAccountsClient(azureStorage.SubscriptionId, azureStorage.session, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to create storage client: %v", err))
+		return false, err
+	}
+
+	_, err = storageClient.GetProperties(ctx, azureStorage.ResourceGroup, azureStorage.BucketName, nil)
+	if err != nil {
+		logs.WithContext(ctx).Info(fmt.Sprintf("Storage account %s does not exist: %v", azureStorage.BucketName, err))
+		return false, nil
+	}
+
+	logs.WithContext(ctx).Info(fmt.Sprintf("Storage account %s exists", azureStorage.BucketName))
+	return true, nil
 }
 
 func (azureStorage *AzureStorage) DeleteFile(ctx context.Context, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
@@ -460,15 +575,8 @@ func (azureStorage *AzureStorage) DeleteFile(ctx context.Context, file []byte, f
 
 }
 
-func (azureStorage *AzureStorage) EmptyBucket() (err error) {
-	fmt.Println("Checking is container is empty")
-	return nil
-}
-
 func (azureStorage AzureStorage) encrypt(ctx context.Context, byteContainer []byte, keyName eruaes.AesKey) (eByteContainer []byte, eByteContainerKey []byte, err error) {
-	fmt.Println("Inside Azure Encrypting ")
-	slog.Info("key Pair", azureStorage.KeyPair)
-	slog.Info("kmsKey", azureStorage.KmsKey)
+	logs.WithContext(ctx).Debug("encrypt - Start")
 	if azureStorage.KeyPair != "" {
 		byteContainer = eruaes.Pad(byteContainer, 16)
 		eByteContainer, err = eruaes.EncryptCBC(ctx, byteContainer, keyName.Key, keyName.Vector)
@@ -476,7 +584,7 @@ func (azureStorage AzureStorage) encrypt(ctx context.Context, byteContainer []by
 			return
 		}
 	} else if azureStorage.KmsKey != nil {
-		aKey := eruaes.AesKey{}
+		/*aKey := eruaes.AesKey{}
 		aKey, err = eruaes.GenerateKey(ctx, 16)
 		if err != nil {
 			return
@@ -488,10 +596,10 @@ func (azureStorage AzureStorage) encrypt(ctx context.Context, byteContainer []by
 			return
 		}
 
-		eByteContainerKey, err = azureStorage.KmsKey.Encrypt(ctx, aKey.Key)
+		 eByteContainerKey, err = azureStorage.KmsKey.Encrypt(ctx, aKey.Key)
 		if err != nil {
 			return
-		}
+		} */
 	} else {
 		err = errors.New("encryption key not found")
 		return
