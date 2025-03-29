@@ -325,7 +325,8 @@ func (azureStorage *AzureStorage) DownloadFile(ctx context.Context, folderPath s
 	serviceClient := azureStorage.getServiceClient(connectionString)
 
 	container_client := serviceClient.ServiceClient().NewContainerClient(containerName)
-	blob_name := fileName + ".enc"
+	blob_name := fileName
+
 	fmt.Println("Blob Name", blob_name)
 	blb_client := container_client.NewBlobClient(blob_name)
 	fmt.Println(blb_client.URL())
