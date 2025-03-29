@@ -15,6 +15,7 @@
 config.json
 *.gitignore
 .gitignore
+.windsurfrules
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
