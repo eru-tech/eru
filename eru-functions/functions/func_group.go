@@ -462,6 +462,8 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 					response = errorResponse(ctx, err.Error(), request)
 					return
 				}
+			} else if fromAsync && funcStep.FuncKey == funcStepName && funcStep.LoopVariable != "" {
+				loopArray = append(loopArray, vars.LoopVar)
 			}
 		}
 	}
@@ -678,7 +680,8 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 				diff := endTime.Sub(startTime)
 				logs.WithContext(ctx).Info(fmt.Sprint("total time taken for RunFuncStepInner before route execute  ", funcStep.FuncKey, " ", diff.Milliseconds(), "seconds"))
 
-				response, routevars, err = funcStep.Route.Execute(ctx, request, funcStep.Path, funcStep.Async, asyncMsg, reqVars[funcStep.FuncKey], loopThread)
+				// TODO - changed from funcStep.Async to false on 2Apr
+				response, routevars, err = funcStep.Route.Execute(ctx, request, funcStep.Path, false, asyncMsg, reqVars[funcStep.FuncKey], loopThread)
 
 				endTime = time.Now()
 				diff = endTime.Sub(startTime)
