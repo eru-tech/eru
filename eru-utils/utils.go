@@ -204,8 +204,11 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	//for _, c := range req.Cookies() {
 	//	logs.WithContext(ctx).Info(c.String())
 	//}
+	PrintRequestBody(ctx, req, "printing request just before utils.ExecuteHttp")
 
 	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
+
+	PrintResponseBody(ctx, resp, "printing response immediately after utils.ExecuteHttp")
 
 	allowedOriginsI := ctx.Value("allowed_origins")
 	originI := ctx.Value("origin")

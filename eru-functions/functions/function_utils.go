@@ -20,7 +20,6 @@ import (
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
-	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 )
 
@@ -732,7 +731,6 @@ func clubResponses(ctx context.Context, responses []*http.Response, errs []error
 		Request:       newR,
 		Header:        respHeader,
 	}
-	utils.PrintResponseBody(ctx, response, "printing response inside club response before returning")
 	return
 }
 

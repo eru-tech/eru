@@ -918,8 +918,6 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 										failedCount = failedCount + 1
 										asyncStatus = "FAILED"
 									} else {
-										logs.WithContext(ctx).Info(fmt.Sprint(response))
-										eru_utils.PrintResponseBody(ctx, response, "printing response from async handler")
 										processedCount = processedCount + 1
 									}
 								}

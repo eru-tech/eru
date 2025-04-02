@@ -203,7 +203,6 @@ func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 									asyncStatus = "FAILED"
 								} else {
 									logs.WithContext(ctx).Info(fmt.Sprint(response))
-									utils.PrintResponseBody(ctx, response, "printing response from async handler")
 									processedCount = processedCount + 1
 								}
 							}
@@ -329,7 +328,6 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 			logs.WithContext(r.Context()).Info(fmt.Sprint(respStatusCode))
 			w.WriteHeader(respStatusCode)
-			utils.PrintResponseBody(r.Context(), response, "response")
 			_, err = io.Copy(w, response.Body)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
@@ -465,7 +463,7 @@ func SFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
 			}
-			responseData.Body = resBodyI	
+			responseData.Body = resBodyI
 
 			// Get the first (and only) value from varsMap
 			for _, v := range varsMap {
@@ -669,14 +667,14 @@ func SFuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						return
 					}
 					type reqBody struct {
-						Body    interface{}             `json:"body"`
+						Body    interface{}                        `json:"body"`
 						ReqVars map[string]*functions.TemplateVars `json:"req_vars"`
 						ResVars map[string]*functions.TemplateVars `json:"res_vars"`
 					}
 
 					bodyMap := reqBody{}
 					bodyNewMap := make(map[string]interface{})
-						
+
 					if rBody, rBodyOk := funcMap["body"]; rBodyOk {
 						rBodyBytes, rBodyBytesErr := json.Marshal(rBody)
 						if rBodyBytesErr != nil {
@@ -701,7 +699,6 @@ func SFuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 								bodyMap.Body = make(map[string]interface{})
 							}
 
-							
 							if bodyArray, ok := bodyMap.Body.([]interface{}); ok {
 								for _, v := range bodyArray {
 									if vMap, ok := v.(map[string]interface{}); ok {
@@ -711,7 +708,7 @@ func SFuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 									}
 								}
 							} else {
-								if bodyM , ok := bodyMap.Body.(map[string]interface{}) ; ok {
+								if bodyM, ok := bodyMap.Body.(map[string]interface{}); ok {
 									bodyNewMap = bodyM
 								}
 							}
@@ -798,10 +795,10 @@ func SFuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						var resBodyI interface{}
 						err = json.Unmarshal(responseBytes, &resBodyI)
 						if err != nil {
-								logs.WithContext(ctx).Error(err.Error())
-								server_handlers.FormatResponse(w, errStatusCode)
-								_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-								return
+							logs.WithContext(ctx).Error(err.Error())
+							server_handlers.FormatResponse(w, errStatusCode)
+							_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+							return
 						}
 						responseData.Body = resBodyI
 

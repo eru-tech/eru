@@ -493,12 +493,10 @@ func (route *Route) RunRoute(ctx context.Context, req *http.Request, url string,
 			}
 
 		} else {
-			utils.PrintRequestBody(ctx, request, "printing request just before utils.ExecuteHttp")
 			response, err = utils.ExecuteHttp(ctx, request)
 			if err != nil {
 				return
-			}
-			utils.PrintResponseBody(ctx, response, "printing response immediately after utils.ExecuteHttp")
+			}			
 		}
 	} else {
 		header := http.Header{}
