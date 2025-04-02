@@ -672,11 +672,13 @@ func clubResponses(ctx context.Context, responses []*http.Response, errs []error
 	respHeader := http.Header{}
 	newR := &http.Request{}
 	if len(responses) > 0 {
-		newR = responses[0].Request
-		for k, v := range responses[0].Header {
-			if k != "Content-Length" { //TODO is this needed? || route.LoopVariable == ""
-				for _, h := range v {
-					respHeader.Set(k, h)
+		if responses[0] != nil {
+			newR = responses[0].Request
+			for k, v := range responses[0].Header {
+				if k != "Content-Length" { //TODO is this needed? || route.LoopVariable == ""
+					for _, h := range v {
+						respHeader.Set(k, h)
+					}
 				}
 			}
 		}
