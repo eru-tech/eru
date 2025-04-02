@@ -802,11 +802,16 @@ func (funcStep *FuncStep) insertAsyncBatch(ctx context.Context, asyncBatch []Asy
 
 	for _, asyncFuncData := range asyncBatch {
 		asyncFuncData.EventId = batch_id
-		lv, lvErr := json.Marshal(asyncFuncData.LoopVar)
-		if lvErr != nil {
+
+		var lvBuf bytes.Buffer
+		encoder := json.NewEncoder(&lvBuf)
+		encoder.SetEscapeHTML(false)
+		err = encoder.Encode(asyncFuncData.LoopVar)
+		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
+
 		if asyncFuncData.EventRequest != "" {
 			eventMsgBytes, eventErr := json.Marshal(asyncFuncData.EventMsg)
 			if eventErr != nil {
@@ -815,7 +820,7 @@ func (funcStep *FuncStep) insertAsyncBatch(ctx context.Context, asyncBatch []Asy
 			}
 			insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, batch_id, asyncFuncData.FuncName, asyncFuncData.FuncStepName, string(eventMsgBytes), asyncFuncData.RequestId, asyncFuncData.EventRequest)
 		}
-		insertQueryFuncAsyncLoop.Vals = append(insertQueryFuncAsyncLoop.Vals, asyncFuncData.AsyncId, batch_id, string(lv))
+		insertQueryFuncAsyncLoop.Vals = append(insertQueryFuncAsyncLoop.Vals, asyncFuncData.AsyncId, batch_id, lvBuf.String())
 	}
 
 	insertQueryFuncAsync.Rank = 1
