@@ -164,19 +164,24 @@ func PrintResponseBody(ctx context.Context, response *http.Response, msg string)
 
 func PrintRequestBody(ctx context.Context, request *http.Request, msg string) {
 	logs.WithContext(ctx).Debug("PrintRequestBody - Start")
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-	}
 	logs.WithContext(ctx).Info(msg)
-	logs.WithContext(ctx).Info(fmt.Sprint(request.URL))
-	cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
-	if cl > 1000 && len(string(body)) > 1000 {
-		logs.WithContext(ctx).Info(string(body)[0:1000])
+	if request != nil {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+
+		logs.WithContext(ctx).Info(fmt.Sprint(request.URL))
+		cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
+		if cl > 1000 && len(string(body)) > 1000 {
+			logs.WithContext(ctx).Info(string(body)[0:1000])
+		} else {
+			logs.WithContext(ctx).Info(string(body))
+		}
+		request.Body = io.NopCloser(bytes.NewReader(body))
 	} else {
-		logs.WithContext(ctx).Info(string(body))
+		logs.WithContext(ctx).Info("request is nil")
 	}
-	request.Body = io.NopCloser(bytes.NewReader(body))
 }
 
 func CallParallelHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}, rc chan *http.Response) (err error) {
