@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"mime/multipart"
+
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-secret-manager/kms"
-	"mime/multipart"
 )
 
 type StorageI interface {
@@ -54,6 +55,9 @@ func GetStorage(storageType string) StorageI {
 		return new(AwsStorage)
 	case "GCP":
 		return new(GcpStorage)
+	case "AZURE":
+		return new(AzureStorage)
+
 	default:
 		return nil
 	}
