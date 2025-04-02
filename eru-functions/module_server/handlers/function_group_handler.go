@@ -669,13 +669,14 @@ func SFuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						return
 					}
 					type reqBody struct {
-						Body    map[string]interface{}             `json:"body"`
+						Body    interface{}             `json:"body"`
 						ReqVars map[string]*functions.TemplateVars `json:"req_vars"`
 						ResVars map[string]*functions.TemplateVars `json:"res_vars"`
 					}
 
 					bodyMap := reqBody{}
-
+					bodyNewMap := make(map[string]interface{})
+						
 					if rBody, rBodyOk := funcMap["body"]; rBodyOk {
 						rBodyBytes, rBodyBytesErr := json.Marshal(rBody)
 						if rBodyBytesErr != nil {
@@ -686,7 +687,6 @@ func SFuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						}
 
 						reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
-
 						if reqContentType == "application/json" && r.ContentLength > 0 {
 
 							tmplBodyFromReq := json.NewDecoder(bytes.NewReader(rBodyBytes))
@@ -697,9 +697,23 @@ func SFuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 								_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to decode request body"})
 								return
 							}
-
 							if bodyMap.Body == nil {
 								bodyMap.Body = make(map[string]interface{})
+							}
+
+							
+							if bodyArray, ok := bodyMap.Body.([]interface{}); ok {
+								for _, v := range bodyArray {
+									if vMap, ok := v.(map[string]interface{}); ok {
+										for kk, vv := range vMap {
+											bodyNewMap[kk] = vv
+										}
+									}
+								}
+							} else {
+								if bodyM , ok := bodyMap.Body.(map[string]interface{}) ; ok {
+									bodyNewMap = bodyM
+								}
 							}
 
 							if bodyMap.ReqVars == nil {
@@ -709,7 +723,7 @@ func SFuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 							if bodyMap.ResVars == nil {
 								bodyMap.ResVars = make(map[string]*functions.TemplateVars)
 							}
-							body, err := json.Marshal(bodyMap.Body)
+							body, err := json.Marshal(bodyNewMap)
 							if err != nil {
 								logs.WithContext(ctx).Error(fmt.Sprint("json.Marshal(vars.Body) error : ", err.Error()))
 								server_handlers.FormatResponse(w, http.StatusBadRequest)
@@ -727,7 +741,7 @@ func SFuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 					}
 
-					funcGroup, err := s.ValidateFunc(ctx, funcObj, projectId, host, url, r.Method, r.Header, bodyMap.Body, s, false)
+					funcGroup, err := s.ValidateFunc(ctx, funcObj, projectId, host, url, r.Method, r.Header, bodyNewMap, s, false)
 					if err != nil {
 						server_handlers.FormatResponse(w, http.StatusBadRequest)
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
