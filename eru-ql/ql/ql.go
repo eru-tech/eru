@@ -150,6 +150,8 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 			if !er {
 				return nil, errors.New("error while parsing value of 'docs'")
 			}
+			logs.WithContext(ctx).Info(fmt.Sprint(dd))
+			logs.WithContext(ctx).Info(fmt.Sprint(templateStr))
 			outputBytes, ptErr := executeTemplate(ctx, templateName, templateStr, dd, outputType)
 			if err != nil {
 				err = ptErr
