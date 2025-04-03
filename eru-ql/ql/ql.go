@@ -121,9 +121,10 @@ func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, var
 
 func processTemplate(ctx context.Context, templateName string, templateString string, vars map[string]interface{}, outputType string, key string, d interface{}) (output []byte, err error) {
 	logs.WithContext(ctx).Debug("processTemplate - Start")
+	logs.WithContext(ctx).Debug(fmt.Sprint("templateString: ", templateString))
 	ruleValue := strings.SplitN(templateString, ".", 2)
 	templateStr := ""
-
+	logs.WithContext(ctx).Debug(fmt.Sprint("ruleValue: ", ruleValue))
 	if ruleValue[0] == module_model.RULEPREFIX_TOKEN {
 		templateStr = ruleValue[1]
 		if !(strings.HasPrefix(ruleValue[1], "{{")) {
@@ -150,8 +151,6 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 			if !er {
 				return nil, errors.New("error while parsing value of 'docs'")
 			}
-			logs.WithContext(ctx).Info(fmt.Sprint(dd))
-			logs.WithContext(ctx).Info(fmt.Sprint(templateStr))
 			outputBytes, ptErr := executeTemplate(ctx, templateName, templateStr, dd, outputType)
 			if err != nil {
 				err = ptErr
