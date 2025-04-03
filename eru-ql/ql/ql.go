@@ -120,8 +120,8 @@ func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, var
 }
 
 func processTemplate(ctx context.Context, templateName string, templateString string, vars map[string]interface{}, outputType string, key string, d interface{}) (output []byte, err error) {
-	logs.WithContext(ctx).Debug("processTemplate - Start")
-	logs.WithContext(ctx).Debug(fmt.Sprint("templateString: ", templateString))
+	logs.WithContext(ctx).Info("processTemplate - Start")
+	logs.WithContext(ctx).Info(fmt.Sprint("templateString: ", templateString))
 	ruleValue := strings.SplitN(templateString, ".", 2)
 	templateStr := ""
 	logs.WithContext(ctx).Debug(fmt.Sprint("ruleValue: ", ruleValue))
