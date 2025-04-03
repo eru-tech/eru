@@ -391,7 +391,6 @@ func (azureStorage *AzureStorage) MakeFromJson(ctx context.Context, rj *json.Raw
 		return err
 	}
 	return nil
-
 }
 
 func (azureStorage *AzureStorage) DeleteStorage(ctx context.Context, forceDelete bool, cloneStorage StorageI) (err error) {
