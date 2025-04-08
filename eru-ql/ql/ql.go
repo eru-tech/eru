@@ -123,7 +123,6 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 	logs.WithContext(ctx).Debug("processTemplate - Start")
 	ruleValue := strings.SplitN(templateString, ".", 2)
 	templateStr := ""
-
 	if ruleValue[0] == module_model.RULEPREFIX_TOKEN {
 		templateStr = ruleValue[1]
 		if !(strings.HasPrefix(ruleValue[1], "{{")) {
@@ -161,7 +160,11 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 			outputBytes = nil
 		}
 	} else if ruleValue[0] == module_model.RULEPREFIX_NONE {
-		templateStr = ruleValue[1]
+		if len(ruleValue) > 1 {
+			templateStr = ruleValue[1]
+		} else {
+			templateStr = templateString
+		}
 		return executeTemplate(ctx, templateName, templateStr, vars, outputType)
 	} else {
 		return executeTemplate(ctx, templateName, templateString, vars, outputType)
