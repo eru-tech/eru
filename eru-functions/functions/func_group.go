@@ -1072,7 +1072,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		avars.Vars = vars
 		avars.ResVars = resVars
 		avars.ReqVars = reqVars
-		output, apErr := processTemplate(ctx, "api_host", funcStep.ApiPath, avars, "string", funcStep.Route.TokenSecretKey)
+		output, apErr := processTemplate(ctx, "api_path", funcStep.ApiPath, avars, "string", funcStep.Route.TokenSecretKey)
 		if apErr != nil {
 			// ignore error if it is no value
 			if apErr.Error() != "Template returned <no value>" {

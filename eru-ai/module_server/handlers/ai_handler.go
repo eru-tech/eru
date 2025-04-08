@@ -69,3 +69,37 @@ func ModelQueryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
+
+func AgentListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("AgentListNamesHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+		tenantID := vars["tenant"]
+		agents, err := s.GetAgentNames(r.Context(), projectID, tenantID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"agents": agents})
+		}
+	}
+}
+
+func ToolListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ToolListNamesHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+		tenantID := vars["tenant"]
+		tools, err := s.GetToolNames(r.Context(), projectID, tenantID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"tools": tools})
+		}
+	}
+}
