@@ -376,7 +376,7 @@ func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_mod
 		returnColStr = fmt.Sprint(returnColStr, k, ",")
 	}
 	returnColStr = strings.TrimSuffix(returnColStr, ",")
-	if sqlObj.MutationReturn.ReturnDoc || returnColStr != "" {
+	if sqlObj.MutationReturn.ReturnDoc || (returnColStr != "" && returnColStr != " * ") {
 		returningStr = fmt.Sprint(" RETURNING ", returnColStr)
 	}
 	//}
