@@ -208,7 +208,9 @@ func ExecuteParallelHttp(ctx context.Context, req *http.Request, rc chan *http.R
 
 func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("ExecuteHttp - Start")
-	req = req.WithContext(ctx)
+	logs.WithContext(ctx).Info(fmt.Sprintf("ctx: %+v", ctx))
+
+	//req = req.WithContext(ctx)
 	//resp, err = httpClient.Do(req)
 	//for _, c := range req.Cookies() {
 	//	logs.WithContext(ctx).Info(c.String())
