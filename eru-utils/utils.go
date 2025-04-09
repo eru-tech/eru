@@ -222,13 +222,14 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	}
 	PrintResponseBody(ctx, resp, "printing response immediately after utils.ExecuteHttp")
 
-	logs.WithContext(ctx).Info("callng deault transport http")
-	resp, err = http.DefaultTransport.RoundTrip(req)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+	if resp == nil {
+		logs.WithContext(ctx).Info("callng deault transport http")
+		resp, err = http.DefaultTransport.RoundTrip(req)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		PrintResponseBody(ctx, resp, "printing response immediately after utils.ExecuteHttp")
 	}
-	PrintResponseBody(ctx, resp, "printing response immediately after utils.ExecuteHttp")
-
 	allowedOriginsI := ctx.Value("allowed_origins")
 	originI := ctx.Value("origin")
 
