@@ -811,7 +811,6 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 
 func (store *Store) SetSmValue(ctx context.Context, projectId string, secretName string, secretValue map[string]string) (err error) {
 	logs.WithContext(ctx).Info("SetSmValue - Start")
-	logs.WithContext(ctx).Info(fmt.Sprint(store.SecretManager))
 	if store.SecretManager == nil {
 		err = errors.New("no secret manager defined in store")
 		logs.WithContext(ctx).Error(err.Error())
