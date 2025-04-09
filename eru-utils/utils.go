@@ -209,8 +209,7 @@ func ExecuteParallelHttp(ctx context.Context, req *http.Request, rc chan *http.R
 func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("ExecuteHttp - Start")
 	logs.WithContext(ctx).Info(fmt.Sprintf("ctx: %+v", ctx))
-
-	//req = req.WithContext(ctx)
+	req = req.WithContext(ctx)
 	//resp, err = httpClient.Do(req)
 	//for _, c := range req.Cookies() {
 	//	logs.WithContext(ctx).Info(c.String())
@@ -218,7 +217,16 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	PrintRequestBody(ctx, req, "printing request just before utils.ExecuteHttp")
 
 	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+	}
+	PrintResponseBody(ctx, resp, "printing response immediately after utils.ExecuteHttp")
 
+	logs.WithContext(ctx).Info("callng deault transport http")
+	resp, err = http.DefaultTransport.RoundTrip(req)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+	}
 	PrintResponseBody(ctx, resp, "printing response immediately after utils.ExecuteHttp")
 
 	allowedOriginsI := ctx.Value("allowed_origins")
