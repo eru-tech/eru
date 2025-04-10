@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
@@ -216,13 +217,22 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	//}
 	PrintRequestBody(ctx, req, "printing request just before utils.ExecuteHttp")
 
-	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
+	//resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
+	//resp, err = http.DefaultTransport.RoundTrip(req)
+	client := &http.Client{
+		Transport: HTTPClientTransporter(http.DefaultTransport),
+		Timeout:   300 * time.Second, // Add timeout
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // Keep your existing redirect policy
+		},
+	}
+	resp, err = client.Do(req)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 	}
 	PrintResponseBody(ctx, resp, "printing response immediately after utils.ExecuteHttp")
 	logs.WithContext(ctx).Info(fmt.Sprintf("resp: %+v", resp))
-	
+
 	allowedOriginsI := ctx.Value("allowed_origins")
 	originI := ctx.Value("origin")
 
