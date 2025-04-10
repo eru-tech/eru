@@ -601,9 +601,8 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 	switch outputFormat {
 	case "string":
 		if str == "<no value>" {
-			err = errors.New("Template returned <no value>")
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
+			logs.WithContext(ctx).Warn("Template returned <no value>")
+			return "", err
 		}
 		return str, nil
 	case "json":
