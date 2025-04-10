@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
+	"net"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
 	models "github.com/eru-tech/eru/eru-models"
@@ -210,7 +210,18 @@ func ExecuteParallelHttp(ctx context.Context, req *http.Request, rc chan *http.R
 func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("ExecuteHttp - Start")
 	logs.WithContext(ctx).Info(fmt.Sprintf("ctx: %+v", ctx))
+
 	req = req.WithContext(ctx)
+	
+	host := req.URL.Host
+    ips, err := net.LookupIP(host)
+    if err != nil {
+        logs.WithContext(ctx).Error(fmt.Sprintf("DNS lookup failed: %v", err))
+    } else {
+        logs.WithContext(ctx).Info(fmt.Sprintf("DNS resolution for %s: %v", host, ips))
+    }
+	
+	
 	//resp, err = httpClient.Do(req)
 	//for _, c := range req.Cookies() {
 	//	logs.WithContext(ctx).Info(c.String())
@@ -226,6 +237,7 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 			return http.ErrUseLastResponse // Keep your existing redirect policy
 		},
 	}
+	
 	resp, err = client.Do(req)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
