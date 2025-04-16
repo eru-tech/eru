@@ -219,7 +219,7 @@ func (anthropicModel *AnthropicModel) QueryModelWithTool(ctx context.Context, ch
 		return
 	}
 	outputJson := make(map[string]interface{})
-	outputJson["raw"] = anthropicChatResponse
+	outputJson["raw"] = anthropicChatResponse.Content
 	queryResponse = JsonMessage{
 		Content: outputJson,
 		Role:    "assistant",

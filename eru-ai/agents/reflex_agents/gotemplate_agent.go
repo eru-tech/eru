@@ -25,13 +25,32 @@ func (reflex_agent *GoTemplateAgent) GetSpec() agents.AgentI {
 func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
 
-	contextVariable, contextVariableErr := json.Marshal(agentMessage.Params)
+	contextVariableMap, contextVariableMapOk := agentMessage.Params["context"]
+	if !contextVariableMapOk {
+		logs.WithContext(ctx).Info("context_variable is not present in the params")
+
+	}
+
+	contextVariable, contextVariableErr := json.Marshal(contextVariableMap)
 	if contextVariableErr != nil {
 		logs.WithContext(ctx).Error(contextVariableErr.Error())
 		return nil, contextVariableErr
 	}
 
-	contextVariableString := fmt.Sprintf("Use this json as context variable to be used in the gotemplate \n\n %s", string(contextVariable))
+	templateCode, templateCodeOk := agentMessage.Params["code"]
+	if !templateCodeOk {
+		logs.WithContext(ctx).Info("code is not present in the params")
+
+	}
+
+	templateCodeString, templateCodeStringOk := templateCode.(string)
+	if !templateCodeStringOk {
+		logs.WithContext(ctx).Info("code is not a string")
+	}
+
+	templateCodeString = fmt.Sprintf("This is existing go template code and you need to build on top of this incorporating user's new instructions. If this code is blank, write a new go template code. \n\n %s", templateCodeString)
+
+	contextVariableString := fmt.Sprintf("Use this json as context variable to be used in the gotemplate \n\n %s \n\n", string(contextVariable))
 
 	contextVariablePrompt := `\n\nThere are three attributes in the context variable : \n 
 				1. vars : this is JSON object for the current function step and its type is of TemplateVars  \n
@@ -43,7 +62,7 @@ func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessag
 				2. unquote : this function takes a string and returns the unquoted string\n
 				`
 
-	contextVariableString = fmt.Sprint(contextVariableString, contextVariablePrompt, templateVarsSchemaString)
+	contextVariableString = fmt.Sprint(templateCodeString, contextVariableString, contextVariablePrompt, templateVarsSchemaString)
 
 	logs.WithContext(ctx).Info(contextVariableString)
 

@@ -8,15 +8,12 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net"
 	"net/http"
-	"os/exec"
 	httpurl "net/url"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
@@ -211,75 +208,76 @@ func ExecuteParallelHttp(ctx context.Context, req *http.Request, rc chan *http.R
 
 func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("ExecuteHttp - Start")
-	logs.WithContext(ctx).Info(fmt.Sprintf("ctx: %+v", ctx))
+	//logs.WithContext(ctx).Info(fmt.Sprintf("ctx: %+v", ctx))
 
 	req = req.WithContext(ctx)
 
-	host := req.URL.Host
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("DNS lookup failed: %v", err))
-	} else {
-		logs.WithContext(ctx).Info(fmt.Sprintf("DNS resolution for %s: %v", host, ips))
-	}
-
-	cmd := exec.Command("traceroute", "-n", host)
-    output, err := cmd.CombinedOutput()
-    if err != nil {
-        logs.WithContext(ctx).Error(fmt.Sprintf("Traceroute failed: %v", err))
-    } else {
-        logs.WithContext(ctx).Info(fmt.Sprintf("Network path to %s:\n%s", host, string(output)))
-    }
-
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			start := time.Now()
-			logs.WithContext(ctx).Info(fmt.Sprintf("Attempting connection to %s at %v", addr, start))
-
-			dialer := &net.Dialer{
-				Timeout:   30 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}
-
-			conn, err := dialer.DialContext(ctx, network, addr)
+	/*
+			host := req.URL.Host
+			ips, err := net.LookupIP(host)
 			if err != nil {
-				logs.WithContext(ctx).Error(fmt.Sprintf("Connection failed to %s after %v: %v",
-					addr, time.Since(start), err))
-				return nil, err
+				logs.WithContext(ctx).Error(fmt.Sprintf("DNS lookup failed: %v", err))
+			} else {
+				logs.WithContext(ctx).Info(fmt.Sprintf("DNS resolution for %s: %v", host, ips))
 			}
 
-			logs.WithContext(ctx).Info(fmt.Sprintf("Connection established to %s in %v",
-				addr, time.Since(start)))
+			 cmd := exec.Command("traceroute", "-n", host)
+		    output, err := cmd.CombinedOutput()
+		    if err != nil {
+		        logs.WithContext(ctx).Error(fmt.Sprintf("Traceroute failed: %v", err))
+		    } else {
+		        logs.WithContext(ctx).Info(fmt.Sprintf("Network path to %s:\n%s", host, string(output)))
+		    }
 
-			// Log connection details
-			if tcpConn, ok := conn.(*net.TCPConn); ok {
-				localAddr := tcpConn.LocalAddr().String()
-				remoteAddr := tcpConn.RemoteAddr().String()
-				logs.WithContext(ctx).Info(fmt.Sprintf("TCP Connection: Local=%s, Remote=%s",
-					localAddr, remoteAddr))
-			}
+			transport := &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					start := time.Now()
+					logs.WithContext(ctx).Info(fmt.Sprintf("Attempting connection to %s at %v", addr, start))
 
-			return conn, nil
-		},
-	}
+					dialer := &net.Dialer{
+						Timeout:   30 * time.Second,
+						KeepAlive: 30 * time.Second,
+					}
+
+					conn, err := dialer.DialContext(ctx, network, addr)
+					if err != nil {
+						logs.WithContext(ctx).Error(fmt.Sprintf("Connection failed to %s after %v: %v",
+							addr, time.Since(start), err))
+						return nil, err
+					}
+
+					logs.WithContext(ctx).Info(fmt.Sprintf("Connection established to %s in %v",
+						addr, time.Since(start)))
+
+					// Log connection details
+					if tcpConn, ok := conn.(*net.TCPConn); ok {
+						localAddr := tcpConn.LocalAddr().String()
+						remoteAddr := tcpConn.RemoteAddr().String()
+						logs.WithContext(ctx).Info(fmt.Sprintf("TCP Connection: Local=%s, Remote=%s",
+							localAddr, remoteAddr))
+					}
+
+					return conn, nil
+				},
+			} */
 	//resp, err = httpClient.Do(req)
 	//for _, c := range req.Cookies() {
 	//	logs.WithContext(ctx).Info(c.String())
 	//}
 	PrintRequestBody(ctx, req, "printing request just before utils.ExecuteHttp")
 
-	//resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
+	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
 	//resp, err = http.DefaultTransport.RoundTrip(req)
-	client := &http.Client{
-		//Transport: HTTPClientTransporter(http.DefaultTransport),
-		Transport: transport,
+	/* client := &http.Client{
+		Transport: HTTPClientTransporter(http.DefaultTransport),
+		//Transport: transport,
 		Timeout:   300 * time.Second, // Add timeout
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse // Keep your existing redirect policy
 		},
-	}
+	} */
 
-	resp, err = client.Do(req)
+	//resp, err = client.Do(req)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 	}
