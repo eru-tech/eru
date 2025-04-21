@@ -342,6 +342,29 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 	return identity, LoginSuccess{}, nil
 }
 
+func (msAuth *MsAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (loginResI interface{}, err error) {
+	logs.WithContext(ctx).Debug("Login - Start")
+
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	msLoginFormBody := make(map[string]string)
+	msLoginFormBody["client_id"] = msAuth.MsConfig.ClientId
+	msLoginFormBody["client_secret"] = msAuth.MsConfig.ClientSecret
+	msLoginFormBody["redirect_uri"] = msAuth.MsConfig.RedirectURI
+	msLoginFormBody["grant_type"] = "authorization_code"
+	msLoginFormBody["scope"] = msAuth.MsConfig.Scope
+	msLoginFormBody["code"] = loginPostBody.IdpCode
+	msLoginFormBody["code_verifier"] = loginPostBody.CodeVerifier
+
+	loginRes, _, _, _, loginErr := utils.CallHttp(ctx, http.MethodPost, msAuth.MsConfig.TokenUrl, headers, msLoginFormBody, nil, nil, nil)
+	if loginErr != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint(map[string]interface{}{"request_id": loginPostBody.IdpRequestId, "error": fmt.Sprint(loginErr)}))
+		return nil, errors.New("something went wrong - please try again")
+	}
+	return loginRes, nil
+}
+
 func (msAuth *MsAuth) GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error) {
 	logs.WithContext(ctx).Debug("GetUserInfo - Start")
 	return msAuth.Hydra.GetUserInfo(ctx, access_token)

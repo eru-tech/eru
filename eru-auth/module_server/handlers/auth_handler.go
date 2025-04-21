@@ -392,6 +392,80 @@ func VerifyTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		return
 	}
 }
+func IdpTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Info("IdpTokenHandler - Start")
+		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(s.GetConn())
+		} else {
+			logs.WithContext(ctx).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+
+		}
+		loginPostBodyFromReq := json.NewDecoder(r.Body)
+		loginPostBodyFromReq.DisallowUnknownFields()
+
+		var loginPostBody auth.LoginPostBody
+
+		if err = loginPostBodyFromReq.Decode(&loginPostBody); err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		msParams := auth.OAuthParams{}
+		pkceRequired := false
+		pkceRequiredI, pkceErr := authObjI.GetAttribute(ctx, "pkce")
+		if pkceErr != nil {
+			logs.WithContext(ctx).Error(pkceErr.Error())
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": pkceErr.Error()})
+			return
+		}
+		pkceRequired, ok := pkceRequiredI.(bool)
+		if !ok {
+			logs.WithContext(ctx).Error("pkceRequired is not a boolean")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "pkceRequired is not a boolean"})
+			return
+		}
+		if pkceRequired {
+			msParams, err = s.GetPkceEvent(ctx, loginPostBody.IdpRequestId, s)
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		}
+
+		loginPostBody.CodeVerifier = msParams.CodeVerifier
+		loginPostBody.Nonce = msParams.Nonce
+		
+		res, err := authObjI.IdpToken(ctx, loginPostBody, projectId, true)
+		if err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			server_handlers.FormatResponse(w, http.StatusOK)
+			_ = json.NewEncoder(w).Encode(res)
+			return
+		}
+	}
+}
 
 func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

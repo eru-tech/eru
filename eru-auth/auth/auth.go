@@ -5,13 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/eru-tech/eru/eru-functions/functions"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	models "github.com/eru-tech/eru/eru-models"
-	"github.com/eru-tech/eru/eru-secret-manager/kms"
-	utils "github.com/eru-tech/eru/eru-utils"
-	"github.com/google/uuid"
-	"golang.org/x/oauth2"
 	"io"
 	"math/rand"
 	"net/http"
@@ -19,6 +12,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/eru-tech/eru/eru-functions/functions"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	models "github.com/eru-tech/eru/eru-models"
+	"github.com/eru-tech/eru/eru-secret-manager/kms"
+	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/uuid"
+	"golang.org/x/oauth2"
 )
 
 type AuthI interface {
@@ -26,6 +27,7 @@ type AuthI interface {
 	SetAuthDb(authDbI AuthDbI)
 	GetAuthDb() (authDbI AuthDbI)
 	Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error)
+	IdpToken(ctx context.Context, idpToken LoginPostBody, projectId string, withTokens bool) (loginResI interface{}, err error)
 	Register(ctx context.Context, registerUser RegisterUser, projectId string) (identity Identity, loginSuccess LoginSuccess, err error)
 	RemoveUser(ctx context.Context, removeUser RemoveUser) (err error)
 	Logout(ctx context.Context, req *http.Request) (res interface{}, resStatusCode int, err error)
@@ -532,6 +534,12 @@ func (auth *Auth) Login(ctx context.Context, loginPostBody LoginPostBody, projec
 	err = errors.New("Login Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return Identity{}, LoginSuccess{}, err
+}
+
+func (auth *Auth) IdpToken(ctx context.Context, idpToken LoginPostBody, projectId string, withTokens bool) (loginResI interface{}, err error) {
+	err = errors.New("IdpToken Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return nil, err
 }
 
 func (auth *Auth) Register(ctx context.Context, registerUser RegisterUser, projectId string) (identity Identity, loginSuccess LoginSuccess, err error) {
