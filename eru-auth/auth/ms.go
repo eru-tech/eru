@@ -110,7 +110,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 	}
 
 	idToken := ""
-
+	logs.WithContext(ctx).Info(fmt.Sprint(loginRes))
 	if lMap, lMapOk := loginRes.(map[string]interface{}); lMapOk {
 
 		if lToken, lTokensOk := lMap["id_token"]; lTokensOk {
@@ -145,6 +145,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 		query := models.Queries{}
 		query.Query = msAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY_SUB)
 		query.Vals = append(query.Vals, sub)
+		logs.WithContext(ctx).Info(fmt.Sprint(tokenMap))
 		if tokenEmail, tokenEmailOk := tokenMap[msAuth.MsConfig.Identifiers.Email.IdpMapper]; tokenEmailOk {
 			query.Vals = append(query.Vals, tokenEmail)
 		} else {
