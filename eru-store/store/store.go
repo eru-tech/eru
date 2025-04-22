@@ -780,10 +780,29 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 		}
 	}
 
-	if smObjClone, smObjCloneOk := smObjI.(sm.SmStoreI); smObjCloneOk {
-		if store.TenantVariables != nil {
-			for prjId, _ := range store.TenantVariables {
-				if projectId == prjId || projectId == "" {
+	//if smObjClone, smObjCloneOk := smObjI.(sm.SmStoreI); smObjCloneOk {
+	if store.TenantVariables != nil {
+		for prjId, _ := range store.TenantVariables {
+			if projectId == prjId || projectId == "" {
+
+				if store.SecretManager == nil {
+					err = errors.New("no secret manager defined in store")
+					smFound = false
+					logs.WithContext(ctx).Error(err.Error())
+				} else if smObj, smObjOk := store.SecretManager[prjId]; !smObjOk {
+					err = errors.New(fmt.Sprint("Secret Manager not defined for project :", prjId))
+					smFound = false
+					logs.WithContext(ctx).Error(err.Error())
+				} else {
+					if smObj != nil {
+						smObjI, err = utils.CloneInterface(ctx, smObj)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+
+						}
+					}
+				}
+				if smObjClone, smObjCloneOk := smObjI.(sm.SmStoreI); smObjCloneOk {
 					logs.WithContext(ctx).Info(fmt.Sprint("loading tenant secrets for :", prjId))
 					for tenantId, _ := range store.TenantVariables[prjId] {
 						smValues, err := smObjClone.GetSmValues(ctx, tenantId)
@@ -802,9 +821,10 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 				}
 			}
 		}
-	} else {
-		logs.WithContext(ctx).Error("failed to clone secret manager")
 	}
+	//} else {
+	//	logs.WithContext(ctx).Error("failed to clone secret manager")
+	//}
 
 	return
 }
