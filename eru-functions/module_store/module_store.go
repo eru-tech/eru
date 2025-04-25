@@ -8,6 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"reflect"
+	"strings"
+	"time"
+
 	"github.com/eru-tech/eru/eru-db/db"
 	"github.com/eru-tech/eru/eru-events/events"
 	"github.com/eru-tech/eru/eru-functions/functions"
@@ -18,11 +24,6 @@ import (
 	"github.com/eru-tech/eru/eru-store/store"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"go.uber.org/zap"
-	"io"
-	"net/http"
-	"reflect"
-	"strings"
-	"time"
 )
 
 var Eruqlbaseurl = "http://localhost:8087"
