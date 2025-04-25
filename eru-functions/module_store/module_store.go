@@ -868,6 +868,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 						if err != nil {
 							failedCount = failedCount + 1
 							asyncStatus = "FAILED"
+							logs.WithContext(ctx).Error(err.Error())
 							logs.WithContext(ctx).Error("Function validation failed")
 						} else {
 							/*reqBytes := []byte("")
