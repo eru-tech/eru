@@ -3,6 +3,7 @@ package ds
 import (
 	"context"
 	"fmt"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	_ "github.com/go-sql-driver/mysql"
@@ -19,13 +20,25 @@ func (mr *MysqlSqlMaker) GetTableMetaDataSQL(ctx context.Context) string {
 
 func (mr *MysqlSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
 	logs.WithContext(ctx).Debug("CreateConn - Start")
-	connString := fmt.Sprint(dataSource.DbConfig.User, ":", dataSource.DbConfig.Password, "@tcp(", dataSource.DbConfig.Host, ":", dataSource.DbConfig.Port, ")/", dataSource.DbConfig.DefaultDB)
+	connString := fmt.Sprint(dataSource.DbConfig.User, ":", dataSource.DbConfig.Password, "@tcp(", dataSource.DbConfig.Host, ":", dataSource.DbConfig.Port, ")/", dataSource.DbConfig.DefaultSchema)
+	//, "?parseTime=true"
+	fmt.Printf("connString = %s\n", connString)
+	logs.WithContext(ctx).Debug(connString)
 	db, err := sqlx.Open("mysql", connString)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
+	logs.WithContext(ctx).Info("db connection(mysql) was successfully done for fetch dummy query")
+	_, err = db.Queryx("select 1")
+	if err != nil {
+		dataSource.ConStatus = false
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	logs.WithContext(ctx).Info("dummy query success - setting con as true")
 	dataSource.Con = db
+	dataSource.ConStatus = true
 	return nil
 }
 func (mr *MysqlSqlMaker) CheckMe(ctx context.Context) {
@@ -78,6 +91,115 @@ func (mr *MysqlSqlMaker) getDataTypeMapping(ctx context.Context, dataType string
 	}
 }
 
-var mysqlTableMetaDataSQL = ""
+var mysqlTableMetaDataSQL = `SELECT 
+    c.TABLE_SCHEMA AS tblschema,
+    c.TABLE_NAME AS tblname,
+    c.COLUMN_NAME AS colname,
+    c.DATA_TYPE AS datatype,
+    '' AS owndatatype,
+    CAST(CASE WHEN pk.CONSTRAINT_TYPE IS NOT NULL THEN 'true' ELSE 'false' END AS CHAR) AS primarykey,
+    CAST(CASE WHEN uq.CONSTRAINT_TYPE IS NOT NULL THEN 'true' ELSE 'false' END AS CHAR) AS isunique,
+    COALESCE(pk.CONSTRAINT_NAME, '') AS pkconstraintname,
+    COALESCE(uq.CONSTRAINT_NAME, '') AS uqconstraintname,
+    CAST(CASE WHEN c.IS_NULLABLE = 'YES' THEN 'true' ELSE 'false' END AS CHAR) AS isnullable,
+    c.ORDINAL_POSITION AS colposition,
+    CAST(COALESCE(c.COLUMN_DEFAULT, '') AS CHAR) AS defaultvalue,
+    CAST(CASE WHEN c.EXTRA LIKE '%auto_increment%' THEN 'true' ELSE 'false' END AS CHAR) AS autoincrement,
+    COALESCE(c.CHARACTER_MAXIMUM_LENGTH, -1) AS charmaxlength,
+    CONCAT(COALESCE(c.NUMERIC_PRECISION, 0), ',', COALESCE(c.NUMERIC_SCALE, 0)) AS numericprecision,
+    COALESCE(c.NUMERIC_SCALE, 0) AS numericscale,
+    COALESCE(c.DATETIME_PRECISION, 0) AS datetimeprecision,
+    COALESCE(fk.CONSTRAINT_NAME, '') AS fkconstraintname,
+    COALESCE(fk.DELETE_RULE, '') AS fkdeleterule,
+    COALESCE(fk.REFERENCED_TABLE_SCHEMA, '') AS fktblschema,
+    COALESCE(fk.REFERENCED_TABLE_NAME, '') AS fktblname,
+    COALESCE(fk.REFERENCED_COLUMN_NAME, '') AS fkcolname
+FROM 
+    information_schema.COLUMNS c
+LEFT JOIN (
+    SELECT 
+        kcu.TABLE_SCHEMA, 
+        kcu.TABLE_NAME, 
+        kcu.COLUMN_NAME, 
+        tc.CONSTRAINT_NAME, 
+        tc.CONSTRAINT_TYPE
+    FROM information_schema.TABLE_CONSTRAINTS tc
+    JOIN information_schema.KEY_COLUMN_USAGE kcu 
+        ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME 
+        AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA 
+        AND tc.TABLE_NAME = kcu.TABLE_NAME
+    WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+) pk 
+    ON pk.TABLE_SCHEMA = c.TABLE_SCHEMA 
+    AND pk.TABLE_NAME = c.TABLE_NAME 
+    AND pk.COLUMN_NAME = c.COLUMN_NAME
+LEFT JOIN (
+    SELECT 
+        kcu.TABLE_SCHEMA, 
+        kcu.TABLE_NAME, 
+        kcu.COLUMN_NAME, 
+        tc.CONSTRAINT_NAME, 
+        tc.CONSTRAINT_TYPE
+    FROM information_schema.TABLE_CONSTRAINTS tc
+    JOIN information_schema.KEY_COLUMN_USAGE kcu 
+        ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME 
+        AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA 
+        AND tc.TABLE_NAME = kcu.TABLE_NAME
+    WHERE tc.CONSTRAINT_TYPE = 'UNIQUE'
+) uq 
+    ON uq.TABLE_SCHEMA = c.TABLE_SCHEMA 
+    AND uq.TABLE_NAME = c.TABLE_NAME 
+    AND uq.COLUMN_NAME = c.COLUMN_NAME
+LEFT JOIN (
+    SELECT 
+        kcu.TABLE_SCHEMA, 
+        kcu.TABLE_NAME, 
+        kcu.COLUMN_NAME, 
+        kcu.CONSTRAINT_NAME, 
+        kcu.REFERENCED_TABLE_SCHEMA, 
+        kcu.REFERENCED_TABLE_NAME, 
+        kcu.REFERENCED_COLUMN_NAME, 
+        rc.DELETE_RULE
+    FROM information_schema.KEY_COLUMN_USAGE kcu
+    JOIN information_schema.REFERENTIAL_CONSTRAINTS rc 
+        ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME 
+        AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+    WHERE kcu.REFERENCED_TABLE_NAME IS NOT NULL
+) fk 
+    ON fk.TABLE_SCHEMA = c.TABLE_SCHEMA 
+    AND fk.TABLE_NAME = c.TABLE_NAME 
+    AND fk.COLUMN_NAME = c.COLUMN_NAME
+WHERE 
+    c.TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION;
+`
 
-var mysqlDataTypeMapping = map[string]string{}
+var mysqlDataTypeMapping = map[string]string{
+	"TINYINT":          "SmallInteger",
+	"SMALLINT":         "SmallInteger",
+	"MEDIUMINT":        "Integer",
+	"INT":              "Integer",
+	"INTEGER":          "Integer",
+	"BIGINT":           "BigInteger",
+	"DECIMAL":          "Decimal",
+	"NUMERIC":          "Decimal",
+	"FLOAT":            "Float",
+	"DOUBLE":           "Float",
+	"DOUBLE PRECISION": "Float",
+	"REAL":             "Integer",
+	"BIT":              "Integer",
+	"BOOL":             "Boolean",
+	"BOOLEAN":          "Boolean",
+	"DATE":             "Date",
+	"DATETIME":         "DateTime",
+	"TIMESTAMP":        "DateTimeWithZone",
+	"TIME":             "Time",
+	"YEAR":             "Varchar",
+	"CHAR":             "Varchar",
+	"VARCHAR":          "Varchar",
+	"TINYTEXT":         "Char",
+	"TEXT":             "Char",
+	"MEDIUMTEXT":       "Varchar",
+	"LONGTEXT":         "Varchar",
+	"JSON":             "JSON",
+}

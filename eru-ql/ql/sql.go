@@ -151,5 +151,3 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 	queryObjs = append(queryObjs, queryObj)
 	return res, queryObjs, err
 }
-
-

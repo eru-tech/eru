@@ -194,6 +194,7 @@ func (sqr *SqlMaker) GetSqlResult(ctx context.Context) map[string]interface{} {
 
 func (sqr *SqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
 	return errors.New("CreateConn not implemented")
+
 }
 
 func (sqr *SqlMaker) CheckMe(ctx context.Context) {
