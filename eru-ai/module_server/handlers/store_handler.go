@@ -397,7 +397,10 @@ func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
 		toolName := vars["toolname"]
-		tool, err := s.GetTool(r.Context(), projectId, tenantId, toolName, s)
+		actionName := vars["actionname"]
+		logs.WithContext(r.Context()).Info(fmt.Sprintf("Tool Name: %v", toolName))
+		logs.WithContext(r.Context()).Info(fmt.Sprintf("Action Name: %v", actionName))
+		tool, err := s.GetTool(r.Context(), projectId, tenantId, toolName, actionName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -416,7 +419,7 @@ func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
-			toolResult, err := tool.Execute(r.Context(), toolParams.Params)
+			toolResult, err := tool.Execute(r.Context(), actionName, toolParams.Params)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

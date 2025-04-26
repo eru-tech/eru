@@ -48,7 +48,7 @@ func ModelQueryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(res)
 		} else {
-			tool, tErr := s.GetTool(r.Context(), projectId, tenantId, toolName, s)
+			tool, tErr := s.GetTool(r.Context(), projectId, tenantId, toolName, "", s)
 			if tErr != nil {
 				logs.WithContext(r.Context()).Error(tErr.Error())
 				server_handlers.FormatResponse(w, 400)

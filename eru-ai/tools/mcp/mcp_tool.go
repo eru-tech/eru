@@ -77,7 +77,7 @@ func NewMCPTool(baseURL string, apiKey string, timeout int) *MCPToolImpl {
 	}
 }
 
-func (mcpTool *MCPToolImpl) Execute(ctx context.Context, params map[string]interface{}) (map[string]interface{}, error) {
+func (mcpTool *MCPToolImpl) Execute(ctx context.Context, actionName string, params map[string]interface{}) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("MCPTool Execute - Start")
 
 	// Convert params to MCPRequest

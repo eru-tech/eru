@@ -36,7 +36,7 @@ type ModuleStoreI interface {
 	RemoveTenants()
 	SaveTool(ctx context.Context, tooling tools.Tooling, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
 	RemoveTool(ctx context.Context, toolName string, projectId string, tenantId string, realStore ModuleStoreI) error
-	GetTool(ctx context.Context, projectId string, tenantId string, toolName string, s ModuleStoreI) (tools.Tooling, error)
+	GetTool(ctx context.Context, projectId string, tenantId string, toolName string, actionName string, s ModuleStoreI) (tools.Tooling, error)
 	GetAgentNames(ctx context.Context, projectID string, tenantID string) (agentNames []string, err error)
 	GetToolNames(ctx context.Context, projectID string, tenantID string) (toolNames []string, err error)
 }
@@ -309,8 +309,9 @@ func (ms *ModuleStore) RemoveTool(ctx context.Context, toolName string, projectI
 	}
 }
 
-func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenantId string, toolName string, s ModuleStoreI) (toolObjClone tools.Tooling, err error) {
+func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenantId string, toolName string, actionName string, s ModuleStoreI) (toolObjClone tools.Tooling, err error) {
 	logs.WithContext(ctx).Debug("GetToolClone - Start")
+	logs.WithContext(ctx).Info(actionName)
 	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
 		return
@@ -324,6 +325,10 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	} else {
+		err = toolObj.ValidateAction(ctx, actionName, toolObj)
+		if err != nil {
+			return
+		}
 		toolObjClone, err = ms.GetToolCloneObject(ctx, projectId, tenantId, toolObj, s)
 		return
 	}
@@ -352,9 +357,9 @@ func (ms *ModuleStore) GetToolCloneObject(ctx context.Context, projectId string,
 	}
 	return iCloneI.Elem().Interface().(tools.Tooling), nil
 }
-func (ms *ModuleStore) GetTool(ctx context.Context, projectId string, tenantId string, toolName string, s ModuleStoreI) (toolObjClone tools.Tooling, err error) {
+func (ms *ModuleStore) GetTool(ctx context.Context, projectId string, tenantId string, toolName string, actionName string, s ModuleStoreI) (toolObjClone tools.Tooling, err error) {
 	logs.WithContext(ctx).Debug("GetTool - Start")
-	return ms.GetToolClone(ctx, projectId, tenantId, toolName, s)
+	return ms.GetToolClone(ctx, projectId, tenantId, toolName, actionName, s)
 
 }
 
@@ -469,7 +474,7 @@ func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId 
 	}
 	tools := make(map[string]tools.Tooling)
 	for _, tn := range toolNames {
-		tool, err := ms.GetTool(ctx, projectId, tenantId, tn, s)
+		tool, err := ms.GetTool(ctx, projectId, tenantId, tn, "",s)
 		if err != nil {
 			return nil, err
 		}

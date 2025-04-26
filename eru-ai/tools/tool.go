@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
@@ -47,8 +48,9 @@ type ToolInputFields struct {
 type Tooling interface {
 	GetSpec() Tooling
 	GetActionsList() []string
+	ValidateAction(ctx context.Context, actionName string, realTool Tooling) (err error)
 	GetInputFields() []ToolInputFields
-	Execute(ctx context.Context, params map[string]interface{}) (map[string]interface{}, error)
+	Execute(ctx context.Context, actionName string, params map[string]interface{}) (map[string]interface{}, error)
 	ValidateOutput(ctx context.Context, output json.RawMessage) error
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
@@ -94,7 +96,7 @@ func (tool *Tool) GetSpec() Tooling {
 	return tool
 }
 
-func (tool *Tool) Execute(ctx context.Context, params map[string]interface{}) (map[string]interface{}, error) {
+func (tool *Tool) Execute(ctx context.Context, actionName string, params map[string]interface{}) (map[string]interface{}, error) {
 	err := errors.New("Execute Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err
@@ -129,4 +131,23 @@ func (tool *Tool) GetAttribute(ctx context.Context, attributeName string) (attri
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
+}
+
+func (tool *Tool) ValidateAction(ctx context.Context, actionName string, realTool Tooling) (err error) {
+	logs.WithContext(ctx).Info("ValidateAction - Start")
+	actions := realTool.GetActionsList()
+	logs.WithContext(ctx).Info(fmt.Sprintf("Actions: %v", actions))
+	logs.WithContext(ctx).Info(fmt.Sprintf("Action Name: %v", actionName))
+
+	if len(actions) == 0 && actionName == "" {
+		//if no actions are defined, and no action name is provided, return nil
+		return
+	}
+	if !slices.Contains(actions, actionName) {
+		err = errors.New("action " + actionName + " not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	//TODO - add param validation for Action
+	return
 }

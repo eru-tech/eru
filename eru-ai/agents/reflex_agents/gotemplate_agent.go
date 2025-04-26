@@ -48,7 +48,7 @@ func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessag
 		logs.WithContext(ctx).Info("code is not a string")
 	}
 
-	templateCodeString = fmt.Sprintf("This is existing go template code and you need to build on top of this incorporating user's new instructions. If this code is blank, write a new go template code. \n\n %s", templateCodeString)
+	templateCodeString = fmt.Sprintf("This is existing go template code and you need to build on top of this incorporating user's new instructions. If this code is blank, write a new go template code. \n\n %s \n\n", templateCodeString)
 
 	contextVariableString := fmt.Sprintf("Use this json as context variable to be used in the gotemplate \n\n %s \n\n", string(contextVariable))
 
@@ -92,7 +92,7 @@ func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessag
 
 func (goTemplateAgent *GoTemplateAgent) callTool(ctx context.Context, tool tools.Tooling, params map[string]interface{}) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("callTool - Start")
-	return tool.Execute(ctx, params)
+	return tool.Execute(ctx, "", params)
 }
 
 func (goTemplateAgent *GoTemplateAgent) callModel(ctx context.Context, model models.ModelI, params map[string]interface{}) (map[string]interface{}, error) {

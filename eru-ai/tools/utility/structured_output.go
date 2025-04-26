@@ -22,7 +22,7 @@ func (soTool *StructuredOutputTool) MakeFromJson(ctx context.Context, rj *json.R
 	return nil
 }
 
-func (soTool *StructuredOutputTool) Execute(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
+func (soTool *StructuredOutputTool) Execute(ctx context.Context, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("StructuredOutputTool Execute - Start")
 	return params, nil
 }

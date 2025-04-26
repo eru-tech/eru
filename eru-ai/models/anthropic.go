@@ -252,7 +252,7 @@ func (anthropicModel *AnthropicModel) makeAnthropicChatToolRequest(ctx context.C
 	}
 	anthropicChatRequest.Model = anthropicModel.LLMName
 	anthropicChatRequest.Temperature = anthropicModel.Temprature
-	anthropicChatRequest.MaxTokens = 150
+	anthropicChatRequest.MaxTokens = 1024
 	//anthropicChatRequest.StopSequences = []string{""}
 	anthropicChatRequest.Stream = false
 	anthropicChatRequest.System = ""
