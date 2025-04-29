@@ -173,6 +173,15 @@ func (funcGroup *FuncGroup) Execute(ctx context.Context, request *http.Request, 
 	//reqVars := make(map[string]*TemplateVars)
 	//resVars := make(map[string]*TemplateVars)
 	response, funcVarsMap, _, err = RunFuncSteps(ctx, funcGroup.FuncSteps, request, reqVars, resVars, "", FuncThreads, LoopThreads, funcStepName, endFuncStepName, false, fromAsync, false)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	response, err = eru_utils.UnqotePlanText(ctx, response)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
 	if funcGroup.ResponseStatusCondition == "IGNORE" {
 		funcGroup.ResponseStatusCode = http.StatusOK
 	} else if funcGroup.ResponseStatusCondition == "ERROR" {

@@ -713,3 +713,26 @@ func ReplaceVariables(ctx context.Context, str string, vars map[string]interface
 	}
 	return
 }
+
+func UnqotePlanText(ctx context.Context, response *http.Response) (responseNew *http.Response, err error) {
+	logs.WithContext(ctx).Debug("UnqotePlanText - Start")
+	if response != nil {
+		if response.Header.Get("Content-Type") == "text/plain" {
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			bodyStr := string(body)
+			bodyStr, err = strconv.Unquote(bodyStr)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			response.ContentLength = int64(len(bodyStr))
+			response.Header.Set("Content-Length", fmt.Sprint(len(bodyStr)))
+			response.Body = io.NopCloser(strings.NewReader(bodyStr))
+		}
+	} else {
+		logs.WithContext(ctx).Info("response is nil")
+	}
+	return response, nil
+}
