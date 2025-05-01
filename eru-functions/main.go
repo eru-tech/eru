@@ -58,12 +58,12 @@ func main() {
 		logs.Logger.Error(e.Error())
 	}
 
-	for i := 0; i < module_store.EventThreads; i++ {
+	/* for i := 0; i < module_store.EventThreads; i++ {
 		err := sh.Store.FetchProjectEvents(context.Background(), sh.Store, i+1)
 		if err != nil {
 			logs.Logger.Error(err.Error())
 		}
-	}
+	} */
 
 	server.Launch(sr, port)
 }

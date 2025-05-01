@@ -71,6 +71,7 @@ type ModuleStoreI interface {
 	SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveFunc(ctx context.Context, funcName string, projectId string, realStore ModuleStoreI) error
 	GetFunctionNames(ctx context.Context, projectId string) (functions []string, err error)
+	GetRouteNames(ctx context.Context, projectId string) (routes []string, err error)
 	SaveWf(ctx context.Context, wfObj functions.Workflow, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveWf(ctx context.Context, wfName string, projectId string, realStore ModuleStoreI) error
 	FetchAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, realStore ModuleStoreI) (asyncFuncData AsyncFuncData, err error)
@@ -613,8 +614,28 @@ func (ms *ModuleStore) GetFunctionNames(ctx context.Context, projectId string) (
 	}
 }
 
+func (ms *ModuleStore) GetRouteNames(ctx context.Context, projectId string) (routes []string, err error) {
+	logs.WithContext(ctx).Debug("GetRouteNames - Start")
+	if _, ok := ms.Projects[projectId]; ok {
+		if ms.Projects[projectId].Routes == nil {
+			return
+		} else {
+			for k, _ := range ms.Projects[projectId].Routes {
+				routes = append(routes, k)
+			}
+			return
+		}
+	} else {
+		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		return nil, err
+	}
+}
+
 func (ms *ModuleStore) SaveWf(ctx context.Context, wfObj functions.Workflow, projectId string, realStore ModuleStoreI, persist bool) error {
-	logs.WithContext(ctx).Debug(fmt.Sprint("SaveWf - Start"))
+	logs.WithContext(ctx).Debug("SaveWf - Start")
 	if persist {
 		realStore.GetMutex().Lock()
 		defer realStore.GetMutex().Unlock()

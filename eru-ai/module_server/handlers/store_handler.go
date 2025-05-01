@@ -390,6 +390,55 @@ func AgentExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
+func ToolCallbackHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ToolCallbackHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		toolName := vars["toolname"]
+		actionName := "callback"
+
+		tool, err := s.GetTool(r.Context(), projectId, tenantId, toolName, actionName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			toolBodyFromReq := json.NewDecoder(r.Body)
+			toolBodyFromReq.DisallowUnknownFields()
+
+			var toolBody map[string]interface{}
+			if err := toolBodyFromReq.Decode(&toolBody); err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+
+			params := r.URL.Query()
+			toolParams := make(map[string][]string)
+			for key, values := range params {
+				toolParams[key] = values
+			}
+
+			toolResult, err := tool.Callback(r.Context(), actionName, toolBody, toolParams)
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			} else {
+				responseContentType := tool.GetToolCallback().ResponseContentType
+				w.Header().Set("Content-Type", responseContentType)
+				w.WriteHeader(http.StatusOK)
+				if responseContentType == "application/json" {
+					_ = json.NewEncoder(w).Encode(toolResult)
+				} else {
+					w.Write([]byte(toolResult.(string)))
+				}
+			}
+		}
+	}
+}
+
 func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ToolExecuteHandler - Start")

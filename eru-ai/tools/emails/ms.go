@@ -22,9 +22,11 @@ const (
 
 func (msEmailTool *MsEmailTool) GetActionsList() []string {
 	actions := []string{}
-	actions = append(actions, "read_email")
-	actions = append(actions, "send_email")
-	actions = append(actions, "subscribe_email")
+	actions = append(actions, ReadEmail)
+	actions = append(actions, SendEmail)
+	actions = append(actions, SubscribeEmail)
+	actions = append(actions, ReadMessage)
+	actions = append(actions, Callback)
 	logs.WithContext(context.Background()).Info(fmt.Sprintf("Actions List: %v", actions))
 	return actions
 }
@@ -46,12 +48,14 @@ func (msEmailTool *MsEmailTool) MakeFromJson(ctx context.Context, rj *json.RawMe
 func (msEmailTool *MsEmailTool) Execute(ctx context.Context, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("MsEmailTool Execute - Start")
 	switch actionName {
-	case "read_email":
+	case ReadEmail:
 		return msEmailTool.ReadEmail(ctx, params)
-	case "send_email":
+	case SendEmail:
 		return msEmailTool.SendEmail(ctx, params)
-	case "subscribe_email":
+	case SubscribeEmail:
 		return msEmailTool.SubscribeEmail(ctx, params)
+	case ReadMessage:
+		return msEmailTool.ReadMessage(ctx, params)
 	default:
 		return nil, fmt.Errorf("action %s not found", actionName)
 	}
@@ -60,6 +64,27 @@ func (msEmailTool *MsEmailTool) Execute(ctx context.Context, actionName string, 
 func (msEmailTool *MsEmailTool) ReadEmail(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ReadEmail Execute - Start")
 	url := fmt.Sprint(BaseUrl, "/v1.0/me/messages")
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", msEmailTool.EmailAccount.SecretName))
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+
+	resbytes, _ := json.Marshal(res)
+
+	logs.WithContext(ctx).Info(string(resbytes))
+
+	logs.WithContext(ctx).Info(msEmailTool.EmailAccount.SecretName)
+	_ = url
+	return nil, nil
+}
+
+func (msEmailTool *MsEmailTool) ReadMessage(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("ReadMessage Execute - Start")
+	messageId := params["message_id"].(string)
+	url := fmt.Sprint(BaseUrl, "/v1.0/me/messages/", messageId, "?$expand=attachments")
 	headers := http.Header{}
 	headers.Set("Authorization", fmt.Sprintf("Bearer %s", msEmailTool.EmailAccount.SecretName))
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
@@ -110,4 +135,23 @@ func (msEmailTool *MsEmailTool) SendEmail(ctx context.Context, params map[string
 	url := fmt.Sprint("/v1.0/me/sendMail")
 	_ = url
 	return nil, nil
+}
+
+func (msEmailTool *MsEmailTool) GetToolCallback() tools.ToolCallback {
+	return tools.ToolCallback{
+		ResponseContentType: "plain/text",
+	}
+}
+
+func (msEmailTool *MsEmailTool) Callback(ctx context.Context, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error) {
+	logs.WithContext(ctx).Debug("Callback Execute - Start")
+	_ = actionName
+	_ = body
+	_ = params
+
+	logs.WithContext(ctx).Info(fmt.Sprint(body))
+	logs.WithContext(ctx).Info(fmt.Sprint(params))
+	logs.WithContext(ctx).Info(fmt.Sprint(actionName))
+	validationString := params["validationToken"][0]
+	return validationString, nil
 }

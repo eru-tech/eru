@@ -23,6 +23,10 @@ type Tool struct {
 	//Inputs       []ToolInput           `json:"inputs"`
 }
 
+type ToolCallback struct {
+	ResponseContentType string `json:"response_content_type"`
+}
+
 type ToolAction struct {
 	ActionName   string                `json:"action_name" eru:"required"`
 	Description  string                `json:"description"`
@@ -51,9 +55,17 @@ type Tooling interface {
 	ValidateAction(ctx context.Context, actionName string, realTool Tooling) (err error)
 	GetInputFields() []ToolInputFields
 	Execute(ctx context.Context, actionName string, params map[string]interface{}) (map[string]interface{}, error)
+	Callback(ctx context.Context, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error)
 	ValidateOutput(ctx context.Context, output json.RawMessage) error
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
+	GetToolCallback() ToolCallback
+}
+
+func (tool *Tool) GetToolCallback() ToolCallback {
+	return ToolCallback{
+		ResponseContentType: "application/json",
+	}
 }
 
 func (tool *Tool) GetActionsList() []string {
@@ -98,6 +110,12 @@ func (tool *Tool) GetSpec() Tooling {
 
 func (tool *Tool) Execute(ctx context.Context, actionName string, params map[string]interface{}) (map[string]interface{}, error) {
 	err := errors.New("Execute Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return nil, err
+}
+
+func (tool *Tool) Callback(ctx context.Context, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error) {
+	err = errors.New("Callback Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err
 }

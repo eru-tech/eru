@@ -6,7 +6,9 @@ type EmailAccount struct {
 }
 
 const (
-	SendEmail     = "send_email"
-	ReadEmail     = "read_email"
-	SubscribeMail = "subscribe_mail"
+	SendEmail      = "send_email"
+	ReadEmail      = "read_email"
+	SubscribeEmail = "subscribe_email"
+	ReadMessage    = "read_message"
+	Callback       = "callback"
 )

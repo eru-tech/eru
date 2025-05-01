@@ -42,6 +42,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/template/execute").HandlerFunc(module_handlers.ExecuteTemplateHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/myquery/list").HandlerFunc(module_handlers.ProjectMyQueryListNamesHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/func/list").HandlerFunc(module_handlers.ProjectFunctionListHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/route/list").HandlerFunc(module_handlers.ProjectRouteListHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/{tenant}/agent/list").HandlerFunc(module_handlers.ProjectAgentListNamesHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/{tenant}/tool/list").HandlerFunc(module_handlers.ProjectToolListNamesHandler(sh.Store))
 	// Adding routing handler to track all incoming requests

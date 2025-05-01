@@ -408,8 +408,8 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 	defer resp.Body.Close()
 	//todo - check if below change from reqContentType to header.get breaks anything
 	//todo - merge conflict - main had below first if commented
-	contentType := strings.Split(headers.Get("Content-type"), ";")[0]
-	respcontentType := strings.Split(resp.Header.Get("Content-type"), ";")[0]
+	contentType := strings.Split(headers.Get("Content-Type"), ";")[0]
+	respcontentType := strings.Split(resp.Header.Get("Content-Type"), ";")[0]
 	if resp.ContentLength > 0 || contentType == encodedForm || contentType == applicationJson {
 		if respcontentType == applicationJson {
 			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
