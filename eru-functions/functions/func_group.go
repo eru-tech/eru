@@ -1098,6 +1098,72 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		}
 	}
 
+	if strings.HasPrefix(funcStep.TenantId, "{{") {
+		avars := &FuncTemplateVars{}
+		avars.Vars = vars
+		avars.ResVars = resVars
+		avars.ReqVars = reqVars
+		output, apErr := processTemplate(ctx, "tenant_id", funcStep.TenantId, avars, "string", funcStep.Route.TokenSecretKey)
+		if apErr != nil {
+			// ignore error if it is no value
+			if apErr.Error() != "Template returned <no value>" {
+				tErrs = append(tErrs, apErr.Error())
+			}
+		}
+		if string(output) != "" {
+			path, pErr := strconv.Unquote(string(output))
+			if pErr != nil {
+				logs.WithContext(ctx).Info(pErr.Error())
+				path = string(output)
+			}
+			funcStep.Route.RewriteUrl = strings.Replace(funcStep.Route.RewriteUrl, funcStep.TenantId, path, 1)
+		}
+	}
+
+	if strings.HasPrefix(funcStep.ToolName, "{{") {
+		avars := &FuncTemplateVars{}
+		avars.Vars = vars
+		avars.ResVars = resVars
+		avars.ReqVars = reqVars
+		output, apErr := processTemplate(ctx, "tool_name", funcStep.ToolName, avars, "string", funcStep.Route.TokenSecretKey)
+		if apErr != nil {
+			// ignore error if it is no value
+			if apErr.Error() != "Template returned <no value>" {
+				tErrs = append(tErrs, apErr.Error())
+			}
+		}
+		if string(output) != "" {
+			path, pErr := strconv.Unquote(string(output))
+			if pErr != nil {
+				logs.WithContext(ctx).Info(pErr.Error())
+				path = string(output)
+			}
+			funcStep.Route.RewriteUrl = strings.Replace(funcStep.Route.RewriteUrl, funcStep.ToolName, path, 1)
+		}
+	}
+
+	if strings.HasPrefix(funcStep.AgentName, "{{") {
+		avars := &FuncTemplateVars{}
+		avars.Vars = vars
+		avars.ResVars = resVars
+		avars.ReqVars = reqVars
+		output, apErr := processTemplate(ctx, "agent_name", funcStep.AgentName, avars, "string", funcStep.Route.TokenSecretKey)
+		if apErr != nil {
+			// ignore error if it is no value
+			if apErr.Error() != "Template returned <no value>" {
+				tErrs = append(tErrs, apErr.Error())
+			}
+		}
+		if string(output) != "" {
+			path, pErr := strconv.Unquote(string(output))
+			if pErr != nil {
+				logs.WithContext(ctx).Info(pErr.Error())
+				path = string(output)
+			}
+			funcStep.Route.RewriteUrl = strings.Replace(funcStep.Route.RewriteUrl, funcStep.AgentName, path, 1)
+		}
+	}
+
 	// lastly we process and transform template based headers and set it in request
 	var hErrs []string
 	err, hErrs = processHeaderTemplates(ctx, req, funcStep.RemoveParams.RequestHeaders, funcStep.RequestHeaders, false, vars, funcStep.Route.TokenSecretKey, reqVars, resVars)
