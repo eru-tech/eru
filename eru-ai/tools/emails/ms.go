@@ -158,11 +158,13 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 	_ = actionName
 	_ = body
 	_ = params
-
+	validationString:=""
 	logs.WithContext(ctx).Info(fmt.Sprint(body))
 	logs.WithContext(ctx).Info(fmt.Sprint(params))
 	logs.WithContext(ctx).Info(fmt.Sprint(actionName))
-	validationString := params["validationToken"][0]
+	if vToken, vTokenOk := params["validationToken"]; vTokenOk {
+		validationString = vToken[0]
+	}
 
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
