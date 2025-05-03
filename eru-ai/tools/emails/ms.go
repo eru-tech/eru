@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -194,9 +195,9 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 }
 
 func (msEmailTool *MsEmailTool) GetToolCbUrl(r *http.Request, projectId string, tenantId string) string {
-	scheme := r.URL.Scheme
+	scheme := "https"
 	host := r.Host
-	if scheme == "" {
+	if strings.Contains(host, "localhost") {
 		return ""
 	}
 	return fmt.Sprint(scheme, "://", host, "/", projectId, "/", tenantId, "/callback/tool/", msEmailTool.ToolName)
