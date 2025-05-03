@@ -10,6 +10,7 @@ import (
 	models "github.com/eru-tech/eru/eru-ai/models"
 	module_model "github.com/eru-tech/eru/eru-ai/module_model"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
+	db "github.com/eru-tech/eru/eru-db/db"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
 )
@@ -330,6 +331,8 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 			return
 		}
 		toolObjClone, err = ms.GetToolCloneObject(ctx, projectId, tenantId, toolObj, s)
+		toolObjClone.SetToolDb(db.GetDb(s.GetDbType()))
+		toolObjClone.GetToolDb().SetConn(s.GetConn())
 		return
 	}
 }
@@ -474,7 +477,7 @@ func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId 
 	}
 	tools := make(map[string]tools.Tooling)
 	for _, tn := range toolNames {
-		tool, err := ms.GetTool(ctx, projectId, tenantId, tn, "",s)
+		tool, err := ms.GetTool(ctx, projectId, tenantId, tn, "", s)
 		if err != nil {
 			return nil, err
 		}

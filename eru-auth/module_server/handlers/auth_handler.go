@@ -413,7 +413,6 @@ func IdpTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
 			return
-
 		}
 		loginPostBodyFromReq := json.NewDecoder(r.Body)
 		loginPostBodyFromReq.DisallowUnknownFields()
