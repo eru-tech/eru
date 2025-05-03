@@ -8,7 +8,12 @@ import (
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	models "github.com/eru-tech/eru/eru-models"
 	utils "github.com/eru-tech/eru/eru-utils"
+)
+
+const (
+	INSERT_FUNC_ASYNC = "insert into eruai_cb_msemail (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
 )
 
 type MsEmailTool struct {
@@ -45,7 +50,7 @@ func (msEmailTool *MsEmailTool) MakeFromJson(ctx context.Context, rj *json.RawMe
 	return nil
 }
 
-func (msEmailTool *MsEmailTool) Execute(ctx context.Context, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
+func (msEmailTool *MsEmailTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("MsEmailTool Execute - Start")
 	switch actionName {
 	case ReadEmail:
@@ -143,7 +148,7 @@ func (msEmailTool *MsEmailTool) GetToolCallback() tools.ToolCallback {
 	}
 }
 
-func (msEmailTool *MsEmailTool) Callback(ctx context.Context, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error) {
+func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, tenantId string, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error) {
 	logs.WithContext(ctx).Debug("Callback Execute - Start")
 	_ = actionName
 	_ = body
@@ -153,5 +158,46 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, actionName string,
 	logs.WithContext(ctx).Info(fmt.Sprint(params))
 	logs.WithContext(ctx).Info(fmt.Sprint(actionName))
 	validationString := params["validationToken"][0]
+
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+
+	paramBytes, err := json.Marshal(params)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+
+	var insertQueries []*models.Queries
+	insertQueryFuncAsync := models.Queries{}
+	insertQueryFuncAsync.Query = msEmailTool.ToolDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC)
+	insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, projectId, tenantId, string(bodyBytes), string(paramBytes))
+	insertQueryFuncAsync.Rank = 1
+	insertQueries = append(insertQueries, &insertQueryFuncAsync)
+	_, insertOutputErr := utils.ExecuteDbSave(ctx, msEmailTool.ToolDb.GetConn(), insertQueries)
+	if insertOutputErr != nil {
+		err = insertOutputErr
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+
+	hookResult, err := msEmailTool.ExecuteCallbackHook(ctx, projectId, tenantId, body, params)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(hookResult))
 	return validationString, nil
+}
+
+func (msEmailTool *MsEmailTool) GetToolCbUrl(r *http.Request, projectId string, tenantId string) string {
+	scheme := r.URL.Scheme
+	host := r.Host
+	if scheme == "" {
+		return ""
+	}
+	return fmt.Sprint(scheme, "://", host, "/", projectId, "/", tenantId, "/callback/tool/", msEmailTool.ToolName)
 }

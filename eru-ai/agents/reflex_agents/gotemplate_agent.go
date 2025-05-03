@@ -90,9 +90,9 @@ func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessag
 	return response.Content, nil
 }
 
-func (goTemplateAgent *GoTemplateAgent) callTool(ctx context.Context, tool tools.Tooling, params map[string]interface{}) (map[string]interface{}, error) {
+func (goTemplateAgent *GoTemplateAgent) callTool(ctx context.Context, projectId string, tenantId string, tool tools.Tooling, params map[string]interface{}) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("callTool - Start")
-	return tool.Execute(ctx, "", params)
+	return tool.Execute(ctx, projectId, tenantId, "", params)
 }
 
 func (goTemplateAgent *GoTemplateAgent) callModel(ctx context.Context, model models.ModelI, params map[string]interface{}) (map[string]interface{}, error) {

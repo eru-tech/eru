@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -393,13 +394,14 @@ func AgentExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 func ToolCallbackHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ToolCallbackHandler - Start")
+		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
 		toolName := vars["toolname"]
 		actionName := "callback"
 
-		tool, err := s.GetTool(r.Context(), projectId, tenantId, toolName, actionName, s)
+		tool, err := s.GetTool(ctx, projectId, tenantId, toolName, actionName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -421,7 +423,7 @@ func ToolCallbackHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				toolParams[key] = values
 			}
 
-			toolResult, err := tool.Callback(r.Context(), actionName, toolBody, toolParams)
+			toolResult, err := tool.Callback(ctx, projectId, tenantId, actionName, toolBody, toolParams)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -438,7 +440,24 @@ func ToolCallbackHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
-
+func ToolCbUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ToolCbUrlHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		toolName := vars["toolname"]
+		actionName := "callback"
+		tool, err := s.GetTool(r.Context(), projectId, tenantId, toolName, actionName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"url": tool.GetToolCbUrl(r, projectId, tenantId)})
+	}
+}
 func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ToolExecuteHandler - Start")
@@ -468,7 +487,7 @@ func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
-			toolResult, err := tool.Execute(r.Context(), actionName, toolParams.Params)
+			toolResult, err := tool.Execute(r.Context(), projectId, tenantId, actionName, toolParams.Params)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

@@ -29,7 +29,7 @@ func (ghTool *GithubTool) MakeFromJson(ctx context.Context, rj *json.RawMessage)
 	return nil
 }
 
-func (ghTool *GithubTool) Execute(ctx context.Context, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
+func (ghTool *GithubTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("PlaywrightTool Execute - Start")
 	logs.WithContext(ctx).Info("ghTool.Executed")
 	contents := ""

@@ -54,6 +54,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	serverRouter.PathPrefix("/{project}/sfunc/{funcname}/{funcstepname}/{endfuncstepname}").HandlerFunc(module_handlers.SFuncHandler(sh.Store))
 	serverRouter.PathPrefix("/{project}/sfunc/{funcname}/{funcstepname}").HandlerFunc(module_handlers.SFuncHandler(sh.Store))
 	serverRouter.PathPrefix("/{project}/sfunc/{funcname}").HandlerFunc(module_handlers.SFuncHandler(sh.Store))
+	serverRouter.PathPrefix("/{project}/func/{funcname}/{eventname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
 	serverRouter.PathPrefix("/{project}/func/{funcname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
 	serverRouter.PathPrefix("/x/{project}/func/{funcname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
 	serverRouter.PathPrefix("/{project}/script").HandlerFunc(module_handlers.ScriptHandler(sh.Store))
