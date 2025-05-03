@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
+	"time"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -59,7 +59,7 @@ func (msEmailTool *MsEmailTool) Execute(ctx context.Context, projectId string, t
 	case SendEmail:
 		return msEmailTool.SendEmail(ctx, params)
 	case SubscribeEmail:
-		return msEmailTool.SubscribeEmail(ctx, params)
+		return msEmailTool.SubscribeEmail(ctx, projectId, tenantId, params)
 	case ReadMessage:
 		return msEmailTool.ReadMessage(ctx, params)
 	default:
@@ -108,17 +108,21 @@ func (msEmailTool *MsEmailTool) ReadMessage(ctx context.Context, params map[stri
 	return nil, nil
 }
 
-func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
+func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("SubscribeEmail Execute - Start")
 	url := fmt.Sprint(BaseUrl, "/v1.0/subscriptions")
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
+
+	// Calculate expiration time (current time + 24 hours)
+	expirationTime := time.Now().Add(24 * time.Hour).Format(time.RFC3339)
+
 	subPost := map[string]interface{}{
 		"changeType":         "created",
-		"notificationUrl":    "https://erufunc.dev.processo.io/processo/func/slack_callback",
+		"notificationUrl":    msEmailTool.GetToolCbUrl(projectId, tenantId),
 		"resource":           "me/mailFolders('Inbox')/messages",
-		"expirationDateTime": "2025-04-30T00:00:00Z",
-		"clientState":        "39acd634-577e-41ba-aa56-df5695208696",
+		"expirationDateTime": expirationTime,
+		"clientState":        tenantId,
 	}
 	headers.Set("Authorization", fmt.Sprintf("Bearer %s", msEmailTool.EmailAccount.SecretName))
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, subPost)
@@ -194,11 +198,6 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 	return validationString, nil
 }
 
-func (msEmailTool *MsEmailTool) GetToolCbUrl(r *http.Request, projectId string, tenantId string) string {
-	scheme := "https"
-	host := r.Host
-	if strings.Contains(host, "localhost") {
-		return ""
-	}
-	return fmt.Sprint(scheme, "://", host, "/", projectId, "/", tenantId, "/callback/tool/", msEmailTool.ToolName)
+func (msEmailTool *MsEmailTool) GetToolCbUrl(projectId string, tenantId string) string {
+	return fmt.Sprint(msEmailTool.CallbackBaseUrl, "/", projectId, "/", tenantId, "/callback/tool/", msEmailTool.ToolName)
 }
