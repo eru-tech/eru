@@ -412,9 +412,10 @@ func ToolCallbackHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			var toolBody map[string]interface{}
 			if err := toolBodyFromReq.Decode(&toolBody); err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
-				server_handlers.FormatResponse(w, 400)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-				return
+				//server_handlers.FormatResponse(w, 400)
+				//json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				//return
+				toolBody = make(map[string]interface{})
 			}
 
 			params := r.URL.Query()
@@ -455,7 +456,7 @@ func ToolCbUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		server_handlers.FormatResponse(w, 200)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"url": tool.GetToolCbUrl(r, projectId, tenantId)})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"url": tool.GetToolCbUrl(projectId, tenantId)})
 	}
 }
 func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {

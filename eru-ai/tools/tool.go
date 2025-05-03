@@ -21,15 +21,16 @@ type ToolHooks struct {
 	POEX string `json:"poex"`
 }
 type Tool struct {
-	ToolType     string                `json:"tool_type" eru:"required"`
-	ToolName     string                `json:"tool_name" eru:"required"`
-	Description  string                `json:"description"`
-	SystemPrompt string                `json:"system_prompt"`
-	OutputSchema eru_models.JSONSchema `json:"output_schema"`
-	Parameters   eru_models.JSONSchema `json:"parameters"`
-	Actions      map[string]ToolAction `json:"actions"`
-	Hooks        ToolHooks             `json:"hooks"`
-	ToolDb       db.DbI                `json:"-"`
+	ToolType        string                `json:"tool_type" eru:"required"`
+	ToolName        string                `json:"tool_name" eru:"required"`
+	Description     string                `json:"description"`
+	SystemPrompt    string                `json:"system_prompt"`
+	OutputSchema    eru_models.JSONSchema `json:"output_schema"`
+	Parameters      eru_models.JSONSchema `json:"parameters"`
+	Actions         map[string]ToolAction `json:"actions"`
+	Hooks           ToolHooks             `json:"hooks"`
+	ToolDb          db.DbI                `json:"-"`
+	CallbackBaseUrl string                `json:"callback_base_url"`
 	//Inputs       []ToolInput           `json:"inputs"`
 }
 
@@ -70,7 +71,7 @@ type Tooling interface {
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
 	GetToolCallback() ToolCallback
-	GetToolCbUrl(r *http.Request, projectId string, tenantId string) string
+	GetToolCbUrl(projectId string, tenantId string) string
 	ExecuteCallbackHook(ctx context.Context, projectId string, tenantId string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error)
 	GetToolDb() db.DbI
 	SetToolDb(db.DbI)
@@ -90,7 +91,7 @@ func (tool *Tool) GetToolCallback() ToolCallback {
 	}
 }
 
-func (tool *Tool) GetToolCbUrl(r *http.Request, projectId string, tenantId string) string {
+func (tool *Tool) GetToolCbUrl(projectId string, tenantId string) string {
 	return ""
 }
 
