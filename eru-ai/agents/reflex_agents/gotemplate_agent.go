@@ -9,6 +9,7 @@ import (
 	models "github.com/eru-tech/eru/eru-ai/models"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 	//eru_models "github.com/eru-tech/eru/eru-models"
 )
 
@@ -25,17 +26,24 @@ func (reflex_agent *GoTemplateAgent) GetSpec() agents.AgentI {
 func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
 
-	contextVariableMap, contextVariableMapOk := agentMessage.Params["context"]
-	if !contextVariableMapOk {
-		logs.WithContext(ctx).Info("context_variable is not present in the params")
-
+	if contextStringI, contextStringIOk := agentMessage.Params["context"]; contextStringIOk {
+		if contextString, contextStringOk := contextStringI.(string); contextStringOk {
+			contextMap := make(map[string]interface{})
+			err := json.Unmarshal([]byte(contextString), &contextMap)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, err
+			}
+			agentMessage.Params["context"] = contextMap
+		}
 	}
-
-	contextVariable, contextVariableErr := json.Marshal(contextVariableMap)
-	if contextVariableErr != nil {
-		logs.WithContext(ctx).Error(contextVariableErr.Error())
-		return nil, contextVariableErr
+	contextJsonSchema := eru_utils.GenerateJSONSchema(ctx, agentMessage.Params)
+	jsonSchemaString, err := json.Marshal(contextJsonSchema)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
+	
 
 	templateCode, templateCodeOk := agentMessage.Params["code"]
 	if !templateCodeOk {
@@ -50,7 +58,7 @@ func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessag
 
 	templateCodeString = fmt.Sprintf("This is existing go template code and you need to build on top of this incorporating user's new instructions. If this code is blank, write a new go template code. \n\n %s \n\n", templateCodeString)
 
-	contextVariableString := fmt.Sprintf("Use this json as context variable to be used in the gotemplate \n\n %s \n\n", string(contextVariable))
+	contextVariableString := fmt.Sprintf("Use this json as context variable to be used in the gotemplate \n\n %s \n\n", jsonSchemaString)
 
 	contextVariablePrompt := `\n\nThere are three attributes in the context variable : \n 
 				1. vars : this is JSON object for the current function step and its type is of TemplateVars  \n
@@ -82,6 +90,9 @@ func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessag
 			msg1,
 		},
 	}
+	
+
+	//return map[string]interface{}{"jsonSchema": jsonSchema}, nil
 	response, err := goTemplateAgent.Model.QueryModelWithTool(ctx, chatRequest, goTemplateAgent.Tools, goTemplateAgent.AgentName, goTemplateAgent.SystemPrompt)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())

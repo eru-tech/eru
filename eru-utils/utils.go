@@ -736,3 +736,69 @@ func UnqotePlanText(ctx context.Context, response *http.Response) (responseNew *
 	}
 	return response, nil
 }
+
+func GenerateJSONSchema(ctx context.Context, data map[string]interface{}) eru_models.JSONSchema {
+	logs.WithContext(ctx).Debug("GenerateJSONSchema - Start")
+	schema := eru_models.JSONSchema{
+		Type:       "object",
+		Properties: make(map[string]eru_models.JSONSchema),
+	}
+
+	for key, value := range data {
+		fieldSchema := eru_models.JSONSchema{}
+
+		switch v := value.(type) {
+		case map[string]interface{}:
+			// Recursively handle nested objects
+			fieldSchema = GenerateJSONSchema(ctx, v)
+		case []interface{}:
+			// Handle arrays
+			fieldSchema.Type = "array"
+			if len(v) > 0 {
+				// Check first element to determine items schema
+				switch firstElem := v[0].(type) {
+				case map[string]interface{}:
+					// If array contains objects, recursively generate schema
+					itemsSchema := GenerateJSONSchema(ctx, firstElem)
+					fieldSchema.Items = &itemsSchema
+				default:
+					// For primitive types in array
+					itemsSchema := eru_models.JSONSchema{
+						Type: getTypeFromValue(firstElem),
+					}
+					fieldSchema.Items = &itemsSchema
+				}
+			} else {
+				// Empty array - use string as default type
+				itemsSchema := eru_models.JSONSchema{
+					Type: "string",
+				}
+				fieldSchema.Items = &itemsSchema
+			}
+		default:
+			// Handle primitive types
+			fieldSchema.Type = getTypeFromValue(v)
+		}
+
+		schema.Properties[key] = fieldSchema
+	}
+
+	return schema
+}
+
+func getTypeFromValue(value interface{}) string {
+	switch value.(type) {
+	case string:
+		return "string"
+	case float64:
+		return "number"
+	case int, int32, int64:
+		return "integer"
+	case bool:
+		return "boolean"
+	case nil:
+		return "null"
+	default:
+		return "string" // Default to string for unknown types
+	}
+}
