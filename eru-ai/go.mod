@@ -15,6 +15,7 @@ require (
 	github.com/eru-tech/eru/eru-store v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-templates v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-templates v0.0.0-00010101000000-000000000000
 	github.com/google/go-cmp v0.5.9
 	github.com/gorilla/mux v1.8.0
 	github.com/playwright-community/playwright-go v0.4902.0
@@ -121,4 +122,5 @@ replace (
 	github.com/eru-tech/eru/eru-store => ../eru-store
 	github.com/eru-tech/eru/eru-templates => ../eru-templates
 	github.com/eru-tech/eru/eru-utils => ../eru-utils
+	github.com/eru-tech/eru/eru-templates => ../eru-templates
 )

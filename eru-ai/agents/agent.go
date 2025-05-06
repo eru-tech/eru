@@ -27,6 +27,7 @@ type Agent struct {
 	ModelName    string                   `json:"model"`
 	Model        models.ModelI            `json:"-"`
 	Tools        map[string]tools.Tooling `json:"-"`
+	RetryCount   int                      `json:"retry_count"`
 }
 
 type AgentI interface {
