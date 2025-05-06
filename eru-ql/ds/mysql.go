@@ -84,9 +84,11 @@ func (mr *MysqlSqlMaker) executeQuery(ctx context.Context, query string, datasou
 }
 func (mr *MysqlSqlMaker) getDataTypeMapping(ctx context.Context, dataType string) string {
 	logs.WithContext(ctx).Debug("getDataTypeMapping - Start")
+	fmt.Printf("getDataTypeMapping - Start dataType = %s\n", dataType)
 	if mysqlDataTypeMapping[dataType] == "" {
 		return "NotSupported"
 	} else {
+		fmt.Printf("mysqlDataTypeMapping[dataType] = %s\n", mysqlDataTypeMapping[dataType])
 		return mysqlDataTypeMapping[dataType]
 	}
 }
@@ -175,31 +177,31 @@ ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION;
 `
 
 var mysqlDataTypeMapping = map[string]string{
-	"TINYINT":          "SmallInteger",
-	"SMALLINT":         "SmallInteger",
-	"MEDIUMINT":        "Integer",
-	"INT":              "Integer",
-	"INTEGER":          "Integer",
-	"BIGINT":           "BigInteger",
-	"DECIMAL":          "Decimal",
-	"NUMERIC":          "Decimal",
-	"FLOAT":            "Float",
-	"DOUBLE":           "Float",
-	"DOUBLE PRECISION": "Float",
-	"REAL":             "Integer",
-	"BIT":              "Integer",
+	"tinyint":          "SmallInteger",
+	"smallint":         "SmallInteger",
+	"mediumint":        "Integer",
+	"int":              "Integer",
+	"integer":          "Integer",
+	"bigint":           "BigInteger",
+	"decimal":          "Decimal",
+	"numeric":          "Decimal",
+	"float":            "Float",
+	"double":           "Float",
+	"double precision": "Float",
+	"real":             "Integer",
+	"bit":              "Integer",
 	"BOOL":             "Boolean",
-	"BOOLEAN":          "Boolean",
-	"DATE":             "Date",
-	"DATETIME":         "DateTime",
-	"TIMESTAMP":        "DateTimeWithZone",
-	"TIME":             "Time",
-	"YEAR":             "Varchar",
-	"CHAR":             "Varchar",
-	"VARCHAR":          "Varchar",
-	"TINYTEXT":         "Char",
-	"TEXT":             "Char",
-	"MEDIUMTEXT":       "Varchar",
-	"LONGTEXT":         "Varchar",
-	"JSON":             "JSON",
+	"boolean":          "Boolean",
+	"date":             "Date",
+	"datetime":         "DateTime",
+	"timestamp":        "DateTimeWithZone",
+	"time":             "Time",
+	"year":             "Varchar",
+	"char":             "Varchar",
+	"varchar":          "Varchar",
+	"tinytext":         "Char",
+	"text":             "Char",
+	"mediumtext":       "Varchar",
+	"longtext":         "Varchar",
+	"json":             "JSON",
 }

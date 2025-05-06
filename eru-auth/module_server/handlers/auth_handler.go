@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
+	"net/http"
+	"strconv"
+
 	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
-	"math/rand"
-	"net/http"
-	"strconv"
 )
 
 func UserInfoHandler(s module_store.ModuleStoreI) http.HandlerFunc {
@@ -612,8 +613,9 @@ func CheckVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-
+		fmt.Printf("verifyCode = %v\n", verifyCode)
 		tokenKey, tokenKeyErr := authObjI.GetAttribute(r.Context(), "token_header_key")
+		fmt.Printf("tokenKey = %v\n", tokenKey)
 		if tokenKeyErr != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": tokenKeyErr.Error()})

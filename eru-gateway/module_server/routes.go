@@ -1,11 +1,12 @@
 package module_server
 
 import (
+	"net/http"
+
 	module_handlers "github.com/eru-tech/eru/eru-gateway/module_server/handlers"
 	"github.com/eru-tech/eru/eru-gateway/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
-	"net/http"
 )
 
 func SetServiceName() {
