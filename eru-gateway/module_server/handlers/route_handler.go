@@ -3,15 +3,16 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+
 	"github.com/eru-tech/eru/eru-gateway/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
 	utils "github.com/eru-tech/eru/eru-utils"
-	"io"
-	"net/http"
-	"strconv"
-	"strings"
 )
 
 var httpClient = http.Client{
@@ -35,7 +36,14 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		logs.WithContext(r.Context()).Info(fmt.Sprint("authorizer.AuthorizerName = ", authorizer.AuthorizerName))
 		if authorizer.AuthorizerName != "" {
-			token := r.Header.Get(authorizer.TokenHeaderKey)
+			accessToken := r.Header.Get(authorizer.TokenHeaderKey)
+			idToken := r.Header.Get(authorizer.IdTokenKey)
+			token := ""
+			if idToken != "" {
+				token = idToken
+			} else {
+				token = accessToken
+			}
 			if token == "" {
 				logs.WithContext(r.Context()).Info("token = \"\"")
 				server_handlers.FormatResponse(w, http.StatusUnauthorized)
@@ -44,7 +52,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 
-			claims, err := authorizer.VerifyToken(r.Context(), r.Header.Get(authorizer.TokenHeaderKey), r.Header.Get(authorizer.KidHeaderKey))
+			claims, err := authorizer.VerifyToken(r.Context(), token, r.Header.Get(authorizer.KidHeaderKey))
 			if err != nil {
 				server_handlers.FormatResponse(w, http.StatusUnauthorized)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -58,6 +66,14 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 			r.Header.Add("claims", string(claimsBytes))
+
+			valid := authorizer.VerifyAccessToken(r.Context(), accessToken)
+			if !valid {
+				logs.WithContext(r.Context()).Info("invalid access token")
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
+				return
+			}
 		}
 
 		for _, v := range addHeaders {

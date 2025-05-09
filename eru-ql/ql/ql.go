@@ -119,58 +119,6 @@ func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, var
 	return
 }
 
-// func processTemplate(ctx context.Context, templateName string, templateString string, vars map[string]interface{}, outputType string, key string, d interface{}) (output []byte, err error) {
-// 	logs.WithContext(ctx).Debug("processTemplate - Start")
-// 	ruleValue := strings.SplitN(templateString, ".", 2)
-// 	templateStr := ""
-// 	if len(ruleValue) > 1 {
-// 		templateStr = ruleValue[1]
-// 	} else {
-// 		templateStr = ruleValue[0]
-// 	}
-// 	if ruleValue[0] == module_model.RULEPREFIX_TOKEN {
-// 		templateStr = ruleValue[1]
-// 		if !(strings.HasPrefix(ruleValue[1], "{{")) {
-// 			templateStr = fmt.Sprint("{{ .", ruleValue[1], " }}")
-// 		}
-// 		templateStr = eru_utils.ReplaceVariables(ctx, templateStr, vars)
-// 		return executeTemplate(ctx, templateName, templateStr, vars[module_model.RULEPREFIX_TOKEN], outputType)
-// 	} else if ruleValue[0] == module_model.RULEPREFIX_DOCS {
-// 		var docs []interface{}
-// 		isArray := false
-
-// 		docs, isArray = d.([]interface{})
-// 		if !isArray {
-// 			dd, er := d.(map[string]interface{}) // checking if docs is a single document without array
-// 			if !er {
-// 				return nil, errors.New("error while parsing value of 'docs'")
-// 			}
-// 			docs = append(docs, dd)
-// 		}
-
-// 		for i, doc := range docs {
-// 			dd, er := doc.(map[string]interface{}) // checking if docs is a single document without array
-// 			if !er {
-// 				return nil, errors.New("error while parsing value of 'docs'")
-// 			}
-// 			outputBytes, ptErr := executeTemplate(ctx, templateName, templateStr, dd, outputType)
-// 			if err != nil {
-// 				err = ptErr
-// 				logs.WithContext(ctx).Error(err.Error())
-// 				return
-// 			}
-// 			dd[key] = string(outputBytes)
-// 			docs[i] = dd
-// 			outputBytes = nil
-// 		}
-// 	} else if ruleValue[0] == module_model.RULEPREFIX_NONE {
-// 		return executeTemplate(ctx, templateName, templateStr, vars, outputType)
-// 	} else {
-// 		return executeTemplate(ctx, templateName, templateStr, vars, outputType)
-// 	}
-// 	return
-// }
-
 func processTemplate(ctx context.Context, templateName string, templateString string, vars map[string]interface{}, outputType string, key string, d interface{}) (output []byte, err error) {
 	logs.WithContext(ctx).Debug("processTemplate - Start")
 	ruleValue := strings.SplitN(templateString, ".", 2)
