@@ -24,8 +24,8 @@ import (
 	"time"
 )
 
-var blockedWords = []string{"SELECT ", "SELECT*", "INSERT ", "UPDATE ", "DELETE FROM ", "CREATE ", "DROP TABLE", "DROP FUNTIONS", "DROP VIEW", "DROP INDEXES", "DROP SEQUENCES", "ALTER ", "TRUNCATE ", "RENAME ", "REVOKE ", "COMMIT ", "ROLLBACK ", "SAVEPOINT "}
-var blockedRegex = []string{"OR[ ]*'", "AND[ ]*'", "GRANT\\s+\\w+\\s+ON", "<SCRIPT.*?>.*?</SCRIPT>"}
+var blockedWords = []string{"SELECT ", "SELECT*", "INSERT ", "UPDATE ", "DELETE FROM ", "CREATE ", "DROP TABLE", "DROP FUNTIONS", "DROP VIEW", "DROP INDEXES", "DROP SEQUENCES", "ALTER ", "TRUNCATE ", "RENAME ", "REVOKE ", "COMMIT ", "ROLLBACK ", "SAVEPOINT ", "\\U003CSCRIPT"}
+var blockedRegex = []string{"OR[ ]*'", "AND[ ]*'", "GRANT\\s+\\w+\\s+ON"}
 
 type tablesInQuery struct {
 	name   string
@@ -149,6 +149,7 @@ func (sqr *SqlMaker) VerifyForBlockedWords(ctx context.Context, key string, valI
 			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
+
 	}
 	for _, v := range realSqr.GetBlockedRegex() {
 		match, mErr := regexp.MatchString(v, vWords)
