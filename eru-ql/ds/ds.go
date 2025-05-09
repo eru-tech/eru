@@ -25,7 +25,7 @@ import (
 )
 
 var blockedWords = []string{"SELECT ", "SELECT*", "INSERT ", "UPDATE ", "DELETE FROM ", "CREATE ", "DROP TABLE", "DROP FUNTIONS", "DROP VIEW", "DROP INDEXES", "DROP SEQUENCES", "ALTER ", "TRUNCATE ", "RENAME ", "REVOKE ", "COMMIT ", "ROLLBACK ", "SAVEPOINT "}
-var blockedRegex = []string{"OR[ ]*'", "AND[ ]*'", "GRANT\\s+\\w+\\s+ON"}
+var blockedRegex = []string{"OR[ ]*'", "AND[ ]*'", "GRANT\\s+\\w+\\s+ON", "<SCRIPT.*?>.*?</SCRIPT>"}
 
 type tablesInQuery struct {
 	name   string
@@ -495,6 +495,7 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 	//defer cancel()
 	rows, e := datasource.Con.Queryx(query)
 	if e != nil {
+		e = logs.Err(ctx, e, "")
 		return nil, e
 	}
 	defer rows.Close()
@@ -502,6 +503,7 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 	mapping := make(map[string]interface{})
 	colsType, ee := rows.ColumnTypes()
 	if ee != nil {
+		ee = logs.Err(ctx, ee, "")
 		return nil, ee
 	}
 	sqr.result = make(map[string]interface{})
@@ -512,6 +514,7 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 		var innerResultLabel []interface{}
 		ee = rows.MapScan(mapping)
 		if ee != nil {
+			ee = logs.Err(ctx, ee, "")
 			return nil, ee
 		}
 		for _, colType := range colsType {
@@ -529,8 +532,8 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 					f, err = strconv.ParseFloat(string(mapping[colType.Name()].([]byte)), 64)
 					mapping[colType.Name()] = strconv.FormatFloat(f, 'f', -1, 64)
 					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
-						return nil, err
+						err = logs.Err(ctx, err, "")
+						return nil, ee
 					}
 				} else if reflect.TypeOf(mapping[colType.Name()]).String() == "float64" {
 					f := 0.0
@@ -560,6 +563,7 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 				innerResultRow = append(innerResultRow, "")
 			} else {
 				err = errors.New(fmt.Sprint("value of ", colType.Name(), " is not a string"))
+				err = logs.Err(ctx, err, "")
 				return nil, err
 			}
 		}
@@ -583,6 +587,7 @@ func (sqr *SqlMaker) ExecutePreparedQuery(ctx context.Context, query string, dat
 	//defer cancel()
 	rows, e := datasource.Con.Queryx(query)
 	if e != nil {
+		e = logs.Err(ctx, e, "")
 		return nil, e
 	}
 	defer rows.Close()
@@ -590,6 +595,7 @@ func (sqr *SqlMaker) ExecutePreparedQuery(ctx context.Context, query string, dat
 	mapping := make(map[string]interface{})
 	colsType, ee := rows.ColumnTypes()
 	if ee != nil {
+		ee = logs.Err(ctx, ee, "")
 		return nil, ee
 	}
 	sqr.result = make(map[string]interface{})
@@ -598,6 +604,7 @@ func (sqr *SqlMaker) ExecutePreparedQuery(ctx context.Context, query string, dat
 		innerResultRow := make(map[string]interface{})
 		ee = rows.MapScan(mapping)
 		if ee != nil {
+			ee = logs.Err(ctx, ee, "")
 			return nil, ee
 		}
 		for _, colType := range colsType {
@@ -611,7 +618,7 @@ func (sqr *SqlMaker) ExecutePreparedQuery(ctx context.Context, query string, dat
 					mapping[colType.Name()] = f
 				}
 				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
+					err = logs.Err(ctx, err, "")
 					return nil, err
 				}
 			} else if (colType.DatabaseTypeName() == "JSONB" || colType.DatabaseTypeName() == "JSON") && mapping[colType.Name()] != nil {
@@ -619,6 +626,7 @@ func (sqr *SqlMaker) ExecutePreparedQuery(ctx context.Context, query string, dat
 				var v interface{}
 				err = json.Unmarshal(bytesToUnmarshal, &v)
 				if err != nil {
+					err = logs.Err(ctx, err, "")
 					return nil, err
 				}
 				mapping[colType.Name()] = &v
@@ -663,6 +671,7 @@ func (sqr *SqlMaker) ExecuteMutationQuery(ctx context.Context, datasource *modul
 	if len(sqr.MutationRecords) > 0 || sqr.QueryType == "insertselect" || sqr.QueryType == "delete" || sqr.PreparedQuery {
 		res, err = sqr.iterateDocsForMutation(ctx, sqr.MutationRecords, sqr.MainTableName, datasource, myself, false, -1)
 		if err != nil {
+			err = logs.Err(ctx, err, "")
 			errMsgs = append(errMsgs, err.Error())
 		}
 	}
@@ -670,6 +679,7 @@ func (sqr *SqlMaker) ExecuteMutationQuery(ctx context.Context, datasource *modul
 		logs.WithContext(ctx).Info("sqr.tx.Commit() called in ExecuteMutationQuery")
 		err = sqr.tx.Commit()
 		if err != nil {
+			err = logs.Err(ctx, err, "")
 			errMsgs = append(errMsgs, fmt.Sprint("DB error :", err.Error()))
 			sqr.tx.Rollback()
 		}
@@ -678,7 +688,8 @@ func (sqr *SqlMaker) ExecuteMutationQuery(ctx context.Context, datasource *modul
 		if sqr.TxnFlag {
 			res = make([]map[string]interface{}, 0)
 		}
-		return res, errors.New(strings.Join(errMsgs, " , "))
+		err = logs.Err(ctx, errors.New(strings.Join(errMsgs, " , ")), "")
+		return res, err
 	}
 	return res, nil
 }
@@ -688,7 +699,7 @@ func (sqr *SqlMaker) RollbackQuery(ctx context.Context) (err error) {
 	if sqr.tx != nil {
 		err = sqr.tx.Rollback()
 		if err != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("RollbackQuery failed = ", err.Error()))
+			err = logs.Err(ctx, err, "")
 		}
 	}
 	return err
@@ -718,6 +729,7 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 		}
 		res, err = sqr.executeMutationQueriesinDB(ctx, query, tableName, datasource, myself, isNested, docNo, 0, finalValues)
 		if err != nil {
+			err = logs.Err(ctx, err, "")
 			errMsgs = append(errMsgs, err.Error())
 			return res, errors.New(strings.Join(errMsgs, " , "))
 		}
@@ -727,6 +739,7 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 			query = strings.Replace(v.DBQuery, "$ColsPlaceholder", myself.GetPreparedQueryPlaceholder(ctx, 1, len(v.Values), false), 1)
 			resDocs, err := sqr.executeMutationQueriesinDB(ctx, query, tableName, datasource, myself, isNested, docNo, i, v.Values)
 			if err != nil {
+				err = logs.Err(ctx, err, "")
 				errMsgs = append(errMsgs, err.Error())
 				return res, errors.New(strings.Join(errMsgs, " , "))
 			}
@@ -777,6 +790,7 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 					resDoc[ck], err = sqr.iterateDocsForMutation(ctx, cv, ck, datasource, myself, true, docNo)
 					if err != nil {
 						childError = true
+						err = logs.Err(ctx, err, "")
 						errMsgs = append(errMsgs, err.Error())
 						return res, errors.New(strings.Join(errMsgs, " , "))
 					}
@@ -815,7 +829,7 @@ func (sqr *SqlMaker) executeMutationQueriesinDB(ctx context.Context, query strin
 	}
 	stmt, err := sqr.tx.PreparexContext(ctx, query) // TODO: to fetch con after locking
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, err, "")
 		errFound = true
 		errMsgs = append(errMsgs, fmt.Sprint("DB error for Document No ", docNo, " : ", err.Error()))
 		sqr.tx.Rollback()
@@ -862,6 +876,7 @@ func (sqr *SqlMaker) executeMutationQueriesinDB(ctx context.Context, query strin
 		*/
 		rw, ee := stmt.QueryxContext(ctx, vals...)
 		if ee != nil {
+			ee = logs.Err(ctx, ee, "")
 			errMsgs = append(errMsgs, fmt.Sprint("DB error for Document No ", docNo, " : ", ee.Error()))
 			logs.WithContext(ctx).Error(strings.Join(errMsgs, " , "))
 			sqr.tx.Rollback()
@@ -873,10 +888,12 @@ func (sqr *SqlMaker) executeMutationQueriesinDB(ctx context.Context, query strin
 			resDoc := make(map[string]interface{})
 			colsType, ee := rw.ColumnTypes()
 			if ee != nil {
+				ee = logs.Err(ctx, ee, "")
 				return nil, ee
 			}
 			e := rw.MapScan(resDoc)
 			if e != nil {
+				e = logs.Err(ctx, e, "")
 				return nil, e
 			}
 
@@ -888,7 +905,7 @@ func (sqr *SqlMaker) executeMutationQueriesinDB(ctx context.Context, query strin
 				} else if colType.DatabaseTypeName() == "NUMERIC" && resDoc[colType.Name()] != nil {
 					f, err := strconv.ParseFloat(string(resDoc[colType.Name()].([]byte)), 64)
 					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
+						err = logs.Err(ctx, err, "")
 						return nil, err
 					}
 					resDoc[colType.Name()] = f
@@ -901,6 +918,7 @@ func (sqr *SqlMaker) executeMutationQueriesinDB(ctx context.Context, query strin
 		logs.WithContext(ctx).Info("sqr.tx.Commit() called")
 		err = sqr.tx.Commit()
 		if err != nil {
+			err = logs.Err(ctx, err, "")
 			errMsgs = append(errMsgs, fmt.Sprint("DB error for Document No ", docNo, " : ", err.Error()))
 			sqr.tx.Rollback()
 		}
@@ -919,6 +937,7 @@ func (sqr *SqlMaker) ExecuteQuery(ctx context.Context, datasource *module_model.
 
 	rows, e := datasource.Con.Queryx(qrm.SQLQuery)
 	if e != nil {
+		e = logs.Err(ctx, e, "")
 		return nil, e
 	}
 
@@ -926,6 +945,7 @@ func (sqr *SqlMaker) ExecuteQuery(ctx context.Context, datasource *module_model.
 	mapping := make(map[string]interface{})
 	colsType, ee := rows.ColumnTypes()
 	if ee != nil {
+		ee = logs.Err(ctx, ee, "")
 		return nil, ee
 	}
 	rowNo := 0
@@ -936,6 +956,7 @@ func (sqr *SqlMaker) ExecuteQuery(ctx context.Context, datasource *module_model.
 
 		e = rows.MapScan(mapping)
 		if e != nil {
+			e = logs.Err(ctx, e, "")
 			return nil, e
 		}
 
@@ -1021,8 +1042,8 @@ func (sqr *SqlMaker) ExecuteQuery(ctx context.Context, datasource *module_model.
 
 		r, rf, err := sqr.processRows(ctx, resultRowHolderNew, 0, rowNo, true, -1) //sqr.result[sqr.MainTableName].([]interface{})
 		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, er
+			err = logs.Err(ctx, err, "")
+			return nil, err
 		}
 		mtn := strings.Replace(sqr.MainTableName, ".", "___", 1)
 		man := strings.Replace(sqr.MainAliasName, ".", "___", 1)
@@ -1050,6 +1071,7 @@ func (sqr *SqlMaker) processRows(ctx context.Context, vrh [][]map[string]interfa
 		vrh[curLevel][i]["parentIndexNo"] = parentIndexNo
 		v, e := json.Marshal(vrh[curLevel][i])
 		if e != nil {
+			e = logs.Err(ctx, e, "")
 			return nil, nil, e
 		}
 
@@ -1102,6 +1124,7 @@ func (sqr *SqlMaker) processRows(ctx context.Context, vrh [][]map[string]interfa
 		if curLevel+1 <= sqr.queryLevel && sqr.tables[curLevel][i].Nested {
 			cr, rf, ee := sqr.processRows(ctx, vrh, curLevel+1, rowNo, recordFound, indexNo)
 			if ee != nil {
+				ee = logs.Err(ctx, ee, "")
 				return nil, nil, ee
 			}
 			idx := 0
@@ -1294,6 +1317,7 @@ func ParseAstValue(ctx context.Context, value ast.Value, vars map[string]interfa
 		for _, v := range obj.Fields {
 			temp, err := ParseAstValue(ctx, v.Value, vars)
 			if err != nil {
+				err = logs.Err(ctx, err, "")
 				return nil, err
 			}
 			o[adjustObjectKey(ctx, v.Name.Value)] = temp
@@ -1306,6 +1330,7 @@ func ParseAstValue(ctx context.Context, value ast.Value, vars map[string]interfa
 		for i, v := range listValue.Values {
 			val, err := ParseAstValue(ctx, v, vars)
 			if err != nil {
+				err = logs.Err(ctx, err, "")
 				return nil, err
 			}
 			array[i] = val
@@ -1345,6 +1370,7 @@ func ParseAstValue(ctx context.Context, value ast.Value, vars map[string]interfa
 		// Convert string to int
 		val, err := strconv.Atoi(intValue.Value)
 		if err != nil {
+			err = logs.Err(ctx, err, "")
 			return nil, err
 		}
 
@@ -1355,6 +1381,7 @@ func ParseAstValue(ctx context.Context, value ast.Value, vars map[string]interfa
 
 		val, err := strconv.ParseFloat(floatValue.Value, 64)
 		if err != nil {
+			err = logs.Err(ctx, err, "")
 			return nil, err
 		}
 
