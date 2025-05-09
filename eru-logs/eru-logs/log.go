@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -146,11 +147,11 @@ func (c *errorLimitCore) With(fields []zapcore.Field) zapcore.Core {
 	return &errorLimitCore{Core: c.Core.With(fields)}
 }
 
-func Err (ctx context.Context, orgErr error, errMsg string) (err error) {
+func Err(ctx context.Context, orgErr error, errMsg string) (err error) {
 	errCode := uuid.New().String()
 	if errMsg == "" {
 		errMsg = "something went wrong - please contact support"
 	}
-	WithContext(ctx).Error(fmt.Sprintf("Error Code : %s, Error : %s", errCode, errMsg))
+	WithContext(ctx).Error(fmt.Sprintf("Error Code : %s, Error : %s", errCode, orgErr.Error()))
 	return fmt.Errorf("error code : %s, error : %s", errCode, errMsg)
 }
