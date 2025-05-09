@@ -25,7 +25,7 @@ import (
 )
 
 var blockedWords = []string{"SELECT ", "SELECT*", "INSERT ", "UPDATE ", "DELETE FROM ", "CREATE ", "DROP TABLE", "DROP FUNTIONS", "DROP VIEW", "DROP INDEXES", "DROP SEQUENCES", "ALTER ", "TRUNCATE ", "RENAME ", "REVOKE ", "COMMIT ", "ROLLBACK ", "SAVEPOINT "}
-var blockedRegex = []string{"OR[ ]*'", "AND[ ]*'", "GRANT\\s+\\w+\\s+ON"}
+var blockedRegex = []string{"OR[ ]*'", "AND[ ]*'", "GRANT\\s+\\w+\\s+ON", "<SCRIPT.*?>.*?</SCRIPT>"}
 
 type tablesInQuery struct {
 	name   string
