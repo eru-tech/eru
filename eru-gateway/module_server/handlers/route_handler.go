@@ -65,7 +65,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
 			}
-			r.Header.Add("claims", string(claimsBytes))
+			r.Header.Set("claims", string(claimsBytes))
 
 			valid := authorizer.VerifyAccessToken(r.Context(), accessToken)
 			if !valid {
@@ -82,14 +82,14 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				goTmpl := gotemplate.GoTemplate{v.Key, v.Value}
 				outputObj, err := goTmpl.Execute(r.Context(), *r, "string")
 				if err != nil {
-					logs.WithContext(r.Context()).Error(err.Error())
+					err = logs.Err(r.Context(), err, "")
 					server_handlers.FormatResponse(w, http.StatusBadRequest)
 					_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 					return
 				} else {
 					output, err := json.Marshal(outputObj)
 					if err != nil {
-						logs.WithContext(r.Context()).Error(err.Error())
+						err = logs.Err(r.Context(), err, "")
 						server_handlers.FormatResponse(w, http.StatusBadRequest)
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 						return
