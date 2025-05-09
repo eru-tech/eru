@@ -125,8 +125,12 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 			if singleTxn && i == len(op.SelectionSet.Selections)-1 {
 				closeTxn = true
 			}
-			//TODO - to handle if no directive/dbalias is received - conn is not getting closed as there is panic error in below line
-			dbAlias := v.(*ast.Field).Directives[0].Name.Value
+			dbAlias := ""
+			if len(v.(*ast.Field).Directives) > 0 {
+				dbAlias = v.(*ast.Field).Directives[0].Name.Value
+			} else {
+				logs.WithContext(ctx).Info(fmt.Sprint("No dbAlias found for ", v.(*ast.Field).Name.Value))
+			}
 			datasource := datasources[dbAlias]
 			if datasource == nil {
 				return nil, nil, errors.New(fmt.Sprint("dbAlias ", dbAlias, " not found"))
@@ -699,7 +703,7 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 					ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
 				}
 				if mainTableName != ruleTableName && !strings.HasPrefix(ruleTableName, "token") {
-					if !(v.Operator == "ex" || v.Operator == "nex") {
+					if !(v.Operator == "ex_in" || v.Operator == "nex_in" || v.Operator == "ex_jin" || v.Operator == "nex_jin") {
 						ruleJoinTables = append(ruleJoinTables, ruleTableName)
 					} else {
 						ruleJoinChildTables = append(ruleJoinChildTables, ruleTableName)
@@ -718,7 +722,7 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 					ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
 				}
 				if mainTableName != ruleTableName && !strings.HasPrefix(ruleTableName, "token") {
-					if !(v.Operator == "ex" || v.Operator == "nex") {
+					if !(v.Operator == "ex_in" || v.Operator == "nex_in" || v.Operator == "ex_jin" || v.Operator == "nex_jin") {
 						ruleJoinTables = append(ruleJoinTables, ruleTableName)
 					} else {
 						ruleJoinChildTables = append(ruleJoinChildTables, ruleTableName)

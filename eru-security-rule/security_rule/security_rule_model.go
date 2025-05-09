@@ -139,10 +139,16 @@ func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType stri
 	case "jnin":
 		op = MAKE_JSON_ARRAY_FN
 		break
-	case "ex":
+	case "ex_in":
 		op = " exists "
 		break
-	case "nex":
+	case "nex_in":
+		op = " not exists "
+		break
+	case "ex_jin":
+		op = " exists "
+		break
+	case "nex_jin":
 		op = " not exists "
 		break
 	default:
@@ -166,11 +172,20 @@ func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType stri
 	} else if ignoreIfNotFound && err.Error() != "no variable prefix found" {
 		return "", nil
 	}
-	if cd.Operator == "ex" || cd.Operator == "nex" {
+	existsClause := false
+	existsOp := ""
+	if cd.Operator == "ex_in" || cd.Operator == "nex_in" {
+		existsClause = true
+		existsOp = " in "
+	} else if cd.Operator == "ex_jin" || cd.Operator == "nex_jin" {
+		existsClause = true
+		existsOp = " ?| array " //TODO - make it DB specific
+	}
+	if existsClause {
 		exStr := ""
 		for k, v := range ctjMap {
 			if strings.Contains(cdv1, k) {
-				exStr = fmt.Sprint("select 1 from (select * from ", k, " where ", cdv1, " in ", cdv2, ") x where ", strings.Replace(v, k, "x", -1))
+				exStr = fmt.Sprint("select 1 from (select * from ", k, " where ", cdv1, existsOp, cdv2, ") x where ", strings.Replace(v, k, "x", -1))
 				return fmt.Sprint(op, " (", exStr, ")"), nil
 			}
 		}

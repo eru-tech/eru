@@ -32,12 +32,16 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/{tenant}/remove/tool/{toolname}").HandlerFunc(module_handlers.ToolRemoveHandler(sh.Store))
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/settings/save").HandlerFunc(module_handlers.ProjectSetingsSaveHandler(sh.Store))
-
+	storeRouter.Methods(http.MethodGet).PathPrefix("/{project}/{tenant}/agent/list").HandlerFunc(module_handlers.AgentListNamesHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).PathPrefix("/{project}/{tenant}/tool/list").HandlerFunc(module_handlers.ToolListNamesHandler(sh.Store))
 	// functions for ai events
 	aiRouter := serverRouter.PathPrefix("/{project}").Subrouter()
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/{model}/query").HandlerFunc(module_handlers.ModelQueryHandler(sh.Store))
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/{model}/{tool}/query").HandlerFunc(module_handlers.ModelQueryHandler(sh.Store))
+	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/execute/tool/{toolname}/{actionname}").HandlerFunc(module_handlers.ToolExecuteHandler(sh.Store))
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/execute/tool/{toolname}").HandlerFunc(module_handlers.ToolExecuteHandler(sh.Store))
+	aiRouter.Methods(http.MethodGet).PathPrefix("/{tenant}/cburl/tool/{toolname}").HandlerFunc(module_handlers.ToolCbUrlHandler(sh.Store))
+	aiRouter.PathPrefix("/{tenant}/callback/tool/{toolname}").HandlerFunc(module_handlers.ToolCallbackHandler(sh.Store))
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/execute/agent/{agentname}").HandlerFunc(module_handlers.AgentExecuteHandler(sh.Store))
 
 }

@@ -69,7 +69,8 @@ type AnthropicContentSource struct {
 	Type      string `json:"type"`
 }
 type AnthropicCacheControl struct {
-	Type string `json:"type" eru:"required"`
+	Type string `json:"type,omitempty"`
+	TTL  int    `json:"ttl,omitempty"`
 }
 
 type AnthropicToolChoice struct {
@@ -80,10 +81,10 @@ type AnthropicToolChoice struct {
 
 type AnthropicRequestTool struct {
 	//Type         string                `json:"type" eru:"required"`
-	Name        string                `json:"name" eru:"required"`
-	Description string                `json:"description" eru:"required"`
-	InputSchema eru_models.JSONSchema `json:"input_schema,omitempty"`
-	//CacheControl AnthropicCacheControl `json:"cache_control,omitempty"`
+	Name         string                `json:"name" eru:"required"`
+	Description  string                `json:"description" eru:"required"`
+	InputSchema  eru_models.JSONSchema `json:"input_schema,omitempty"`
+	CacheControl AnthropicCacheControl `json:"cache_control,omitempty"`
 }
 
 // Response Types
@@ -163,9 +164,9 @@ func (anthropicModel *AnthropicModel) makeAnthropicChatRequest(ctx context.Conte
 
 	for _, message := range chatRequest.Messages {
 		aContent := AnthropicMessageContent{
-			Type:         "text",
-			Text:         message.Content,
-			CacheControl: AnthropicCacheControl{Type: "ephemeral"},
+			Type: "text",
+			Text: message.Content,
+			//CacheControl: AnthropicCacheControl{TTL: 0},
 		}
 		anthropicRequest.Messages = append(anthropicRequest.Messages, AnthropicMessage{
 			Role:    message.Role,
@@ -219,7 +220,7 @@ func (anthropicModel *AnthropicModel) QueryModelWithTool(ctx context.Context, ch
 		return
 	}
 	outputJson := make(map[string]interface{})
-	outputJson["raw"] = anthropicChatResponse
+	outputJson["raw"] = anthropicChatResponse.Content[0].Input
 	queryResponse = JsonMessage{
 		Content: outputJson,
 		Role:    "assistant",
@@ -246,13 +247,13 @@ func (anthropicModel *AnthropicModel) makeAnthropicChatToolRequest(ctx context.C
 			Description: toolDescription,
 			InputSchema: toolParameters,
 			//Type:         "custom",
-			//CacheControl: AnthropicCacheControl{Type: "ephemeral"},
+			CacheControl: AnthropicCacheControl{TTL: 0, Type: "ephemeral"},
 		}
 		anthropicRequestTools = append(anthropicRequestTools, reqTool)
 	}
 	anthropicChatRequest.Model = anthropicModel.LLMName
 	anthropicChatRequest.Temperature = anthropicModel.Temprature
-	anthropicChatRequest.MaxTokens = 150
+	anthropicChatRequest.MaxTokens = 1024
 	//anthropicChatRequest.StopSequences = []string{""}
 	anthropicChatRequest.Stream = false
 	anthropicChatRequest.System = ""

@@ -601,9 +601,8 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 	switch outputFormat {
 	case "string":
 		if str == "<no value>" {
-			err = errors.New("Template returned <no value>")
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
+			logs.WithContext(ctx).Warn("Template returned <no value>")
+			return "", err
 		}
 		return str, nil
 	case "json":
@@ -985,6 +984,33 @@ func makeOrString(ctx context.Context, filter []interface{}, jsonKey string, par
 func makeFilterStr(ctx context.Context, key string, cond map[string]interface{}, isJson bool) (filterStr string, err error) {
 	for ck, cv := range cond {
 		switch ck {
+
+		case "$btw":
+			if btwMap, ok := cv.(map[string]interface{}); ok {
+				from, fromOk := btwMap["from"]
+				to, toOk := btwMap["to"]
+				if fromOk && toOk {
+					if cvF, cvFOk := from.(float64); cvFOk {
+						if isJson {
+							key = fmt.Sprint("(", key, ")::numeric")
+						}
+						filterStr = fmt.Sprint(key, " between ", cvF, " and ", to)
+						return filterStr, nil
+					} else {
+						filterStr = fmt.Sprint(key, " between '", from, "' and '", to, "'")
+						return filterStr, nil
+					}
+				} else {
+					err = errors.New("'from' or 'to' key missing in $btw map")
+					logs.WithContext(ctx).Error(err.Error())
+					return "false", nil
+				}
+			} else {
+				err = errors.New("$btw operator expects a map with 'from' and 'to' keys")
+				logs.WithContext(ctx).Error(err.Error())
+				return "false", nil
+
+			}
 		case "$in", "$inc":
 			if cvArray, cvArrayOk := cv.([]interface{}); cvArrayOk {
 				tempStr := ""

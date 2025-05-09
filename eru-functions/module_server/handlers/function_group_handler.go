@@ -49,7 +49,7 @@ func WfHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		for _, v := range wfObj.WfEvents {
 			fn = v.Function_Name
 		}
-		funcGroup, err := s.GetAndValidateFunc(ctx, fn, projectId, host, url, r.Method, r.Header, nil, s, false)
+		funcGroup, err := s.GetAndValidateFunc(ctx, fn, projectId, host, url, r.Method, r.Header, nil, s, false, "")
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -135,37 +135,42 @@ func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			asyncStatus := "PROCESSED"
 			var asyncFuncData module_store.AsyncFuncData
 			asyncFuncData, err = s.FetchAsyncEvent(ctx, m.Msg, aStatus, s)
+			eventResponseBytes := []byte("{}")
 			//	logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler for FetchAsyncEvent "))
 			if err != nil || asyncFuncData.AsyncId == "" {
 				failedCount = failedCount + 1
 				asyncStatus = "FAILED"
-				logs.WithContext(ctx).Error("event not found")
+				eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
+				logs.WithContext(ctx).Error(err.Error())
 			} else {
 				bodyMap := make(map[string]interface{})
-				eventResponseBytes := []byte("")
+
 				bodyMapOk := false
 				if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
 					logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
 				}
-				funcGroup, err := s.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, host, url, r.Method, r.Header, bodyMap, s, true)
+				funcGroup, err := s.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, host, url, r.Method, r.Header, bodyMap, s, true, "")
 				//	logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler for GetAndValidateFunc"))
 				if err != nil {
 					failedCount = failedCount + 1
 					asyncStatus = "FAILED"
-					logs.WithContext(ctx).Error("Function validation failed")
+					eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
+					logs.WithContext(ctx).Error(err.Error())
 				} else {
 					reqBytes := []byte("")
 					reqBytes, err = b64.StdEncoding.DecodeString(asyncFuncData.EventRequest)
 					if err != nil {
 						failedCount = failedCount + 1
 						asyncStatus = "FAILED"
-						logs.WithContext(ctx).Error("event request decoding failed")
+						eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
+						logs.WithContext(ctx).Error(err.Error())
 					} else {
 						var newReq *http.Request
 						if newReq, err = http.ReadRequest(bufio.NewReader(bytes.NewReader(reqBytes))); err != nil { // deserialize request
 							failedCount = failedCount + 1
 							asyncStatus = "FAILED"
-							logs.WithContext(ctx).Error("event request deserialization failed")
+							eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
+							logs.WithContext(ctx).Error(err.Error())
 						}
 						reqVars := make(map[string]*functions.TemplateVars)
 						resVars := make(map[string]*functions.TemplateVars)
@@ -181,8 +186,8 @@ func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						if err != nil {
 							failedCount = failedCount + 1
 							asyncStatus = "FAILED"
+							eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
 							logs.WithContext(ctx).Error(err.Error())
-							logs.WithContext(ctx).Error("Function execution failed")
 						} else {
 							responseBytes := []byte("")
 							responseBytes, err = io.ReadAll(response.Body)
@@ -190,6 +195,7 @@ func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 								logs.WithContext(ctx).Error(err.Error())
 								failedCount = failedCount + 1
 								asyncStatus = "FAILED"
+								eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
 							} else {
 								response.Body = io.NopCloser(bytes.NewBuffer(responseBytes))
 								responseStr := string(responseBytes)
@@ -201,6 +207,7 @@ func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 									logs.WithContext(ctx).Error(err.Error())
 									failedCount = failedCount + 1
 									asyncStatus = "FAILED"
+									eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
 								} else {
 									logs.WithContext(ctx).Info(fmt.Sprint(response))
 									processedCount = processedCount + 1
@@ -264,6 +271,8 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		funcName := vars["funcname"]
 		funcStepName := vars["funcstepname"]
 		endfuncStepName := vars["endfuncstepname"]
+		eventName := vars["eventname"]
+		logs.WithContext(r.Context()).Info(fmt.Sprint("eventName : ", eventName))
 		// Lookup a functions in a function based on host and url
 
 		reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
@@ -290,7 +299,7 @@ func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			r.ContentLength = int64(len(body))
 		}
 
-		funcGroup, err := s.GetAndValidateFunc(ctx, funcName, projectId, host, url, r.Method, r.Header, bodyMap, s, false)
+		funcGroup, err := s.GetAndValidateFunc(ctx, funcName, projectId, host, url, r.Method, r.Header, bodyMap, s, false, eventName)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -407,7 +416,7 @@ func SFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			r.ContentLength = int64(len(body))
 		}
 
-		funcGroup, err := s.GetAndValidateFunc(ctx, funcName, projectId, host, url, r.Method, r.Header, bodyMap.Body, s, false)
+		funcGroup, err := s.GetAndValidateFunc(ctx, funcName, projectId, host, url, r.Method, r.Header, bodyMap.Body, s, false, "")
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -512,7 +521,7 @@ func SFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 func FuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		logs.WithContext(r.Context()).Debug("FuncRunHandler - Start")
+		logs.WithContext(r.Context()).Info("FuncRunHandler - Start")
 		ctx := context.WithValue(r.Context(), "allowed_origins", server_handlers.AllowedOrigins)
 		ctx = context.WithValue(ctx, "origin", r.Header.Get("Origin"))
 
@@ -570,7 +579,7 @@ func FuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 					}
 
-					funcGroup, err := s.ValidateFunc(ctx, funcObj, projectId, host, url, r.Method, r.Header, nil, s, false)
+					funcGroup, err := s.ValidateFunc(ctx, funcObj, projectId, host, url, r.Method, r.Header, nil, s, false, "")
 					if err != nil {
 						server_handlers.FormatResponse(w, http.StatusBadRequest)
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -738,7 +747,7 @@ func SFuncRunHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 					}
 
-					funcGroup, err := s.ValidateFunc(ctx, funcObj, projectId, host, url, r.Method, r.Header, bodyNewMap, s, false)
+					funcGroup, err := s.ValidateFunc(ctx, funcObj, projectId, host, url, r.Method, r.Header, bodyNewMap, s, false, "")
 					if err != nil {
 						server_handlers.FormatResponse(w, http.StatusBadRequest)
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})

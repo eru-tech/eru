@@ -11,8 +11,12 @@ import (
 )
 
 type AgentMessage struct {
-	Content string                 `json:"content" eru:"required"`
-	Params  map[string]interface{} `json:"params"`
+	Content   string                 `json:"content,omitempty"`
+	Params    map[string]interface{} `json:"params,omitempty"`
+	FileData  string                 `json:"file_data,omitempty"`
+	FileName  string                 `json:"file_name,omitempty"`
+	FileId    string                 `json:"file_id,omitempty"`
+	ImageData string                 `json:"image_data,omitempty"`
 }
 type Agent struct {
 	AgentType    string                   `json:"agent_type" eru:"required"`
@@ -23,6 +27,7 @@ type Agent struct {
 	ModelName    string                   `json:"model"`
 	Model        models.ModelI            `json:"-"`
 	Tools        map[string]tools.Tooling `json:"-"`
+	RetryCount   int                      `json:"retry_count"`
 }
 
 type AgentI interface {

@@ -31,7 +31,7 @@ func (pwTool *PlaywrightTool) MakeFromJson(ctx context.Context, rj *json.RawMess
 	return nil
 }
 
-func (pwTool *PlaywrightTool) Execute(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
+func (pwTool *PlaywrightTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("PlaywrightTool Execute - Start")
 	httpVersion := params["http_version"].(string)
 	extarctedData := ""

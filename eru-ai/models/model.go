@@ -29,9 +29,13 @@ type ChatRequest struct {
 	Messages []Message `json:"messages"`
 }
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-	Name    string `json:"name"`
+	Role      string `json:"role"`
+	Content   string `json:"content,omitempty"`
+	FileData  string `json:"file_data,omitempty"`
+	FileName  string `json:"file_name,omitempty"`
+	FileId    string `json:"file_id,omitempty"`
+	Name      string `json:"name"`
+	ImageData string `json:"image_data,omitempty"`
 }
 type JsonMessage struct {
 	Role    string                 `json:"role"`

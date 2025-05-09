@@ -10,6 +10,7 @@ import (
 	models "github.com/eru-tech/eru/eru-ai/models"
 	module_model "github.com/eru-tech/eru/eru-ai/module_model"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
+	db "github.com/eru-tech/eru/eru-db/db"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
 )
@@ -36,7 +37,9 @@ type ModuleStoreI interface {
 	RemoveTenants()
 	SaveTool(ctx context.Context, tooling tools.Tooling, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
 	RemoveTool(ctx context.Context, toolName string, projectId string, tenantId string, realStore ModuleStoreI) error
-	GetTool(ctx context.Context, projectId string, tenantId string, toolName string, s ModuleStoreI) (tools.Tooling, error)
+	GetTool(ctx context.Context, projectId string, tenantId string, toolName string, actionName string, s ModuleStoreI) (tools.Tooling, error)
+	GetAgentNames(ctx context.Context, projectID string, tenantID string) (agentNames []string, err error)
+	GetToolNames(ctx context.Context, projectID string, tenantID string) (toolNames []string, err error)
 }
 
 type ModuleStore struct {
@@ -307,8 +310,9 @@ func (ms *ModuleStore) RemoveTool(ctx context.Context, toolName string, projectI
 	}
 }
 
-func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenantId string, toolName string, s ModuleStoreI) (toolObjClone tools.Tooling, err error) {
+func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenantId string, toolName string, actionName string, s ModuleStoreI) (toolObjClone tools.Tooling, err error) {
 	logs.WithContext(ctx).Debug("GetToolClone - Start")
+	logs.WithContext(ctx).Info(actionName)
 	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
 		return
@@ -322,7 +326,13 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	} else {
+		err = toolObj.ValidateAction(ctx, actionName, toolObj)
+		if err != nil {
+			return
+		}
 		toolObjClone, err = ms.GetToolCloneObject(ctx, projectId, tenantId, toolObj, s)
+		toolObjClone.SetToolDb(db.GetDb(s.GetDbType()))
+		toolObjClone.GetToolDb().SetConn(s.GetConn())
 		return
 	}
 }
@@ -350,9 +360,9 @@ func (ms *ModuleStore) GetToolCloneObject(ctx context.Context, projectId string,
 	}
 	return iCloneI.Elem().Interface().(tools.Tooling), nil
 }
-func (ms *ModuleStore) GetTool(ctx context.Context, projectId string, tenantId string, toolName string, s ModuleStoreI) (toolObjClone tools.Tooling, err error) {
+func (ms *ModuleStore) GetTool(ctx context.Context, projectId string, tenantId string, toolName string, actionName string, s ModuleStoreI) (toolObjClone tools.Tooling, err error) {
 	logs.WithContext(ctx).Debug("GetTool - Start")
-	return ms.GetToolClone(ctx, projectId, tenantId, toolName, s)
+	return ms.GetToolClone(ctx, projectId, tenantId, toolName, actionName, s)
 
 }
 
@@ -467,7 +477,7 @@ func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId 
 	}
 	tools := make(map[string]tools.Tooling)
 	for _, tn := range toolNames {
-		tool, err := ms.GetTool(ctx, projectId, tenantId, tn, s)
+		tool, err := ms.GetTool(ctx, projectId, tenantId, tn, "", s)
 		if err != nil {
 			return nil, err
 		}
@@ -536,5 +546,34 @@ func (ms *ModuleStore) RemoveTenants() {
 	for key, project := range ms.Projects {
 		project.Tenants = nil
 		ms.Projects[key] = project
+	}
+}
+
+func (ms *ModuleStore) GetAgentNames(ctx context.Context, projectId string, tenantId string) (agentNames []string, err error) {
+	logs.WithContext(ctx).Debug("GetAgentNames - Start")
+	if prj, ok := ms.Projects[projectId]; ok {
+		for agentName := range prj.Tenants[tenantId].Agents {
+			agentNames = append(agentNames, agentName)
+		}
+		return agentNames, nil
+	} else {
+		err = errors.New("Project " + projectId + " does not exist")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+}
+
+func (ms *ModuleStore) GetToolNames(ctx context.Context, projectId string, tenantId string) (toolNames []string, err error) {
+	logs.WithContext(ctx).Debug("GetToolNames - Start")
+
+	if prj, ok := ms.Projects[projectId]; ok {
+		for toolName := range prj.Tenants[tenantId].Tools {
+			toolNames = append(toolNames, toolName)
+		}
+		return toolNames, nil
+	} else {
+		err = errors.New("Project " + projectId + " does not exist")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
 }

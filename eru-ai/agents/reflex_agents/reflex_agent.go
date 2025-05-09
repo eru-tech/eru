@@ -22,9 +22,13 @@ func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agent
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
 
 	msg := models.Message{
-		Role:    "assistant",
-		Content: agentMessage.Content,
-		Name:    reflex_agent.AgentName,
+		Role:      "user",
+		Content:   agentMessage.Content,
+		Name:      reflex_agent.AgentName,
+		FileData:  agentMessage.FileData,
+		FileName:  agentMessage.FileName,
+		FileId:    agentMessage.FileId,
+		ImageData: agentMessage.ImageData,
 	}
 	chatRequest := models.ChatRequest{
 		Messages: []models.Message{
@@ -39,9 +43,9 @@ func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agent
 	return response.Content, nil
 }
 
-func (reflex_agent *ReflexAgent) callTool(ctx context.Context, tool tools.Tooling, params map[string]interface{}) (map[string]interface{}, error) {
+func (reflex_agent *ReflexAgent) callTool(ctx context.Context, projectId string, tenantId string, tool tools.Tooling, params map[string]interface{}) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("callTool - Start")
-	return tool.Execute(ctx, params)
+	return tool.Execute(ctx, projectId, tenantId, "", params)
 }
 
 func (reflex_agent *ReflexAgent) callModel(ctx context.Context, model models.ModelI, params map[string]interface{}) (map[string]interface{}, error) {

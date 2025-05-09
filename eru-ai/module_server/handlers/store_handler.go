@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -390,6 +391,74 @@ func AgentExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
+func ToolCallbackHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ToolCallbackHandler - Start")
+		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		toolName := vars["toolname"]
+		actionName := "callback"
+
+		tool, err := s.GetTool(ctx, projectId, tenantId, toolName, actionName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			toolBodyFromReq := json.NewDecoder(r.Body)
+			toolBodyFromReq.DisallowUnknownFields()
+
+			var toolBody map[string]interface{}
+			if err := toolBodyFromReq.Decode(&toolBody); err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				//server_handlers.FormatResponse(w, 400)
+				//json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				//return
+				toolBody = make(map[string]interface{})
+			}
+
+			params := r.URL.Query()
+			toolParams := make(map[string][]string)
+			for key, values := range params {
+				toolParams[key] = values
+			}
+
+			toolResult, err := tool.Callback(ctx, projectId, tenantId, actionName, toolBody, toolParams)
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			} else {
+				responseContentType := tool.GetToolCallback().ResponseContentType
+				w.Header().Set("Content-Type", responseContentType)
+				w.WriteHeader(http.StatusOK)
+				if responseContentType == "application/json" {
+					_ = json.NewEncoder(w).Encode(toolResult)
+				} else {
+					w.Write([]byte(toolResult.(string)))
+				}
+			}
+		}
+	}
+}
+func ToolCbUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ToolCbUrlHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		toolName := vars["toolname"]
+		actionName := "callback"
+		tool, err := s.GetTool(r.Context(), projectId, tenantId, toolName, actionName, s)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"url": tool.GetToolCbUrl(projectId, tenantId)})
+	}
+}
 func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ToolExecuteHandler - Start")
@@ -397,7 +466,10 @@ func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
 		toolName := vars["toolname"]
-		tool, err := s.GetTool(r.Context(), projectId, tenantId, toolName, s)
+		actionName := vars["actionname"]
+		logs.WithContext(r.Context()).Info(fmt.Sprintf("Tool Name: %v", toolName))
+		logs.WithContext(r.Context()).Info(fmt.Sprintf("Action Name: %v", actionName))
+		tool, err := s.GetTool(r.Context(), projectId, tenantId, toolName, actionName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -416,7 +488,7 @@ func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
-			toolResult, err := tool.Execute(r.Context(), toolParams.Params)
+			toolResult, err := tool.Execute(r.Context(), projectId, tenantId, actionName, toolParams.Params)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

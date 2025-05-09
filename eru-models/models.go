@@ -20,10 +20,11 @@ func (a QueriesSorter) Less(i, j int) bool {
 
 // JSONSchema represents a JSON schema definition
 type JSONSchema struct {
-	Type       string                `json:"type"`
-	Properties map[string]JSONSchema `json:"properties,omitempty"`
-	Required   []string              `json:"required,omitempty"`
-	Items      *JSONSchema           `json:"items,omitempty"`  // For arrays
-	Enum       []interface{}         `json:"enum,omitempty"`   // For enums
-	Format     string                `json:"format,omitempty"` // For strings
+	Type        string                `json:"type"`
+	Properties  map[string]JSONSchema `json:"properties,omitempty"`
+	Required    []string              `json:"required,omitempty"`
+	Items       *JSONSchema           `json:"items,omitempty"`  // For arrays
+	Enum        []interface{}         `json:"enum,omitempty"`   // For enums
+	Format      string                `json:"format,omitempty"` // For strings
+	Description string                `json:"description,omitempty"`
 }

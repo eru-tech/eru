@@ -1,11 +1,12 @@
 package module_server
 
 import (
+	"net/http"
+
 	module_handlers "github.com/eru-tech/eru/eru-gateway/module_server/handlers"
 	"github.com/eru-tech/eru/eru-gateway/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
-	"net/http"
 )
 
 func SetServiceName() {
@@ -32,6 +33,9 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	serverRouter.Get("sm_set").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.Get("sm_unset").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.Get("sm_get").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("tsm_set").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("tsm_unset").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("tsm_get").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 
 	serverRouter.Get("kms_list").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.Get("kms_save").HandlerFunc(module_handlers.RouteHandler(sh.Store))
