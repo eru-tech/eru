@@ -212,13 +212,13 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					if gqd.OutputType == eru_writes.OutputTypeCsv || gqd.OutputType == eru_writes.OutputTypeExcel {
 						result, err = graphQLs[i].ExecuteQueryForCsv(ctx, qrm.SQLQuery, datasource, mainAliasNames[i])
 						if err != nil {
-							logs.WithContext(ctx).Error(err.Error())
+							err = logs.Err(ctx, err, "")
 						}
 					} else {
 						result, err = graphQLs[i].ExecuteQuery(ctx, datasource, qrm)
 					}
 					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
+						err = logs.Err(ctx, err, "")
 						errMsg = err.Error()
 						errFound = true
 					}
@@ -248,8 +248,8 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 						}
 						sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, sqlObj.QueryType, gqd.FinalVariables[docKeyword])
 						if err != nil {
+							err = logs.Err(ctx, err, "")
 							errMsg = err.Error()
-							logs.WithContext(ctx).Error(err.Error())
 							errFound = true
 						}
 					default:
@@ -272,7 +272,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					//todo consider passing token from finalvariables
 					if err != nil {
 						errFound = true
-						logs.WithContext(ctx).Error(err.Error())
+						err = logs.Err(ctx, err, "")
 						errMsg = err.Error()
 					}
 				}
@@ -305,14 +305,14 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					results, err = graphQLs[i].ExecuteMutationQuery(ctx, datasource, graphQLs[i], mrm)
 					if err != nil {
 						errFound = true
-						logs.WithContext(ctx).Error(err.Error())
+						err = logs.Err(ctx, err, "")
 						errMsg = err.Error()
 						// no need to return here - error is returned as part of result - if asked in the query.
 					}
 				} else if errFound {
 					rollBackErr := graphQLs[i].RollbackQuery(ctx)
 					if rollBackErr != nil {
-						logs.WithContext(ctx).Error(rollBackErr.Error())
+						rollBackErr = logs.Err(ctx, rollBackErr, "")
 						errMsg = rollBackErr.Error()
 					}
 					breakForLoop = true

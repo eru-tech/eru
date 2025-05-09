@@ -581,27 +581,21 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 	logs.WithContext(ctx).Debug("Execute - Start")
 	buf := &bytes.Buffer{}
 
-	t := template.Must(template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(GenericFuncMap(ctx)), err)
-	if err != nil {
-		logs.WithContext(ctx).Error("error while initializing template")
-		logs.WithContext(ctx).Error(err.Error())
-		return "", err
-	}
+	t := template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(GenericFuncMap(ctx))
 	t, err = t.Parse(goTmpl.Template)
 	if err != nil {
-		logs.WithContext(ctx).Error("error while parsing template")
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, err, "")
 		return "", err
 	}
 	if err = t.Execute(buf, obj); err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, err, "")
 		return "", err
 	}
 	str := buf.String()
 	switch outputFormat {
 	case "string":
 		if str == "<no value>" {
-			logs.WithContext(ctx).Warn("Template returned <no value>")
+			logs.WithContext(ctx).Warn("template returned <no value>")
 			return "", err
 		}
 		return str, nil
@@ -610,15 +604,15 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 			return nil, err
 		}
 		if err = json.Unmarshal([]byte(str), &output); err != nil {
-			err = errors.New(fmt.Sprintf("Unable to marhsal templated output to JSON : ", buf.String(), " ", err))
-			logs.WithContext(ctx).Error(err.Error())
+			err = fmt.Errorf("unable to marhsal templated output to JSON : %s, %s", buf.String(), err)
+			logs.Err(ctx, err, "")
 			return nil, err
 		} else {
 			return
 		}
 	}
 	err = errors.New(fmt.Sprint("Unknown output format : ", outputFormat))
-	logs.WithContext(ctx).Error(err.Error())
+	logs.Err(ctx, err, "")
 	return nil, err
 }
 func EvalFilter(ctx context.Context, filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
@@ -632,6 +626,7 @@ func EvalFilter(ctx context.Context, filter map[string]interface{}, record map[s
 				}
 			} else {
 				err = errors.New("$or needs an array")
+				logs.Err(ctx, err, "")
 				return false, err
 			}
 		} else {
@@ -649,7 +644,7 @@ func EvalFilter(ctx context.Context, filter map[string]interface{}, record map[s
 				}
 			} else {
 				err = errors.New(fmt.Sprint("key : ", kk, " not found in data"))
-				logs.WithContext(ctx).Info(err.Error())
+				logs.Err(ctx, err, "")
 				return false, nil
 			}
 		}
@@ -668,7 +663,7 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				}
 			} else {
 				err = errors.New("$in and $inc operators requires an array")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return false, err
 			}
 		case "$nin", "$ninc", "nin", "ninc":
@@ -680,7 +675,7 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 				}
 			} else {
 				err = errors.New("$nin and $ninc operators requires an array")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return false, err
 			}
 		case "$like", "like":
@@ -689,12 +684,12 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 					return strings.Contains(rvStr, cvStr), nil
 				} else {
 					err = errors.New("$like operator requires a string")
-					logs.WithContext(ctx).Error(err.Error())
+					logs.Err(ctx, err, "")
 					return false, err
 				}
 			} else {
 				err = errors.New("$like operator requires a string to compare")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return false, err
 			}
 		case "$nlike", "nlike":
@@ -703,12 +698,12 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 					return !(strings.Contains(rvStr, cvStr)), nil
 				} else {
 					err = errors.New("$nlike operator requires a string")
-					logs.WithContext(ctx).Error(err.Error())
+					logs.Err(ctx, err, "")
 					return false, err
 				}
 			} else {
 				err = errors.New("$nlike operator requires a string to compare")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return false, err
 			}
 		case "$gt", "gt":
@@ -717,12 +712,12 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 					return (rvF > cvF), nil
 				} else {
 					err = errors.New("$gt operator requires a number")
-					logs.WithContext(ctx).Error(err.Error())
+					logs.Err(ctx, err, "")
 					return false, nil
 				}
 			} else {
 				err = errors.New("$gt operator requires a number to compare")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return false, nil
 			}
 		case "$gte", "gte":
@@ -731,12 +726,12 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 					return (rvF >= cvF), nil
 				} else {
 					err = errors.New("$gte operator requires a number")
-					logs.WithContext(ctx).Error(err.Error())
+					logs.Err(ctx, err, "")
 					return false, nil
 				}
 			} else {
 				err = errors.New("$gte operator requires a number to compare")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return false, err
 			}
 		case "$lt", "lt":
@@ -745,12 +740,12 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 					return (rvF < cvF), nil
 				} else {
 					err = errors.New("$lt operator requires a number")
-					logs.WithContext(ctx).Error(err.Error())
+					logs.Err(ctx, err, "")
 					return false, nil
 				}
 			} else {
 				err = errors.New("$lt operator requires a number to compare")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return false, nil
 			}
 		case "$lte", "lte":
@@ -759,12 +754,12 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 					return (rvF <= cvF), nil
 				} else {
 					err = errors.New("$lte operator requires a number")
-					logs.WithContext(ctx).Error(err.Error())
+					logs.Err(ctx, err, "")
 					return false, nil
 				}
 			} else {
 				err = errors.New("$lte operator requires a number to compare")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return false, nil
 			}
 		case "$ne", "ne":
@@ -777,12 +772,12 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 					return eruutils.ImplArrayContains(cvArray, rArray), nil
 				} else {
 					err = errors.New("$jin operator requires an array for record value")
-					logs.WithContext(ctx).Error(err.Error())
+					logs.Err(ctx, err, "")
 					return false, err
 				}
 			} else {
 				err = errors.New("$jin operator requires an array for filter")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return false, err
 			}
 		case "$jnin", "jnin":
@@ -791,16 +786,16 @@ func evalCondition(ctx context.Context, cond map[string]interface{}, recordValue
 					return eruutils.ImplArrayNotContains(cvArray, rArray), nil
 				} else {
 					err = errors.New("$jnin operator requires an array for record value")
-					logs.WithContext(ctx).Error(err.Error())
+					logs.Err(ctx, err, "")
 					return false, err
 				}
 			} else {
 				err = errors.New("$jnin operator requires an array for filter")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return false, err
 			}
 		default:
-			logs.WithContext(ctx).Info("operator not found")
+			logs.Err(ctx, errors.New("operator not found"), "")
 			return false, nil
 		}
 	}
@@ -815,14 +810,13 @@ func fetchKey(k string) (key string) {
 	return
 }
 func evalOrFilter(ctx context.Context, filter []interface{}, record map[string]interface{}) (result bool, err error) {
-	for i, v := range filter {
+	for _, v := range filter {
 		if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
 			result, err = EvalFilter(ctx, vMap, record)
 		} else {
 			err = errors.New("$or needs array of objects")
+			logs.Err(ctx, err, "")
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint("result of OR element no ", i))
-		logs.WithContext(ctx).Info(fmt.Sprint(result))
 		if result {
 			return true, nil
 		}
@@ -834,7 +828,7 @@ func fetchFilterKeys(ctx context.Context, inPutfilterStr string, parentPrefix st
 	filter := make(map[string]interface{})
 	err = json.Unmarshal([]byte(inPutfilterStr), &filter)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		logs.Err(ctx, err, "")
 		return
 	}
 	return fetchFilterKeysFromMap(ctx, filter, parentPrefix)
@@ -849,6 +843,7 @@ func fetchFilterKeysFromMap(ctx context.Context, filter map[string]interface{}, 
 				filterKeys = append(filterKeys, tempStr...)
 			} else {
 				err = errors.New("$or needs an array")
+				logs.Err(ctx, err, "")
 				return
 			}
 		} else {
@@ -870,6 +865,7 @@ func fetchOrFilterKeys(ctx context.Context, filter []interface{}, parentPrefix s
 			}
 		} else {
 			err = errors.New("$or needs array of objects")
+			logs.Err(ctx, err, "")
 		}
 	}
 	return
@@ -878,7 +874,7 @@ func makeFilter(ctx context.Context, inPutfilterStr string, jsonKey string) (fil
 	filter := make(map[string]interface{})
 	err = json.Unmarshal([]byte(inPutfilterStr), &filter)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		logs.Err(ctx, err, "")
 		return "false", nil
 	}
 	return makeFilterFromMap(ctx, filter, jsonKey, "")
@@ -887,7 +883,7 @@ func makeParentFilter(ctx context.Context, inPutfilterStr string, jsonKey string
 	filter := make(map[string]interface{})
 	err = json.Unmarshal([]byte(inPutfilterStr), &filter)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		logs.Err(ctx, err, "")
 		return "false", nil
 	}
 	return makeFilterFromMap(ctx, filter, jsonKey, parentPrefix)
@@ -904,6 +900,7 @@ func makeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonK
 				filterStrArray = append(filterStrArray, tempStr)
 			} else {
 				err = errors.New("$or needs an array")
+				logs.Err(ctx, err, "")
 				return "false", nil
 			}
 		} else {
@@ -970,6 +967,7 @@ func makeOrString(ctx context.Context, filter []interface{}, jsonKey string, par
 			filterStr, err = makeFilterFromMap(ctx, vMap, jsonKey, parentPrefix)
 		} else {
 			err = errors.New("$or needs array of objects")
+			logs.Err(ctx, err, "")
 		}
 		if filterStr != "" {
 			orStr = fmt.Sprint(orStr, orOp, filterStr)
@@ -1002,12 +1000,12 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 					}
 				} else {
 					err = errors.New("'from' or 'to' key missing in $btw map")
-					logs.WithContext(ctx).Error(err.Error())
+					logs.Err(ctx, err, "")
 					return "false", nil
 				}
 			} else {
 				err = errors.New("$btw operator expects a map with 'from' and 'to' keys")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return "false", nil
 
 			}
@@ -1037,7 +1035,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 				return filterStr, nil
 			} else {
 				err = errors.New("$in and $inc operators requires an array")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return "false", nil
 			}
 		case "$nin", "$ninc":
@@ -1065,7 +1063,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 				return filterStr, nil
 			} else {
 				err = errors.New("$nin and $ninc operators requires an array")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return "false", nil
 			}
 		case "$like":
@@ -1074,7 +1072,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 				return filterStr, nil
 			} else {
 				err = errors.New("$like operator requires a string")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return "false", nil
 			}
 		case "$nlike":
@@ -1083,7 +1081,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 				return filterStr, nil
 			} else {
 				err = errors.New("$nlike operator requires a string")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return "false", nil
 			}
 		case "$gt":
@@ -1182,7 +1180,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 				return filterStr, nil
 			} else {
 				err = errors.New("$jin operator requires an array")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return "false", nil
 			}
 		case "$jnin":
@@ -1205,7 +1203,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 				return filterStr, nil
 			} else {
 				err = errors.New("$jnin operator requires an array")
-				logs.WithContext(ctx).Error(err.Error())
+				logs.Err(ctx, err, "")
 				return "false", nil
 			}
 		case "$null":
@@ -1233,7 +1231,7 @@ func makeFilterStr(ctx context.Context, key string, cond map[string]interface{},
 			filterStr = key
 			return filterStr, nil
 		default:
-			logs.WithContext(ctx).Info("operator not found")
+			logs.Err(ctx, errors.New("operator not found"), "")
 			return "false", nil
 		}
 	}
@@ -1249,18 +1247,18 @@ func excelToJson(ctx context.Context, fData string, sheetNames string, firstRowH
 	result := make(map[string][]map[string]interface{})
 	fDataDecoded, err := b64.StdEncoding.DecodeString(fData)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		logs.Err(ctx, err, "")
 		return "", nil
 	}
 	f, err := excelize.OpenReader(bytes.NewReader(fDataDecoded))
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		logs.Err(ctx, err, "")
 		return "", err
 	}
 	defer func() {
 		// Close the spreadsheet.
 		if err := f.Close(); err != nil {
-			logs.WithContext(ctx).Error(err.Error())
+			logs.Err(ctx, err, "")
 		}
 	}()
 	sheetFound := false
@@ -1286,7 +1284,7 @@ func excelToJson(ctx context.Context, fData string, sheetNames string, firstRowH
 			if sNo < len(firstRowHeaderArray) {
 				isFirstRowHeader, err = strconv.ParseBool(firstRowHeaderArray[sNo])
 				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
+					logs.Err(ctx, err, "")
 					isFirstRowHeader = false
 				}
 			}
@@ -1305,7 +1303,7 @@ func excelToJson(ctx context.Context, fData string, sheetNames string, firstRowH
 				rows, rErr := f.GetRows(sheetName)
 				if rErr != nil {
 					err = rErr
-					logs.WithContext(ctx).Error(err.Error())
+					logs.Err(ctx, err, "")
 					return
 				}
 				for rNo, row := range rows {

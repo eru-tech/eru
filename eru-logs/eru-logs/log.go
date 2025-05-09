@@ -4,10 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"os"
 )
+
+type contextKey string
+
+const loggerKey contextKey = "ctxlog"
 
 var Logger *zap.Logger
 
@@ -46,6 +51,10 @@ func LogInit(serviceName string) {
 	if err != nil {
 		panic(err)
 	}
+
+	// Wrap the logger with our error limiting core
+	Logger = WithErrorLimit(Logger)
+
 	undo := zap.ReplaceGlobals(Logger)
 	defer undo()
 
@@ -87,21 +96,61 @@ func LogInit(serviceName string) {
 }
 
 func NewContext(ctx context.Context, fields ...zap.Field) context.Context {
-	return context.WithValue(ctx, "ctxlog", WithContext(ctx).With(fields...))
+	return context.WithValue(ctx, loggerKey, WithContext(ctx).With(fields...))
 }
 
 func WithContext(ctx context.Context) *zap.Logger {
 	if ctx == nil {
 		return Logger
 	}
-	if ctxLogger, ok := ctx.Value("ctxlog").(*zap.Logger); ok {
+	if ctxLogger, ok := ctx.Value(loggerKey).(*zap.Logger); ok {
 		return ctxLogger
 	} else {
 		return Logger
 	}
 }
 
-func Sprintify(l ...interface{}) string {
-	Logger.Info(fmt.Sprint(l))
-	return fmt.Sprint(l)[0:1000]
+// limitErrorMsg limits error messages to 1000 characters
+func limitErrorMsg(msg string) string {
+	if len(msg) > 1000 {
+		return msg[:1000]
+	}
+	return msg
+}
+
+// ErrorWithLimit logs an error message with a 1000 character limit
+func ErrorWithLimit(logger *zap.Logger, msg string, fields ...zap.Field) {
+	logger.Error(limitErrorMsg(msg), fields...)
+}
+
+// WithErrorLimit returns a logger that limits error messages to 1000 characters
+func WithErrorLimit(logger *zap.Logger) *zap.Logger {
+	return logger.WithOptions(zap.WrapCore(func(core zapcore.Core) zapcore.Core {
+		return &errorLimitCore{Core: core}
+	}))
+}
+
+// errorLimitCore wraps a zapcore.Core to limit error message length
+type errorLimitCore struct {
+	zapcore.Core
+}
+
+func (c *errorLimitCore) Write(ent zapcore.Entry, fields []zapcore.Field) error {
+	if ent.Level == zapcore.ErrorLevel {
+		ent.Message = limitErrorMsg(ent.Message)
+	}
+	return c.Core.Write(ent, fields)
+}
+
+func (c *errorLimitCore) With(fields []zapcore.Field) zapcore.Core {
+	return &errorLimitCore{Core: c.Core.With(fields)}
+}
+
+func Err (ctx context.Context, orgErr error, errMsg string) (err error) {
+	errCode := uuid.New().String()
+	if errMsg == "" {
+		errMsg = "something went wrong - please contact support"
+	}
+	WithContext(ctx).Error(fmt.Sprintf("Error Code : %s, Error : %s", errCode, errMsg))
+	return fmt.Errorf("error code : %s, error : %s", errCode, errMsg)
 }
