@@ -67,12 +67,14 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 			r.Header.Set("claims", string(claimsBytes))
 
-			valid := authorizer.VerifyAccessToken(r.Context(), accessToken)
-			if !valid {
-				logs.WithContext(r.Context()).Info("invalid access token")
-				server_handlers.FormatResponse(w, http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
-				return
+			if authorizer.KidHeaderKey == "" {
+				valid := authorizer.VerifyAccessToken(r.Context(), accessToken)
+				if !valid {
+					logs.WithContext(r.Context()).Info("invalid access token")
+					server_handlers.FormatResponse(w, http.StatusUnauthorized)
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
+					return
+				}
 			}
 		}
 
