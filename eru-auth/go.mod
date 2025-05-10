@@ -14,11 +14,10 @@ require (
 	github.com/eru-tech/eru/eru-templates v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
 	github.com/google/go-cmp v0.5.9
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.3.1
 	github.com/gorilla/mux v1.8.0
 	github.com/jmoiron/sqlx v1.3.4
 	golang.org/x/oauth2 v0.6.0
-	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
 )
 
 require (
@@ -99,7 +98,6 @@ require (
 	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
 	google.golang.org/grpc v1.55.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
-	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 )
 
 replace (

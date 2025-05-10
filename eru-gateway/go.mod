@@ -47,7 +47,7 @@ require (
 	github.com/goccy/go-json v0.9.6 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.1 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/uuid v1.3.0 // indirect
+	github.com/google/uuid v1.3.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0 // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
