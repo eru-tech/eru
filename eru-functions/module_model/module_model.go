@@ -3,6 +3,7 @@ package module_model
 import (
 	"context"
 	"encoding/json"
+
 	"github.com/eru-tech/eru/eru-functions/functions"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
@@ -20,7 +21,12 @@ type StoreCompare struct {
 	NewFuncs       []string               `json:"new_funcs"`
 	MismatchFuncs  map[string]interface{} `json:"mismatch_funcs"`
 }
-
+type SampleRequest struct {
+	RequestId     string                 `json:"request_id" eru:"required"`
+	RequestName   string                 `json:"request_name" eru:"required"`
+	RequestBody   map[string]interface{} `json:"request_body" eru:"required"`
+	FuncGroupName string                 `json:"func_group_name" eru:"required"`
+}
 type ModuleProjectI interface {
 	AddFunc(ctx context.Context, funcObj functions.FuncGroup) error
 	AddRoute(ctx context.Context, routeObj functions.Route) error

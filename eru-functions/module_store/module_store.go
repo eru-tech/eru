@@ -33,8 +33,11 @@ var LoopThreads = 3
 var EventThreads = 3
 
 const (
-	UPDATE_FUNC_ASYNC = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
-	SELECT_FUNC_ASYNC = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
+	UPDATE_FUNC_ASYNC   = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
+	SELECT_FUNC_ASYNC   = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
+	SELECT_FUNC_REQUEST = "select * from erufunctions_requests where project_id=??? and tenant_id=??? and func_group_name=??? and (request_name=??? or 'ALL'=???)"
+	SAVE_FUNC_REQUEST   = "insert into erufunctions_requests (request_id, request_name, func_group_name, project_id, tenant_id, request_json) values (???, ???, ???, ???, ???, ???) on conflict (request_id) do update set request_json=EXCLUDED.request_json , request_name=EXCLUDED.request_name"
+	DELETE_FUNC_REQUEST = "delete from erufunctions_requests where request_id=??? returning request_id"
 )
 
 type StoreHolder struct {
@@ -78,6 +81,9 @@ type ModuleStoreI interface {
 	UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, eventResponse string, realStore ModuleStoreI) (err error)
 	FetchProjectEvents(ctx context.Context, s ModuleStoreI, cnt int) (err error)
 	StartPolling(ctx context.Context, projectId string, event events.EventI, s ModuleStoreI, cnt int) (err error)
+	SaveFuncRequest(ctx context.Context, sampleRequest module_model.SampleRequest, projectId string, tenantId string, realStore ModuleStoreI) error
+	RemoveFuncRequest(ctx context.Context, requestId string, realStore ModuleStoreI) error
+	GetFuncRequests(ctx context.Context, projectId string, tenantId string, funcName string, realStore ModuleStoreI) (requests []module_model.SampleRequest, err error)
 }
 
 type ModuleStore struct {
@@ -975,6 +981,68 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 		endTime := time.Now()
 		diff := endTime.Sub(startTime)
 		logs.WithContext(nctx).Info(fmt.Sprint("total time taken for message processing for job ", jcnt, " of ", cnt, " and msg ", i, " is ", diff.Seconds(), "seconds"))
+	}
+	return
+}
+
+func (ms *ModuleStore) SaveFuncRequest(ctx context.Context, sampleRequest module_model.SampleRequest, projectId string, tenantId string, s ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveFuncRequest - Start")
+	sampleRequestBytes, err := json.Marshal(sampleRequest.RequestBody)
+	if err != nil {
+		err = logs.Err(ctx, err, "error marshalling sample request")
+		return
+	}
+	var saveQueries []*models.Queries
+	saveQueryFuncRequest := models.Queries{}
+	saveQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SAVE_FUNC_REQUEST)
+	saveQueryFuncRequest.Vals = append(saveQueryFuncRequest.Vals, sampleRequest.RequestId, sampleRequest.RequestName, sampleRequest.FuncGroupName, projectId, tenantId, (string)(sampleRequestBytes))
+	saveQueryFuncRequest.Rank = 1
+	saveQueries = append(saveQueries, &saveQueryFuncRequest)
+	_, err = eru_utils.ExecuteDbSave(ctx, s.GetConn(), saveQueries)
+	if err != nil {
+		return
+	}
+	return
+}
+
+func (ms *ModuleStore) RemoveFuncRequest(ctx context.Context, requestId string, s ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveFuncRequest - Start")
+	var deleteQueries []*models.Queries
+	deleteQueryFuncRequest := models.Queries{}
+	deleteQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, DELETE_FUNC_REQUEST)
+	deleteQueryFuncRequest.Vals = append(deleteQueryFuncRequest.Vals, requestId)
+	deleteQueryFuncRequest.Rank = 1
+	deleteQueries = append(deleteQueries, &deleteQueryFuncRequest)
+	var delResult [][]map[string]interface{}
+	delResult, err = eru_utils.ExecuteDbSave(ctx, s.GetConn(), deleteQueries)
+	if err != nil {
+		return
+	}
+	if len(delResult[0]) == 0 {
+		err = logs.Err(ctx, fmt.Errorf("func request not found %s", requestId), "")
+		return
+	}
+	return
+}
+
+func (ms *ModuleStore) GetFuncRequests(ctx context.Context, projectId string, tenantId string, funcName string, s ModuleStoreI) (requests []module_model.SampleRequest, err error) {
+	logs.WithContext(ctx).Debug("GetFuncRequests - Start")
+	selectQueryFuncRequest := models.Queries{}
+	selectQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SELECT_FUNC_REQUEST)
+	selectQueryFuncRequest.Vals = append(selectQueryFuncRequest.Vals, projectId, tenantId, funcName, "ALL", "ALL")
+	selectQueryFuncRequest.Rank = 1
+	output, err := eru_utils.ExecuteDbFetch(ctx, s.GetConn(), selectQueryFuncRequest)
+	if err != nil {
+		return
+	}
+	requests = []module_model.SampleRequest{}
+	for _, request := range output {
+		requests = append(requests, module_model.SampleRequest{
+			RequestId:     eru_utils.GetStringField(request, "request_id"),
+			RequestName:   eru_utils.GetStringField(request, "request_name"),
+			RequestBody:   eru_utils.GetMapField(request, "request_json"),
+			FuncGroupName: eru_utils.GetStringField(request, "func_group_name"),
+		})
 	}
 	return
 }

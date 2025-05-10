@@ -802,3 +802,39 @@ func getTypeFromValue(value interface{}) string {
 		return "string" // Default to string for unknown types
 	}
 }
+
+// Helper functions for safe type assertions
+func GetStringField(m map[string]interface{}, key string) string {
+	if val, exists := m[key]; exists {
+		if str, ok := val.(string); ok {
+			return str
+		}
+		_ = logs.Err(context.Background(), fmt.Errorf("GetStringField - %s is not a string ", key), "")
+		return ""
+	}
+	_ = logs.Err(context.Background(), fmt.Errorf("GetStringField - %s not found ", key), "")
+	return ""
+}
+
+func GetMapField(m map[string]interface{}, key string) map[string]interface{} {
+	if val, exists := m[key]; exists {
+		if val == nil {
+			return make(map[string]interface{})
+		}
+		// Handle pointer to map
+		if ptr, ok := val.(*map[string]interface{}); ok {
+			if ptr == nil {
+				return make(map[string]interface{})
+			}
+			return *ptr
+		}
+		// Handle direct map
+		if mapVal, ok := val.(map[string]interface{}); ok {
+			return mapVal
+		}
+		_ = logs.Err(context.Background(), fmt.Errorf("GetMapField - %s is not a map %+v", key, val), "")
+		return make(map[string]interface{})
+	}
+	_ = logs.Err(context.Background(), fmt.Errorf("GetMapField - %s not found ", key), "")
+	return make(map[string]interface{})
+}

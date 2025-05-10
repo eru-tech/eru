@@ -16,6 +16,7 @@ import (
 
 	"github.com/eru-tech/eru/eru-events/events"
 	"github.com/eru-tech/eru/eru-functions/functions"
+	"github.com/eru-tech/eru/eru-functions/module_model"
 	"github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -253,6 +254,77 @@ func ScriptHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		w.Write([]byte(jsCode))
 		return
 
+	}
+}
+func FuncRequestListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FuncRequestListHandler - Start")
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenantid"]
+		funcName := vars["funcname"]
+		requests, err := s.GetFuncRequests(r.Context(), projectId, tenantId, funcName, s)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(requests)
+	}
+}	
+func FuncRequestSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FuncRequestSaveHandler - Start")
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenantid"]
+
+		var sampleRequest module_model.SampleRequest
+		err := json.NewDecoder(r.Body).Decode(&sampleRequest)
+		if err != nil {
+			err = logs.Err(r.Context(), err, "error decode request body")
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		} else {
+			err := utils.ValidateStruct(r.Context(), sampleRequest, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		err = s.SaveFuncRequest(r.Context(), sampleRequest, projectId, tenantId, s)
+		if err != nil {
+			err = logs.Err(r.Context(), err, "error saving function request")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprintf("function request %s saved successfully", sampleRequest.RequestName)})
+		}
+	}
+}
+
+func FuncRequestRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FuncRequestRemoveHandler - Start")
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		requestId := vars["requestid"]
+		err := s.RemoveFuncRequest(r.Context(), requestId, s)
+		if err != nil {
+			err = logs.Err(r.Context(), err, "error removing function request")
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"msg": fmt.Sprintf("function request %s removed successfully", requestId)})
 	}
 }
 

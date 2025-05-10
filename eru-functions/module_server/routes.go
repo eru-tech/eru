@@ -28,6 +28,11 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run/{funcstepname}").HandlerFunc(module_handlers.SFuncRunHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run").HandlerFunc(module_handlers.FuncRunHandler(sh.Store))
 
+	storeRouter.Methods(http.MethodGet).Path("/{project}/{tenant}/func/{funcname}/request/list").HandlerFunc(module_handlers.FuncRequestListHandler(sh.Store))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/func/request/save").HandlerFunc(module_handlers.FuncRequestSaveHandler(sh.Store))
+	storeRouter.Methods(http.MethodDelete).Path("/{project}/{tenant}/func/request/remove/{requestid}").HandlerFunc(module_handlers.FuncRequestRemoveHandler(sh.Store))
+	
+
 	storeRouter.Methods(http.MethodPost).Path("/{project}/wf/save").HandlerFunc(module_handlers.WfSaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/wf/remove/{wfname}").HandlerFunc(module_handlers.WfRemoveHandler(sh.Store))
 	//storeRouter.Methods(http.MethodPost).Path("/{project}/wf/run").HandlerFunc(module_handlers.WfRunHandler(sh.Store))
