@@ -44,7 +44,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			} else {
 				token = accessToken
 			}
-			if token == "" {
+			if token == "" || accessToken == "" {
 				logs.WithContext(r.Context()).Info("token = \"\"")
 				server_handlers.FormatResponse(w, http.StatusUnauthorized)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
@@ -52,12 +52,63 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 
-			claims, err := authorizer.VerifyToken(r.Context(), token, r.Header.Get(authorizer.KidHeaderKey))
+			accessClaims, err := authorizer.VerifyToken(r.Context(), accessToken, r.Header.Get(authorizer.KidHeaderKey))
 			if err != nil {
+				logs.WithContext(r.Context()).Error("access token verification failed")
 				server_handlers.FormatResponse(w, http.StatusUnauthorized)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
 			}
+			accessClaimsMap, accessClaimsMapOk := accessClaims.(map[string]interface{})
+			if !accessClaimsMapOk {
+				logs.WithContext(r.Context()).Error("access token is not a map")
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			accessSub, accessSubOk := accessClaimsMap["sub"]
+			if !accessSubOk {
+				err = fmt.Errorf("access token sub is not set")
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+
+			claims, err := authorizer.VerifyToken(r.Context(), token, r.Header.Get(authorizer.KidHeaderKey))
+			if err != nil {
+				logs.WithContext(r.Context()).Error("id token verification failed")
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+
+			claimsMap, claimsMapOk := claims.(map[string]interface{})
+			if !claimsMapOk {
+				logs.WithContext(r.Context()).Error("id token is not a map")
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			idSub, idSubOk := claimsMap["sub"]
+			if !idSubOk {
+				err = fmt.Errorf("id token sub is not set")
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+
+			if idSub.(string) != accessSub.(string) {
+				err = fmt.Errorf("sub mismatch")
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+
 			claimsBytes, err := json.Marshal(claims)
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
