@@ -552,8 +552,12 @@ func (ms *ModuleStore) RemoveTenants() {
 func (ms *ModuleStore) GetAgentNames(ctx context.Context, projectId string, tenantId string) (agentNames []string, err error) {
 	logs.WithContext(ctx).Debug("GetAgentNames - Start")
 	if prj, ok := ms.Projects[projectId]; ok {
-		for agentName := range prj.Tenants[tenantId].Agents {
-			agentNames = append(agentNames, agentName)
+		for _, tenant := range prj.Tenants {
+			if tenantId == "" || tenantId == tenant.TenantId {
+				for agentName := range tenant.Agents {
+					agentNames = append(agentNames, agentName)
+				}
+			}
 		}
 		return agentNames, nil
 	} else {
@@ -567,8 +571,12 @@ func (ms *ModuleStore) GetToolNames(ctx context.Context, projectId string, tenan
 	logs.WithContext(ctx).Debug("GetToolNames - Start")
 
 	if prj, ok := ms.Projects[projectId]; ok {
-		for toolName := range prj.Tenants[tenantId].Tools {
-			toolNames = append(toolNames, toolName)
+		for _, tenant := range prj.Tenants {
+			if tenantId == "" || tenantId == tenant.TenantId {
+				for toolName := range tenant.Tools {
+					toolNames = append(toolNames, toolName)
+				}
+			}
 		}
 		return toolNames, nil
 	} else {

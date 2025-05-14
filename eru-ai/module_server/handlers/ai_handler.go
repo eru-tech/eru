@@ -3,7 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-
+	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
 	model "github.com/eru-tech/eru/eru-ai/models"
 	"github.com/eru-tech/eru/eru-ai/module_store"
 	"github.com/eru-tech/eru/eru-ai/tools"
@@ -12,6 +12,16 @@ import (
 	"github.com/gorilla/mux"
 )
 
+func ToolListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ToolListHandler - Start")
+		toolName:= "MS_EMAIL" //get it from env variable
+		tool := tools_factory.GetTool(toolName)
+		mcpTools := tool.GetMcpTools()
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"tools": mcpTools})
+	}
+}
 func ModelQueryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ModelSaveHandler - Start")

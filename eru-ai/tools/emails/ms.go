@@ -61,6 +61,26 @@ func (msEmailTool *MsEmailTool) GetActionsList() []string {
 	return actions
 }
 
+func (msEmailTool *MsEmailTool) GetMcpTools() []tools.McpToolList {
+	mcpTools := []tools.McpToolList{}
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        ReadEmail,
+		ToolDescription: "Read Emails from your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", ReadEmail),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        SendEmail,
+		ToolDescription: "Send Emails from your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", SendEmail),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        SubscribeEmail,
+		ToolDescription: "Subscribe to your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", SubscribeEmail),
+	})
+	return mcpTools
+}
+
 func (msEmailTool *MsEmailTool) GetSpec() tools.Tooling {
 	return msEmailTool
 }

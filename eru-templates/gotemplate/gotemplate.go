@@ -615,6 +615,47 @@ func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFo
 	logs.Err(ctx, err, "")
 	return nil, err
 }
+
+func (goTmpl *GoTemplate) ExecuteWithErrors(ctx context.Context, obj interface{}, outputFormat string) (output interface{}, err error) {
+	logs.WithContext(ctx).Debug("Execute - Start")
+	buf := &bytes.Buffer{}
+
+	t := template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(GenericFuncMap(ctx))
+	t, err = t.Parse(goTmpl.Template)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return "", err
+	}
+	if err = t.Execute(buf, obj); err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return "", err
+	}
+	str := buf.String()
+	switch outputFormat {
+	case "string":
+		if str == "<no value>" {
+			logs.WithContext(ctx).Warn("template returned <no value>")
+			return "", err
+		}
+		return str, nil
+	case "json":
+		if str == "<no value>" {
+			return nil, err
+		}
+		if err = json.Unmarshal([]byte(str), &output); err != nil {
+			err = fmt.Errorf("unable to marhsal templated output to JSON : %s, %s", buf.String(), err)
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		} else {
+			return
+		}
+	}
+	err = errors.New(fmt.Sprint("Unknown output format : ", outputFormat))
+	logs.WithContext(ctx).Error(err.Error())
+	return nil, err
+}
+
+
 func EvalFilter(ctx context.Context, filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
 	for k, v := range filter {
 		kk := fetchKey(k)

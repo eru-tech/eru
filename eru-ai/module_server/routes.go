@@ -16,7 +16,8 @@ func SetServiceName() {
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	//store functions specific to files
-
+	serverRouter.Methods(http.MethodGet).Path("/tools").HandlerFunc(module_handlers.ToolListHandler(sh.Store))
+	
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 	storeRouter.Methods(http.MethodPost).Path("/{project}/compare").HandlerFunc(module_handlers.StoreCompareHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save").HandlerFunc(module_handlers.ProjectSaveHandler(sh.Store))
@@ -33,7 +34,9 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/settings/save").HandlerFunc(module_handlers.ProjectSetingsSaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).PathPrefix("/{project}/{tenant}/agent/list").HandlerFunc(module_handlers.AgentListNamesHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).PathPrefix("/{project}/agent/list").HandlerFunc(module_handlers.AgentListNamesHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).PathPrefix("/{project}/{tenant}/tool/list").HandlerFunc(module_handlers.ToolListNamesHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).PathPrefix("/{project}/tool/list").HandlerFunc(module_handlers.ToolListNamesHandler(sh.Store))
 	// functions for ai events
 	aiRouter := serverRouter.PathPrefix("/{project}").Subrouter()
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/{model}/query").HandlerFunc(module_handlers.ModelQueryHandler(sh.Store))
