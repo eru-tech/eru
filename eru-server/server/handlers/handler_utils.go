@@ -46,7 +46,7 @@ func AllowCorsObject() *cors.Cors {
 	return cors.New(cors.Options{
 		AllowCredentials: true,
 		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Original-Endpoint"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Original-Endpoint","Id_token"},
 		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
 			return true
 		},

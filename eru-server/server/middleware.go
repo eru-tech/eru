@@ -31,6 +31,9 @@ func requestIdMiddleWare(next http.Handler) http.Handler {
 			traceId = ""
 		}
 		r = r.WithContext(logs.NewContext(r.Context(), zap.String(server_handlers.RequestIdKey, requestID), zap.String("spanID", spanId), zap.String("traceID", traceId)))
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
 		next.ServeHTTP(w, r)
 	})
 }
