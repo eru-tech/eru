@@ -267,7 +267,12 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 		TLSNextProto: make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
 	} */
 	PrintRequestBody(ctx, req, "printing request just before utils.ExecuteHttp")
-	client := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+	client := &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	resp, err = client.Do(req)
 
 	//resp, err = httpClient.Do(req)
