@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
-	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
+
 	model "github.com/eru-tech/eru/eru-ai/models"
 	"github.com/eru-tech/eru/eru-ai/module_store"
 	"github.com/eru-tech/eru/eru-ai/tools"
+	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
@@ -15,7 +17,7 @@ import (
 func ToolListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ToolListHandler - Start")
-		toolName:= "MS_EMAIL" //get it from env variable
+		toolName := "MS_EMAIL" //get it from env variable
 		tool := tools_factory.GetTool(toolName)
 		mcpTools := tool.GetMcpTools()
 		server_handlers.FormatResponse(w, 200)
@@ -91,6 +93,7 @@ func AgentListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
+			logs.WithContext(r.Context()).Info(fmt.Sprintf("Agents: %v", agents))
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"agents": agents})
 		}
@@ -108,6 +111,7 @@ func ToolListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
+			logs.WithContext(r.Context()).Info(fmt.Sprintf("Tools: %v", tools))
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"tools": tools})
 		}
