@@ -269,7 +269,11 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 			}
 
 			if processMsg {
-				hookResult, err := msEmailTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, readMsg, params)
+				body := map[string]interface{}{
+					"mail": readMsg,
+					"tenant_id": tenantId,
+				}
+				hookResult, err := msEmailTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, body, params)
 				if err != nil {
 					logs.WithContext(bgCtx).Error(err.Error())
 					return
