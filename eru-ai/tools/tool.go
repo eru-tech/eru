@@ -16,6 +16,11 @@ import (
 	gojsonschema "github.com/xeipuuv/gojsonschema"
 )
 
+type McpToolList struct {
+	ToolName        string `json:"name"`
+	ToolDescription string `json:"description"`
+	ComponentUrl    string `json:"component_url"`
+}
 type ToolHooks struct {
 	CLBK string `json:"clbk"`
 	POEX string `json:"poex"`
@@ -63,6 +68,7 @@ type ToolInputFields struct {
 type Tooling interface {
 	GetSpec() Tooling
 	GetActionsList() []string
+	GetMcpTools() []McpToolList
 	ValidateAction(ctx context.Context, actionName string, realTool Tooling) (err error)
 	GetInputFields() []ToolInputFields
 	Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (map[string]interface{}, error)
@@ -90,6 +96,10 @@ func (tool *Tool) GetToolCallback() ToolCallback {
 		ResponseContentType: "application/json",
 	}
 }
+func (tool *Tool) Callback(ctx context.Context, projectId string, tenantId string, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error) {
+	err = logs.Err(ctx, fmt.Errorf("callback not implemented"), "")
+	return nil, err
+}
 
 func (tool *Tool) GetToolCbUrl(projectId string, tenantId string) string {
 	return ""
@@ -106,6 +116,10 @@ func (tool *Tool) GetActionsList() []string {
 func (tool *Tool) GetInputFields() []ToolInputFields {
 	fields := []ToolInputFields{}
 	return fields
+}
+
+func (tool *Tool) GetMcpTools() []McpToolList {
+	return []McpToolList{}
 }
 
 func (tool *Tool) ValidateOutput(ctx context.Context, output json.RawMessage) error {
@@ -137,12 +151,6 @@ func (tool *Tool) GetSpec() Tooling {
 
 func (tool *Tool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (map[string]interface{}, error) {
 	err := errors.New("Execute Method not implemented")
-	logs.WithContext(ctx).Error(err.Error())
-	return nil, err
-}
-
-func (tool *Tool) Callback(ctx context.Context, projectId string, tenantId string, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error) {
-	err = errors.New("Callback Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err
 }

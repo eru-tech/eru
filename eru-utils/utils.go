@@ -29,11 +29,11 @@ const (
 	applicationJson = "application/json"
 )
 
-var httpClient = http.Client{
+/* var httpClient = http.Client{
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	},
-}
+} */
 
 func getAttr(ctx context.Context, obj interface{}, fieldName string) reflect.Value {
 	logs.WithContext(ctx).Debug("getAttr - Start")
@@ -139,6 +139,7 @@ func ReplaceUnderscoresWithDots(str string) string {
 func PrintResponseBody(ctx context.Context, response *http.Response, msg string) {
 	logs.WithContext(ctx).Debug("PrintResponseBody - Start")
 	logs.WithContext(ctx).Info(msg)
+	logs.WithContext(ctx).Info(fmt.Sprintf("response: %+v", response))
 	if response != nil {
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
@@ -165,6 +166,9 @@ func PrintResponseBody(ctx context.Context, response *http.Response, msg string)
 func PrintRequestBody(ctx context.Context, request *http.Request, msg string) {
 	logs.WithContext(ctx).Debug("PrintRequestBody - Start")
 	logs.WithContext(ctx).Info(msg)
+	logs.WithContext(ctx).Info(fmt.Sprintf("request.Header: %+v", request.Header))
+	logs.WithContext(ctx).Info(fmt.Sprintf("request.URL: %+v", request.URL))
+
 	if request != nil {
 		if request.Body != nil {
 			body, err := io.ReadAll(request.Body)
@@ -260,13 +264,28 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 					return conn, nil
 				},
 			} */
+	/* tr := &http.Transport{
+		TLSNextProto: make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
+	} */
+	PrintRequestBody(ctx, req, "printing request just before utils.ExecuteHttp")
+	//Transport: otelhttp.NewTransport(http.DefaultTransport),
+	/* client := &http.Client{
+		Transport: http.DefaultTransport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err = client.Do(req) */
+
 	//resp, err = httpClient.Do(req)
 	//for _, c := range req.Cookies() {
 	//	logs.WithContext(ctx).Info(c.String())
 	//}
-	PrintRequestBody(ctx, req, "printing request just before utils.ExecuteHttp")
 
 	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
+
+	//resp, err = otelhttp.NewTransport(http.DefaultTransport).RoundTrip(req)
+
 	//resp, err = http.DefaultTransport.RoundTrip(req)
 	/* client := &http.Client{
 		Transport: HTTPClientTransporter(http.DefaultTransport),
@@ -282,7 +301,6 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 		logs.WithContext(ctx).Error(err.Error())
 	}
 	PrintResponseBody(ctx, resp, "printing response immediately after utils.ExecuteHttp")
-	logs.WithContext(ctx).Info(fmt.Sprintf("resp: %+v", resp))
 
 	allowedOriginsI := ctx.Value("allowed_origins")
 	originI := ctx.Value("origin")

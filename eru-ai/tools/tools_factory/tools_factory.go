@@ -8,6 +8,7 @@ import (
 	web_scraping "github.com/eru-tech/eru/eru-ai/tools/web_scraping"
 )
 
+
 func GetTool(toolType string) tools.Tooling {
 	switch toolType {
 	case "PLAYWRIGHT":
@@ -23,4 +24,13 @@ func GetTool(toolType string) tools.Tooling {
 	default:
 		return new(tools.Tool)
 	}
+}
+
+func GetMcpToolNames() []string {
+	tools := []string{
+		"PLAYWRIGHT",
+		"STRUCTURED_OUTPUT",
+		"MS_EMAIL",
+	}
+	return tools
 }

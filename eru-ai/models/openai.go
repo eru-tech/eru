@@ -286,29 +286,35 @@ func (openaiModel *OpenAIModel) makeOpenAIChatRequestContent(ctx context.Context
 			Type: "text",
 			Text: message.Content,
 		})
-	} else if message.FileData != "" {
-		openAIRequestMessageContent = append(openAIRequestMessageContent, FileContent{
-			Type: "file",
-			File: OpenAIRequestMessageContentFile{
-				Filename: message.FileName,
-				FileData: message.FileData,
-			},
-		})
-	} else if message.FileId != "" {
-		openAIRequestMessageContent = append(openAIRequestMessageContent, FileContent{
-			Type: "file",
-			File: OpenAIRequestMessageContentFile{
-				FileId: message.FileId,
-			},
-		})
-	} else if message.ImageData != "" {
-		openAIRequestMessageContent = append(openAIRequestMessageContent, ImageContent{
-			Type: "image_url",
-			ImageUrl: OpenAIRequestMessageContentImage{
-				Url: message.ImageData,
-			},
-		})
 	}
+	if len(message.Files) > 0 {
+		for _, file := range message.Files {
+		if file.FileData != "" {
+			openAIRequestMessageContent = append(openAIRequestMessageContent, FileContent{
+				Type: "file",
+				File: OpenAIRequestMessageContentFile{
+					Filename: file.FileName,
+					FileData: file.FileData,
+				},
+			})
+		} else if file.FileId != "" {
+			openAIRequestMessageContent = append(openAIRequestMessageContent, FileContent{
+				Type: "file",
+				File: OpenAIRequestMessageContentFile{
+					FileId: file.FileId,
+				},
+			})
+		} else if file.ImageData != "" {
+			openAIRequestMessageContent = append(openAIRequestMessageContent, ImageContent{
+				Type: "image_url",
+				ImageUrl: OpenAIRequestMessageContentImage{
+					Url: file.ImageData,
+				},
+			})
+		}
+	}
+	}
+
 	return
 }
 func (openaiModel *OpenAIModel) makeOpenAIChatRequest(ctx context.Context, chatRequest ChatRequest) (openAIChatRequest OpenAIChatRequest, err error) {
@@ -366,7 +372,7 @@ func (openaiModel *OpenAIModel) makeOpenAIChatToolRequest(ctx context.Context, c
 			Temperature:         openaiModel.Temprature,
 			TopP:                1,
 			Modalities:          []string{"text"},
-			MaxCompletionTokens: 150,
+			MaxCompletionTokens: 1024,
 			ServiceTier:         "auto",
 		},
 

@@ -13,11 +13,9 @@ import (
 type AgentMessage struct {
 	Content   string                 `json:"content,omitempty"`
 	Params    map[string]interface{} `json:"params,omitempty"`
-	FileData  string                 `json:"file_data,omitempty"`
-	FileName  string                 `json:"file_name,omitempty"`
-	FileId    string                 `json:"file_id,omitempty"`
-	ImageData string                 `json:"image_data,omitempty"`
+	Files     []models.FileMessage   `json:"files,omitempty"`
 }
+
 type Agent struct {
 	AgentType    string                   `json:"agent_type" eru:"required"`
 	AgentName    string                   `json:"agent_name" eru:"required"`

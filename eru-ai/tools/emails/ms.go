@@ -61,6 +61,26 @@ func (msEmailTool *MsEmailTool) GetActionsList() []string {
 	return actions
 }
 
+func (msEmailTool *MsEmailTool) GetMcpTools() []tools.McpToolList {
+	mcpTools := []tools.McpToolList{}
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        ReadEmail,
+		ToolDescription: "Read Emails from your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", ReadEmail),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        SendEmail,
+		ToolDescription: "Send Emails from your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", SendEmail),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        SubscribeEmail,
+		ToolDescription: "Subscribe to your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", SubscribeEmail),
+	})
+	return mcpTools
+}
+
 func (msEmailTool *MsEmailTool) GetSpec() tools.Tooling {
 	return msEmailTool
 }
@@ -249,7 +269,11 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 			}
 
 			if processMsg {
-				hookResult, err := msEmailTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, readMsg, params)
+				body := map[string]interface{}{
+					"mail": readMsg,
+					"tenant_id": tenantId,
+				}
+				hookResult, err := msEmailTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, body, params)
 				if err != nil {
 					logs.WithContext(bgCtx).Error(err.Error())
 					return

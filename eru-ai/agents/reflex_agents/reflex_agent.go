@@ -3,6 +3,7 @@ package reflex_agents
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
@@ -25,23 +26,52 @@ func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agent
 		Role:      "user",
 		Content:   agentMessage.Content,
 		Name:      reflex_agent.AgentName,
-		FileData:  agentMessage.FileData,
-		FileName:  agentMessage.FileName,
-		FileId:    agentMessage.FileId,
-		ImageData: agentMessage.ImageData,
+		Files:     agentMessage.Files,
 	}
 	chatRequest := models.ChatRequest{
 		Messages: []models.Message{
 			msg,
 		},
 	}
+	return reflex_agent.execute(ctx, chatRequest, reflex_agent.Tools, reflex_agent.AgentName, reflex_agent.SystemPrompt, 1)
+}
+func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models.ChatRequest, tools map[string]tools.Tooling, agentName string, systemPrompt string, currentTry int) (map[string]interface{}, error) {
+	logs.WithContext(ctx).Debug("validate - Start")
+	agentOutput := make(map[string]interface{})
 	response, err := reflex_agent.Model.QueryModelWithTool(ctx, chatRequest, reflex_agent.Tools, reflex_agent.AgentName, reflex_agent.SystemPrompt)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Info(fmt.Sprintf("%+v", response.Content))
+		if currentTry < reflex_agent.RetryCount {
+			errMsgString := fmt.Sprintf("Error in the json string. Please try again. \n Error: %s \n Erroneous JSON Code generated in previous try: %s", err.Error(), response.Content["raw"])
+			msg := models.Message{
+				Role:      "user",
+				Content:   errMsgString,
+				Name:      reflex_agent.AgentName,
+				Files:     []models.FileMessage{},
+			}
+			chatRequest.Messages = append(chatRequest.Messages, msg)
+			return reflex_agent.execute(ctx, chatRequest, reflex_agent.Tools, reflex_agent.AgentName, reflex_agent.SystemPrompt, currentTry+1)
+		}
 		return nil, err
 	}
-	return response.Content, nil
+
+	agentOutput["output"] = response.Content
+	agentOutput["retry_count"] = currentTry
+	return agentOutput, nil
 }
+
+/* func (reflex_agent *ReflexAgent) validate(ctx context.Context, jsonString string) error {
+	logs.WithContext(ctx).Debug("validate - Start")
+	jsonI := map[string]interface{}{}
+	err := json.Unmarshal([]byte(jsonString), &jsonI)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("jsonI: %+v", jsonI))
+	return nil
+} */
 
 func (reflex_agent *ReflexAgent) callTool(ctx context.Context, projectId string, tenantId string, tool tools.Tooling, params map[string]interface{}) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("callTool - Start")
