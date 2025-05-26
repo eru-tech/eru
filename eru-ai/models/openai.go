@@ -289,30 +289,30 @@ func (openaiModel *OpenAIModel) makeOpenAIChatRequestContent(ctx context.Context
 	}
 	if len(message.Files) > 0 {
 		for _, file := range message.Files {
-		if file.FileData != "" {
-			openAIRequestMessageContent = append(openAIRequestMessageContent, FileContent{
-				Type: "file",
-				File: OpenAIRequestMessageContentFile{
-					Filename: file.FileName,
-					FileData: file.FileData,
-				},
-			})
-		} else if file.FileId != "" {
-			openAIRequestMessageContent = append(openAIRequestMessageContent, FileContent{
-				Type: "file",
-				File: OpenAIRequestMessageContentFile{
-					FileId: file.FileId,
-				},
-			})
-		} else if file.ImageData != "" {
-			openAIRequestMessageContent = append(openAIRequestMessageContent, ImageContent{
-				Type: "image_url",
-				ImageUrl: OpenAIRequestMessageContentImage{
-					Url: file.ImageData,
-				},
-			})
+			if file.FileData != "" {
+				openAIRequestMessageContent = append(openAIRequestMessageContent, FileContent{
+					Type: "file",
+					File: OpenAIRequestMessageContentFile{
+						Filename: file.FileName,
+						FileData: file.FileData,
+					},
+				})
+			} else if file.FileId != "" {
+				openAIRequestMessageContent = append(openAIRequestMessageContent, FileContent{
+					Type: "file",
+					File: OpenAIRequestMessageContentFile{
+						FileId: file.FileId,
+					},
+				})
+			} else if file.ImageData != "" {
+				openAIRequestMessageContent = append(openAIRequestMessageContent, ImageContent{
+					Type: "image_url",
+					ImageUrl: OpenAIRequestMessageContentImage{
+						Url: fmt.Sprintf("data:%s;base64,%s", file.FileType, file.ImageData),
+					},
+				})
+			}
 		}
-	}
 	}
 
 	return

@@ -51,16 +51,16 @@ type AnthropicMessage struct {
 }
 
 type AnthropicMessageContent struct {
-	Text string `json:"text"`
-	//Source       AnthropicContentSource `json:"source,omitempty"`
-	Id           string                `json:"id,omitempty"`
-	ToolUseId    string                `json:"tool_use_id,omitempty"`
-	Content      string                `json:"content,omitempty"`
-	IsError      bool                  `json:"is_error,omitempty"`
-	Name         string                `json:"name,omitempty"`
-	Input        interface{}           `json:"input,omitempty"`
-	Type         string                `json:"type" eru:"required"`
-	CacheControl AnthropicCacheControl `json:"cache_control,omitempty"`
+	Text         *string                 `json:"text,omitempty"`
+	Source       *AnthropicContentSource `json:"source,omitempty"`
+	Id           string                  `json:"id,omitempty"`
+	ToolUseId    string                  `json:"tool_use_id,omitempty"`
+	Content      string                  `json:"content,omitempty"`
+	IsError      bool                    `json:"is_error,omitempty"`
+	Name         string                  `json:"name,omitempty"`
+	Input        interface{}             `json:"input,omitempty"`
+	Type         string                  `json:"type" eru:"required"`
+	CacheControl *AnthropicCacheControl  `json:"cache_control,omitempty"`
 }
 
 type AnthropicContentSource struct {
@@ -81,10 +81,10 @@ type AnthropicToolChoice struct {
 
 type AnthropicRequestTool struct {
 	//Type         string                `json:"type" eru:"required"`
-	Name         string                `json:"name" eru:"required"`
-	Description  string                `json:"description" eru:"required"`
-	InputSchema  eru_models.JSONSchema `json:"input_schema,omitempty"`
-	CacheControl AnthropicCacheControl `json:"cache_control,omitempty"`
+	Name         string                 `json:"name" eru:"required"`
+	Description  string                 `json:"description" eru:"required"`
+	InputSchema  eru_models.JSONSchema  `json:"input_schema,omitempty"`
+	CacheControl *AnthropicCacheControl `json:"cache_control,omitempty"`
 }
 
 // Response Types
@@ -164,9 +164,9 @@ func (anthropicModel *AnthropicModel) makeAnthropicChatRequest(ctx context.Conte
 
 	for _, message := range chatRequest.Messages {
 		aContent := AnthropicMessageContent{
-			Type: "text",
-			Text: message.Content,
-			//CacheControl: AnthropicCacheControl{TTL: 0},
+			Type:         "text",
+			Text:         &message.Content,
+			CacheControl: nil,
 		}
 		anthropicRequest.Messages = append(anthropicRequest.Messages, AnthropicMessage{
 			Role:    message.Role,
@@ -247,7 +247,7 @@ func (anthropicModel *AnthropicModel) makeAnthropicChatToolRequest(ctx context.C
 			Description: toolDescription,
 			InputSchema: toolParameters,
 			//Type:         "custom",
-			CacheControl: AnthropicCacheControl{TTL: 0, Type: "ephemeral"},
+			CacheControl: nil,
 		}
 		anthropicRequestTools = append(anthropicRequestTools, reqTool)
 	}
@@ -264,17 +264,66 @@ func (anthropicModel *AnthropicModel) makeAnthropicChatToolRequest(ctx context.C
 	anthropicChatRequest.Tools = anthropicRequestTools
 	//anthropicChatRequest.Metadata.Content.CacheControl = AnthropicCacheControl{Type: "ephemeral"}
 
+	content := fmt.Sprint(agentPrompt, "\n", toolPrompt)
 	anthropicChatRequest.Messages = append(anthropicChatRequest.Messages, AnthropicMessage{
 		Role:    "assistant",
-		Content: []AnthropicMessageContent{{Type: "text", Text: fmt.Sprint(agentPrompt, "\n", toolPrompt), CacheControl: AnthropicCacheControl{Type: "ephemeral"}}},
+		Content: []AnthropicMessageContent{{Type: "text", Text: &content}}, //CacheControl: AnthropicCacheControl{Type: "ephemeral"},
+
 	})
 
 	for _, message := range chatRequest.Messages {
 		anthropicChatRequest.Messages = append(anthropicChatRequest.Messages, AnthropicMessage{
 			Role:    message.Role,
-			Content: []AnthropicMessageContent{{Type: "text", Text: message.Content, CacheControl: AnthropicCacheControl{Type: "ephemeral"}}},
+			Content: anthropicModel.makeAnthropicChatRequestContent(ctx, message),
 		})
 	}
+	return
+}
+
+func (anthropicModel *AnthropicModel) makeAnthropicChatRequestContent(ctx context.Context, message Message) (anthropicRequestMessageContent []AnthropicMessageContent) {
+	logs.WithContext(ctx).Debug("makeOpenAIChatRequestContent - Start")
+	if message.Content != "" {
+		anthropicRequestMessageContent = append(anthropicRequestMessageContent, AnthropicMessageContent{
+			Type:         "text",
+			Text:         &message.Content,
+			Source:       nil,
+			CacheControl: nil,
+		})
+	}
+	if len(message.Files) > 0 {
+		for _, file := range message.Files {
+			if file.FileData != "" {
+				/* anthropicRequestMessageContent = append(anthropicRequestMessageContent, AnthropicMessageContent{
+					Type: "file",
+					Source: AnthropicContentSource{
+						Filename: file.FileName,
+						FileData: file.FileData,
+					},
+				}) */
+				//TODO: Add file data support
+			} else if file.FileId != "" {
+				/* anthropicRequestMessageContent = append(anthropicRequestMessageContent, AnthropicMessageContent{
+					Type: "file",
+					Source: AnthropicContentSource{
+						FileId: file.FileId,
+					},
+				}) */
+				//TODO: Add file id support
+			} else if file.ImageData != "" {
+				anthropicRequestMessageContent = append(anthropicRequestMessageContent, AnthropicMessageContent{
+					Type: "image",
+					Text: nil,
+					Source: &AnthropicContentSource{
+						MediaType: file.FileType,
+						Type:      "base64",
+						Data:      file.ImageData,
+					},
+					CacheControl: nil,
+				})
+			}
+		}
+	}
+
 	return
 }
 
@@ -304,7 +353,5 @@ func (anthropicModel *AnthropicModel) queryModelTool(ctx context.Context, toolRe
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-
-	logs.WithContext(ctx).Info(fmt.Sprint(anthropicResponse))
 	return
 }

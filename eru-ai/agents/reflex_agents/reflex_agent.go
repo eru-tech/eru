@@ -3,7 +3,6 @@ package reflex_agents
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
@@ -23,10 +22,10 @@ func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agent
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
 
 	msg := models.Message{
-		Role:      "user",
-		Content:   agentMessage.Content,
-		Name:      reflex_agent.AgentName,
-		Files:     agentMessage.Files,
+		Role:    "user",
+		Content: agentMessage.Content,
+		Name:    reflex_agent.AgentName,
+		Files:   agentMessage.Files,
 	}
 	chatRequest := models.ChatRequest{
 		Messages: []models.Message{
@@ -39,7 +38,7 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 	logs.WithContext(ctx).Debug("validate - Start")
 	agentOutput := make(map[string]interface{})
 	response, err := reflex_agent.Model.QueryModelWithTool(ctx, chatRequest, reflex_agent.Tools, reflex_agent.AgentName, reflex_agent.SystemPrompt)
-	if err != nil {
+	/* if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		logs.WithContext(ctx).Info(fmt.Sprintf("%+v", response.Content))
 		if currentTry < reflex_agent.RetryCount {
@@ -54,11 +53,11 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 			return reflex_agent.execute(ctx, chatRequest, reflex_agent.Tools, reflex_agent.AgentName, reflex_agent.SystemPrompt, currentTry+1)
 		}
 		return nil, err
-	}
+	} */
 
 	agentOutput["output"] = response.Content
 	agentOutput["retry_count"] = currentTry
-	return agentOutput, nil
+	return agentOutput, err
 }
 
 /* func (reflex_agent *ReflexAgent) validate(ctx context.Context, jsonString string) error {
