@@ -103,7 +103,7 @@ func (qld *QLData) ProcessTransformRule(ctx context.Context, tr module_model.Tra
 	return
 }
 
-func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, vars map[string]interface{}, mainTableName string, ctjMap map[string]string) (outputStr string, templates []string, err error) {
+func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, vars map[string]interface{}, mainTableName string, ctjMap map[string]string) (outputStr string, templates []string, ptables []string, err error) {
 	logs.WithContext(ctx).Debug("processSecurityRule - Start")
 	if sr.RuleType == module_model.RULETYPE_NONE {
 		err = errors.New("Security Rule Set to NONE")
@@ -113,7 +113,7 @@ func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, var
 		//do nothing
 		return
 	} else if sr.RuleType == module_model.RULETYPE_CUSTOM {
-		outputStr, templates, err = sr.Stringify(ctx, vars, false, mainTableName, ctjMap)
+		outputStr, templates, ptables, err = sr.Stringify(ctx, vars, false, mainTableName, ctjMap)
 
 	}
 	return

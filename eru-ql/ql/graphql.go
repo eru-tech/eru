@@ -703,7 +703,7 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 					ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
 				}
 				if mainTableName != ruleTableName && !strings.HasPrefix(ruleTableName, "token") {
-					if !(v.Operator == "ex_in" || v.Operator == "nex_in" || v.Operator == "ex_jin" || v.Operator == "nex_jin") {
+					if !(v.Operator == "ex_in" || v.Operator == "nex_in" || v.Operator == "ex_jin" || v.Operator == "nex_jin" || v.Operator == "ex_pj" || v.Operator == "nex_pj") {
 						ruleJoinTables = append(ruleJoinTables, ruleTableName)
 					} else {
 						ruleJoinChildTables = append(ruleJoinChildTables, ruleTableName)
@@ -722,7 +722,7 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 					ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
 				}
 				if mainTableName != ruleTableName && !strings.HasPrefix(ruleTableName, "token") {
-					if !(v.Operator == "ex_in" || v.Operator == "nex_in" || v.Operator == "ex_jin" || v.Operator == "nex_jin") {
+					if !(v.Operator == "ex_in" || v.Operator == "nex_in" || v.Operator == "ex_jin" || v.Operator == "nex_jin" || v.Operator == "ex_pj" || v.Operator == "nex_pj") {
 						ruleJoinTables = append(ruleJoinTables, ruleTableName)
 					} else {
 						ruleJoinChildTables = append(ruleJoinChildTables, ruleTableName)
@@ -751,8 +751,8 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 			oc, _ := processWhereClause(ctx, onClause, "", mainTableName, true, false)
 			ctjObjMap[ctj] = oc
 		}
-
-		ruleOutput, templates, err = processSecurityRule(ctx, sr.Select, vars, mainTableName, ctjObjMap)
+		var ptables []string
+		ruleOutput, templates, ptables, err = processSecurityRule(ctx, sr.Select, vars, mainTableName, ctjObjMap)
 
 		for _, t := range templates {
 			ro, rj, rerr := getTableSecurityRule(ctx, projectId, dbAlias, t, s, op, vars, tableName)
@@ -763,8 +763,17 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 			ruleJoinTables = append(ruleJoinTables, rj...)
 			ruleOutput = strings.Replace(ruleOutput, fmt.Sprint("$TEMPLATE_", t), ro, -1)
 		}
+
+		for _, p := range ptables {
+			ro, rjt, roerr := getTableSecurityRule(ctx, projectId, dbAlias, p, s, op, vars, p)
+			if roerr != nil {
+				return
+			}
+			ruleJoinTables = append(ruleJoinTables, rjt...)
+			ruleOutput = strings.Replace(ruleOutput, fmt.Sprint("$", p, "$"), fmt.Sprint(p, " ", ro), -1)
+		}
 	} else if op == "mutation" {
-		ruleOutput, templates, err = processSecurityRule(ctx, sr.Insert, vars, mainTableName, nil) //todo to change it as per query type
+		ruleOutput, templates, _, err = processSecurityRule(ctx, sr.Insert, vars, mainTableName, nil) //todo to change it as per query type
 		_ = templates
 	} else {
 		err = errors.New(fmt.Sprint("Invalid Query Type : ", op))

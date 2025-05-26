@@ -39,35 +39,35 @@ type SecurityRule struct {
 	IgnoreRecord string                 `json:"ignore_record"`
 }
 
-func (sr SecurityRule) Stringify(ctx context.Context, vars map[string]interface{}, ignoreIfNotFound bool, mainTableName string, ctjMap map[string]string) (str string, templates []string, err error) {
+func (sr SecurityRule) Stringify(ctx context.Context, vars map[string]interface{}, ignoreIfNotFound bool, mainTableName string, ctjMap map[string]string) (str string, templates []string, ptables []string, err error) {
 	logs.WithContext(ctx).Debug("Stringify - Start")
 	if len(sr.CustomRule.AND) > 0 {
-		str, templates, err = processRuleClause(ctx, sr.CustomRule.AND, "and", vars, ignoreIfNotFound, mainTableName, ctjMap)
+		str, templates, ptables, err = processRuleClause(ctx, sr.CustomRule.AND, "and", vars, ignoreIfNotFound, mainTableName, ctjMap)
 		return
 	}
 	if len(sr.CustomRule.OR) > 0 {
-		str, templates, err = processRuleClause(ctx, sr.CustomRule.OR, "or", vars, ignoreIfNotFound, mainTableName, ctjMap)
+		str, templates, ptables, err = processRuleClause(ctx, sr.CustomRule.OR, "or", vars, ignoreIfNotFound, mainTableName, ctjMap)
 		return
 	}
 	return
 }
-func processRuleClause(ctx context.Context, rules []CustomRuleDetails, conditionType string, vars map[string]interface{}, ignoreIfNotFound bool, mainTableName string, ctjMap map[string]string) (ruleOutput string, templates []string, err error) {
+func processRuleClause(ctx context.Context, rules []CustomRuleDetails, conditionType string, vars map[string]interface{}, ignoreIfNotFound bool, mainTableName string, ctjMap map[string]string) (ruleOutput string, templates []string, ptables []string, err error) {
 	logs.WithContext(ctx).Debug("processRuleClause - Start")
 	var strArray []string
 	var tmpTemplates []string
 	str := ""
 	for _, v := range rules {
 		if len(v.AND) > 0 {
-			str, tmpTemplates, err = processRuleClause(ctx, v.AND, "and", vars, ignoreIfNotFound, mainTableName, ctjMap)
+			str, ptables, tmpTemplates, err = processRuleClause(ctx, v.AND, "and", vars, ignoreIfNotFound, mainTableName, ctjMap)
 			templates = append(templates, tmpTemplates...)
 		} else if len(v.OR) > 0 {
-			str, tmpTemplates, err = processRuleClause(ctx, v.OR, "or", vars, ignoreIfNotFound, mainTableName, ctjMap)
+			str, ptables, tmpTemplates, err = processRuleClause(ctx, v.OR, "or", vars, ignoreIfNotFound, mainTableName, ctjMap)
 			templates = append(templates, tmpTemplates...)
 		} else if v.Template != "" {
 			str = fmt.Sprint("$TEMPLATE_", v.Template)
 			templates = append(templates, v.Template)
 		} else {
-			str, err = stringifyRule(ctx, v, conditionType, vars, ignoreIfNotFound, mainTableName, ctjMap)
+			str, ptables, err = stringifyRule(ctx, v, conditionType, vars, ignoreIfNotFound, mainTableName, ctjMap)
 		}
 		if str != "" {
 			strArray = append(strArray, str)
@@ -80,7 +80,7 @@ func processRuleClause(ctx context.Context, rules []CustomRuleDetails, condition
 	return
 }
 
-func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType string, vars map[string]interface{}, ignoreIfNotFound bool, mainTableName string, ctjMap map[string]string) (str string, err error) {
+func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType string, vars map[string]interface{}, ignoreIfNotFound bool, mainTableName string, ctjMap map[string]string) (str string, ptables []string, err error) {
 	logs.WithContext(ctx).Debug("stringifyRule - Start")
 	op := ""
 	valPrefix := ""
@@ -151,6 +151,12 @@ func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType stri
 	case "nex_jin":
 		op = " not exists "
 		break
+	case "ex_pj":
+		op = " exists "
+		break
+	case "nex_pj":
+		op = " not exists "
+		break
 	default:
 		//do nothing
 		break
@@ -164,17 +170,17 @@ func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType stri
 	if err == nil {
 		cdv1 = fmt.Sprint(valPrefix, string(var1Bytes), valSuffix)
 	} else if ignoreIfNotFound && err.Error() != "no variable prefix found" {
-		return "", nil
+		return "", nil, nil
 	}
 	var2Bytes, err := processTemplate(ctx, "customrule", cdv2, vars, "string")
 	if err == nil {
 		cdv2 = fmt.Sprint(valPrefix, string(var2Bytes), valSuffix)
 	} else if ignoreIfNotFound && err.Error() != "no variable prefix found" {
-		return "", nil
+		return "", nil, nil
 	}
 	existsClause := false
 	existsOp := ""
-	if cd.Operator == "ex_in" || cd.Operator == "nex_in" {
+	if cd.Operator == "ex_in" || cd.Operator == "nex_in" || cd.Operator == "ex_pj" || cd.Operator == "nex_pj" {
 		existsClause = true
 		existsOp = " in "
 	} else if cd.Operator == "ex_jin" || cd.Operator == "nex_jin" {
@@ -185,12 +191,18 @@ func stringifyRule(ctx context.Context, cd CustomRuleDetails, conditionType stri
 		exStr := ""
 		for k, v := range ctjMap {
 			if strings.Contains(cdv1, k) {
-				exStr = fmt.Sprint("select 1 from (select * from ", k, " where ", cdv1, existsOp, cdv2, ") x where ", strings.Replace(v, k, "x", -1))
-				return fmt.Sprint(op, " (", exStr, ")"), nil
+				if cd.Operator == "ex_jin" || cd.Operator == "nex_jin" || cd.Operator == "ex_in" || cd.Operator == "nex_in" {
+					exStr = fmt.Sprint("select 1 from (select * from $", k, "$ where ", cdv1, existsOp, cdv2, ") x where ", strings.Replace(v, k, "x", -1))
+				}
+				if cd.Operator == "ex_pj" || cd.Operator == "nex_pj" {
+					exStr = fmt.Sprint("select 1 from (select * from $", k, "$ ", ") x where ", strings.Replace(v, k, "x", -1))
+					ptables = append(ptables, k)
+				}
+				return fmt.Sprint(op, " (", exStr, ")"), ptables, nil
 			}
 		}
 	}
-	return fmt.Sprint(cdv1, op, cdv2), nil
+	return fmt.Sprint(cdv1, op, cdv2), ptables, nil
 }
 
 func processTemplate(ctx context.Context, templateName string, templateString string, vars map[string]interface{}, outputType string) (output []byte, err error) {
