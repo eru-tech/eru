@@ -369,6 +369,7 @@ func AgentExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
+			logs.WithContext(r.Context()).Info(fmt.Sprintf("Agent: %v", agent))
 			agentParamsFromReq := json.NewDecoder(r.Body)
 			agentParamsFromReq.DisallowUnknownFields()
 
@@ -379,11 +380,13 @@ func AgentExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
+			logs.WithContext(r.Context()).Info(fmt.Sprintf("AgentMessage: %v", agentMessage))
 			agentResult, err := agent.Execute(r.Context(), agentMessage)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			} else {
+				logs.WithContext(r.Context()).Info(fmt.Sprintf("AgentResult: %v", agentResult))
 				server_handlers.FormatResponse(w, 200)
 				_ = json.NewEncoder(w).Encode(agentResult)
 			}

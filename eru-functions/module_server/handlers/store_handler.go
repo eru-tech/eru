@@ -398,10 +398,12 @@ func ProjectAgentListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		tenantID := vars["tenant"]
-
+		if tenantID != "" {
+			tenantID = fmt.Sprintf("/%s", tenantID)
+		}
 		reqHeader := http.Header{}
 		reqHeader.Set("Content-Type", "application/json")
-		res, _, _, _, err := utils.CallHttp(r.Context(), http.MethodGet, fmt.Sprint(module_store.Eruaibaseurl, "/store/", projectID, "/", tenantID, "/agent/list"), reqHeader, nil, nil, nil, nil)
+		res, _, _, _, err := utils.CallHttp(r.Context(), http.MethodGet, fmt.Sprint(module_store.Eruaibaseurl, "/store/", projectID, tenantID, "/agent/list"), reqHeader, nil, nil, nil, nil)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -409,7 +411,6 @@ func ProjectAgentListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(res)
 		}
-		return
 	}
 }
 
@@ -419,18 +420,19 @@ func ProjectToolListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		tenantID := vars["tenant"]
-
+		if tenantID != "" {	
+			tenantID = fmt.Sprintf("/%s", tenantID)
+		}
 		reqHeader := http.Header{}
 		reqHeader.Set("Content-Type", "application/json")
-		res, _, _, _, err := utils.CallHttp(r.Context(), http.MethodGet, fmt.Sprint(module_store.Eruaibaseurl, "/store/", projectID, "/", tenantID, "/tool/list"), reqHeader, nil, nil, nil, nil)
+		res, _, _, _, err := utils.CallHttp(r.Context(), http.MethodGet, fmt.Sprint(module_store.Eruaibaseurl, "/store/", projectID, tenantID, "/tool/list"), reqHeader, nil, nil, nil, nil)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(res)
-		}
-		return
+		}		
 	}
 }
 

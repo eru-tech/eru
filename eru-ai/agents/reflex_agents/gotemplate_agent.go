@@ -162,7 +162,7 @@ func (goTemplateAgent *GoTemplateAgent) MakeFromJson(ctx context.Context, rj *js
 func processTemplate(ctx context.Context, templateName string, templateString string, vars *interface{}, outputType string, tokenHeaderKey string) (output interface{}, err error) {
 	logs.WithContext(ctx).Debug("processTemplate - Start")
 	goTmpl := gotemplate.GoTemplate{Name: templateName, Template: templateString}
-	output, err = goTmpl.Execute(ctx, vars, outputType)
+	output, err = goTmpl.ExecuteWithErrors(ctx, vars, outputType)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
