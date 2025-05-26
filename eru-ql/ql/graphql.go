@@ -766,11 +766,25 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 
 		for _, p := range ptables {
 			ro, rjt, roerr := getTableSecurityRule(ctx, projectId, dbAlias, p, s, op, vars, p)
-			if roerr != nil {
-				return
+			if roerr == nil && ro != "" {
+				q := fmt.Sprint("select  ", p, ".* from ", p)
+				for _, srJoin := range rjt {
+					tj, e := ds.GetTableJoins(ctx, p, srJoin, make(map[string]string))
+					if e != nil {
+						logs.WithContext(ctx).Error(e.Error())
+						return
+					}
+					onClause, er := processMapVariable(ctx, tj.GetOnClause(ctx), vars)
+					if er != nil {
+						logs.WithContext(ctx).Error(er.Error())
+						return
+					}
+					oc, _ := processWhereClause(ctx, onClause, "", p, true, false)
+					q = fmt.Sprint(q, " left join ", srJoin, " on ", oc)
+				}
+				q = fmt.Sprint(q, " where ", ro)
+				ruleOutput = strings.Replace(ruleOutput, fmt.Sprint("$", p, "$"), fmt.Sprint("( ", q, " ) pj "), -1)
 			}
-			ruleJoinTables = append(ruleJoinTables, rjt...)
-			ruleOutput = strings.Replace(ruleOutput, fmt.Sprint("$", p, "$"), fmt.Sprint(p, " ", ro), -1)
 		}
 	} else if op == "mutation" {
 		ruleOutput, templates, _, err = processSecurityRule(ctx, sr.Insert, vars, mainTableName, nil) //todo to change it as per query type
