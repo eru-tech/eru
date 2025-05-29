@@ -8,6 +8,7 @@ import (
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
+	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	module_model "github.com/eru-tech/eru/eru-ai/module_model"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	db "github.com/eru-tech/eru/eru-db/db"
@@ -16,6 +17,8 @@ import (
 )
 
 var Erufuncbaseurl = "http://localhost:8083"
+var Eruauthbaseurl = "http://localhost:8085"
+var Eruaiport = "8088"
 
 type StoreHolder struct {
 	Store ModuleStoreI
@@ -117,7 +120,7 @@ func (ms *ModuleStore) GetExtendedProjectConfig(ctx context.Context, projectId s
 		if err != nil {
 			logs.WithContext(ctx).Warn(err.Error())
 		}
-		ePrj.SecretManager, err = realStore.FetchSm(ctx, projectId)
+		ePrj.Scheduler, err = realStore.FetchScheduler(ctx, projectId)
 		if err != nil {
 			logs.WithContext(ctx).Warn(err.Error())
 		}
@@ -330,9 +333,21 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 		if err != nil {
 			return
 		}
+		err = toolObj.SetPrivateAttributes(ctx, toolObj)
+		if err != nil {
+			return
+		}
 		toolObjClone, err = ms.GetToolCloneObject(ctx, projectId, tenantId, toolObj, s)
 		toolObjClone.SetToolDb(db.GetDb(s.GetDbType()))
 		toolObjClone.GetToolDb().SetConn(s.GetConn())
+		if err != nil {
+			return
+		}
+		var scheduler scheduler.SchedulerI
+		scheduler, err = s.FetchScheduler(ctx, projectId)
+		if err == nil {
+			toolObjClone.SetScheduler(scheduler)
+		}
 		return
 	}
 }
@@ -340,17 +355,16 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 func (ms *ModuleStore) GetToolCloneObject(ctx context.Context, projectId string, tenantId string, toolObj tools.Tooling, s ModuleStoreI) (toolObjClone tools.Tooling, err error) {
 	logs.WithContext(ctx).Debug("GetToolCloneObject - Start")
 
-	toolObjJson, toolObjJsonErr := json.Marshal(toolObj)
+	toolObjJson, toolObjJsonErr := toolObj.GetBytes(ctx)
 	if toolObjJsonErr != nil {
-		err = errors.New("error while cloning toolObj (marshal)")
-		logs.WithContext(ctx).Error(err.Error())
-		logs.WithContext(ctx).Error(toolObjJsonErr.Error())
 		return
 	}
 	toolObjJson = s.ReplaceTenantVariables(ctx, projectId, tenantId, toolObjJson)
 	toolObjJson = s.ReplaceVariables(ctx, projectId, toolObjJson, nil)
 
-	iCloneI := reflect.New(reflect.TypeOf(toolObj))
+	return toolObj.BytesToTool(ctx, toolObjJson)
+
+	/* iCloneI := reflect.New(reflect.TypeOf(toolObj))
 	toolObjCloneErr := json.Unmarshal(toolObjJson, iCloneI.Interface())
 	if toolObjCloneErr != nil {
 		err = errors.New("error while cloning toolObj(unmarshal)")
@@ -358,7 +372,7 @@ func (ms *ModuleStore) GetToolCloneObject(ctx context.Context, projectId string,
 		logs.WithContext(ctx).Error(toolObjCloneErr.Error())
 		return
 	}
-	return iCloneI.Elem().Interface().(tools.Tooling), nil
+	return iCloneI.Elem().Interface().(tools.Tooling), nil */
 }
 func (ms *ModuleStore) GetTool(ctx context.Context, projectId string, tenantId string, toolName string, actionName string, s ModuleStoreI) (toolObjClone tools.Tooling, err error) {
 	logs.WithContext(ctx).Debug("GetTool - Start")

@@ -342,7 +342,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 	return identity, LoginSuccess{}, nil
 }
 
-func (msAuth *MsAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (loginResI interface{}, err error) {
+func (msAuth *MsAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error) {
 	logs.WithContext(ctx).Debug("Login - Start")
 
 	headers := http.Header{}
@@ -351,11 +351,17 @@ func (msAuth *MsAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody,
 	msLoginFormBody := make(map[string]string)
 	msLoginFormBody["client_id"] = msAuth.MsConfig.ClientId
 	msLoginFormBody["client_secret"] = msAuth.MsConfig.ClientSecret
-	msLoginFormBody["redirect_uri"] = msAuth.MsConfig.RedirectURI
-	msLoginFormBody["grant_type"] = "authorization_code"
+	//msLoginFormBody["redirect_uri"] = msAuth.MsConfig.RedirectURI
+	msLoginFormBody["redirect_uri"] = "https://www.google.com"
 	msLoginFormBody["scope"] = msAuth.MsConfig.Scope
-	msLoginFormBody["code"] = loginPostBody.IdpCode
-	msLoginFormBody["code_verifier"] = loginPostBody.CodeVerifier
+	if renewFlag {
+		msLoginFormBody["grant_type"] = "refresh_token"
+		msLoginFormBody["refresh_token"] = loginPostBody.RefreshToken
+	} else {
+		msLoginFormBody["code"] = loginPostBody.IdpCode
+		msLoginFormBody["code_verifier"] = loginPostBody.CodeVerifier
+		msLoginFormBody["grant_type"] = "authorization_code"
+	}
 
 	loginRes, _, _, _, loginErr := utils.CallHttp(ctx, http.MethodPost, msAuth.MsConfig.TokenUrl, headers, msLoginFormBody, nil, nil, nil)
 	if loginErr != nil {

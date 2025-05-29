@@ -13,6 +13,7 @@ import (
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-repos/repos"
+	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	"github.com/eru-tech/eru/eru-secret-manager/kms"
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
@@ -61,6 +62,49 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 			}
 			msi.SetVars(ctx, vars)
 		}
+	}
+
+	var prjScheduler map[string]*json.RawMessage
+	if _, ok := storeMap["scheduler"]; ok {
+		if storeMap["scheduler"] != nil {
+			err = json.Unmarshal(*storeMap["scheduler"], &prjScheduler)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			for prj, schedulerJson := range prjScheduler {
+				var schedulerObj map[string]*json.RawMessage
+				err = json.Unmarshal(*schedulerJson, &schedulerObj)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return err
+				}
+				var schedulerType string
+				if _, stOk := schedulerObj["scheduler_type"]; stOk {
+					err = json.Unmarshal(*schedulerObj["scheduler_type"], &schedulerType)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return err
+					}
+					schedulerI := scheduler.GetScheduler(schedulerType)
+					err = schedulerI.MakeFromJson(ctx, schedulerJson)
+					if err == nil {
+						err = msi.SaveScheduler(ctx, prj, schedulerI, msi, false)
+						if err != nil {
+							return err
+						}
+					} else {
+						return err
+					}
+				} else {
+					logs.WithContext(ctx).Info("ignoring scheduler as scheduler_type attribute not found")
+				}
+			}
+		} else {
+			logs.WithContext(ctx).Info("scheduler attribute is nil")
+		}
+	} else {
+		logs.WithContext(ctx).Info("scheduler attribute not found in store")
 	}
 
 	var prjSm map[string]*json.RawMessage

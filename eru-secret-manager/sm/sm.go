@@ -27,7 +27,7 @@ type SmStoreI interface {
 	UnsetSmValue(ctx context.Context, secretName string, secretKey string) (err error)
 	GetSmValue(ctx context.Context, secretName string, secretKey string, forceFetch bool) (secretValue interface{}, err error)
 	GetSmValues(ctx context.Context, secretName string) (secretValues map[string]string, err error)
-
+	GetSecretName() string
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	InitCache(ctx context.Context) error
 	GetCacheStore() cache.CacheStoreI
@@ -102,4 +102,7 @@ func (smStore *SmStore) MakeFromJson(ctx context.Context, rj *json.RawMessage) e
 		return err
 	}
 	return nil
+}
+func (smStore *SmStore) GetSecretName() string {
+	return ""
 }

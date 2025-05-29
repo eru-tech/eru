@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 
 	db "github.com/eru-tech/eru/eru-db/db"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
+	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	utils "github.com/eru-tech/eru/eru-utils"
 	gojsonschema "github.com/xeipuuv/gojsonschema"
 )
@@ -22,9 +24,12 @@ type McpToolList struct {
 	ComponentUrl    string `json:"component_url"`
 }
 type ToolHooks struct {
-	CLBK string `json:"clbk"`
-	POEX string `json:"poex"`
+	CLBK string `json:"clbk"` //callback
+	POEX string `json:"poex"` //post execute
+	ARSU string `json:"arsu"` //auto renew subscription
+	ARRT string `json:"arrt"` //auto renew refresh token
 }
+
 type Tool struct {
 	ToolType        string                `json:"tool_type" eru:"required"`
 	ToolName        string                `json:"tool_name" eru:"required"`
@@ -34,6 +39,8 @@ type Tool struct {
 	Parameters      eru_models.JSONSchema `json:"parameters"`
 	Actions         map[string]ToolAction `json:"actions"`
 	Hooks           ToolHooks             `json:"hooks"`
+	HookAsyncEvent  string                `json:"hook_async_event"`
+	Scheduler       scheduler.SchedulerI  `json:"-"`
 	ToolDb          db.DbI                `json:"-"`
 	CallbackBaseUrl string                `json:"callback_base_url"`
 	//Inputs       []ToolInput           `json:"inputs"`
@@ -67,9 +74,12 @@ type ToolInputFields struct {
 
 type Tooling interface {
 	GetSpec() Tooling
+	GetBytes(ctx context.Context) ([]byte, error)
+	BytesToTool(ctx context.Context, toolObjJson []byte) (Tooling, error)
 	GetActionsList() []string
 	GetMcpTools() []McpToolList
 	ValidateAction(ctx context.Context, actionName string, realTool Tooling) (err error)
+	SetPrivateAttributes(ctx context.Context, realTool Tooling) (err error)
 	GetInputFields() []ToolInputFields
 	Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (map[string]interface{}, error)
 	Callback(ctx context.Context, projectId string, tenantId string, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error)
@@ -81,6 +91,26 @@ type Tooling interface {
 	ExecuteCallbackHook(ctx context.Context, projectId string, tenantId string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error)
 	GetToolDb() db.DbI
 	SetToolDb(db.DbI)
+	SetScheduler(scheduler.SchedulerI)
+}
+
+func (tool *Tool) GetBytes(ctx context.Context) ([]byte, error) {
+	toolJson, err := json.Marshal(tool)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, err
+	}
+	return toolJson, nil
+}
+
+func (tool *Tool) BytesToTool(ctx context.Context, toolObjJson []byte) (Tooling, error) {
+	iCloneI := reflect.New(reflect.TypeOf(tool))
+	toolObjCloneErr := json.Unmarshal(toolObjJson, iCloneI.Interface())
+	if toolObjCloneErr != nil {
+		err := logs.Err(ctx, toolObjCloneErr, "error while cloning toolObj(unmarshal)")
+		return nil, err
+	}
+	return iCloneI.Elem().Interface().(Tooling), nil
 }
 
 func (tool *Tool) GetToolDb() db.DbI {
@@ -89,6 +119,10 @@ func (tool *Tool) GetToolDb() db.DbI {
 
 func (tool *Tool) SetToolDb(db db.DbI) {
 	tool.ToolDb = db
+}
+
+func (tool *Tool) SetScheduler(s scheduler.SchedulerI) {
+	tool.Scheduler = s
 }
 
 func (tool *Tool) GetToolCallback() ToolCallback {
@@ -103,6 +137,10 @@ func (tool *Tool) Callback(ctx context.Context, projectId string, tenantId strin
 
 func (tool *Tool) GetToolCbUrl(projectId string, tenantId string) string {
 	return ""
+}
+
+func (tool *Tool) SetPrivateAttributes(ctx context.Context, realTool Tooling) (err error) {
+	return nil
 }
 
 func (tool *Tool) GetActionsList() []string {
@@ -212,8 +250,11 @@ func (tool *Tool) ExecuteCallbackHook(ctx context.Context, projectId string, ten
 		for k, v := range params {
 			paramMap[k] = strings.Join(v, ",")
 		}
-
-		url := fmt.Sprint(ctx.Value("Erufuncbaseurl").(string), "/", projectId, "/func/", tool.Hooks.CLBK, "/async_func")
+		asyncEvent := ""
+		if tool.HookAsyncEvent != "" {
+			asyncEvent = fmt.Sprint("/", tool.HookAsyncEvent)
+		}
+		url := fmt.Sprint(ctx.Value("Erufuncbaseurl").(string), "/", projectId, "/func/", tool.Hooks.CLBK, asyncEvent)
 		logs.WithContext(ctx).Info(fmt.Sprintf("url: %v", url))
 		headers := http.Header{}
 		headers.Add("Content-Type", "application/json")

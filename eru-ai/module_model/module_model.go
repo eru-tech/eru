@@ -11,6 +11,7 @@ import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
@@ -45,6 +46,7 @@ type ExtendedProject struct {
 	Project
 	Variables           store.Variables            `json:"variables"`
 	SecretManager       sm.SmStoreI                `json:"secret_manager"`
+	Scheduler           scheduler.SchedulerI       `json:"scheduler"`
 	TenantSecretManager sm.SmStoreI                `json:"tenant_secret_manager"`
 	TenantVariables     map[string]store.Variables `json:"tenant_variables"`
 }

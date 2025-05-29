@@ -15,6 +15,7 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-read-write/validator"
 	repos "github.com/eru-tech/eru/eru-repos/repos"
+	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	kms "github.com/eru-tech/eru/eru-secret-manager/kms"
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	utils "github.com/eru-tech/eru/eru-utils"
@@ -80,11 +81,9 @@ type StoreI interface {
 	RemoveEvent(ctx context.Context, projectId string, eventName string, cloudDelete bool, s StoreI) (err error)
 	PublishEvent(ctx context.Context, projectId string, eventName string, msg interface{}, s StoreI) (msgId string, err error)
 	PollEvent(ctx context.Context, projectId string, eventName string, s StoreI) (err error)
-
-	//SaveProject(projectId string, realStore StoreI) error
-	//RemoveProject(projectId string, realStore StoreI) error
-	//GetProjectConfig(projectId string) (*model.ProjectI, error)
-	//GetProjectList() []map[string]interface{}
+	SaveScheduler(ctx context.Context, projectId string, schedulerObj scheduler.SchedulerI, s StoreI, persist bool) (err error)
+	FetchScheduler(ctx context.Context, projectId string) (schedulerObj scheduler.SchedulerI, err error)
+	InitScheduler(ctx context.Context, s StoreI) (err error)
 }
 
 type Store struct {
@@ -95,6 +94,7 @@ type Store struct {
 	ProjectRepos      map[string]repos.RepoI              `json:"repos"`
 	ProjectRepoTokens map[string]repos.RepoToken          `json:"repo_token"`
 	SecretManager     map[string]sm.SmStoreI              `json:"secret_manager"`
+	Scheduler         map[string]scheduler.SchedulerI     `json:"scheduler"`
 	KMS               map[string]map[string]kms.KmsStoreI `json:"kms"`
 	Events            map[string]map[string]events.EventI `json:"events"`
 	CacheStore        map[string]cache.CacheStoreI        `json:"-"`
@@ -250,7 +250,7 @@ type EnvVars struct {
 
 type Secrets struct {
 	Key   string `json:"key"`
-	Value string `json:"-"`
+	Value string `json:"value"`
 }
 
 func (store *Store) GetDbType() string {
@@ -412,9 +412,20 @@ func (store *Store) SaveSecret(ctx context.Context, projectId string, newSecret 
 	if v.Secrets == nil {
 		v.Secrets = make(map[string]Secrets)
 	}
+	
+	sv := newSecret.Value
+	newSecret.Value = ""
 	v.Secrets[newSecret.Key] = newSecret
+	
 	store.Variables[projectId] = v
 	err = s.SaveStore(ctx, projectId, "", s)
+
+	if sm, ok := store.SecretManager[projectId]; ok {
+		smValue := make(map[string]string)
+		smValue[newSecret.Key] = sv
+		store.SetSmValue(ctx, projectId, sm.GetSecretName(), smValue)
+	}
+
 	return
 }
 
@@ -439,6 +450,11 @@ func (store *Store) RemoveSecret(ctx context.Context, projectId string, key stri
 	}
 	delete(store.Variables[projectId].Secrets, key)
 	err = s.SaveStore(ctx, projectId, "", s)
+
+	if sm, ok := store.SecretManager[projectId]; ok {
+		store.UnsetSmValue(ctx, projectId, sm.GetSecretName(), key)
+	}
+
 	return
 }
 
@@ -1499,51 +1515,53 @@ func (store *Store) GetStoreWithoutTenants(ctx context.Context, ms StoreI) (b []
 	return
 }
 
-/*
-func (store *Store) SaveProject(projectId string, realStore StoreI) error {
-	//TODO to handle edit project once new project attributes are finalized
-	if _, ok := store.Projects[projectId]; !ok {
-		project := new(model.Project)
-		project.ProjectId = projectId
-		if store.Projects == nil {
-			store.Projects = make(map[string]*model.Project)
+func (store *Store) SaveScheduler(ctx context.Context, projectId string, schedulerObj scheduler.SchedulerI, s StoreI, persist bool) (err error) {
+	logs.WithContext(ctx).Debug("SaveScheduler - Start")
+	if persist {
+		s.GetMutex().Lock()
+		defer s.GetMutex().Unlock()
+	}
+	if store.Scheduler == nil {
+		store.Scheduler = make(map[string]scheduler.SchedulerI)
+	}
+	store.Scheduler[projectId] = schedulerObj
+	if persist {
+		err = s.SaveStore(ctx, projectId, "", s)
+	}
+	return
+}
+func (store *Store) FetchScheduler(ctx context.Context, projectId string) (schedulerObj scheduler.SchedulerI, err error) {
+	logs.WithContext(ctx).Debug("FetchScheduler - Start")
+	if store.Scheduler == nil {
+		err = errors.New("no scheduler defined in store")
+		logs.Err(ctx, err, "no scheduler defined in store")
+		return nil, err
+	}
+	ok := false
+	if schedulerObj, ok = store.Scheduler[projectId]; !ok {
+		err = errors.New(fmt.Sprint("scheduler not defined for project :", projectId))
+		logs.Err(ctx, err, "scheduler not defined for project")
+		return nil, err
+	}
+	return
+}
+
+func (store *Store) InitScheduler(ctx context.Context, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("InitScheduler - Start")
+	for projectId, sch := range store.Scheduler {
+		schJson, err := json.Marshal(sch)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
 		}
-		store.Projects[projectId] = project
-		return realStore.SaveStore("")
-	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " already exists"))
-	}
-}
 
-func (store *Store) RemoveProject(projectId string, realStore StoreI) error {
-	if _, ok := store.Projects[projectId]; ok {
-		delete(store.Projects, projectId)
-		return realStore.SaveStore("")
-	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		schJsonStr := store.ReplaceVariables(ctx, projectId, schJson, nil)
+		rawMsg := json.RawMessage(schJsonStr)
+		err = sch.Init(ctx, &rawMsg)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
 	}
+	return nil
 }
-
-func (store *Store) GetProjectConfig(projectId string) (*model.ProjectI, error) {
-	if _, ok := store.Projects[projectId]; ok {
-		var p model.ProjectI
-		p = store.Projects[projectId]
-		return &p, nil
-	} else {
-		return nil, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
-	}
-}
-
-func (store *Store) GetProjectList() []map[string]interface{} {
-	projects := make([]map[string]interface{}, len(store.Projects))
-	i := 0
-	for k := range store.Projects {
-		project := make(map[string]interface{})
-		project["projectName"] = k
-		//project["lastUpdateDate"] = time.Now()
-		projects[i] = project
-		i++
-	}
-	return projects
-}
-*/

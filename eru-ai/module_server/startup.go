@@ -22,6 +22,13 @@ func StartUp() (module_store.ModuleStoreI, error) {
 	}
 	module_store.Erufuncbaseurl = erufuncbaseurl
 
+	eruauthbaseurl := os.Getenv("ERUAUTH_BASEURL")
+	if eruauthbaseurl == "" {
+		eruauthbaseurl = "http://localhost:8085"
+		logs.WithContext(context.Background()).Info("'ERUAUTH_BASEURL' environment variable not found - setting default value as http://localhost:8085")
+	}
+	module_store.Eruauthbaseurl = eruauthbaseurl
+
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
 	if storeType == "" {
 		storeType = "STANDALONE"

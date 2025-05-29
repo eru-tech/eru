@@ -38,6 +38,9 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Methods(http.MethodPost).Path("/store/grepo/commit").HandlerFunc(handlers.CommitRepoHandler(s.Store))
 	router.Methods(http.MethodPost).Path("/store/grepo/savetoken").HandlerFunc(handlers.SaveRepoTokenHandler(s.Store))
 
+	router.Name("sch").Methods(http.MethodPost).Path("/store/{project}/scheduler/save/{schedulertype}").HandlerFunc(handlers.SaveSchedulerHandler(s.Store))
+	router.Name("sch_list").Methods(http.MethodGet).Path("/store/{project}/scheduler/list").HandlerFunc(handlers.FetchSchedulerHandler(s.Store))
+	
 	router.Name("sm").Methods(http.MethodPost).Path("/store/{project}/sm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))
 	router.Name("sm_list").Methods(http.MethodGet).Path("/store/{project}/sm/list").HandlerFunc(handlers.FetchSmHandler(s.Store))
 	router.Name("sm_value").Methods(http.MethodGet).Path("/store/{project}/sm/load").HandlerFunc(handlers.LoadSmValueHandler(s.Store))

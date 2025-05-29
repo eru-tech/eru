@@ -27,7 +27,7 @@ type AuthI interface {
 	SetAuthDb(authDbI AuthDbI)
 	GetAuthDb() (authDbI AuthDbI)
 	Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error)
-	IdpToken(ctx context.Context, idpToken LoginPostBody, projectId string, withTokens bool) (loginResI interface{}, err error)
+	IdpToken(ctx context.Context, idpToken LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error)
 	Register(ctx context.Context, registerUser RegisterUser, projectId string) (identity Identity, loginSuccess LoginSuccess, err error)
 	RemoveUser(ctx context.Context, removeUser RemoveUser) (err error)
 	Logout(ctx context.Context, req *http.Request) (res interface{}, resStatusCode int, err error)
@@ -97,6 +97,7 @@ type LoginPostBody struct {
 	IdpRequestId string `json:"request_id"`
 	CodeVerifier string `json:"-"`
 	Nonce        string `json:"-"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 type RecoveryPostBody struct {
@@ -536,7 +537,7 @@ func (auth *Auth) Login(ctx context.Context, loginPostBody LoginPostBody, projec
 	return Identity{}, LoginSuccess{}, err
 }
 
-func (auth *Auth) IdpToken(ctx context.Context, idpToken LoginPostBody, projectId string, withTokens bool) (loginResI interface{}, err error) {
+func (auth *Auth) IdpToken(ctx context.Context, idpToken LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error) {
 	err = errors.New("IdpToken Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err

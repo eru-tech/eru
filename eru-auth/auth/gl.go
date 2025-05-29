@@ -81,7 +81,7 @@ func (glAuth *GlAuth) GetUrl(ctx context.Context, state string) (urlStr string, 
 	return
 }
 
-func (glAuth *GlAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (loginResI interface{}, err error) {
+func (glAuth *GlAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error) {
 	logs.WithContext(ctx).Debug("Login - Start")
 
 	headers := http.Header{}

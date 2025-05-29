@@ -41,6 +41,7 @@ require (
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000 // indirect
+	github.com/eru-tech/eru/eru-scheduler v0.0.0-00010101000000-000000000000 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -51,7 +52,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0 // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
-	github.com/jmoiron/sqlx v1.3.4 // indirect
+	github.com/jmoiron/sqlx v1.3.5 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.0 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
@@ -94,6 +95,7 @@ require (
 	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
 	google.golang.org/grpc v1.55.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
+
 )
 
 replace (
@@ -104,6 +106,7 @@ replace (
 	github.com/eru-tech/eru/eru-models => ../eru-models
 	github.com/eru-tech/eru/eru-read-write => ../eru-read-write
 	github.com/eru-tech/eru/eru-repos => ../eru-repos
+	github.com/eru-tech/eru/eru-scheduler => ../eru-scheduler
 	github.com/eru-tech/eru/eru-secret-manager => ../eru-secret-manager
 	github.com/eru-tech/eru/eru-server => ../eru-server
 	github.com/eru-tech/eru/eru-store => ../eru-store

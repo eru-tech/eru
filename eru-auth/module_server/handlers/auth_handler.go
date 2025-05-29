@@ -399,6 +399,11 @@ func IdpTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authName := vars["authname"]
+		renew := vars["renew"]
+		renewFlag := false
+		if renew == "renew" {
+			renewFlag = true
+		}
 		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -453,7 +458,7 @@ func IdpTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		loginPostBody.CodeVerifier = msParams.CodeVerifier
 		loginPostBody.Nonce = msParams.Nonce
 		
-		res, err := authObjI.IdpToken(ctx, loginPostBody, projectId, true)
+		res, err := authObjI.IdpToken(ctx, loginPostBody, projectId, true, renewFlag)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

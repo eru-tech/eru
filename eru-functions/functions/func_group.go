@@ -79,6 +79,7 @@ type FuncStep struct {
 	ApiPath                 string        `json:"api_path"`
 	Path                    string        `json:"path"`
 	ToolName                string        `json:"tool_name"`
+	ToolAction              string        `json:"tool_action"`
 	AgentName               string        `json:"agent_name"`
 	TenantId                string        `json:"tenant_id"`
 	Route                   Route         `json:"-"`

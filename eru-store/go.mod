@@ -8,10 +8,11 @@ require (
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-scheduler v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-secret-manager v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
 	github.com/google/go-cmp v0.5.9
-	github.com/jmoiron/sqlx v1.3.4
+	github.com/jmoiron/sqlx v1.3.5
 	github.com/lib/pq v1.2.0
 	github.com/tidwall/gjson v1.17.1
 )
@@ -57,6 +58,7 @@ replace (
 	github.com/eru-tech/eru/eru-models => ../eru-models
 	github.com/eru-tech/eru/eru-read-write => ../eru-read-write
 	github.com/eru-tech/eru/eru-repos => ../eru-repos
+	github.com/eru-tech/eru/eru-scheduler => ../eru-scheduler
 	github.com/eru-tech/eru/eru-secret-manager => ../eru-secret-manager
 	github.com/eru-tech/eru/eru-utils => ../eru-utils
 )

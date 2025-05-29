@@ -49,6 +49,7 @@ require (
 	github.com/eru-tech/eru/eru-cache v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-events v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000 // indirect
+	github.com/eru-tech/eru/eru-scheduler v0.0.0-00010101000000-000000000000 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -90,7 +91,7 @@ require (
 require (
 	github.com/gabriel-vasile/mimetype v1.4.1
 	github.com/gobwas/glob v0.2.3
-	github.com/jmoiron/sqlx v1.3.4 // indirect
+	github.com/jmoiron/sqlx v1.3.5 // indirect
 	github.com/lib/pq v1.2.0 // indirect
 	github.com/rs/cors v1.7.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
@@ -104,6 +105,7 @@ replace (
 	github.com/eru-tech/eru/eru-models => ../eru-models
 	github.com/eru-tech/eru/eru-read-write => ../eru-read-write
 	github.com/eru-tech/eru/eru-repos => ../eru-repos
+	github.com/eru-tech/eru/eru-scheduler => ../eru-scheduler
 	github.com/eru-tech/eru/eru-secret-manager => ../eru-secret-manager
 	github.com/eru-tech/eru/eru-server => ../eru-server
 	github.com/eru-tech/eru/eru-store => ../eru-store

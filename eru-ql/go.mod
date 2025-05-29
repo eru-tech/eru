@@ -19,7 +19,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/websocket v1.5.1
 	github.com/graphql-go/graphql v0.8.0
-	github.com/jmoiron/sqlx v1.3.4
+	github.com/jmoiron/sqlx v1.3.5
 	github.com/lib/pq v1.10.4
 )
 
@@ -49,6 +49,7 @@ require (
 	github.com/eru-tech/eru/eru-events v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000 // indirect
+	github.com/eru-tech/eru/eru-scheduler v0.0.0-00010101000000-000000000000 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -110,6 +111,7 @@ replace (
 	github.com/eru-tech/eru/eru-models => ../eru-models
 	github.com/eru-tech/eru/eru-read-write => ../eru-read-write
 	github.com/eru-tech/eru/eru-repos => ../eru-repos
+	github.com/eru-tech/eru/eru-scheduler => ../eru-scheduler
 	github.com/eru-tech/eru/eru-secret-manager => ../eru-secret-manager
 	github.com/eru-tech/eru/eru-security-rule => ../eru-security-rule
 	github.com/eru-tech/eru/eru-server => ../eru-server

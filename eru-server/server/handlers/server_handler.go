@@ -13,6 +13,7 @@ import (
 	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-repos/repos"
+	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	kms "github.com/eru-tech/eru/eru-secret-manager/kms"
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
@@ -772,5 +773,55 @@ func RemoveEventHandler(s store.StoreI) http.HandlerFunc {
 		}
 		FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("event for project ", projectId, " removed successfully.")})
+	}
+}
+
+func SaveSchedulerHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveSchedulerHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		schedulerType := vars["schedulertype"]
+
+		schedulerJson := json.NewDecoder(r.Body)
+		schedulerJson.DisallowUnknownFields()
+
+		var schedulerObj = scheduler.GetScheduler(schedulerType)
+		if err := schedulerJson.Decode(&schedulerObj); err == nil {
+			err = s.SaveScheduler(r.Context(), projectId, schedulerObj, s, true)
+			if err != nil {
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		} else {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("Scheduler for project ", projectId, " saved successfully.")})
+	}
+}
+
+func FetchSchedulerHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Info("FetchSchedulerHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		schedulerObj, err := s.FetchScheduler(r.Context(), projectId)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(schedulerObj)
 	}
 }
