@@ -36,6 +36,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.28.6 // indirect
 	github.com/aws/smithy-go v1.20.2 // indirect
 	github.com/eru-tech/eru/eru-cache v0.0.0-00010101000000-000000000000 // indirect
+	github.com/eru-tech/eru/eru-db v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000 // indirect
@@ -55,7 +56,9 @@ require (
 
 replace (
 	github.com/eru-tech/eru/eru-cache => ../eru-cache
+	github.com/eru-tech/eru/eru-db => ../eru-db
 	github.com/eru-tech/eru/eru-events => ../eru-events
+	github.com/eru-tech/eru/eru-events/events => ../eru-events/events
 	github.com/eru-tech/eru/eru-logs => ../eru-logs
 	github.com/eru-tech/eru/eru-models => ../eru-models
 	github.com/eru-tech/eru/eru-read-write => ../eru-read-write

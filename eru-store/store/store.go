@@ -249,8 +249,9 @@ type EnvVars struct {
 }
 
 type Secrets struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
+	Key         string `json:"key"`
+	Value       string `json:"-"`
+	SecretValue string `json:"secret_value"`
 }
 
 func (store *Store) GetDbType() string {
@@ -412,11 +413,11 @@ func (store *Store) SaveSecret(ctx context.Context, projectId string, newSecret 
 	if v.Secrets == nil {
 		v.Secrets = make(map[string]Secrets)
 	}
-	
-	sv := newSecret.Value
-	newSecret.Value = ""
+
+	sv := newSecret.SecretValue
+	newSecret.SecretValue = ""
 	v.Secrets[newSecret.Key] = newSecret
-	
+
 	store.Variables[projectId] = v
 	err = s.SaveStore(ctx, projectId, "", s)
 
