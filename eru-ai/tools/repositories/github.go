@@ -29,7 +29,7 @@ func (ghTool *GithubTool) MakeFromJson(ctx context.Context, rj *json.RawMessage)
 	return nil
 }
 
-func (ghTool *GithubTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
+func (ghTool *GithubTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("PlaywrightTool Execute - Start")
 	logs.WithContext(ctx).Info("ghTool.Executed")
 	contents := ""
@@ -39,20 +39,20 @@ func (ghTool *GithubTool) Execute(ctx context.Context, projectId string, tenantI
 	} else {
 		err = errors.New("contents attribute not found")
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return nil, false, err
 	}
 	if fileNameI, fileNameIOk := params["file_name"]; fileNameIOk {
 		fileName = fileNameI.(string)
 	} else {
 		err = errors.New("file_name attribute not found")
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return nil, false, err
 	}
 
 	err = ghTool.Repo.Commit(ctx, []byte(contents), fileName)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return nil, false, err
 	}
-	return map[string]interface{}{"content": "Commit successful"}, nil
+	return map[string]interface{}{"content": "Commit successful"}, false, nil
 }

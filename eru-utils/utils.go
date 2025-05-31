@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
@@ -855,4 +856,10 @@ func GetMapField(m map[string]interface{}, key string) map[string]interface{} {
 	}
 	_ = logs.Err(context.Background(), fmt.Errorf("GetMapField - %s not found ", key), "")
 	return make(map[string]interface{})
+}
+
+func GetCronStr(ctx context.Context, nextRun time.Time) string {
+	cronStr := fmt.Sprintf("%d %d %d %d *", nextRun.Minute(), nextRun.Hour(), nextRun.Day(), nextRun.Month())
+	logs.WithContext(ctx).Info(fmt.Sprint("Scheduling job to run at: ", nextRun.Format(time.RFC3339)))
+	return cronStr
 }

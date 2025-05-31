@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"strings"
 
 	"github.com/eru-tech/eru/eru-functions/module_server"
 	"github.com/eru-tech/eru/eru-functions/module_store"
@@ -58,10 +59,18 @@ func main() {
 		logs.Logger.Error(e.Error())
 	}
 
-	for i := 0; i < module_store.EventThreads; i++ {
-		err := sh.Store.FetchProjectEvents(context.Background(), sh.Store, i+1)
-		if err != nil {
-			logs.Logger.Error(err.Error())
+	asyncEventsList := []string{}
+	asyncEvents := os.Getenv("ASYNC_EVENTS")
+	if asyncEvents != "" {
+		asyncEventsList = strings.Split(asyncEvents, ",")
+	}
+	logs.WithContext(context.Background()).Info(fmt.Sprint("asyncEventsList: ", asyncEventsList))
+	if len(asyncEventsList) > 0 {
+		for i := 0; i < module_store.EventThreads; i++ {
+			err := sh.Store.FetchProjectEvents(context.Background(), sh.Store, i+1, asyncEventsList)
+			if err != nil {
+				logs.Logger.Error(err.Error())
+			}
 		}
 	}
 

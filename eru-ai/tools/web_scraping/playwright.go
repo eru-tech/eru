@@ -31,7 +31,7 @@ func (pwTool *PlaywrightTool) MakeFromJson(ctx context.Context, rj *json.RawMess
 	return nil
 }
 
-func (pwTool *PlaywrightTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, err error) {
+func (pwTool *PlaywrightTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("PlaywrightTool Execute - Start")
 	httpVersion := params["http_version"].(string)
 	extarctedData := ""
@@ -41,7 +41,7 @@ func (pwTool *PlaywrightTool) Execute(ctx context.Context, projectId string, ten
 	if httpVersion == "2.0" {
 		extarctedData, err = extractBodyContentPlaywright_v2(ctx, params["url"].(string), params["selectors"].(string))
 	}
-	return map[string]interface{}{"content": extarctedData}, nil
+	return map[string]interface{}{"content": extarctedData}, false, nil
 }
 
 func (pwTool *PlaywrightTool) GetSpec() tools.Tooling {

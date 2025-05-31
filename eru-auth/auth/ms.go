@@ -110,7 +110,6 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 	}
 
 	idToken := ""
-	logs.WithContext(ctx).Info(fmt.Sprint(loginRes))
 	if lMap, lMapOk := loginRes.(map[string]interface{}); lMapOk {
 
 		if lToken, lTokensOk := lMap["id_token"]; lTokensOk {

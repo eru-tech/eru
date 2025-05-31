@@ -139,7 +139,7 @@ func (goTemplateAgent *GoTemplateAgent) validate(ctx context.Context, templateCo
 	return output, nil
 }
 
-func (goTemplateAgent *GoTemplateAgent) callTool(ctx context.Context, projectId string, tenantId string, tool tools.Tooling, params map[string]interface{}) (map[string]interface{}, error) {
+func (goTemplateAgent *GoTemplateAgent) callTool(ctx context.Context, projectId string, tenantId string, tool tools.Tooling, params map[string]interface{}) (map[string]interface{}, bool, error) {
 	logs.WithContext(ctx).Debug("callTool - Start")
 	return tool.Execute(ctx, projectId, tenantId, "", params)
 }

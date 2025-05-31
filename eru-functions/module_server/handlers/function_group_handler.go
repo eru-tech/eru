@@ -167,11 +167,23 @@ func AsyncFuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						logs.WithContext(ctx).Error(err.Error())
 					} else {
 						var newReq *http.Request
-						if newReq, err = http.ReadRequest(bufio.NewReader(bytes.NewReader(reqBytes))); err != nil { // deserialize request
-							failedCount = failedCount + 1
-							asyncStatus = "FAILED"
-							eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
-							logs.WithContext(ctx).Error(err.Error())
+						if len(reqBytes) > 0 {
+							if newReq, err = http.ReadRequest(bufio.NewReader(bytes.NewReader(reqBytes))); err != nil { // deserialize request
+								failedCount = failedCount + 1
+								asyncStatus = "FAILED"
+								eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
+								logs.WithContext(ctx).Error(err.Error())
+							}
+						} else {
+							newReq = r
+							body, err := json.Marshal(bodyMap)
+							if err != nil {
+								logs.WithContext(ctx).Error(err.Error())
+								failedCount = failedCount + 1
+								asyncStatus = "FAILED"
+								eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
+							}
+							newReq.Body = io.NopCloser(bytes.NewBuffer(body))
 						}
 						reqVars := make(map[string]*functions.TemplateVars)
 						resVars := make(map[string]*functions.TemplateVars)
@@ -274,7 +286,7 @@ func FuncRequestListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		server_handlers.FormatResponse(w, http.StatusOK)
 		_ = json.NewEncoder(w).Encode(requests)
 	}
-}	
+}
 func FuncRequestSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("FuncRequestSaveHandler - Start")

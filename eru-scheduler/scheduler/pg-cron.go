@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -93,17 +94,45 @@ func (pgCronScheduler *PgCronScheduler) getStoreDbPath() string {
 	return fmt.Sprint("postgres://", pgCronScheduler.DataSource.DbConfig.User, ":", pgCronScheduler.DataSource.DbConfig.Password, "@", pgCronScheduler.DataSource.DbConfig.Host, ":", pgCronScheduler.DataSource.DbConfig.Port, "/", pgCronScheduler.DataSource.DbConfig.DefaultDB, "?sslmode=disable")
 }
 
-func (pgCronScheduler *PgCronScheduler) Schedule(ctx context.Context, scheduleJobName string, scheduleCommand string, scheduleCron string) (err error) {
+func (pgCronScheduler *PgCronScheduler) Schedule(ctx context.Context, scheduleJobName string, scheduleCommand string, scheduleCron string) (jobId string, err error) {
 	logs.WithContext(ctx).Debug("ScheduleCronJob - Start")
-
-	logs.WithContext(ctx).Info(fmt.Sprint("scheduleJobName: ", scheduleJobName))
-	logs.WithContext(ctx).Info(fmt.Sprint("scheduleCommand: ", scheduleCommand))
-	logs.WithContext(ctx).Info(fmt.Sprint("scheduleCron: ", scheduleCron))
 
 	var insertQueries []*models.Queries
 	insertQueryFuncAsync := models.Queries{}
-	query := fmt.Sprint("SELECT cron.schedule('", scheduleJobName, "','", scheduleCron, "', $$ ", scheduleCommand, "; $$);")
+	query := fmt.Sprint("SELECT cron.schedule('", scheduleJobName, "','", scheduleCron, "', $$ ", scheduleCommand, "; $$)::text AS job_id;")
 	logs.WithContext(ctx).Info(fmt.Sprint("query: ", query))
+	insertQueryFuncAsync.Query = query
+	insertQueryFuncAsync.Rank = 1
+	insertQueries = append(insertQueries, &insertQueryFuncAsync)
+	insertOutput, insertOutputErr := utils.ExecuteDbSave(ctx, pgCronScheduler.GetConn(), insertQueries)
+	if insertOutputErr != nil {
+		logs.WithContext(ctx).Error(insertOutputErr.Error())
+		return "", insertOutputErr
+	}
+	jobIdOk := false
+	jobIdI, jobIdOkI := insertOutput[0][0]["job_id"]
+	if !jobIdOkI {
+		return "", errors.New("job_id not found")
+	}
+	if jobId, jobIdOk = jobIdI.(string); !jobIdOk {
+		return "", errors.New("job_id is not a string")
+	}
+	return jobId, nil
+}
+
+func (pgCronScheduler *PgCronScheduler) Unschedule(ctx context.Context, scheduleJobId string, scheduleJobName string) (err error) {
+	logs.WithContext(ctx).Debug("UnscheduleCronJob - Start")
+
+	query := ""
+	if scheduleJobId != "" {
+		query = fmt.Sprint("SELECT cron.unschedule('", scheduleJobId, "');")
+	} else if scheduleJobName != "" {
+		query = fmt.Sprint("DO $$ DECLARE jid int; BEGIN SELECT jobid INTO jid FROM cron.job WHERE jobname = '", scheduleJobName, "'; IF jid IS NOT NULL THEN PERFORM cron.unschedule(jid); END IF; END $$;")
+	} else {
+		return errors.New("scheduleJobId or scheduleJobName is required")
+	}
+	insertQueries := []*models.Queries{}
+	insertQueryFuncAsync := models.Queries{}
 	insertQueryFuncAsync.Query = query
 	insertQueryFuncAsync.Rank = 1
 	insertQueries = append(insertQueries, &insertQueryFuncAsync)

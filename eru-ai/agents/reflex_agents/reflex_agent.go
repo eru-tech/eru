@@ -72,7 +72,7 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 	return nil
 } */
 
-func (reflex_agent *ReflexAgent) callTool(ctx context.Context, projectId string, tenantId string, tool tools.Tooling, params map[string]interface{}) (map[string]interface{}, error) {
+func (reflex_agent *ReflexAgent) callTool(ctx context.Context, projectId string, tenantId string, tool tools.Tooling, params map[string]interface{}) (map[string]interface{}, bool, error) {
 	logs.WithContext(ctx).Debug("callTool - Start")
 	return tool.Execute(ctx, projectId, tenantId, "", params)
 }

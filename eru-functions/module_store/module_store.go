@@ -10,9 +10,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
+
+	"strconv"
 
 	"github.com/eru-tech/eru/eru-db/db"
 	"github.com/eru-tech/eru/eru-events/events"
@@ -79,7 +83,7 @@ type ModuleStoreI interface {
 	RemoveWf(ctx context.Context, wfName string, projectId string, realStore ModuleStoreI) error
 	FetchAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, realStore ModuleStoreI) (asyncFuncData AsyncFuncData, err error)
 	UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, eventResponse string, realStore ModuleStoreI) (err error)
-	FetchProjectEvents(ctx context.Context, s ModuleStoreI, cnt int) (err error)
+	FetchProjectEvents(ctx context.Context, s ModuleStoreI, cnt int, asyncEventsList []string) (err error)
 	StartPolling(ctx context.Context, projectId string, event events.EventI, s ModuleStoreI, cnt int) (err error)
 	SaveFuncRequest(ctx context.Context, sampleRequest module_model.SampleRequest, projectId string, tenantId string, realStore ModuleStoreI) error
 	RemoveFuncRequest(ctx context.Context, requestId string, realStore ModuleStoreI) error
@@ -784,16 +788,18 @@ func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asy
 	return
 }
 
-func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI, cnt int) (err error) {
+func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI, cnt int, asyncEventsList []string) (err error) {
 	logs.WithContext(ctx).Debug("FetchProjectEvents - Start")
 	for _, p := range ms.Projects {
-		if err != nil {
-			return err
-		}
 		evts, err := s.FetchEvents(ctx, p.ProjectId)
 		if err == nil {
 			for _, e := range evts {
-				go ms.StartPolling(ctx, p.ProjectId, e, s, cnt)
+				eventName, err := e.GetAttribute("event_name")
+				if err == nil {
+					if slices.Contains(asyncEventsList, eventName.(string)) {
+						go ms.StartPolling(ctx, p.ProjectId, e, s, cnt)
+					}
+				}
 			}
 		}
 	}
@@ -802,6 +808,10 @@ func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI, c
 
 func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event events.EventI, s ModuleStoreI, jcnt int) (err error) {
 	eventName, _ := event.GetAttribute("event_name")
+	eventType, _ := event.GetAttribute("event_type")
+	if eventType == "DB" {
+		event.SetCon(s.GetConn(),s.GetDbType())
+	}
 	logs.WithContext(ctx).Info(fmt.Sprint("StartPolling - Start : ", eventName, " jcnt = ", jcnt))
 	for {
 		logs.WithContext(ctx).Info(fmt.Sprint("polling message for event : ", eventName, " jcnt = ", jcnt))
@@ -851,6 +861,7 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 				logs.WithContext(ctx).Info(fmt.Sprint("next poll is immediate after processing the current messages : ", len(eventResults)))
 			}
 		*/
+		event.InitiatPollingInterval(ctx)
 	}
 }
 
@@ -890,17 +901,45 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 					eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
 					logs.WithContext(ctx).Error(err.Error())
 				} else {
-					r := bufio.NewReader(bytes.NewBuffer(requestBytes))
-					if eventReq, err := http.ReadRequest(r); err != nil { // deserialize request
-						failedCount = failedCount + 1
-						asyncStatus = "FAILED"
-						eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
-						logs.WithContext(ctx).Error(err.Error())
-					} else {
-						eventReq = eventReq.WithContext(logs.NewContext(ctx, zap.String(server_handlers.RequestIdKey, async_id)))
-						if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
-							logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
+					var eventReq *http.Request
+					if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
+						logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
+					}
+					if len(requestBytes) > 0 {
+						r := bufio.NewReader(bytes.NewBuffer(requestBytes))
+						if eventReq, err = http.ReadRequest(r); err != nil { // deserialize request
+							failedCount = failedCount + 1
+							asyncStatus = "FAILED"
+							eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
+							logs.WithContext(ctx).Error(err.Error())
 						}
+					} else {
+						eventReq = &http.Request{
+							Method: "POST",
+							URL: &url.URL{
+								Scheme: "http",
+								Host:   "localhost",
+								Path:   "/",
+							},
+							Header: http.Header{
+								"Content-Type": []string{"application/json"},
+							},
+						}
+						body, err := json.Marshal(bodyMap)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+							failedCount = failedCount + 1
+							asyncStatus = "FAILED"
+							eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
+						} else {
+							eventReq.Body = io.NopCloser(bytes.NewBuffer(body))
+							eventReq.Header.Set("Content-Length", strconv.Itoa(len(body)))
+							eventReq.ContentLength = int64(len(body))
+						}
+					}
+					if asyncStatus != "FAILED" {
+						eventReq = eventReq.WithContext(logs.NewContext(ctx, zap.String(server_handlers.RequestIdKey, async_id)))
+
 						funcGroup, err := ms.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, strings.Split(eventReq.Host, ":")[0], eventReq.URL.Path, eventReq.Method, eventReq.Header, bodyMap, s, true, "")
 						if err != nil {
 							failedCount = failedCount + 1

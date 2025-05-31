@@ -29,7 +29,7 @@ import (
 
 const (
 	INSERT_FUNC_ASYNC_LOOP = "insert into erufunctions_async_loop (async_id,event_id,loop_var) values (??? , ???, ???)"
-	INSERT_FUNC_ASYNC      = "insert into erufunctions_async (event_id,func_group_name,func_step_name,event_msg,request_id, event_request) values (???,???,???,???,???,???)"
+	INSERT_FUNC_ASYNC      = "insert into erufunctions_async (event_id,func_group_name,func_step_name,event_msg,request_id, event_request,async_event_name) values (???,???,???,???,???,???,???)"
 )
 
 type AsyncFuncData struct {
@@ -438,7 +438,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 					var insertQueries []*models.Queries
 					insertQueryFuncAsync := models.Queries{}
 					insertQueryFuncAsync.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC)
-					insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, msgId, funcStep.ParentFuncGroupName, funcStep.FuncKey, string(eventMsgBytes), string(eventMsgRequest), requestStr)
+					insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, msgId, funcStep.ParentFuncGroupName, funcStep.FuncKey, string(eventMsgBytes), string(eventMsgRequest), requestStr, funcStep.AsyncEventName)
 					insertQueryFuncAsync.Rank = 1
 					insertQueries = append(insertQueries, &insertQueryFuncAsync)
 
@@ -831,7 +831,7 @@ func (funcStep *FuncStep) insertAsyncBatch(ctx context.Context, asyncBatch []Asy
 				logs.WithContext(ctx).Error(err.Error())
 				return
 			}
-			insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, batch_id, asyncFuncData.FuncName, asyncFuncData.FuncStepName, string(eventMsgBytes), asyncFuncData.RequestId, asyncFuncData.EventRequest)
+			insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, batch_id, asyncFuncData.FuncName, asyncFuncData.FuncStepName, string(eventMsgBytes), asyncFuncData.RequestId, asyncFuncData.EventRequest, funcStep.AsyncEventName)
 		}
 		insertQueryFuncAsyncLoop.Vals = append(insertQueryFuncAsyncLoop.Vals, asyncFuncData.AsyncId, batch_id, lvBuf.String())
 	}

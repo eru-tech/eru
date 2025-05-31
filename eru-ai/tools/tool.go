@@ -81,8 +81,8 @@ type Tooling interface {
 	ValidateAction(ctx context.Context, actionName string, realTool Tooling) (err error)
 	SetPrivateAttributes(ctx context.Context, realTool Tooling) (err error)
 	GetInputFields() []ToolInputFields
-	Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (map[string]interface{}, error)
-	Callback(ctx context.Context, projectId string, tenantId string, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error)
+	Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (map[string]interface{}, bool, error)
+	Callback(ctx context.Context, projectId string, tenantId string, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, persistStore bool, err error)
 	ValidateOutput(ctx context.Context, output json.RawMessage) error
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
@@ -130,9 +130,9 @@ func (tool *Tool) GetToolCallback() ToolCallback {
 		ResponseContentType: "application/json",
 	}
 }
-func (tool *Tool) Callback(ctx context.Context, projectId string, tenantId string, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error) {
+func (tool *Tool) Callback(ctx context.Context, projectId string, tenantId string, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, persistStore bool, err error) {
 	err = logs.Err(ctx, fmt.Errorf("callback not implemented"), "")
-	return nil, err
+	return nil, false, err
 }
 
 func (tool *Tool) GetToolCbUrl(projectId string, tenantId string) string {
@@ -187,10 +187,10 @@ func (tool *Tool) GetSpec() Tooling {
 	return tool
 }
 
-func (tool *Tool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (map[string]interface{}, error) {
+func (tool *Tool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (map[string]interface{}, bool, error) {
 	err := errors.New("Execute Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
-	return nil, err
+	return nil, false, err
 }
 
 func (tool *Tool) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {

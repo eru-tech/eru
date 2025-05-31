@@ -427,7 +427,7 @@ func ToolCallbackHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				toolParams[key] = values
 			}
 
-			toolResult, err := tool.Callback(ctx, projectId, tenantId, actionName, toolBody, toolParams)
+			toolResult, _, err := tool.Callback(ctx, projectId, tenantId, actionName, toolBody, toolParams)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -502,12 +502,19 @@ func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 					toolParams.Params[key] = values[0]
 				}
 			}
-
-			toolResult, err := tool.Execute(ctx, projectId, tenantId, actionName, toolParams.Params)
+			toolResult, persistStore, err := tool.Execute(ctx, projectId, tenantId, actionName, toolParams.Params)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			} else {
+				if persistStore {
+					err = s.SaveTool(r.Context(), tool, projectId, tenantId, s, true)
+					if err != nil {
+						logs.WithContext(r.Context()).Error(err.Error())
+						server_handlers.FormatResponse(w, 400)
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					}
+				}
 				server_handlers.FormatResponse(w, 200)
 				_ = json.NewEncoder(w).Encode(toolResult)
 			}
