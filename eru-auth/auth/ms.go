@@ -350,8 +350,7 @@ func (msAuth *MsAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody,
 	msLoginFormBody := make(map[string]string)
 	msLoginFormBody["client_id"] = msAuth.MsConfig.ClientId
 	msLoginFormBody["client_secret"] = msAuth.MsConfig.ClientSecret
-	//msLoginFormBody["redirect_uri"] = msAuth.MsConfig.RedirectURI
-	msLoginFormBody["redirect_uri"] = "https://www.google.com"
+	msLoginFormBody["redirect_uri"] = msAuth.MsConfig.RedirectURI
 	msLoginFormBody["scope"] = msAuth.MsConfig.Scope
 	if renewFlag {
 		msLoginFormBody["grant_type"] = "refresh_token"
