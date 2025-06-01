@@ -40,11 +40,11 @@ func (s *Server) GetRouter() *mux.Router {
 
 	router.Name("sch").Methods(http.MethodPost).Path("/store/{project}/scheduler/save/{schedulertype}").HandlerFunc(handlers.SaveSchedulerHandler(s.Store))
 	router.Name("sch_list").Methods(http.MethodGet).Path("/store/{project}/scheduler/list").HandlerFunc(handlers.FetchSchedulerHandler(s.Store))
-	
+
 	router.Name("sm").Methods(http.MethodPost).Path("/store/{project}/sm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))
 	router.Name("sm_list").Methods(http.MethodGet).Path("/store/{project}/sm/list").HandlerFunc(handlers.FetchSmHandler(s.Store))
 	router.Name("sm_value").Methods(http.MethodGet).Path("/store/{project}/sm/load").HandlerFunc(handlers.LoadSmValueHandler(s.Store))
-	
+
 	router.Name("sm_set").Methods(http.MethodPost).Path("/store/{project}/sm/set").HandlerFunc(handlers.SetSmValueHandler(s.Store))
 	router.Name("sm_unset").Methods(http.MethodPost).Path("/store/{project}/sm/unset").HandlerFunc(handlers.UnsetSmValueHandler(s.Store))
 	router.Name("sm_get").Methods(http.MethodPost).Path("/store/{project}/sm/get").HandlerFunc(handlers.GetSmValueHandler(s.Store))
@@ -64,6 +64,13 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Name("event_remove_cd").Methods(http.MethodDelete).Path("/store/{project}/event/remove/{eventname}/{clouddelete}").HandlerFunc(handlers.RemoveEventHandler(s.Store))
 	router.Name("event_pub").Methods(http.MethodPost).Path("/store/{project}/event/publish/{eventname}").HandlerFunc(handlers.PublishEventHandler(s.Store))
 	router.Name("event_poll").Methods(http.MethodPost).Path("/store/{project}/event/poll/{eventname}").HandlerFunc(handlers.PollEventHandler(s.Store))
+
+	router.Name("sr_list").Methods(http.MethodGet).Path("/store/{project}/{resource}/request/list").HandlerFunc(handlers.RequestListHandler(s.Store))
+	router.Name("sr_save").Methods(http.MethodPost).Path("/store/{project}/request/save").HandlerFunc(handlers.RequestSaveHandler(s.Store))
+	router.Name("sr_remove").Methods(http.MethodDelete).Path("/store/{project}/request/remove/{requestid}").HandlerFunc(handlers.RequestRemoveHandler(s.Store))
+	router.Name("tsr_list").Methods(http.MethodGet).Path("/store/{project}/{tenant}/{resource}/request/list").HandlerFunc(handlers.RequestListHandler(s.Store))
+	router.Name("tsr_save").Methods(http.MethodPost).Path("/store/{project}/{tenant}/request/save").HandlerFunc(handlers.RequestSaveHandler(s.Store))
+	router.Name("tsr_remove").Methods(http.MethodDelete).Path("/store/{project}/{tenant}/request/remove/{requestid}").HandlerFunc(handlers.RequestRemoveHandler(s.Store))
 
 	router.Methods(http.MethodPost).Path("/store/gsm/save/{smtype}").HandlerFunc(handlers.SaveSmHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/store/gsm/list").HandlerFunc(handlers.FetchSmHandler(s.Store))

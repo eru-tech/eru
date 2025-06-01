@@ -37,11 +37,11 @@ var LoopThreads = 3
 var EventThreads = 3
 
 const (
-	UPDATE_FUNC_ASYNC   = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
-	SELECT_FUNC_ASYNC   = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
-	SELECT_FUNC_REQUEST = "select * from erufunctions_requests where project_id=??? and tenant_id=??? and func_group_name=??? and (request_name=??? or 'ALL'=???)"
-	SAVE_FUNC_REQUEST   = "insert into erufunctions_requests (request_id, request_name, func_group_name, project_id, tenant_id, request_json) values (???, ???, ???, ???, ???, ???) on conflict (request_id) do update set request_json=EXCLUDED.request_json , request_name=EXCLUDED.request_name"
-	DELETE_FUNC_REQUEST = "delete from erufunctions_requests where request_id=??? returning request_id"
+	UPDATE_FUNC_ASYNC = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
+	SELECT_FUNC_ASYNC = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
+	//SELECT_FUNC_REQUEST = "select * from erufunctions_requests where project_id=??? and tenant_id=??? and func_group_name=??? and (request_name=??? or 'ALL'=???)"
+	//SAVE_FUNC_REQUEST   = "insert into erufunctions_requests (request_id, request_name, func_group_name, project_id, tenant_id, request_json) values (???, ???, ???, ???, ???, ???) on conflict (request_id) do update set request_json=EXCLUDED.request_json , request_name=EXCLUDED.request_name"
+	//DELETE_FUNC_REQUEST = "delete from erufunctions_requests where request_id=??? returning request_id"
 )
 
 type StoreHolder struct {
@@ -85,9 +85,9 @@ type ModuleStoreI interface {
 	UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, eventResponse string, realStore ModuleStoreI) (err error)
 	FetchProjectEvents(ctx context.Context, s ModuleStoreI, cnt int, asyncEventsList []string) (err error)
 	StartPolling(ctx context.Context, projectId string, event events.EventI, s ModuleStoreI, cnt int) (err error)
-	SaveFuncRequest(ctx context.Context, sampleRequest module_model.SampleRequest, projectId string, tenantId string, realStore ModuleStoreI) error
-	RemoveFuncRequest(ctx context.Context, requestId string, realStore ModuleStoreI) error
-	GetFuncRequests(ctx context.Context, projectId string, tenantId string, funcName string, realStore ModuleStoreI) (requests []module_model.SampleRequest, err error)
+	//SaveFuncRequest(ctx context.Context, sampleRequest module_model.SampleRequest, projectId string, tenantId string, realStore ModuleStoreI) error
+	//RemoveFuncRequest(ctx context.Context, requestId string, realStore ModuleStoreI) error
+	//GetFuncRequests(ctx context.Context, projectId string, tenantId string, funcName string, realStore ModuleStoreI) (requests []module_model.SampleRequest, err error)
 }
 
 type ModuleStore struct {
@@ -810,7 +810,7 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 	eventName, _ := event.GetAttribute("event_name")
 	eventType, _ := event.GetAttribute("event_type")
 	if eventType == "DB" {
-		event.SetCon(s.GetConn(),s.GetDbType())
+		event.SetCon(s.GetConn(), s.GetDbType())
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("StartPolling - Start : ", eventName, " jcnt = ", jcnt))
 	for {
@@ -1027,7 +1027,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 	return
 }
 
-func (ms *ModuleStore) SaveFuncRequest(ctx context.Context, sampleRequest module_model.SampleRequest, projectId string, tenantId string, s ModuleStoreI) (err error) {
+/* func (ms *ModuleStore) SaveFuncRequest(ctx context.Context, sampleRequest module_model.SampleRequest, projectId string, tenantId string, s ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveFuncRequest - Start")
 	sampleRequestBytes, err := json.Marshal(sampleRequest.RequestBody)
 	if err != nil {
@@ -1087,4 +1087,4 @@ func (ms *ModuleStore) GetFuncRequests(ctx context.Context, projectId string, te
 		})
 	}
 	return
-}
+} */

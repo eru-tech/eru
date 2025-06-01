@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/eru-tech/eru/eru-cache/cache"
+	db "github.com/eru-tech/eru/eru-db/db"
 	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-read-write/validator"
 	repos "github.com/eru-tech/eru/eru-repos/repos"
 	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
@@ -23,6 +25,12 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jmoiron/sqlx"
 	"github.com/tidwall/gjson"
+)
+
+const (
+	SELECT_REQUEST = "select * from eru_requests where project_id=??? and tenant_id=??? and resource_name=??? and (request_name=??? or 'ALL'=???)"
+	SAVE_REQUEST   = "insert into eru_requests (request_id, request_name, resource_name, project_id, tenant_id, request_json) values (???, ???, ???, ???, ???, ???) on conflict (request_id) do update set request_json=EXCLUDED.request_json , request_name=EXCLUDED.request_name"
+	DELETE_REQUEST = "delete from eru_requests where request_id=??? returning request_id"
 )
 
 type StoreI interface {
@@ -84,6 +92,9 @@ type StoreI interface {
 	SaveScheduler(ctx context.Context, projectId string, schedulerObj scheduler.SchedulerI, s StoreI, persist bool) (err error)
 	FetchScheduler(ctx context.Context, projectId string) (schedulerObj scheduler.SchedulerI, err error)
 	InitScheduler(ctx context.Context, s StoreI) (err error)
+	SaveRequest(ctx context.Context, request models.SampleRequest, projectId string, tenantId string, s StoreI) (err error)
+	GetRequests(ctx context.Context, projectId string, tenantId string, resourceName string, s StoreI) (requests []models.SampleRequest, err error)
+	RemoveRequest(ctx context.Context, requestId string, s StoreI) (err error)
 }
 
 type Store struct {
@@ -1565,4 +1576,65 @@ func (store *Store) InitScheduler(ctx context.Context, s StoreI) (err error) {
 		}
 	}
 	return nil
+}
+func (store *Store) SaveRequest(ctx context.Context, sampleRequest models.SampleRequest, projectId string, tenantId string, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveRequest - Start")
+	sampleRequestBytes, err := json.Marshal(sampleRequest.RequestBody)
+	if err != nil {
+		err = logs.Err(ctx, err, "error marshalling sample request")
+		return
+	}
+	var saveQueries []*models.Queries
+	saveQueryFuncRequest := models.Queries{}
+	saveQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SAVE_REQUEST)
+	saveQueryFuncRequest.Vals = append(saveQueryFuncRequest.Vals, sampleRequest.RequestId, sampleRequest.RequestName, sampleRequest.ResourceName, projectId, tenantId, (string)(sampleRequestBytes))
+	saveQueryFuncRequest.Rank = 1
+	saveQueries = append(saveQueries, &saveQueryFuncRequest)
+	_, err = utils.ExecuteDbSave(ctx, s.GetConn(), saveQueries)
+	if err != nil {
+		return
+	}
+	return
+}
+
+func (store *Store) RemoveRequest(ctx context.Context, requestId string, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveRequest - Start")
+	var deleteQueries []*models.Queries
+	deleteQueryFuncRequest := models.Queries{}
+	deleteQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, DELETE_REQUEST)
+	deleteQueryFuncRequest.Vals = append(deleteQueryFuncRequest.Vals, requestId)
+	deleteQueryFuncRequest.Rank = 1
+	deleteQueries = append(deleteQueries, &deleteQueryFuncRequest)
+	var delResult [][]map[string]interface{}
+	delResult, err = utils.ExecuteDbSave(ctx, s.GetConn(), deleteQueries)
+	if err != nil {
+		return
+	}
+	if len(delResult[0]) == 0 {
+		err = logs.Err(ctx, fmt.Errorf("func request not found %s", requestId), "")
+		return
+	}
+	return
+}
+
+func (store *Store) GetRequests(ctx context.Context, projectId string, tenantId string, resourceName string, s StoreI) (requests []models.SampleRequest, err error) {
+	logs.WithContext(ctx).Debug("GetRequests - Start")
+	selectQueryFuncRequest := models.Queries{}
+	selectQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SELECT_REQUEST)
+	selectQueryFuncRequest.Vals = append(selectQueryFuncRequest.Vals, projectId, tenantId, resourceName, "ALL", "ALL")
+	selectQueryFuncRequest.Rank = 1
+	output, err := utils.ExecuteDbFetch(ctx, s.GetConn(), selectQueryFuncRequest)
+	if err != nil {
+		return
+	}
+	requests = []models.SampleRequest{}
+	for _, request := range output {
+		requests = append(requests, models.SampleRequest{
+			RequestId:     utils.GetStringField(request, "request_id"),
+			RequestName:   utils.GetStringField(request, "request_name"),
+			RequestBody:   utils.GetMapField(request, "request_json"),
+			ResourceName:  utils.GetStringField(request, "resource_name"),
+		})
+	}
+	return
 }

@@ -28,3 +28,9 @@ type JSONSchema struct {
 	Format      string                `json:"format,omitempty"` // For strings
 	Description string                `json:"description,omitempty"`
 }
+type SampleRequest struct {
+	RequestId    string                 `json:"request_id" eru:"required"`
+	RequestName  string                 `json:"request_name" eru:"required"`
+	RequestBody  map[string]interface{} `json:"request_body" eru:"required"`
+	ResourceName string                 `json:"resource_name" eru:"required"`
+}

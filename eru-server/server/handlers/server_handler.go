@@ -12,11 +12,13 @@ import (
 
 	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-repos/repos"
 	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	kms "github.com/eru-tech/eru/eru-secret-manager/kms"
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
 )
 
@@ -823,5 +825,76 @@ func FetchSchedulerHandler(s store.StoreI) http.HandlerFunc {
 		}
 		FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(schedulerObj)
+	}
+}
+func RequestListHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FuncRequestListHandler - Start")
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		resourceName := vars["resource"]
+		requests, err := s.GetRequests(r.Context(), projectId, tenantId, resourceName, s)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(requests)
+	}
+}
+func RequestSaveHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FuncRequestSaveHandler - Start")
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+
+		var sampleRequest models.SampleRequest
+		err := json.NewDecoder(r.Body).Decode(&sampleRequest)
+		if err != nil {
+			err = logs.Err(r.Context(), err, "error decode request body")
+			FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		} else {
+			err := utils.ValidateStruct(r.Context(), sampleRequest, "")
+			if err != nil {
+				FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		err = s.SaveRequest(r.Context(), sampleRequest, projectId, tenantId, s)
+		if err != nil {
+			err = logs.Err(r.Context(), err, "error saving function request")
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprintf("function request %s saved successfully", sampleRequest.RequestName)})
+		}
+	}
+}
+
+func RequestRemoveHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FuncRequestRemoveHandler - Start")
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		requestId := vars["requestid"]
+		err := s.RemoveRequest(r.Context(), requestId, s)
+		if err != nil {
+			err = logs.Err(r.Context(), err, "error removing function request")
+			FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"msg": fmt.Sprintf("function request %s removed successfully", requestId)})
 	}
 }

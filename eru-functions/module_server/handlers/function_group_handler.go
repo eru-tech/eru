@@ -16,7 +16,8 @@ import (
 
 	"github.com/eru-tech/eru/eru-events/events"
 	"github.com/eru-tech/eru/eru-functions/functions"
-	"github.com/eru-tech/eru/eru-functions/module_model"
+
+	//"github.com/eru-tech/eru/eru-functions/module_model"
 	"github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -268,7 +269,8 @@ func ScriptHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 	}
 }
-func FuncRequestListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+
+/* func FuncRequestListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("FuncRequestListHandler - Start")
 		defer r.Body.Close()
@@ -338,7 +340,7 @@ func FuncRequestRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		server_handlers.FormatResponse(w, http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]string{"msg": fmt.Sprintf("function request %s removed successfully", requestId)})
 	}
-}
+} */
 
 func FuncHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
