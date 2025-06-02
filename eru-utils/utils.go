@@ -555,7 +555,10 @@ func CloneInterface(ctx context.Context, i interface{}) (iClone interface{}, err
 
 func ExecuteDbFetch(ctx context.Context, db *sqlx.DB, query models.Queries) (output []map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ExecuteDbFetch - Start")
-
+	if db == nil {
+		logs.WithContext(ctx).Error("db connection is nil")
+		return nil, errors.New("db connection is nil")
+	}
 	rows, err := db.Queryx(query.Query, query.Vals...)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -604,6 +607,10 @@ func ExecuteDbFetch(ctx context.Context, db *sqlx.DB, query models.Queries) (out
 
 func ExecuteDbSave(ctx context.Context, db *sqlx.DB, queries []*models.Queries) (output [][]map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ExecuteDbSave - Start")
+	if db == nil {
+		logs.WithContext(ctx).Error("db connection is nil")
+		return nil, errors.New("db connection is nil")
+	}
 	tx := db.MustBegin()
 	for _, q := range queries {
 		stmt, err := tx.PreparexContext(ctx, q.Query)
