@@ -50,6 +50,13 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	serverRouter.Get("event_pub").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	serverRouter.Get("event_poll").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 
+	serverRouter.Get("sr_list").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("sr_save").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("sr_remove").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("tsr_list").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("tsr_save").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+	serverRouter.Get("tsr_remove").HandlerFunc(module_handlers.RouteHandler(sh.Store))
+
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 
 	storeRouter.Methods(http.MethodPost).Path("/compare").HandlerFunc(module_handlers.StoreCompareHandler(sh.Store))
