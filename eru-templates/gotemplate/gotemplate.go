@@ -580,7 +580,7 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFormat string) (output interface{}, err error) {
 	logs.WithContext(ctx).Debug("Execute - Start")
 	buf := &bytes.Buffer{}
-
+	goTmpl.Template = strings.ReplaceAll(goTmpl.Template, "\n", "")
 	t := template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(GenericFuncMap(ctx))
 	t, err = t.Parse(goTmpl.Template)
 	if err != nil {
@@ -654,7 +654,6 @@ func (goTmpl *GoTemplate) ExecuteWithErrors(ctx context.Context, obj interface{}
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err
 }
-
 
 func EvalFilter(ctx context.Context, filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
 	for k, v := range filter {
