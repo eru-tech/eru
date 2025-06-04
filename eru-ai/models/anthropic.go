@@ -293,14 +293,16 @@ func (anthropicModel *AnthropicModel) makeAnthropicChatRequestContent(ctx contex
 	if len(message.Files) > 0 {
 		for _, file := range message.Files {
 			if file.FileData != "" {
-				/* anthropicRequestMessageContent = append(anthropicRequestMessageContent, AnthropicMessageContent{
-					Type: "file",
-					Source: AnthropicContentSource{
-						Filename: file.FileName,
-						FileData: file.FileData,
+				anthropicRequestMessageContent = append(anthropicRequestMessageContent, AnthropicMessageContent{
+					Type: "document",
+					Text: nil,
+					Source: &AnthropicContentSource{
+						MediaType: file.FileType,
+						Type:      "base64",
+						Data:      file.FileData,
 					},
-				}) */
-				//TODO: Add file data support
+					CacheControl: nil,
+				})
 			} else if file.FileId != "" {
 				/* anthropicRequestMessageContent = append(anthropicRequestMessageContent, AnthropicMessageContent{
 					Type: "file",

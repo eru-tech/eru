@@ -6,17 +6,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
+	"reflect"
+	"sort"
+	"strings"
+
 	auth_utils "github.com/eru-tech/eru/eru-auth/utils"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
-	"net/http"
-	"net/url"
-	"reflect"
-	"sort"
-	"strings"
 )
 
 type OAuth struct {
@@ -26,18 +27,19 @@ type OAuth struct {
 }
 
 type OAuthConfig struct {
-	ClientId            string      `json:"client_id"`
-	ClientSecret        string      `json:"client_secret"`
-	RedirectURI         string      `json:"redirect_uri" eru:"required"`
-	CodeKey             string      `json:"code_key"`
-	TokenUrlContentType string      `json:"token_url_content_type"`
-	Scope               string      `json:"scope"`
-	SsoBaseUrl          string      `json:"sso_base_url" eru:"required"`
-	TokenUrl            string      `json:"token_url" eru:"required"`
-	JwkUrl              string      `json:"jwk_url"`
-	CheckSum            string      `json:"checksum"`
-	Identifiers         Identifiers `json:"identifiers"`
-	TokenKey            string      `json:"token_key"`
+	SsoUrlParams        map[string]string `json:"sso_url_params"`
+	ClientId            string            `json:"client_id"`
+	ClientSecret        string            `json:"client_secret"`
+	RedirectURI         string            `json:"redirect_uri" eru:"required"`
+	CodeKey             string            `json:"code_key"`
+	TokenUrlContentType string            `json:"token_url_content_type"`
+	Scope               string            `json:"scope"`
+	SsoBaseUrl          string            `json:"sso_base_url" eru:"required"`
+	TokenUrl            string            `json:"token_url" eru:"required"`
+	JwkUrl              string            `json:"jwk_url"`
+	CheckSum            string            `json:"checksum"`
+	Identifiers         Identifiers       `json:"identifiers"`
+	TokenKey            string            `json:"token_key"`
 }
 
 func (oAuth *OAuth) PerformPreSaveTask(ctx context.Context) (err error) {
@@ -89,6 +91,11 @@ func (oAuth *OAuth) GetUrl(ctx context.Context, state string) (urlStr string, oA
 			}
 		}
 	}
+
+	for k, v := range oAuth.OAuthConfig.SsoUrlParams {
+		params.Add(k, v)
+	}
+
 	urlStr = fmt.Sprint(oAuth.OAuthConfig.SsoBaseUrl, "?", params.Encode())
 	oAuthParams.Url = urlStr
 	return
