@@ -342,7 +342,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 }
 
 func (msAuth *MsAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error) {
-	logs.WithContext(ctx).Debug("Login - Start")
+	logs.WithContext(ctx).Debug("IdpToken - Start")
 
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/x-www-form-urlencoded")
