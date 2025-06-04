@@ -32,7 +32,7 @@ type amazonToolWithToken struct {
 }
 
 const (
-	SellerBaseUrl = "https://graph.microsoft.com"
+	SellerBaseUrl = "https://sellingpartnerapi-eu.amazon.com"
 )
 
 func (amazonTool *AmazonTool) GetActionsList() []string {
@@ -82,7 +82,7 @@ func (amazonTool *AmazonTool) GetOrders(ctx context.Context, params map[string]i
 	headers.Set("x-amz-access-token", amazonTool.AmazonAccount.AccessToken)
 	headers.Set("x-amz-date", time.Now().UTC().Format(time.RFC3339))
 	headers.Set("user-agent", amazonTool.AmazonAccount.UserAgent)
-
+	headers.Set("content-type", "application/json")
 	queryParams := map[string]string{}
 	for k, v := range params {
 		queryParams[k] = v.(string)
@@ -106,7 +106,7 @@ func (amazonTool *AmazonTool) GetPayments(ctx context.Context, params map[string
 	headers.Set("x-amz-access-token", amazonTool.AmazonAccount.AccessToken)
 	headers.Set("x-amz-date", time.Now().UTC().Format(time.RFC3339))
 	headers.Set("user-agent", amazonTool.AmazonAccount.UserAgent)
-
+	headers.Set("content-type", "application/json")
 	queryParams := map[string]string{}
 	for k, v := range params {
 		queryParams[k] = v.(string)
