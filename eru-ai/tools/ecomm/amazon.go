@@ -101,7 +101,7 @@ func (amazonTool *AmazonTool) GetOrders(ctx context.Context, params map[string]i
 
 func (amazonTool *AmazonTool) GetPayments(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetPayments Execute - Start")
-	url := fmt.Sprint(SellerBaseUrl, "finances/v0/financialEvents")
+	url := fmt.Sprint(SellerBaseUrl, "/finances/v0/financialEvents")
 	headers := http.Header{}
 	headers.Set("x-amz-access-token", amazonTool.AmazonAccount.AccessToken)
 	headers.Set("x-amz-date", time.Now().UTC().Format(time.RFC3339))
