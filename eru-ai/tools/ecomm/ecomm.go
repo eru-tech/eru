@@ -15,10 +15,12 @@ type amazonAccountWithToken struct {
 }
 
 const (
-	GetOrders     = "get_orders"
-	GetPayments   = "get_payments"
-	Login         = "login"
-	RenewToken    = "renew_token"
-	GetSsoUrl     = "get_sso_url"
-	StopAutoRenew = "stop_auto_renew"
+	GetOrders               = "get_orders"
+	GetOrderItems           = "get_order_items"
+	GetFinancialEvents      = "get_financial_events"
+	GetFinancialEventGroups = "get_financial_event_groups"
+	Login                   = "login"
+	RenewToken              = "renew_token"
+	GetSsoUrl               = "get_sso_url"
+	StopAutoRenew           = "stop_auto_renew"
 )

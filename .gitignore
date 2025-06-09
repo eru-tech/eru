@@ -34,3 +34,5 @@ config.json
 # windsurf rules
 .windsurfrules
 .gitignore
+eru-ql/eru-ql.log
+.gitignore

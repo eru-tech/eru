@@ -272,13 +272,15 @@ func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, dat
 	if err != nil {
 		return err
 	}
-	err = sqlMaker.CreateConn(ctx, datasourceClone)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+	if sqlMaker != nil {
+		err = sqlMaker.CreateConn(ctx, datasourceClone)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		//setting DB connection object in actual store
+		datasource.Con = datasourceClone.Con
+		datasource.ConStatus = datasourceClone.ConStatus
 	}
-	//setting DB connection object in actual store
-	datasource.Con = datasourceClone.Con
-	datasource.ConStatus = datasourceClone.ConStatus
 	logs.WithContext(ctx).Info("SaveStore called from SaveDataSource")
 	return realStore.SaveStore(ctx, projectId, "", realStore)
 }
@@ -731,7 +733,7 @@ func (ms *ModuleStore) RemoveTableSecurity(ctx context.Context, projectId string
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
 			if _, ok := db.SchemaTablesSecurity[tableName]; ok {
-				delete(db.SchemaTablesSecurity, tableName)				
+				delete(db.SchemaTablesSecurity, tableName)
 			} else {
 				err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
 				if err != nil {

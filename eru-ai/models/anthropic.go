@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -220,7 +221,15 @@ func (anthropicModel *AnthropicModel) QueryModelWithTool(ctx context.Context, ch
 		return
 	}
 	outputJson := make(map[string]interface{})
-	outputJson["raw"] = anthropicChatResponse.Content[0].Input
+	outputJson, ok := anthropicChatResponse.Content[0].Input.(map[string]interface{})
+	if !ok {
+		err = errors.New("input is not a map")
+		logs.WithContext(ctx).Error(err.Error())
+		outputJson = make(map[string]interface{})
+		outputJson["raw"] = anthropicChatResponse.Content[0].Input
+		return
+	}
+
 	queryResponse = JsonMessage{
 		Content: outputJson,
 		Role:    "assistant",
