@@ -433,39 +433,39 @@ type OrderItemsResponse struct {
 }
 
 type OrderItem struct {
-	ASIN                     string                 `json:"ASIN,omitempty"`
-	SellerSKU                string                 `json:"SellerSKU,omitempty"`
-	OrderItemId              string                 `json:"OrderItemId,omitempty"`
-	Title                    string                 `json:"Title,omitempty"`
-	QuantityOrdered          int                    `json:"QuantityOrdered,omitempty"`
-	QuantityShipped          int                    `json:"QuantityShipped,omitempty"`
-	ProductInfo              ProductInfo            `json:"ProductInfo,omitempty"`
-	PointsGranted            PointsGranted          `json:"PointsGranted,omitempty"`
-	ItemPrice                Money                  `json:"ItemPrice,omitempty"`
-	ShippingPrice            Money                  `json:"ShippingPrice,omitempty"`
-	ItemTax                  Money                  `json:"ItemTax,omitempty"`
-	ShippingTax              Money                  `json:"ShippingTax,omitempty"`
-	ShippingDiscount         Money                  `json:"ShippingDiscount,omitempty"`
-	ShippingDiscountTax      Money                  `json:"ShippingDiscountTax,omitempty"`
-	PromotionDiscount        Money                  `json:"PromotionDiscount,omitempty"`
-	PromotionDiscountTax     Money                  `json:"PromotionDiscountTax,omitempty"`
-	PromotionIds             []string               `json:"PromotionIds,omitempty"`
-	CODFee                   Money                  `json:"CODFee,omitempty"`
-	CODFeeDiscount           Money                  `json:"CODFeeDiscount,omitempty"`
-	IsGift                   bool                   `json:"IsGift,omitempty"`
-	ConditionNote            string                 `json:"ConditionNote,omitempty"`
-	ConditionId              string                 `json:"ConditionId,omitempty"`
-	ConditionSubtypeId       string                 `json:"ConditionSubtypeId,omitempty"`
-	ScheduledDeliveryStartDate string               `json:"ScheduledDeliveryStartDate,omitempty"`
-	ScheduledDeliveryEndDate string                 `json:"ScheduledDeliveryEndDate,omitempty"`
-	PriceDesignation         string                 `json:"PriceDesignation,omitempty"`
-	TaxCollection            TaxCollection          `json:"TaxCollection,omitempty"`
-	SerialNumberRequired     bool                   `json:"SerialNumberRequired,omitempty"`
-	IsTransparency           bool                   `json:"IsTransparency,omitempty"`
-	IossNumber               string                 `json:"IossNumber,omitempty"`
-	StoreChainStoreId        string                 `json:"StoreChainStoreId,omitempty"`
-	DeemedResellerCategory   string                 `json:"DeemedResellerCategory,omitempty"`
-	BuyerInfo                BuyerInfo              `json:"BuyerInfo,omitempty"`
+	ASIN                       string        `json:"ASIN,omitempty"`
+	SellerSKU                  string        `json:"SellerSKU,omitempty"`
+	OrderItemId                string        `json:"OrderItemId,omitempty"`
+	Title                      string        `json:"Title,omitempty"`
+	QuantityOrdered            int           `json:"QuantityOrdered,omitempty"`
+	QuantityShipped            int           `json:"QuantityShipped,omitempty"`
+	ProductInfo                ProductInfo   `json:"ProductInfo,omitempty"`
+	PointsGranted              PointsGranted `json:"PointsGranted,omitempty"`
+	ItemPrice                  Money         `json:"ItemPrice,omitempty"`
+	ShippingPrice              Money         `json:"ShippingPrice,omitempty"`
+	ItemTax                    Money         `json:"ItemTax,omitempty"`
+	ShippingTax                Money         `json:"ShippingTax,omitempty"`
+	ShippingDiscount           Money         `json:"ShippingDiscount,omitempty"`
+	ShippingDiscountTax        Money         `json:"ShippingDiscountTax,omitempty"`
+	PromotionDiscount          Money         `json:"PromotionDiscount,omitempty"`
+	PromotionDiscountTax       Money         `json:"PromotionDiscountTax,omitempty"`
+	PromotionIds               []string      `json:"PromotionIds,omitempty"`
+	CODFee                     Money         `json:"CODFee,omitempty"`
+	CODFeeDiscount             Money         `json:"CODFeeDiscount,omitempty"`
+	IsGift                     bool          `json:"IsGift,omitempty"`
+	ConditionNote              string        `json:"ConditionNote,omitempty"`
+	ConditionId                string        `json:"ConditionId,omitempty"`
+	ConditionSubtypeId         string        `json:"ConditionSubtypeId,omitempty"`
+	ScheduledDeliveryStartDate string        `json:"ScheduledDeliveryStartDate,omitempty"`
+	ScheduledDeliveryEndDate   string        `json:"ScheduledDeliveryEndDate,omitempty"`
+	PriceDesignation           string        `json:"PriceDesignation,omitempty"`
+	TaxCollection              TaxCollection `json:"TaxCollection,omitempty"`
+	SerialNumberRequired       bool          `json:"SerialNumberRequired,omitempty"`
+	IsTransparency             bool          `json:"IsTransparency,omitempty"`
+	IossNumber                 string        `json:"IossNumber,omitempty"`
+	StoreChainStoreId          string        `json:"StoreChainStoreId,omitempty"`
+	DeemedResellerCategory     string        `json:"DeemedResellerCategory,omitempty"`
+	BuyerInfo                  BuyerInfo     `json:"BuyerInfo,omitempty"`
 }
 
 type ProductInfo struct {
@@ -473,18 +473,18 @@ type ProductInfo struct {
 }
 
 type PointsGranted struct {
-	PointsNumber      int   `json:"PointsNumber,omitempty"`
+	PointsNumber        int   `json:"PointsNumber,omitempty"`
 	PointsMonetaryValue Money `json:"PointsMonetaryValue,omitempty"`
 }
 
 type Money struct {
-	CurrencyCode string  `json:"CurrencyCode,omitempty"`
-	Amount       string  `json:"Amount,omitempty"`
+	CurrencyCode string `json:"CurrencyCode,omitempty"`
+	Amount       string `json:"Amount,omitempty"`
 }
 
 type TaxCollection struct {
-	Model             string `json:"Model,omitempty"`
-	ResponsibleParty  string `json:"ResponsibleParty,omitempty"`
+	Model            string `json:"Model,omitempty"`
+	ResponsibleParty string `json:"ResponsibleParty,omitempty"`
 }
 
 type BuyerInfo struct {
@@ -727,7 +727,7 @@ func (amazonTool *AmazonTool) GetOrderItems(ctx context.Context, params map[stri
 	}
 
 	toolResult = make(map[string]interface{})
-	
+
 	// Extract order items from response
 	if responsePayload, exists := responseMap["payload"]; exists {
 		if payloadMap, ok := responsePayload.(map[string]interface{}); ok {
@@ -831,15 +831,24 @@ func (amazonTool *AmazonTool) GetFinancialEvents(ctx context.Context, params map
 	logs.WithContext(ctx).Debug("GetFinancialEvents Execute - Start")
 
 	nextToken := ""
-
+	financialGroupId := ""
+	if params["FinancialEventGroupId"] != nil {
+		financialGroupId = params["FinancialEventGroupId"].(string)
+	}
+	orderId := ""
+	if params["AmazonOrderId"] != nil {
+		orderId = params["AmazonOrderId"].(string)
+	}
 	// Convert params to query parameters
 	queryParams := map[string]string{}
 	for k, v := range params {
-		queryParams[k] = v.(string)
+		if k != "FinancialEventGroupId" && k != "AmazonOrderId" {
+			queryParams[k] = v.(string)
+		}
 	}
 
 	// Call recursively to get all financial events with structured merging
-	consolidatedFinancialEvents, err := amazonTool.getFinancialEventsRecursive(ctx, queryParams, nextToken)
+	consolidatedFinancialEvents, err := amazonTool.getFinancialEventsRecursive(ctx, queryParams, nextToken, financialGroupId, orderId)
 	if err != nil {
 		return nil, false, err
 	}
@@ -864,17 +873,23 @@ func (amazonTool *AmazonTool) GetFinancialEvents(ctx context.Context, params map
 	return toolResult, false, nil
 }
 
-func (amazonTool *AmazonTool) getFinancialEventsRecursive(ctx context.Context, queryParams map[string]string, nextToken string) (*FinancialEvents, error) {
+func (amazonTool *AmazonTool) getFinancialEventsRecursive(ctx context.Context, queryParams map[string]string, nextToken string, financialGroupId string, orderId string) (*FinancialEvents, error) {
 	logs.WithContext(ctx).Debug("getFinancialEventsRecursive Execute - Start")
 
 	// Initialize consolidated financial events structure
 	consolidatedEvents := &FinancialEvents{}
 
-	return amazonTool.getFinancialEventsRecursiveHelper(ctx, queryParams, nextToken, consolidatedEvents)
+	return amazonTool.getFinancialEventsRecursiveHelper(ctx, queryParams, nextToken, consolidatedEvents, financialGroupId, orderId)
 }
 
-func (amazonTool *AmazonTool) getFinancialEventsRecursiveHelper(ctx context.Context, queryParams map[string]string, nextToken string, consolidatedEvents *FinancialEvents) (*FinancialEvents, error) {
+func (amazonTool *AmazonTool) getFinancialEventsRecursiveHelper(ctx context.Context, queryParams map[string]string, nextToken string, consolidatedEvents *FinancialEvents, financialGroupId string, orderId string) (*FinancialEvents, error) {
 	url := fmt.Sprint(SellerBaseUrl, "/finances/v0/financialEvents")
+	if financialGroupId != "" {
+		url = fmt.Sprint(SellerBaseUrl, "/finances/v0/financialEventGroups/", financialGroupId, "/financialEvents")
+	}
+	if orderId != "" {
+		url = fmt.Sprint(SellerBaseUrl, "/finances/v0/orders/", orderId, "/financialEvents")
+	}
 	headers := http.Header{}
 	headers.Set("x-amz-access-token", amazonTool.AmazonAccount.AccessToken)
 	headers.Set("x-amz-date", time.Now().UTC().Format(time.RFC3339))
@@ -932,7 +947,7 @@ func (amazonTool *AmazonTool) getFinancialEventsRecursiveHelper(ctx context.Cont
 				nextToken = nt.(string)
 				logs.WithContext(ctx).Info("Found NextToken: %s, making recursive call")
 				// Recursive call with NextToken
-				return amazonTool.getFinancialEventsRecursiveHelper(ctx, queryParams, nextToken, consolidatedEvents)
+				return amazonTool.getFinancialEventsRecursiveHelper(ctx, queryParams, nextToken, consolidatedEvents, financialGroupId, orderId)
 			}
 		}
 	}
