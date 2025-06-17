@@ -979,6 +979,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 								logs.WithContext(ctx).Error(err.Error())
 							} else {
 								eru_utils.PrintResponseBody(ctx, response, "response from ProcessEvents")
+								logs.WithContext(ctx).Info(fmt.Sprint("funcVarsMap from ProcessEvents", funcVarsMap))
 								responseBytes := []byte("")
 								responseBytes, err = io.ReadAll(response.Body)
 								if err != nil {
