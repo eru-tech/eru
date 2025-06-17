@@ -978,6 +978,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 								eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
 								logs.WithContext(ctx).Error(err.Error())
 							} else {
+								logs.WithContext(ctx).Info(fmt.Sprint("request_id of actual function processing", response.Header.Get("request_id")))
 								eru_utils.PrintResponseBody(ctx, response, "response from ProcessEvents")
 								logs.WithContext(ctx).Info(fmt.Sprint("funcVarsMap from ProcessEvents", funcVarsMap))
 								responseBytes := []byte("")
