@@ -56,7 +56,7 @@ func StartUp() (module_store.ModuleStoreI, error) {
 		module_store.LoopThreads = 3
 	}
 
-	eventThreads := os.Getenv("LOOP_THREADS")
+	eventThreads := os.Getenv("EVENT_THREADS")
 	if eventThreads == "" {
 		eventThreads = "3"
 		logs.WithContext(context.Background()).Info("'EVENT_THREADS' environment variable not found - setting default value as 3")

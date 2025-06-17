@@ -1572,7 +1572,7 @@ func (store *Store) InitScheduler(ctx context.Context, s StoreI) (err error) {
 		err = sch.Init(ctx, &rawMsg)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
-			return err
+			//return err
 		}
 	}
 	return nil
@@ -1630,10 +1630,10 @@ func (store *Store) GetRequests(ctx context.Context, projectId string, tenantId 
 	requests = []models.SampleRequest{}
 	for _, request := range output {
 		requests = append(requests, models.SampleRequest{
-			RequestId:     utils.GetStringField(request, "request_id"),
-			RequestName:   utils.GetStringField(request, "request_name"),
-			RequestBody:   utils.GetMapField(request, "request_json"),
-			ResourceName:  utils.GetStringField(request, "resource_name"),
+			RequestId:    utils.GetStringField(request, "request_id"),
+			RequestName:  utils.GetStringField(request, "request_name"),
+			RequestBody:  utils.GetMapField(request, "request_json"),
+			ResourceName: utils.GetStringField(request, "resource_name"),
 		})
 	}
 	return

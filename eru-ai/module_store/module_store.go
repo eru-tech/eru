@@ -8,11 +8,11 @@ import (
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
-	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	module_model "github.com/eru-tech/eru/eru-ai/module_model"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	db "github.com/eru-tech/eru/eru-db/db"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	"github.com/eru-tech/eru/eru-store/store"
 )
 
@@ -347,6 +347,8 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 		scheduler, err = s.FetchScheduler(ctx, projectId)
 		if err == nil {
 			toolObjClone.SetScheduler(scheduler)
+		} else {
+			err = nil //ignore error and allow rest of object to be cloned
 		}
 		return
 	}

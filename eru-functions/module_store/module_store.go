@@ -780,6 +780,7 @@ func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asy
 	updateQueryFuncAsync.Vals = append(updateQueryFuncAsync.Vals, asyncStatus, eventResponse, asyncId)
 	updateQueryFuncAsync.Rank = 1
 	updateQueries = append(updateQueries, &updateQueryFuncAsync)
+	logs.WithContext(ctx).Info(fmt.Sprint("updateQueryFuncAsync = ", updateQueryFuncAsync))
 	_, err = eru_utils.ExecuteDbSave(ctx, s.GetConn(), updateQueries)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -977,6 +978,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 								eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
 								logs.WithContext(ctx).Error(err.Error())
 							} else {
+								eru_utils.PrintResponseBody(ctx, response, "response from ProcessEvents")
 								responseBytes := []byte("")
 								responseBytes, err = io.ReadAll(response.Body)
 								if err != nil {
@@ -1012,6 +1014,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 						}
 					}
 				}
+				logs.WithContext(ctx).Info(fmt.Sprint("eventResponseBytes = ", string(eventResponseBytes)))
 				_ = s.UpdateAsyncEvent(ctx, async_id, asyncStatus, string(eventResponseBytes), s)
 			}
 			endTimeaid := time.Now()
