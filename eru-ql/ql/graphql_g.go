@@ -564,9 +564,32 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 								switch reflect.TypeOf(newVal).Kind() {
 								case reflect.String:
 									s := reflect.ValueOf(newVal)
-									if strings.HasPrefix(s.String(), "$") {
+									//TODO - do we need this then implement variable replacement for $jin and $jnin
+									/* if strings.HasPrefix(s.String(), "$") {
 
+									} */
+									op = module_model.MAKE_JSON_ARRAY_FN_STR
+									valPrefix = "'"
+									valSuffix = "'"
+									if strings.HasPrefix(s.String(), "FIELD_") {
+										valPrefix = ""
+										valSuffix = ""
 									}
+									str := ""
+									//TODO to make this from db specific syntax
+									if v == "$jnin" || v == "$jin" {
+										parentKey = strings.Replace(parentKey, "->>", "->", -1)
+										str = fmt.Sprint(parentKey, op, valPrefix, strings.Replace(s.String(), "FIELD_", "", -1), valSuffix)
+									} else {
+										var temp []string
+										temp = append(temp, s.String())
+										str = fmt.Sprint(parentKey, op, "(", valPrefix, strings.Join(temp, " , "), valSuffix, ")")
+									}
+
+									if v == "$jnin" {
+										str = fmt.Sprint(" not (", str, ") ")
+									}
+									tempArray = append(tempArray, str)
 								case reflect.Slice:
 									s := reflect.ValueOf(newVal)
 									temp := make([]string, s.Len())
@@ -840,10 +863,18 @@ func (sqlObj *SQLObjectQ) MakeQuery(ctx context.Context, sqlMaker ds.SqlMakerI, 
 	sqlObj.DBQuery = fmt.Sprint(withClause, "select ", strDistinct, strColums, " from ", fromTable, " ", strJoinClause, " ", strWhereClause, " ", strGroupClause, strSortClause)
 
 	sqlObj.DBQuery = sqlMaker.AddLimitSkipClause(ctx, sqlObj.DBQuery, sqlObj.Limit, sqlObj.Skip, 1000)
+
+	makeJsonArrayFnStrKeyWord, err := sqlMaker.GetMakeJsonArrayFnStr()
+	if err != nil {
+		makeJsonArrayFnStrKeyWord = ""
+	}
+	sqlObj.DBQuery = strings.Replace(sqlObj.DBQuery, module_model.MAKE_JSON_ARRAY_FN_STR, makeJsonArrayFnStrKeyWord, -1)
+
 	makeJsonArrayFnKeyWord, err := sqlMaker.GetMakeJsonArrayFn()
 	if err != nil {
 		makeJsonArrayFnKeyWord = ""
 	}
 	sqlObj.DBQuery = strings.Replace(sqlObj.DBQuery, module_model.MAKE_JSON_ARRAY_FN, makeJsonArrayFnKeyWord, -1)
+
 	return err
 }

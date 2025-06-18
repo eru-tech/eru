@@ -221,11 +221,18 @@ func (qld *QLData) secureSQL(ctx context.Context, query string, projectId string
 					q = fmt.Sprint(q, " left join ", srJoin, " on ", oc)
 				}
 				q = fmt.Sprint(q, " where ", sRulesStr)
+				query = strings.Replace(query, fmt.Sprint(table.TableKeyPrefix, table.TableKey, table.TableKeySuffix), fmt.Sprint(table.TableKeyPrefix, " (", q, ") ", table.AliasName, " ", table.TableKeySuffix), -1)
+
+				makeJsonArrayFnStrKeyWord, err := sr.GetMakeJsonArrayFnStr()
+				if err != nil {
+					makeJsonArrayFnStrKeyWord = ""
+				}
+				query = strings.Replace(query, module_model.MAKE_JSON_ARRAY_FN_STR, makeJsonArrayFnStrKeyWord, -1)
+
 				makeJsonArrayFnKeyWord, err := sr.GetMakeJsonArrayFn()
 				if err != nil {
 					makeJsonArrayFnKeyWord = ""
 				}
-				query = strings.Replace(query, fmt.Sprint(table.TableKeyPrefix, table.TableKey, table.TableKeySuffix), fmt.Sprint(table.TableKeyPrefix, " (", q, ") ", table.AliasName, " ", table.TableKeySuffix), -1)
 				query = strings.Replace(query, module_model.MAKE_JSON_ARRAY_FN, makeJsonArrayFnKeyWord, -1)
 			}
 		} else {

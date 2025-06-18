@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	MAKE_JSON_ARRAY_FN = "$make_json_array_fn"
+	MAKE_JSON_ARRAY_FN     = "$make_json_array_fn"
+	MAKE_JSON_ARRAY_FN_STR = "$make_json_array_fn_str"
 )
 
 type CustomRule struct {

@@ -33,6 +33,7 @@ const (
 	COLUMN_MASKING_ENCRYPT = "encrypt"
 	COLUMN_MASKING_HASH    = "hash"
 	MAKE_JSON_ARRAY_FN     = "$make_json_array_fn"
+	MAKE_JSON_ARRAY_FN_STR = "$make_json_array_fn_str"
 )
 
 type TableInQuery struct {

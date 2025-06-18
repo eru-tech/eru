@@ -56,6 +56,9 @@ func (pr *PostgresSqlMaker) GetBlockedRegex() []string {
 func (pr *PostgresSqlMaker) GetMakeJsonArrayFn() (string, error) {
 	return " ?| array ", nil
 }
+func (pr *PostgresSqlMaker) GetMakeJsonArrayFnStr() (string, error) {
+	return " ? ", nil
+}
 
 func (pr *PostgresSqlMaker) ExtractTableNames(ctx context.Context, query string) (resTablesInQuery module_model.TablesInQuery) {
 	logs.WithContext(ctx).Debug("ExtractTableNames - Start")
