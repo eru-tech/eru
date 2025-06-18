@@ -736,6 +736,7 @@ func (ms *ModuleStore) GetWfCloneObject(ctx context.Context, projectId string, w
 
 func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, s ModuleStoreI) (asyncFuncData AsyncFuncData, err error) {
 	logs.WithContext(ctx).Debug("FetchAsyncEvent - Start")
+	logs.WithContext(ctx).Info(fmt.Sprint("FetchAsyncEvent called for asyncId = ", asyncId))
 	var selectQueries []*models.Queries
 	selectQueryFuncAsync := models.Queries{}
 	selectQueryFuncAsync.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SELECT_FUNC_ASYNC)
@@ -747,6 +748,7 @@ func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyn
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint("selectOutput = ", selectOutput))
 	var fVars functions.FuncTemplateVars
 	if selectOutput[0] != nil {
 		if selectOutput[0][0] != nil {
@@ -882,6 +884,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 			startTimeaid := time.Now()
 			ctx := context.WithoutCancel(nctx)
 			ctx = logs.NewContext(ctx, zap.String(server_handlers.RequestIdKey, async_id))
+			logs.WithContext(nctx).Info(fmt.Sprint("async_id = ", async_id))
 
 			asyncFuncData, err = ms.FetchAsyncEvent(ctx, async_id, aStatus, s)
 			logs.WithContext(ctx).Info(fmt.Sprint("after fetch event  = ", asyncFuncData.AsyncId))
@@ -890,8 +893,9 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 				asyncStatus = "FAILED"
 				logs.WithContext(ctx).Error("event not found")
 			} else {
+				logs.WithContext(ctx).Info("event found")
 				bodyMap := make(map[string]interface{})
-				eventResponseBytes := []byte("")
+				eventResponseBytes := []byte("{}")
 				bodyMapOk := false
 				requestBytes := []byte("")
 				_ = requestBytes
