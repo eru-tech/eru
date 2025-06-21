@@ -74,6 +74,8 @@ func GetModel(provider string) ModelI {
 		return new(AnthropicModel)
 	case "BEDROCK":
 		return new(BedrockModel)
+	case "GEMINI":
+		return new(GeminiModel)
 	default:
 		return new(Model)
 	}

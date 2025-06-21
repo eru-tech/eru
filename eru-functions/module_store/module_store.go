@@ -891,9 +891,9 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 			if err != nil || asyncFuncData.AsyncId == "" {
 				failedCount = failedCount + 1
 				asyncStatus = "FAILED"
-				logs.WithContext(ctx).Error("event not found")
+				logs.WithContext(ctx).Error(fmt.Sprint("event not found", cnt, ":", jcnt))
 			} else {
-				logs.WithContext(ctx).Info("event found")
+				logs.WithContext(ctx).Info(fmt.Sprint("event found", cnt, ":", jcnt))
 				bodyMap := make(map[string]interface{})
 				eventResponseBytes := []byte("{}")
 				bodyMapOk := false
@@ -911,6 +911,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 						logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
 					}
 					if len(requestBytes) > 0 {
+						logs.WithContext(ctx).Info("here 3")
 						r := bufio.NewReader(bytes.NewBuffer(requestBytes))
 						if eventReq, err = http.ReadRequest(r); err != nil { // deserialize request
 							failedCount = failedCount + 1
@@ -982,9 +983,6 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 								eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
 								logs.WithContext(ctx).Error(err.Error())
 							} else {
-								logs.WithContext(ctx).Info(fmt.Sprint("request_id of actual function processing", response.Header.Get("request_id")))
-								eru_utils.PrintResponseBody(ctx, response, "response from ProcessEvents")
-								logs.WithContext(ctx).Info(fmt.Sprint("funcVarsMap from ProcessEvents", funcVarsMap))
 								responseBytes := []byte("")
 								responseBytes, err = io.ReadAll(response.Body)
 								if err != nil {
@@ -1020,7 +1018,6 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 						}
 					}
 				}
-				logs.WithContext(ctx).Info(fmt.Sprint("eventResponseBytes = ", string(eventResponseBytes)))
 				_ = s.UpdateAsyncEvent(ctx, async_id, asyncStatus, string(eventResponseBytes), s)
 			}
 			endTimeaid := time.Now()

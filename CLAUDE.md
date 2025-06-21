@@ -82,8 +82,8 @@ Services use local module replacement for shared functionality:
 - **eru-files**: Multi-cloud file storage (AWS S3, Azure Blob, GCP Storage)
 
 ### Communication & Integrations
-- **eru-channels**: Email (SMTP/IMAP), Slack, WhatsApp integration
-- **eru-alerts**: Alert management with multiple delivery channels
+- ~~**eru-channels**: Email (SMTP/IMAP), Slack, WhatsApp integration~~
+- ~~**eru-alerts**: Alert management with multiple delivery channels~~
 
 ## Configuration
 
@@ -124,3 +124,8 @@ go test ./...
 
 ### Observability
 Services include OpenTelemetry tracing integration. Set `TRACE_URL` environment variable to enable distributed tracing to Jaeger/Tempo.
+
+## Deprecated Services
+
+- Removed references to `eru-channels` and `eru-alerts`
+- Note: Internal services like `eru-store`, `eru-logs`, and `eru-crypto` are for internal use

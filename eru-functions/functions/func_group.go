@@ -41,6 +41,7 @@ type AsyncFuncData struct {
 	EventRequest string           `json:"event_request"`
 	RequestId    string           `json:"request_id"`
 	LoopVar      interface{}      `json:"loop_var"`
+	EventName    string           `json:"event_name"`
 }
 
 type FuncGroup struct {
@@ -264,7 +265,6 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprint(err.Error()))
 	}
-	eru_utils.PrintResponseBody(ctx, response, "after club responses")
 	return
 }
 
@@ -287,6 +287,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 	ctx, span := otel.Tracer(server_handlers.ServerName).Start(octx, funcStep.FuncKey, oteltrace.WithAttributes(attribute.String("requestID", req.Header.Get(server_handlers.RequestIdKey)), attribute.String("traceID", pspan.SpanContext().TraceID().String()), attribute.String("spanID", pspan.SpanContext().SpanID().String())))
 	defer span.End()
 	ctx = logs.NewContext(ctx, zap.String("funcStepName", funcStep.FuncKey))
+	logs.WithContext(ctx).Info(fmt.Sprint("funcStepName from Context", ctx.Value("funcStepName")))
 	req = req.WithContext(ctx)
 	request := req
 	var loopArray []interface{}
@@ -370,7 +371,8 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			}
 		}
 		if strCond == "true" {
-			if (!fromAsync || (fromAsync && funcStepName != funcStep.FuncKey)) && funcStep.Async && funcStep.AsyncMessage != "" && funcStep.LoopVariable == "" {
+			// removed '&& funcStep.LoopVariable == ""' from below if condifion as we are handling loop variable here to spin as many async tasks as loop variable has values
+			if (!fromAsync || (fromAsync && funcStepName != funcStep.FuncKey)) && funcStep.Async && funcStep.AsyncMessage != "" {
 				avars := &FuncTemplateVars{}
 				avars.Vars = reqVars[funcStep.FuncKey]
 				avars.ReqVars = reqVars
@@ -434,30 +436,52 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 					asyncFuncData.EventId = msgId
 					asyncFuncDataBatch = append(asyncFuncDataBatch, asyncFuncData)
 				} else {
-					msgId = uuid.New().String()
-					var insertQueries []*models.Queries
-					insertQueryFuncAsync := models.Queries{}
-					insertQueryFuncAsync.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC)
-					insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, msgId, funcStep.ParentFuncGroupName, funcStep.FuncKey, string(eventMsgBytes), string(eventMsgRequest), requestStr, funcStep.AsyncEventName)
-					insertQueryFuncAsync.Rank = 1
-					insertQueries = append(insertQueries, &insertQueryFuncAsync)
-
-					insertQueryFuncAsyncLoop := models.Queries{}
-					insertQueryFuncAsyncLoop.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC_LOOP)
-					insertQueryFuncAsyncLoop.Vals = append(insertQueryFuncAsyncLoop.Vals, async_id, msgId, "{}")
-					insertQueryFuncAsyncLoop.Rank = 2
-					insertQueries = append(insertQueries, &insertQueryFuncAsyncLoop)
-
-					logs.WithContext(ctx).Info("calling async insert from here")
-					_, insertOutputErr := eru_utils.ExecuteDbSave(ctx, funcStep.FsDb.GetConn(), insertQueries)
-					if insertOutputErr != nil {
-						err = insertOutputErr
-						logs.WithContext(ctx).Error(err.Error())
+					if funcStep.LoopVariable != "" {
+						if reqVars[funcStep.FuncKey].LoopVars != nil {
+							if loopArray, loopArrayok := reqVars[funcStep.FuncKey].LoopVars.([]interface{}); loopArrayok {
+								for _, loopVar := range loopArray {
+									async_id = uuid.New().String()
+									asyncFuncData := AsyncFuncData{}
+									asyncFuncData.FuncName = funcStep.ParentFuncGroupName
+									asyncFuncData.FuncStepName = funcStep.FuncKey
+									asyncFuncData.AsyncId = async_id
+									asyncFuncData.EventMsg = *avars
+									asyncFuncData.EventRequest = requestStr
+									asyncFuncData.RequestId = string(eventMsgRequest)
+									asyncFuncData.EventId = msgId
+									asyncFuncData.LoopVar = loopVar
+									asyncFuncData.EventName = funcStep.AsyncEventName
+									asyncFuncDataBatch = append(asyncFuncDataBatch, asyncFuncData)
+								}
+							}
+						}
 						return
-					}
-					_, err = funcStep.AsyncEvent.Publish(ctx, async_id, funcStep.AsyncEvent)
-					if err != nil {
-						return
+					} else {
+						msgId = uuid.New().String()
+						var insertQueries []*models.Queries
+						insertQueryFuncAsync := models.Queries{}
+						insertQueryFuncAsync.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC)
+						insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, msgId, funcStep.ParentFuncGroupName, funcStep.FuncKey, string(eventMsgBytes), string(eventMsgRequest), requestStr, funcStep.AsyncEventName)
+						insertQueryFuncAsync.Rank = 1
+						insertQueries = append(insertQueries, &insertQueryFuncAsync)
+
+						insertQueryFuncAsyncLoop := models.Queries{}
+						insertQueryFuncAsyncLoop.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC_LOOP)
+						insertQueryFuncAsyncLoop.Vals = append(insertQueryFuncAsyncLoop.Vals, async_id, msgId, "{}")
+						insertQueryFuncAsyncLoop.Rank = 2
+						insertQueries = append(insertQueries, &insertQueryFuncAsyncLoop)
+
+						logs.WithContext(ctx).Info("calling async insert from here")
+						_, insertOutputErr := eru_utils.ExecuteDbSave(ctx, funcStep.FsDb.GetConn(), insertQueries)
+						if insertOutputErr != nil {
+							err = insertOutputErr
+							logs.WithContext(ctx).Error(err.Error())
+							return
+						}
+						_, err = funcStep.AsyncEvent.Publish(ctx, async_id, funcStep.AsyncEvent)
+						if err != nil {
+							return
+						}
 					}
 				}
 				return
@@ -500,6 +524,8 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			}
 		}()
 		var asyncBatch []AsyncFuncData
+		eventMsg := FuncTemplateVars{}
+		eventRequest := ""
 		for res := range results {
 			if res.response != nil {
 				responses = append(responses, res.response)
@@ -509,16 +535,44 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 				errs = append(errs, res.responseErr)
 			}
 			if res.asyncFuncDataBatch != nil {
+				if eventRequest == "" {
+					eventMsg = res.asyncFuncDataBatch[0].EventMsg
+					eventRequest = res.asyncFuncDataBatch[0].EventRequest
+				}
 				asyncBatch = append(asyncBatch, res.asyncFuncDataBatch...)
 			}
-			if len(asyncBatch) == 1000 {
-				logs.WithContext(ctx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatch)))
-				err = funcStep.insertAsyncBatch(ctx, asyncBatch)
+
+			if len(res.asyncFuncDataBatch) > 1 {
+				var asyncBatchInner []AsyncFuncData
+				for _, asyncFuncData := range asyncBatch {
+					asyncBatchInner = append(asyncBatchInner, asyncFuncData)
+					// TODO - change it to event parameter
+					if len(asyncBatchInner) == 1000 {
+						logs.WithContext(ctx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatchInner)))
+						err = funcStep.insertAsyncBatch(ctx, asyncBatchInner)
+						asyncBatchInner = nil
+					}
+				}
+				if len(asyncBatchInner) > 0 {
+					logs.WithContext(ctx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatchInner)))
+					err = funcStep.insertAsyncBatch(ctx, asyncBatchInner)
+				}
 				asyncBatch = nil
+			} else {
+				// TODO - change it to event parameter
+				if len(asyncBatch) == 1000 {
+					logs.WithContext(ctx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatch)))
+					asyncBatch[0].EventMsg = eventMsg
+					asyncBatch[0].EventRequest = eventRequest
+					err = funcStep.insertAsyncBatch(ctx, asyncBatch)
+					asyncBatch = nil
+				}
 			}
 		}
 		if len(asyncBatch) > 0 {
 			logs.WithContext(ctx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatch)))
+			asyncBatch[0].EventMsg = eventMsg
+			asyncBatch[0].EventRequest = eventRequest
 			err = funcStep.insertAsyncBatch(ctx, asyncBatch)
 		}
 		done <- true
@@ -813,7 +867,7 @@ func (funcStep *FuncStep) insertAsyncBatch(ctx context.Context, asyncBatch []Asy
 
 	batch_id := uuid.New().String()
 
-	for _, asyncFuncData := range asyncBatch {
+	for i, asyncFuncData := range asyncBatch {
 		asyncFuncData.EventId = batch_id
 
 		var lvBuf bytes.Buffer
@@ -825,13 +879,17 @@ func (funcStep *FuncStep) insertAsyncBatch(ctx context.Context, asyncBatch []Asy
 			return
 		}
 
-		if asyncFuncData.EventRequest != "" {
+		if i == 0 {
 			eventMsgBytes, eventErr := json.Marshal(asyncFuncData.EventMsg)
 			if eventErr != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				logs.WithContext(ctx).Error(eventErr.Error())
 				return
 			}
-			insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, batch_id, asyncFuncData.FuncName, asyncFuncData.FuncStepName, string(eventMsgBytes), asyncFuncData.RequestId, asyncFuncData.EventRequest, funcStep.AsyncEventName)
+			eventName := asyncFuncData.EventName
+			if eventName == "" {
+				eventName = funcStep.AsyncEventName
+			}
+			insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, batch_id, asyncFuncData.FuncName, asyncFuncData.FuncStepName, string(eventMsgBytes), asyncFuncData.RequestId, asyncFuncData.EventRequest, eventName)
 		}
 		insertQueryFuncAsyncLoop.Vals = append(insertQueryFuncAsyncLoop.Vals, asyncFuncData.AsyncId, batch_id, lvBuf.String())
 	}
