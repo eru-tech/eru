@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
+
 	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
 	"github.com/eru-tech/eru/eru-auth/module_model"
@@ -15,8 +18,6 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-store/store"
 	"github.com/google/uuid"
-	"reflect"
-	"strings"
 )
 
 const (
@@ -668,7 +669,7 @@ func (ms *ModuleStore) GetApiTokens(ctx context.Context, identity_id string, rea
 }
 
 func (ms *ModuleStore) GetKid(ctx context.Context, kid string, projectId string, realStore ModuleStoreI) (rsakeyPair erursa.RsaKeyPair, err error) {
-	logs.WithContext(ctx).Debug("RemoveKid - Start")
+	logs.WithContext(ctx).Debug("GetKid - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
 	if prg, ok := ms.Projects[projectId]; ok {

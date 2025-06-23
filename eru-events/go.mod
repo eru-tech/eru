@@ -7,10 +7,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.27.11
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.11
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.32.3
-	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
-	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
-	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000
+	github.com/confluentinc/confluent-kafka-go/v2 v2.3.0
 	github.com/eru-tech/eru/eru-db v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
+	github.com/jmoiron/sqlx v1.3.4
 )
 
 require (
@@ -29,7 +31,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/uuid v1.3.0 // indirect
-	github.com/jmoiron/sqlx v1.3.4 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.25.0 // indirect
 	go.opentelemetry.io/otel v1.14.0 // indirect
 	go.opentelemetry.io/otel/internal/metric v0.24.0 // indirect
@@ -41,8 +42,8 @@ require (
 )
 
 replace (
+	github.com/eru-tech/eru/eru-db => ../eru-db
 	github.com/eru-tech/eru/eru-logs => ../eru-logs
 	github.com/eru-tech/eru/eru-models => ../eru-models
-	github.com/eru-tech/eru/eru-db => ../eru-db
 	github.com/eru-tech/eru/eru-utils => ../eru-utils
 )

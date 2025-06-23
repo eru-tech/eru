@@ -33,7 +33,6 @@ type GraphQLResponse struct {
 	} `json:"errors,omitempty"`
 }
 
-
 type TestConfig struct {
 	EruQLBaseURL string
 	ProjectId    string
@@ -120,10 +119,8 @@ func TestGraphQLQueries(t *testing.T) {
 		DbConfig:     getDbConfig(dbAlias),
 	}
 
-	// Skip if running in demo mode
-
 	if os.Getenv("SKIP_SETUP") == "true" {
-		t.Skip("Skipping setup (SKIP_SETUP=true)")
+		//t.Skip("Skipping setup (SKIP_SETUP=true)")
 	} else {
 		if err := tConfig.executeSchemaScript(t); err != nil {
 			t.Fatalf("Failed to execute schema script: %v", err)
@@ -343,7 +340,7 @@ func (tConfig *TestConfig) setupEruql(t *testing.T) error {
 	t.Logf("✅ Fetched database schema for: %s", tConfig.DbConfig.DbAlias)
 
 	// 4. Add tables to schema
-	tables := []string{"users", "products", "companies", "orders", "audit_log", "categories", "order_items", "departments", "order_analytics", "user_department_summary", "user_profiles"}
+	tables := []string{"order_items", "orders", "products", "categories", "user_profiles", "users", "companies", "departments", "audit_logs"}
 	for _, table := range tables {
 		if err := callEruqlAPI("POST", fmt.Sprintf("%s/store/%s/datasource/schema/%s/addtable/%s.%s", tConfig.EruQLBaseURL, tConfig.ProjectId, tConfig.DbConfig.DbAlias, tConfig.DbConfig.DbSchema, table), nil); err != nil {
 			t.Logf("⚠️  Warning: Could not add table %s to %s: %v", table, tConfig.DbConfig.DbAlias, err)
@@ -407,26 +404,26 @@ func normalizeArrayByID(arr []interface{}) []interface{} {
 		if !aOk || !bOk {
 			return false
 		}
-		
+
 		aID, aIdOk := a["id"]
 		bID, bIdOk := b["id"]
 		if !aIdOk || !bIdOk {
 			return false
 		}
-		
+
 		// Handle both int and float64 ID types
 		aFloat, aFloatOk := aID.(float64)
 		bFloat, bFloatOk := bID.(float64)
 		if aFloatOk && bFloatOk {
 			return aFloat < bFloat
 		}
-		
+
 		aInt, aIntOk := aID.(int)
 		bInt, bIntOk := bID.(int)
 		if aIntOk && bIntOk {
 			return aInt < bInt
 		}
-		
+
 		return false
 	})
 	return arr
@@ -435,7 +432,7 @@ func normalizeArrayByID(arr []interface{}) []interface{} {
 func compareJSONResponse(t *testing.T, actual, expected interface{}, fieldName string) bool {
 	actualNorm := normalizeJSONResponse(actual)
 	expectedNorm := normalizeJSONResponse(expected)
-	
+
 	// If both are arrays, normalize by ID before comparing
 	if actualArr, ok := actualNorm.([]interface{}); ok {
 		if expectedArr, ok := expectedNorm.([]interface{}); ok {
@@ -443,7 +440,7 @@ func compareJSONResponse(t *testing.T, actual, expected interface{}, fieldName s
 			expectedNorm = normalizeArrayByID(expectedArr)
 		}
 	}
-	
+
 	if !reflect.DeepEqual(actualNorm, expectedNorm) {
 		t.Errorf("Field %s does not match expected data", fieldName)
 		t.Logf("Expected: %+v", expectedNorm)
@@ -459,18 +456,18 @@ func validateResponseStructure(t *testing.T, data map[string]interface{}, fieldN
 		t.Errorf("Field %s not found in response", fieldName)
 		return nil
 	}
-	
+
 	fieldArray, ok := field.([]interface{})
 	if !ok {
 		t.Errorf("Field %s is not an array", fieldName)
 		return nil
 	}
-	
+
 	if len(fieldArray) != expectedLength {
 		t.Errorf("Expected %d %s records, got %d", expectedLength, fieldName, len(fieldArray))
 		return fieldArray // Return even if length is wrong for further validation
 	}
-	
+
 	return fieldArray
 }
 
@@ -518,31 +515,31 @@ func (tConfig *TestConfig) testFilterOperators(t *testing.T, dbAlias string) {
 		query    string
 		validate func(t *testing.T, response *GraphQLResponse, err error)
 	}{
-		{
+		{ //TODO {eq: 1}
 			name: "EqualityFilter",
 			query: fmt.Sprintf(`query {
-				users(where: {company_id: {eq: 1}}) @%s {
+				users(where: {company_id: 1}) @%s {
 					id name email company_id
 				}
 			}`, dbAlias),
 			validate: func(t *testing.T, response *GraphQLResponse, err error) {
 				if len(response.Errors) > 0 {
-					t.Logf("Expected errors for filter test: %v", response.Errors)
+					t.Errorf("Expected errors for filter test: %v", response.Errors)
 					return
 				}
-				
+
 				data, ok := response.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				users, ok := data["users"].([]interface{})
 				if !ok {
 					t.Errorf("Expected users to be []interface{}, got %T", data["users"])
 					return
 				}
-				
+
 				// Expected: 4 users from company_id = 1 (John Doe, Jane Smith, Bob Wilson, Alice Brown)
 				expectedUsers := []map[string]interface{}{
 					{"id": float64(1), "name": "John Doe", "email": "john.doe@techcorp.com", "company_id": float64(1)},
@@ -550,39 +547,39 @@ func (tConfig *TestConfig) testFilterOperators(t *testing.T, dbAlias string) {
 					{"id": float64(3), "name": "Bob Wilson", "email": "bob.wilson@techcorp.com", "company_id": float64(1)},
 					{"id": float64(4), "name": "Alice Brown", "email": "alice.brown@techcorp.com", "company_id": float64(1)},
 				}
-				
+
 				if len(users) != len(expectedUsers) {
 					t.Errorf("Expected %d users with company_id=1, got %d", len(expectedUsers), len(users))
 					return
 				}
-				
+
 				// Validate each user
 				for i, expectedUser := range expectedUsers {
 					if i >= len(users) {
 						t.Errorf("Missing user at index %d", i)
 						continue
 					}
-					
+
 					actualUser, ok := users[i].(map[string]interface{})
 					if !ok {
 						t.Errorf("Expected user %d to be map[string]interface{}, got %T", i, users[i])
 						continue
 					}
-					
+
 					for field, expectedValue := range expectedUser {
 						if actualUser[field] != expectedValue {
 							t.Errorf("User %d field %s: expected %v, got %v", i, field, expectedValue, actualUser[field])
 						}
 					}
 				}
-				
+
 				t.Logf("✅ Equality filter test passed for %s - validated %d users", dbAlias, len(users))
 			},
 		},
 		{
 			name: "InFilter",
 			query: fmt.Sprintf(`query {
-				users(where: {id: {in: [1, 2, 3]}}) @%s {
+				users(where: {id: {_in: [1, 2, 3]}}) @%s {
 					id name email
 				}
 			}`, dbAlias),
@@ -591,58 +588,58 @@ func (tConfig *TestConfig) testFilterOperators(t *testing.T, dbAlias string) {
 					t.Logf("Expected errors for filter test: %v", response.Errors)
 					return
 				}
-				
+
 				data, ok := response.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				users, ok := data["users"].([]interface{})
 				if !ok {
 					t.Errorf("Expected users to be []interface{}, got %T", data["users"])
 					return
 				}
-				
+
 				// Expected: users with IDs 1, 2, 3 (John Doe, Jane Smith, Bob Wilson)
 				expectedUsers := []map[string]interface{}{
 					{"id": float64(1), "name": "John Doe", "email": "john.doe@techcorp.com"},
 					{"id": float64(2), "name": "Jane Smith", "email": "jane.smith@techcorp.com"},
 					{"id": float64(3), "name": "Bob Wilson", "email": "bob.wilson@techcorp.com"},
 				}
-				
+
 				if len(users) != len(expectedUsers) {
 					t.Errorf("Expected %d users with IDs [1,2,3], got %d", len(expectedUsers), len(users))
 					return
 				}
-				
+
 				// Validate each user
 				for i, expectedUser := range expectedUsers {
 					if i >= len(users) {
 						t.Errorf("Missing user at index %d", i)
 						continue
 					}
-					
+
 					actualUser, ok := users[i].(map[string]interface{})
 					if !ok {
 						t.Errorf("Expected user %d to be map[string]interface{}, got %T", i, users[i])
 						continue
 					}
-					
+
 					for field, expectedValue := range expectedUser {
 						if actualUser[field] != expectedValue {
 							t.Errorf("User %d field %s: expected %v, got %v", i, field, expectedValue, actualUser[field])
 						}
 					}
 				}
-				
+
 				t.Logf("✅ IN filter test passed for %s - validated %d users", dbAlias, len(users))
 			},
 		},
 		{
 			name: "LikeFilter",
 			query: fmt.Sprintf(`query {
-				users(where: {email: {like: "%%@techcorp.com"}}) @%s {
+				users(where: {email: {_like: "@techcorp.com"}}) @%s {
 					id name email
 				}
 			}`, dbAlias),
@@ -651,19 +648,19 @@ func (tConfig *TestConfig) testFilterOperators(t *testing.T, dbAlias string) {
 					t.Logf("Expected errors for filter test: %v", response.Errors)
 					return
 				}
-				
+
 				data, ok := response.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				users, ok := data["users"].([]interface{})
 				if !ok {
 					t.Errorf("Expected users to be []interface{}, got %T", data["users"])
 					return
 				}
-				
+
 				// Expected: all users with @techcorp.com emails (4 users from company_id=1)
 				expectedUsers := []map[string]interface{}{
 					{"id": float64(1), "name": "John Doe", "email": "john.doe@techcorp.com"},
@@ -671,39 +668,39 @@ func (tConfig *TestConfig) testFilterOperators(t *testing.T, dbAlias string) {
 					{"id": float64(3), "name": "Bob Wilson", "email": "bob.wilson@techcorp.com"},
 					{"id": float64(4), "name": "Alice Brown", "email": "alice.brown@techcorp.com"},
 				}
-				
+
 				if len(users) != len(expectedUsers) {
 					t.Errorf("Expected %d users with @techcorp.com emails, got %d", len(expectedUsers), len(users))
 					return
 				}
-				
+
 				// Validate each user
 				for i, expectedUser := range expectedUsers {
 					if i >= len(users) {
 						t.Errorf("Missing user at index %d", i)
 						continue
 					}
-					
+
 					actualUser, ok := users[i].(map[string]interface{})
 					if !ok {
 						t.Errorf("Expected user %d to be map[string]interface{}, got %T", i, users[i])
 						continue
 					}
-					
+
 					for field, expectedValue := range expectedUser {
 						if actualUser[field] != expectedValue {
 							t.Errorf("User %d field %s: expected %v, got %v", i, field, expectedValue, actualUser[field])
 						}
 					}
 				}
-				
+
 				t.Logf("✅ LIKE filter test passed for %s - validated %d users", dbAlias, len(users))
 			},
 		},
 		{
 			name: "GreaterThanFilter",
 			query: fmt.Sprintf(`query {
-				products(where: {price: {gt: 500}}) @%s {
+				products(where: {price: {_gt: 500}}) @%s {
 					id name price
 				}
 			}`, dbAlias),
@@ -712,19 +709,19 @@ func (tConfig *TestConfig) testFilterOperators(t *testing.T, dbAlias string) {
 					t.Logf("Expected errors for filter test: %v", response.Errors)
 					return
 				}
-				
+
 				data, ok := response.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				products, ok := data["products"].([]interface{})
 				if !ok {
 					t.Errorf("Expected products to be []interface{}, got %T", data["products"])
 					return
 				}
-				
+
 				// Expected: products with price > 500 (MacBook Pro 16", Dell XPS 13, iMac 24", iPhone 15 Pro, Samsung Galaxy S24, Executive Desk)
 				expectedProducts := []map[string]interface{}{
 					{"id": float64(1), "name": "MacBook Pro 16\"", "price": float64(2499.99)},
@@ -734,39 +731,39 @@ func (tConfig *TestConfig) testFilterOperators(t *testing.T, dbAlias string) {
 					{"id": float64(5), "name": "Samsung Galaxy S24", "price": float64(799.99)},
 					{"id": float64(6), "name": "Executive Desk", "price": float64(899.99)},
 				}
-				
+
 				if len(products) != len(expectedProducts) {
 					t.Errorf("Expected %d products with price > 500, got %d", len(expectedProducts), len(products))
 					return
 				}
-				
+
 				// Validate each product
 				for i, expectedProduct := range expectedProducts {
 					if i >= len(products) {
 						t.Errorf("Missing product at index %d", i)
 						continue
 					}
-					
+
 					actualProduct, ok := products[i].(map[string]interface{})
 					if !ok {
 						t.Errorf("Expected product %d to be map[string]interface{}, got %T", i, products[i])
 						continue
 					}
-					
+
 					for field, expectedValue := range expectedProduct {
 						if actualProduct[field] != expectedValue {
 							t.Errorf("Product %d field %s: expected %v, got %v", i, field, expectedValue, actualProduct[field])
 						}
 					}
 				}
-				
+
 				t.Logf("✅ Greater than filter test passed for %s - validated %d products", dbAlias, len(products))
 			},
 		},
 		{
 			name: "LessThanFilter",
 			query: fmt.Sprintf(`query {
-				products(where: {price: {lt: 1000}}) @%s {
+				products(where: {price: {_lt: 1000}}) @%s {
 					id name price
 				}
 			}`, dbAlias),
@@ -775,51 +772,51 @@ func (tConfig *TestConfig) testFilterOperators(t *testing.T, dbAlias string) {
 					t.Logf("Expected errors for filter test: %v", response.Errors)
 					return
 				}
-				
+
 				data, ok := response.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				products, ok := data["products"].([]interface{})
 				if !ok {
 					t.Errorf("Expected products to be []interface{}, got %T", data["products"])
 					return
 				}
-				
+
 				// Expected: products with price < 1000 (iPhone 15 Pro: 999.99, Samsung Galaxy S24: 799.99, Executive Desk: 899.99)
 				expectedProducts := []map[string]interface{}{
 					{"id": float64(4), "name": "iPhone 15 Pro", "price": float64(999.99)},
 					{"id": float64(5), "name": "Samsung Galaxy S24", "price": float64(799.99)},
 					{"id": float64(6), "name": "Executive Desk", "price": float64(899.99)},
 				}
-				
+
 				if len(products) != len(expectedProducts) {
 					t.Errorf("Expected %d products with price < 1000, got %d", len(expectedProducts), len(products))
 					return
 				}
-				
+
 				// Validate each product
 				for i, expectedProduct := range expectedProducts {
 					if i >= len(products) {
 						t.Errorf("Missing product at index %d", i)
 						continue
 					}
-					
+
 					actualProduct, ok := products[i].(map[string]interface{})
 					if !ok {
 						t.Errorf("Expected product %d to be map[string]interface{}, got %T", i, products[i])
 						continue
 					}
-					
+
 					for field, expectedValue := range expectedProduct {
 						if actualProduct[field] != expectedValue {
 							t.Errorf("Product %d field %s: expected %v, got %v", i, field, expectedValue, actualProduct[field])
 						}
 					}
 				}
-				
+
 				t.Logf("✅ Less than filter test passed for %s - validated %d products", dbAlias, len(products))
 			},
 		},
@@ -830,7 +827,7 @@ func (tConfig *TestConfig) testFilterOperators(t *testing.T, dbAlias string) {
 			request := GraphQLRequest{Query: tc.query}
 			response, err := executeGraphQL(tConfig, request)
 			if err != nil {
-				t.Logf("Expected error for demo test: %v", err)
+				t.Errorf("❌ Error while executing query '%s': %v", tc.name, err)
 				return
 			}
 			tc.validate(t, response, err)
@@ -864,19 +861,19 @@ func (tConfig *TestConfig) testJSONFieldQueries(t *testing.T, dbAlias string) {
 					t.Logf("Expected errors for JSON field test: %v", response.Errors)
 					return
 				}
-				
+
 				data, ok := response.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				users, ok := data["users"].([]interface{})
 				if !ok {
 					t.Errorf("Expected users to be []interface{}, got %T", data["users"])
 					return
 				}
-				
+
 				// Note: JSON field queries might not work depending on eru-ql implementation
 				// This test validates the query structure but might return 0 results
 				t.Logf("✅ JSON field access test passed for %s - returned %d results", dbAlias, len(users))
@@ -894,19 +891,19 @@ func (tConfig *TestConfig) testJSONFieldQueries(t *testing.T, dbAlias string) {
 					t.Logf("Expected errors for nested JSON test: %v", response.Errors)
 					return
 				}
-				
+
 				data, ok := response.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				companies, ok := data["companies"].([]interface{})
 				if !ok {
 					t.Errorf("Expected companies to be []interface{}, got %T", data["companies"])
 					return
 				}
-				
+
 				// Note: Nested JSON field queries might not work depending on eru-ql implementation
 				// This test validates the query structure but might return 0 results
 				t.Logf("✅ Nested JSON field test passed for %s - returned %d results", dbAlias, len(companies))
@@ -947,31 +944,31 @@ func (tConfig *TestConfig) testAggregationQueries(t *testing.T, dbAlias string) 
 					t.Logf("Expected errors for aggregation test: %v", response.Errors)
 					return
 				}
-				
+
 				data, ok := response.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				usersAggregate, ok := data["users_aggregate"].(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected users_aggregate to be map[string]interface{}, got %T", data["users_aggregate"])
 					return
 				}
-				
+
 				aggregate, ok := usersAggregate["aggregate"].(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected aggregate to be map[string]interface{}, got %T", usersAggregate["aggregate"])
 					return
 				}
-				
+
 				count, ok := aggregate["count"]
 				if !ok {
 					t.Errorf("Expected count field in aggregate response")
 					return
 				}
-				
+
 				// Expected: 7 total users in test data
 				expectedCount := float64(7)
 				if countFloat, ok := count.(float64); ok {
@@ -983,7 +980,7 @@ func (tConfig *TestConfig) testAggregationQueries(t *testing.T, dbAlias string) 
 					t.Errorf("Expected count to be float64, got %T", count)
 					return
 				}
-				
+
 				t.Logf("✅ Count aggregation test passed for %s - count: %v", dbAlias, count)
 			},
 		},
@@ -1001,14 +998,14 @@ func (tConfig *TestConfig) testAggregationQueries(t *testing.T, dbAlias string) 
 					t.Logf("Expected errors for aggregation test: %v", response.Errors)
 					return
 				}
-				
+
 				// Note: Sum aggregation on orders may not work if orders table is empty
 				// This test validates the query structure
 				if _, ok := response.Data.(map[string]interface{}); !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				t.Logf("✅ Sum aggregation test passed for %s - structure validated", dbAlias)
 			},
 		},
@@ -1026,37 +1023,37 @@ func (tConfig *TestConfig) testAggregationQueries(t *testing.T, dbAlias string) 
 					t.Logf("Expected errors for aggregation test: %v", response.Errors)
 					return
 				}
-				
+
 				data, ok := response.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				productsAggregate, ok := data["products_aggregate"].(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected products_aggregate to be map[string]interface{}, got %T", data["products_aggregate"])
 					return
 				}
-				
+
 				aggregate, ok := productsAggregate["aggregate"].(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected aggregate to be map[string]interface{}, got %T", productsAggregate["aggregate"])
 					return
 				}
-				
+
 				avg, ok := aggregate["avg"].(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected avg to be map[string]interface{}, got %T", aggregate["avg"])
 					return
 				}
-				
+
 				price, ok := avg["price"]
 				if !ok {
 					t.Errorf("Expected price field in avg response")
 					return
 				}
-				
+
 				// Expected: Average price should be approximately 1466.66 (sum of all prices / 6)
 				// (2499.99 + 1299.99 + 1499.99 + 999.99 + 799.99 + 899.99) / 6 = 1499.99
 				if priceFloat, ok := price.(float64); ok {
@@ -1064,7 +1061,7 @@ func (tConfig *TestConfig) testAggregationQueries(t *testing.T, dbAlias string) 
 						t.Logf("Average price %v is outside expected range [1400-1600]", priceFloat)
 					}
 				}
-				
+
 				t.Logf("✅ Average aggregation test passed for %s - avg price: %v", dbAlias, price)
 			},
 		},
@@ -1083,53 +1080,53 @@ func (tConfig *TestConfig) testAggregationQueries(t *testing.T, dbAlias string) 
 					t.Logf("Expected errors for aggregation test: %v", response.Errors)
 					return
 				}
-				
+
 				data, ok := response.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				productsAggregate, ok := data["products_aggregate"].(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected products_aggregate to be map[string]interface{}, got %T", data["products_aggregate"])
 					return
 				}
-				
+
 				aggregate, ok := productsAggregate["aggregate"].(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected aggregate to be map[string]interface{}, got %T", productsAggregate["aggregate"])
 					return
 				}
-				
+
 				min, ok := aggregate["min"].(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected min to be map[string]interface{}, got %T", aggregate["min"])
 					return
 				}
-				
+
 				max, ok := aggregate["max"].(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected max to be map[string]interface{}, got %T", aggregate["max"])
 					return
 				}
-				
+
 				minPrice := min["price"]
 				maxPrice := max["price"]
-				
+
 				// Expected: Min price = 799.99 (Samsung Galaxy S24), Max price = 2499.99 (MacBook Pro 16")
 				if minFloat, ok := minPrice.(float64); ok {
 					if minFloat != 799.99 {
 						t.Logf("Min price %v differs from expected 799.99", minFloat)
 					}
 				}
-				
+
 				if maxFloat, ok := maxPrice.(float64); ok {
 					if maxFloat != 2499.99 {
 						t.Logf("Max price %v differs from expected 2499.99", maxFloat)
 					}
 				}
-				
+
 				t.Logf("✅ Min/Max aggregation test passed for %s - min: %v, max: %v", dbAlias, minPrice, maxPrice)
 			},
 		},
@@ -1169,25 +1166,25 @@ func (tConfig *TestConfig) testJoinQueries(t *testing.T, dbAlias string) {
 					t.Logf("Expected errors for join test: %v", response.Errors)
 					return
 				}
-				
+
 				data, ok := response.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				users, ok := data["users"].([]interface{})
 				if !ok {
 					t.Errorf("Expected users to be []interface{}, got %T", data["users"])
 					return
 				}
-				
+
 				// Expected: 7 users each with their company information
 				if len(users) != 7 {
 					t.Errorf("Expected 7 users with company joins, got %d", len(users))
 					return
 				}
-				
+
 				// Validate first user has company information
 				if len(users) > 0 {
 					user := users[0].(map[string]interface{})
@@ -1196,24 +1193,24 @@ func (tConfig *TestConfig) testJoinQueries(t *testing.T, dbAlias string) {
 						t.Errorf("Expected user to have company field")
 						return
 					}
-					
+
 					companyMap, ok := company.(map[string]interface{})
 					if !ok {
 						t.Errorf("Expected company to be map[string]interface{}, got %T", company)
 						return
 					}
-					
+
 					if _, hasID := companyMap["id"]; !hasID {
 						t.Errorf("Expected company to have id field")
 						return
 					}
-					
+
 					if _, hasName := companyMap["name"]; !hasName {
 						t.Errorf("Expected company to have name field")
 						return
 					}
 				}
-				
+
 				t.Logf("✅ User-Company join test passed for %s - validated %d users with company data", dbAlias, len(users))
 			},
 		},
@@ -1235,19 +1232,19 @@ func (tConfig *TestConfig) testJoinQueries(t *testing.T, dbAlias string) {
 					t.Logf("Expected errors for complex join test: %v", response.Errors)
 					return
 				}
-				
+
 				data, ok := response.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 					return
 				}
-				
+
 				orders, ok := data["orders"].([]interface{})
 				if !ok {
 					t.Errorf("Expected orders to be []interface{}, got %T", data["orders"])
 					return
 				}
-				
+
 				// Note: Orders table might be empty in test data
 				// This test validates the query structure for complex joins
 				if len(orders) > 0 {
@@ -1265,7 +1262,7 @@ func (tConfig *TestConfig) testJoinQueries(t *testing.T, dbAlias string) {
 						}
 					}
 				}
-				
+
 				t.Logf("✅ Order-User-Company join test passed for %s - returned %d orders", dbAlias, len(orders))
 			},
 		},
@@ -1496,7 +1493,7 @@ func (tConfig *TestConfig) testUniversalTestCases(t *testing.T, dbAlias string) 
 			}
 			response, err := executeGraphQL(tConfig, request)
 			if err != nil {
-				t.Logf("Expected error for demo test: %v", err)
+				t.Errorf("❌ Expected error for demo test: %v", err)
 				return
 			}
 			tc.validate(t, response)
@@ -1504,36 +1501,35 @@ func (tConfig *TestConfig) testUniversalTestCases(t *testing.T, dbAlias string) 
 	}
 }
 
-
 // validateUsersResponse validates users query response against expected test data
 func validateUsersResponse(t *testing.T, data map[string]interface{}) {
 	users := validateResponseStructure(t, data, "users", 7)
 	if users == nil {
 		return
 	}
-	
+
 	// Convert expected users to interface{} for comparison
 	expectedUsers := make([]interface{}, len(ExpectedTestData.Users))
 	for i, user := range ExpectedTestData.Users {
 		expectedUsers[i] = user
 	}
-	
+
 	compareJSONResponse(t, users, expectedUsers, "users")
 }
 
-// validateProductsResponse validates products query response against expected test data  
+// validateProductsResponse validates products query response against expected test data
 func validateProductsResponse(t *testing.T, data map[string]interface{}) {
 	products := validateResponseStructure(t, data, "products", 6)
 	if products == nil {
 		return
 	}
-	
+
 	// Convert expected products to interface{} for comparison
 	expectedProducts := make([]interface{}, len(ExpectedTestData.Products))
 	for i, product := range ExpectedTestData.Products {
 		expectedProducts[i] = product
 	}
-	
+
 	compareJSONResponse(t, products, expectedProducts, "products")
 }
 
@@ -1543,13 +1539,13 @@ func validateCompaniesResponse(t *testing.T, data map[string]interface{}) {
 	if companies == nil {
 		return
 	}
-	
+
 	// Convert expected companies to interface{} for comparison
 	expectedCompanies := make([]interface{}, len(ExpectedTestData.Companies))
 	for i, company := range ExpectedTestData.Companies {
 		expectedCompanies[i] = company
 	}
-	
+
 	compareJSONResponse(t, companies, expectedCompanies, "companies")
 }
 
@@ -1571,13 +1567,13 @@ var basicTestCases = []struct {
 				t.Errorf("GraphQL errors: %v", response.Errors)
 				return
 			}
-			
+
 			data, ok := response.Data.(map[string]interface{})
 			if !ok {
 				t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 				return
 			}
-			
+
 			validateUsersResponse(t, data)
 		},
 	},
@@ -1593,13 +1589,13 @@ var basicTestCases = []struct {
 				t.Errorf("GraphQL errors: %v", response.Errors)
 				return
 			}
-			
+
 			data, ok := response.Data.(map[string]interface{})
 			if !ok {
 				t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 				return
 			}
-			
+
 			validateProductsResponse(t, data)
 		},
 	},
@@ -1615,13 +1611,13 @@ var basicTestCases = []struct {
 				t.Errorf("GraphQL errors: %v", response.Errors)
 				return
 			}
-			
+
 			data, ok := response.Data.(map[string]interface{})
 			if !ok {
 				t.Errorf("Expected data to be map[string]interface{}, got %T", response.Data)
 				return
 			}
-			
+
 			validateCompaniesResponse(t, data)
 		},
 	},

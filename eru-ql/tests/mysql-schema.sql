@@ -11,8 +11,6 @@ DROP TABLE IF EXISTS user_profiles;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS companies;
 DROP TABLE IF EXISTS departments;
-DROP TABLE IF EXISTS user_analytics;
-DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS audit_log;
 
 -- Companies table (top level)
