@@ -46,6 +46,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.23.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.28.6 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
+	github.com/confluentinc/confluent-kafka-go/v2 v2.3.0 // indirect
 	github.com/eru-tech/eru/eru-cache v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-db v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-events v0.0.0-00010101000000-000000000000 // indirect
@@ -84,7 +85,7 @@ require (
 	golang.org/x/crypto v0.33.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
-	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
+	google.golang.org/genproto v0.0.0-20230331144136-dcfb400f0633 // indirect
 	google.golang.org/grpc v1.55.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 )

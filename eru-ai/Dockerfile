@@ -1,4 +1,12 @@
-FROM golang:1.22.2-alpine3.19
+FROM golang:1.22.2-bullseye
+
+# Install build dependencies for CGO and Kafka
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    pkg-config \
+    librdkafka-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
@@ -11,8 +19,8 @@ RUN PWGO_VER=$(grep -oE "playwright-go v\S+" go.mod | sed 's/playwright-go //g')
     && go install github.com/playwright-community/playwright-go/cmd/playwright@${PWGO_VER}
 
 
-# Build eru-ai
-RUN GOOS=linux CGO_ENABLED=0 go build -a -ldflags '-s -w -extldflags "-static"' -o app .
+# Build eru-ai with CGO enabled for Kafka support
+RUN GOOS=linux CGO_ENABLED=1 go build -a -ldflags '-s -w' -o app .
 
 
 

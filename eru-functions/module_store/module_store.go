@@ -736,7 +736,7 @@ func (ms *ModuleStore) GetWfCloneObject(ctx context.Context, projectId string, w
 
 func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, s ModuleStoreI) (asyncFuncData AsyncFuncData, err error) {
 	logs.WithContext(ctx).Debug("FetchAsyncEvent - Start")
-	logs.WithContext(ctx).Info(fmt.Sprint("FetchAsyncEvent called for asyncId = ", asyncId))
+	logs.WithContext(ctx).Info(fmt.Sprint("FetchAsyncEvent called for asyncId = ", asyncId, asyncStatus))
 	var selectQueries []*models.Queries
 	selectQueryFuncAsync := models.Queries{}
 	selectQueryFuncAsync.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SELECT_FUNC_ASYNC)
@@ -748,7 +748,6 @@ func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyn
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("selectOutput = ", selectOutput))
 	var fVars functions.FuncTemplateVars
 	if selectOutput[0] != nil {
 		if selectOutput[0][0] != nil {
@@ -911,7 +910,6 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 						logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
 					}
 					if len(requestBytes) > 0 {
-						logs.WithContext(ctx).Info("here 3")
 						r := bufio.NewReader(bytes.NewBuffer(requestBytes))
 						if eventReq, err = http.ReadRequest(r); err != nil { // deserialize request
 							failedCount = failedCount + 1
@@ -1024,7 +1022,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 			diffaid := endTimeaid.Sub(startTimeaid)
 			logs.WithContext(ctx).Info(fmt.Sprint("total time taken for asyncid ", async_id, " is ", diffaid.Seconds(), "seconds"))
 		}
-		logs.WithContext(nctx).Info(fmt.Sprint("Delete msg called for ", m.Msg))
+		logs.WithContext(nctx).Info(fmt.Sprint("Delete msg called for ", m.MsgIdentifer))
 		_ = event.DeleteMessage(nctx, m.MsgIdentifer)
 		endTime := time.Now()
 		diff := endTime.Sub(startTime)

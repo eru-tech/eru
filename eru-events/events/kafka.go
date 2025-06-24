@@ -1,3 +1,6 @@
+//go:build cgo
+// +build cgo
+
 package events
 
 import (
@@ -15,71 +18,71 @@ import (
 
 type Kafka_Event struct {
 	Event
-	
+
 	// Connection Configuration
-	Brokers               string            `json:"brokers" eru:"required"`
-	Topic                 string            `json:"topic" eru:"required"`
-	GroupId               string            `json:"group_id" eru:"required"`
-	
+	Brokers string `json:"brokers" eru:"required"`
+	Topic   string `json:"topic" eru:"required"`
+	GroupId string `json:"group_id" eru:"required"`
+
 	// Security Configuration
-	SecurityProtocol      string            `json:"security_protocol"`
-	SaslMechanism         string            `json:"sasl_mechanism"`
-	SaslUsername          string            `json:"sasl_username"`
-	SaslPassword          string            `json:"sasl_password"`
-	SaslKerberosServiceName string          `json:"sasl_kerberos_service_name"`
-	SaslKerberosPrincipal string            `json:"sasl_kerberos_principal"`
-	SaslKerberosKinitCmd  string            `json:"sasl_kerberos_kinit_cmd"`
-	SaslOauthToken        string            `json:"sasl_oauth_token"`
-	
+	SecurityProtocol        string `json:"security_protocol"`
+	SaslMechanism           string `json:"sasl_mechanism"`
+	SaslUsername            string `json:"sasl_username"`
+	SaslPassword            string `json:"sasl_password"`
+	SaslKerberosServiceName string `json:"sasl_kerberos_service_name"`
+	SaslKerberosPrincipal   string `json:"sasl_kerberos_principal"`
+	SaslKerberosKinitCmd    string `json:"sasl_kerberos_kinit_cmd"`
+	SaslOauthToken          string `json:"sasl_oauth_token"`
+
 	// AWS MSK IAM Authentication
-	AwsRegion             string            `json:"aws_region"`
-	AwsAccessKeyId        string            `json:"aws_access_key_id"`
-	AwsSecretAccessKey    string            `json:"aws_secret_access_key"`
-	AwsSessionToken       string            `json:"aws_session_token"`
-	
+	AwsRegion          string `json:"aws_region"`
+	AwsAccessKeyId     string `json:"aws_access_key_id"`
+	AwsSecretAccessKey string `json:"aws_secret_access_key"`
+	AwsSessionToken    string `json:"aws_session_token"`
+
 	// SSL/TLS Configuration
-	SslCaLocation         string            `json:"ssl_ca_location"`
-	SslCertificateLocation string           `json:"ssl_certificate_location"`
-	SslKeyLocation        string            `json:"ssl_key_location"`
-	SslKeyPassword        string            `json:"ssl_key_password"`
-	SslCrlLocation        string            `json:"ssl_crl_location"`
-	SslKeystoreLocation   string            `json:"ssl_keystore_location"`
-	SslKeystorePassword   string            `json:"ssl_keystore_password"`
-	SslTruststoreLocation string            `json:"ssl_truststore_location"`
-	SslTruststorePassword string            `json:"ssl_truststore_password"`
-	
+	SslCaLocation          string `json:"ssl_ca_location"`
+	SslCertificateLocation string `json:"ssl_certificate_location"`
+	SslKeyLocation         string `json:"ssl_key_location"`
+	SslKeyPassword         string `json:"ssl_key_password"`
+	SslCrlLocation         string `json:"ssl_crl_location"`
+	SslKeystoreLocation    string `json:"ssl_keystore_location"`
+	SslKeystorePassword    string `json:"ssl_keystore_password"`
+	SslTruststoreLocation  string `json:"ssl_truststore_location"`
+	SslTruststorePassword  string `json:"ssl_truststore_password"`
+
 	// Topic Configuration
-	Partitions            int32             `json:"partitions"`
-	ReplicationFactor     int16             `json:"replication_factor"`
-	TopicConfig           map[string]string `json:"topic_config"`
-	
+	Partitions        int32             `json:"partitions"`
+	ReplicationFactor int16             `json:"replication_factor"`
+	TopicConfig       map[string]string `json:"topic_config"`
+
 	// Consumer Configuration
-	SessionTimeoutMs      int               `json:"session_timeout_ms"`
-	AutoOffsetReset       string            `json:"auto_offset_reset"`
-	EnableAutoCommit      bool              `json:"enable_auto_commit"`
-	FetchMinBytes         int               `json:"fetch_min_bytes"`
-	FetchMaxWaitMs        int               `json:"fetch_max_wait_ms"`
-	MaxPartitionFetchBytes int              `json:"max_partition_fetch_bytes"`
-	HeartbeatIntervalMs   int               `json:"heartbeat_interval_ms"`
-	MaxPollRecords        int               `json:"max_poll_records"`
-	IsolationLevel        string            `json:"isolation_level"`
-	
+	SessionTimeoutMs       int    `json:"session_timeout_ms"`
+	AutoOffsetReset        string `json:"auto_offset_reset"`
+	EnableAutoCommit       bool   `json:"enable_auto_commit"`
+	FetchMinBytes          int    `json:"fetch_min_bytes"`
+	FetchMaxWaitMs         int    `json:"fetch_max_wait_ms"`
+	MaxPartitionFetchBytes int    `json:"max_partition_fetch_bytes"`
+	HeartbeatIntervalMs    int    `json:"heartbeat_interval_ms"`
+	MaxPollRecords         int    `json:"max_poll_records"`
+	IsolationLevel         string `json:"isolation_level"`
+
 	// Producer Configuration
-	Acks                  string            `json:"acks"`
-	Retries               int               `json:"retries"`
-	RetryBackoffMs        int               `json:"retry_backoff_ms"`
-	RequestTimeoutMs      int               `json:"request_timeout_ms"`
-	DeliveryTimeoutMs     int               `json:"delivery_timeout_ms"`
-	BatchSize             int               `json:"batch_size"`
-	LingerMs              int               `json:"linger_ms"`
-	CompressionType       string            `json:"compression_type"`
-	MaxInFlightRequests   int               `json:"max_in_flight_requests"`
-	BufferMemory          int               `json:"buffer_memory"`
-	
+	Acks                string `json:"acks"`
+	Retries             int    `json:"retries"`
+	RetryBackoffMs      int    `json:"retry_backoff_ms"`
+	RequestTimeoutMs    int    `json:"request_timeout_ms"`
+	DeliveryTimeoutMs   int    `json:"delivery_timeout_ms"`
+	BatchSize           int    `json:"batch_size"`
+	LingerMs            int    `json:"linger_ms"`
+	CompressionType     string `json:"compression_type"`
+	MaxInFlightRequests int    `json:"max_in_flight_requests"`
+	BufferMemory        int    `json:"buffer_memory"`
+
 	// Internal client instances
-	producer              *kafka.Producer
-	consumer              *kafka.Consumer
-	adminClient           *kafka.AdminClient
+	producer    *kafka.Producer
+	consumer    *kafka.Consumer
+	adminClient *kafka.AdminClient
 }
 
 func (kafkaEvent *Kafka_Event) Init(ctx context.Context) (err error) {
@@ -100,7 +103,7 @@ func (kafkaEvent *Kafka_Event) Init(ctx context.Context) (err error) {
 	}
 	kafkaEvent.applyProducerConfig(ctx, producerConfig)
 
-	// Create consumer config with consumer settings  
+	// Create consumer config with consumer settings
 	consumerConfig := kafka.ConfigMap{}
 	for k, v := range baseConfig {
 		consumerConfig[k] = v
@@ -115,7 +118,6 @@ func (kafkaEvent *Kafka_Event) Init(ctx context.Context) (err error) {
 	for k, v := range baseConfig {
 		adminConfig[k] = v
 	}
-
 
 	kafkaEvent.producer, err = kafka.NewProducer(&producerConfig)
 	if err != nil {
@@ -327,7 +329,7 @@ func (kafkaEvent *Kafka_Event) GetAttribute(attributeName string) (attributeValu
 		return kafkaEvent.EventType, nil
 	case "polling_interval":
 		return kafkaEvent.PollingInterval, nil
-	
+
 	// Connection attributes
 	case "brokers":
 		return kafkaEvent.Brokers, nil
@@ -335,7 +337,7 @@ func (kafkaEvent *Kafka_Event) GetAttribute(attributeName string) (attributeValu
 		return kafkaEvent.Topic, nil
 	case "group_id":
 		return kafkaEvent.GroupId, nil
-	
+
 	// Security attributes
 	case "security_protocol":
 		return kafkaEvent.SecurityProtocol, nil
@@ -351,7 +353,7 @@ func (kafkaEvent *Kafka_Event) GetAttribute(attributeName string) (attributeValu
 		return kafkaEvent.AwsRegion, nil
 	case "aws_access_key_id":
 		return kafkaEvent.AwsAccessKeyId, nil
-	
+
 	// SSL attributes
 	case "ssl_ca_location":
 		return kafkaEvent.SslCaLocation, nil
@@ -359,7 +361,7 @@ func (kafkaEvent *Kafka_Event) GetAttribute(attributeName string) (attributeValu
 		return kafkaEvent.SslCertificateLocation, nil
 	case "ssl_key_location":
 		return kafkaEvent.SslKeyLocation, nil
-	
+
 	// Topic configuration
 	case "partitions":
 		return kafkaEvent.Partitions, nil
@@ -367,7 +369,7 @@ func (kafkaEvent *Kafka_Event) GetAttribute(attributeName string) (attributeValu
 		return kafkaEvent.ReplicationFactor, nil
 	case "topic_config":
 		return kafkaEvent.TopicConfig, nil
-	
+
 	// Consumer configuration
 	case "session_timeout_ms":
 		return kafkaEvent.SessionTimeoutMs, nil
@@ -381,7 +383,7 @@ func (kafkaEvent *Kafka_Event) GetAttribute(attributeName string) (attributeValu
 		return kafkaEvent.MaxPollRecords, nil
 	case "isolation_level":
 		return kafkaEvent.IsolationLevel, nil
-	
+
 	// Producer configuration
 	case "acks":
 		return kafkaEvent.Acks, nil
@@ -393,7 +395,7 @@ func (kafkaEvent *Kafka_Event) GetAttribute(attributeName string) (attributeValu
 		return kafkaEvent.CompressionType, nil
 	case "max_in_flight_requests":
 		return kafkaEvent.MaxInFlightRequests, nil
-	
+
 	default:
 		return kafkaEvent.Event.GetAttribute(attributeName)
 	}

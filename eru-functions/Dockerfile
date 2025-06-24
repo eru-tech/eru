@@ -6,7 +6,9 @@ WORKDIR /build
 COPY . .
 WORKDIR eru-functions
 
-# Build eru-files
+# Build eru-functions with CGO disabled
+# Note: This build will not include Kafka functionality due to CGO requirements
+# Use DB event type for async processing when Kafka is not available
 RUN GOOS=linux CGO_ENABLED=0 go build -a -ldflags '-s -w -extldflags "-static"' -o app .
 
 FROM alpine:3.19.0
