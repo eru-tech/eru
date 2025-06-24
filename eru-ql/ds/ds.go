@@ -199,6 +199,7 @@ func (sqr *SqlMaker) GetSqlResult(ctx context.Context) map[string]interface{} {
 
 func (sqr *SqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
 	return errors.New("CreateConn not implemented")
+
 }
 
 func (sqr *SqlMaker) CheckMe(ctx context.Context) {
@@ -1481,6 +1482,7 @@ func (sqr *SqlMaker) GetTableList(ctx context.Context, query string, datasource 
 	logs.WithContext(ctx).Debug("GetTableList - Start")
 	tableList := make(map[string]map[string]module_model.TableColsMetaData)
 	rows, e := datasource.Con.Queryx(query)
+
 	if e != nil {
 		logs.WithContext(ctx).Error(e.Error())
 		return e
@@ -1492,6 +1494,7 @@ func (sqr *SqlMaker) GetTableList(ctx context.Context, query string, datasource 
 		if e != nil {
 			logs.WithContext(ctx).Error(e.Error())
 		}
+
 		innerResultRow.OwnDataType = myself.getDataTypeMapping(ctx, innerResultRow.DataType)
 		tableKey := fmt.Sprint(innerResultRow.TblSchema, ".", innerResultRow.TblName)
 		if tableList[tableKey] == nil {
