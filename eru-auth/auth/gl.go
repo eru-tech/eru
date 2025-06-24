@@ -81,6 +81,28 @@ func (glAuth *GlAuth) GetUrl(ctx context.Context, state string) (urlStr string, 
 	return
 }
 
+func (glAuth *GlAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error) {
+	logs.WithContext(ctx).Debug("Login - Start")
+
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	glLoginFormBody := make(map[string]string)
+	glLoginFormBody["client_id"] = glAuth.GlConfig.ClientId
+	glLoginFormBody["client_secret"] = glAuth.GlConfig.ClientSecret
+	logs.WithContext(ctx).Info(glAuth.GlConfig.RedirectURI)
+	glLoginFormBody["redirect_uri"] = glAuth.GlConfig.RedirectURI
+	glLoginFormBody["code"] = loginPostBody.IdpCode
+	glLoginFormBody["grant_type"] = "authorization_code"
+
+	loginRes, _, _, _, loginErr := utils.CallHttp(ctx, http.MethodPost, glAuth.GlConfig.TokenUrl, headers, glLoginFormBody, nil, nil, nil)
+	if loginErr != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint(map[string]interface{}{"request_id": loginPostBody.IdpRequestId, "error": fmt.Sprint(loginErr)}))
+		return nil, errors.New("something went wrong - please try again")
+	}
+	return loginRes, nil
+}
+
 func (glAuth *GlAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
 	logs.WithContext(ctx).Debug("Login - Start")
 

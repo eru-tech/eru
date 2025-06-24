@@ -29,7 +29,7 @@ import (
 
 const (
 	INSERT_FUNC_ASYNC_LOOP = "insert into erufunctions_async_loop (async_id,event_id,loop_var) values (??? , ???, ???)"
-	INSERT_FUNC_ASYNC      = "insert into erufunctions_async (event_id,func_group_name,func_step_name,event_msg,request_id, event_request) values (???,???,???,???,???,???)"
+	INSERT_FUNC_ASYNC      = "insert into erufunctions_async (event_id,func_group_name,func_step_name,event_msg,request_id, event_request,async_event_name) values (???,???,???,???,???,???,???)"
 )
 
 type AsyncFuncData struct {
@@ -41,15 +41,17 @@ type AsyncFuncData struct {
 	EventRequest string           `json:"event_request"`
 	RequestId    string           `json:"request_id"`
 	LoopVar      interface{}      `json:"loop_var"`
+	EventName    string           `json:"event_name"`
 }
 
 type FuncGroup struct {
-	FuncCategoryName    string               `json:"func_category_name" eru:"required"`
-	FuncGroupName       string               `json:"func_group_name" eru:"required"`
-	FuncSteps           map[string]*FuncStep `json:"func_steps" `
-	TokenSecretKey      string               `json:"-"`
-	ResponseStatusCode  int                  `json:"response_status_code"`
-	ResponseContentType string               `json:"response_content_type"`
+	FuncCategoryName        string               `json:"func_category_name" eru:"required"`
+	FuncGroupName           string               `json:"func_group_name" eru:"required"`
+	FuncSteps               map[string]*FuncStep `json:"func_steps" `
+	TokenSecretKey          string               `json:"-"`
+	ResponseStatusCode      int                  `json:"response_status_code"`
+	ResponseStatusCondition string               `json:"response_status_condition"`
+	ResponseContentType     string               `json:"response_content_type"`
 }
 
 type FuncTemplateVars struct {
@@ -77,6 +79,10 @@ type FuncStep struct {
 	Api                     TargetHost    `json:"api"`
 	ApiPath                 string        `json:"api_path"`
 	Path                    string        `json:"path"`
+	ToolName                string        `json:"tool_name"`
+	ToolAction              string        `json:"tool_action"`
+	AgentName               string        `json:"agent_name"`
+	TenantId                string        `json:"tenant_id"`
 	Route                   Route         `json:"-"`
 	FuncKey                 string        `json:"-"`
 	ParentFuncGroupName     string        `json:"-"`
@@ -169,6 +175,31 @@ func (funcGroup *FuncGroup) Execute(ctx context.Context, request *http.Request, 
 	//reqVars := make(map[string]*TemplateVars)
 	//resVars := make(map[string]*TemplateVars)
 	response, funcVarsMap, _, err = RunFuncSteps(ctx, funcGroup.FuncSteps, request, reqVars, resVars, "", FuncThreads, LoopThreads, funcStepName, endFuncStepName, false, fromAsync, false)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	response, err = eru_utils.UnqotePlanText(ctx, response)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if funcGroup.ResponseStatusCondition == "IGNORE" {
+		funcGroup.ResponseStatusCode = http.StatusOK
+	} else if funcGroup.ResponseStatusCondition == "ERROR" {
+		errFound := false
+		for _, v := range funcVarsMap {
+			if !errFound {
+				for _, vv := range v.ResVars {
+					if vv.ResponseStatus >= 400 {
+						funcGroup.ResponseStatusCode = vv.ResponseStatus
+						errFound = true
+						break
+					}
+				}
+			}
+		}
+	}
 	return
 }
 
@@ -234,7 +265,6 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprint(err.Error()))
 	}
-	eru_utils.PrintResponseBody(ctx, response, "after club responses")
 	return
 }
 
@@ -257,6 +287,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 	ctx, span := otel.Tracer(server_handlers.ServerName).Start(octx, funcStep.FuncKey, oteltrace.WithAttributes(attribute.String("requestID", req.Header.Get(server_handlers.RequestIdKey)), attribute.String("traceID", pspan.SpanContext().TraceID().String()), attribute.String("spanID", pspan.SpanContext().SpanID().String())))
 	defer span.End()
 	ctx = logs.NewContext(ctx, zap.String("funcStepName", funcStep.FuncKey))
+	logs.WithContext(ctx).Info(fmt.Sprint("funcStepName from Context", ctx.Value("funcStepName")))
 	req = req.WithContext(ctx)
 	request := req
 	var loopArray []interface{}
@@ -340,7 +371,8 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			}
 		}
 		if strCond == "true" {
-			if (!fromAsync || (fromAsync && funcStepName != funcStep.FuncKey)) && funcStep.Async && funcStep.AsyncMessage != "" && funcStep.LoopVariable == "" {
+			// removed '&& funcStep.LoopVariable == ""' from below if condifion as we are handling loop variable here to spin as many async tasks as loop variable has values
+			if (!fromAsync || (fromAsync && funcStepName != funcStep.FuncKey)) && funcStep.Async && funcStep.AsyncMessage != "" {
 				avars := &FuncTemplateVars{}
 				avars.Vars = reqVars[funcStep.FuncKey]
 				avars.ReqVars = reqVars
@@ -404,30 +436,52 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 					asyncFuncData.EventId = msgId
 					asyncFuncDataBatch = append(asyncFuncDataBatch, asyncFuncData)
 				} else {
-					msgId = uuid.New().String()
-					var insertQueries []*models.Queries
-					insertQueryFuncAsync := models.Queries{}
-					insertQueryFuncAsync.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC)
-					insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, msgId, funcStep.ParentFuncGroupName, funcStep.FuncKey, string(eventMsgBytes), string(eventMsgRequest), requestStr)
-					insertQueryFuncAsync.Rank = 1
-					insertQueries = append(insertQueries, &insertQueryFuncAsync)
-
-					insertQueryFuncAsyncLoop := models.Queries{}
-					insertQueryFuncAsyncLoop.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC_LOOP)
-					insertQueryFuncAsyncLoop.Vals = append(insertQueryFuncAsyncLoop.Vals, async_id, msgId, "{}")
-					insertQueryFuncAsyncLoop.Rank = 2
-					insertQueries = append(insertQueries, &insertQueryFuncAsyncLoop)
-
-					logs.WithContext(ctx).Info("calling async insert from here")
-					_, insertOutputErr := eru_utils.ExecuteDbSave(ctx, funcStep.FsDb.GetConn(), insertQueries)
-					if insertOutputErr != nil {
-						err = insertOutputErr
-						logs.WithContext(ctx).Error(err.Error())
+					if funcStep.LoopVariable != "" {
+						if reqVars[funcStep.FuncKey].LoopVars != nil {
+							if loopArray, loopArrayok := reqVars[funcStep.FuncKey].LoopVars.([]interface{}); loopArrayok {
+								for _, loopVar := range loopArray {
+									async_id = uuid.New().String()
+									asyncFuncData := AsyncFuncData{}
+									asyncFuncData.FuncName = funcStep.ParentFuncGroupName
+									asyncFuncData.FuncStepName = funcStep.FuncKey
+									asyncFuncData.AsyncId = async_id
+									asyncFuncData.EventMsg = *avars
+									asyncFuncData.EventRequest = requestStr
+									asyncFuncData.RequestId = string(eventMsgRequest)
+									asyncFuncData.EventId = msgId
+									asyncFuncData.LoopVar = loopVar
+									asyncFuncData.EventName = funcStep.AsyncEventName
+									asyncFuncDataBatch = append(asyncFuncDataBatch, asyncFuncData)
+								}
+							}
+						}
 						return
-					}
-					_, err = funcStep.AsyncEvent.Publish(ctx, async_id, funcStep.AsyncEvent)
-					if err != nil {
-						return
+					} else {
+						msgId = uuid.New().String()
+						var insertQueries []*models.Queries
+						insertQueryFuncAsync := models.Queries{}
+						insertQueryFuncAsync.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC)
+						insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, msgId, funcStep.ParentFuncGroupName, funcStep.FuncKey, string(eventMsgBytes), string(eventMsgRequest), requestStr, funcStep.AsyncEventName)
+						insertQueryFuncAsync.Rank = 1
+						insertQueries = append(insertQueries, &insertQueryFuncAsync)
+
+						insertQueryFuncAsyncLoop := models.Queries{}
+						insertQueryFuncAsyncLoop.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC_LOOP)
+						insertQueryFuncAsyncLoop.Vals = append(insertQueryFuncAsyncLoop.Vals, async_id, msgId, "{}")
+						insertQueryFuncAsyncLoop.Rank = 2
+						insertQueries = append(insertQueries, &insertQueryFuncAsyncLoop)
+
+						logs.WithContext(ctx).Info("calling async insert from here")
+						_, insertOutputErr := eru_utils.ExecuteDbSave(ctx, funcStep.FsDb.GetConn(), insertQueries)
+						if insertOutputErr != nil {
+							err = insertOutputErr
+							logs.WithContext(ctx).Error(err.Error())
+							return
+						}
+						_, err = funcStep.AsyncEvent.Publish(ctx, async_id, funcStep.AsyncEvent)
+						if err != nil {
+							return
+						}
 					}
 				}
 				return
@@ -442,6 +496,8 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 					response = errorResponse(ctx, err.Error(), request)
 					return
 				}
+			} else if fromAsync && funcStep.FuncKey == funcStepName && funcStep.LoopVariable != "" {
+				loopArray = append(loopArray, vars.LoopVar)
 			}
 		}
 	}
@@ -468,6 +524,8 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			}
 		}()
 		var asyncBatch []AsyncFuncData
+		eventMsg := FuncTemplateVars{}
+		eventRequest := ""
 		for res := range results {
 			if res.response != nil {
 				responses = append(responses, res.response)
@@ -477,16 +535,44 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 				errs = append(errs, res.responseErr)
 			}
 			if res.asyncFuncDataBatch != nil {
+				if eventRequest == "" {
+					eventMsg = res.asyncFuncDataBatch[0].EventMsg
+					eventRequest = res.asyncFuncDataBatch[0].EventRequest
+				}
 				asyncBatch = append(asyncBatch, res.asyncFuncDataBatch...)
 			}
-			if len(asyncBatch) == 1000 {
-				logs.WithContext(ctx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatch)))
-				err = funcStep.insertAsyncBatch(ctx, asyncBatch)
+
+			if len(res.asyncFuncDataBatch) > 1 {
+				var asyncBatchInner []AsyncFuncData
+				for _, asyncFuncData := range asyncBatch {
+					asyncBatchInner = append(asyncBatchInner, asyncFuncData)
+					// TODO - change it to event parameter
+					if len(asyncBatchInner) == 1000 {
+						logs.WithContext(ctx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatchInner)))
+						err = funcStep.insertAsyncBatch(ctx, asyncBatchInner)
+						asyncBatchInner = nil
+					}
+				}
+				if len(asyncBatchInner) > 0 {
+					logs.WithContext(ctx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatchInner)))
+					err = funcStep.insertAsyncBatch(ctx, asyncBatchInner)
+				}
 				asyncBatch = nil
+			} else {
+				// TODO - change it to event parameter
+				if len(asyncBatch) == 1000 {
+					logs.WithContext(ctx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatch)))
+					asyncBatch[0].EventMsg = eventMsg
+					asyncBatch[0].EventRequest = eventRequest
+					err = funcStep.insertAsyncBatch(ctx, asyncBatch)
+					asyncBatch = nil
+				}
 			}
 		}
 		if len(asyncBatch) > 0 {
 			logs.WithContext(ctx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatch)))
+			asyncBatch[0].EventMsg = eventMsg
+			asyncBatch[0].EventRequest = eventRequest
 			err = funcStep.insertAsyncBatch(ctx, asyncBatch)
 		}
 		done <- true
@@ -658,7 +744,8 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 				diff := endTime.Sub(startTime)
 				logs.WithContext(ctx).Info(fmt.Sprint("total time taken for RunFuncStepInner before route execute  ", funcStep.FuncKey, " ", diff.Milliseconds(), "seconds"))
 
-				response, routevars, err = funcStep.Route.Execute(ctx, request, funcStep.Path, funcStep.Async, asyncMsg, reqVars[funcStep.FuncKey], loopThread)
+				// TODO - changed from funcStep.Async to false on 2Apr
+				response, routevars, err = funcStep.Route.Execute(ctx, request, funcStep.Path, false, asyncMsg, reqVars[funcStep.FuncKey], loopThread)
 
 				endTime = time.Now()
 				diff = endTime.Sub(startTime)
@@ -780,22 +867,31 @@ func (funcStep *FuncStep) insertAsyncBatch(ctx context.Context, asyncBatch []Asy
 
 	batch_id := uuid.New().String()
 
-	for _, asyncFuncData := range asyncBatch {
+	for i, asyncFuncData := range asyncBatch {
 		asyncFuncData.EventId = batch_id
-		lv, lvErr := json.Marshal(asyncFuncData.LoopVar)
-		if lvErr != nil {
+
+		var lvBuf bytes.Buffer
+		encoder := json.NewEncoder(&lvBuf)
+		encoder.SetEscapeHTML(false)
+		err = encoder.Encode(asyncFuncData.LoopVar)
+		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
-		if asyncFuncData.EventRequest != "" {
+
+		if i == 0 {
 			eventMsgBytes, eventErr := json.Marshal(asyncFuncData.EventMsg)
 			if eventErr != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				logs.WithContext(ctx).Error(eventErr.Error())
 				return
 			}
-			insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, batch_id, asyncFuncData.FuncName, asyncFuncData.FuncStepName, string(eventMsgBytes), asyncFuncData.RequestId, asyncFuncData.EventRequest)
+			eventName := asyncFuncData.EventName
+			if eventName == "" {
+				eventName = funcStep.AsyncEventName
+			}
+			insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, batch_id, asyncFuncData.FuncName, asyncFuncData.FuncStepName, string(eventMsgBytes), asyncFuncData.RequestId, asyncFuncData.EventRequest, eventName)
 		}
-		insertQueryFuncAsyncLoop.Vals = append(insertQueryFuncAsyncLoop.Vals, asyncFuncData.AsyncId, batch_id, string(lv))
+		insertQueryFuncAsyncLoop.Vals = append(insertQueryFuncAsyncLoop.Vals, asyncFuncData.AsyncId, batch_id, lvBuf.String())
 	}
 
 	insertQueryFuncAsync.Rank = 1
@@ -1044,7 +1140,7 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		avars.Vars = vars
 		avars.ResVars = resVars
 		avars.ReqVars = reqVars
-		output, apErr := processTemplate(ctx, "api_host", funcStep.ApiPath, avars, "string", funcStep.Route.TokenSecretKey)
+		output, apErr := processTemplate(ctx, "api_path", funcStep.ApiPath, avars, "string", funcStep.Route.TokenSecretKey)
 		if apErr != nil {
 			// ignore error if it is no value
 			if apErr.Error() != "Template returned <no value>" {
@@ -1058,6 +1154,72 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 				path = string(output)
 			}
 			funcStep.Route.RewriteUrl = path
+		}
+	}
+
+	if strings.HasPrefix(funcStep.TenantId, "{{") {
+		avars := &FuncTemplateVars{}
+		avars.Vars = vars
+		avars.ResVars = resVars
+		avars.ReqVars = reqVars
+		output, apErr := processTemplate(ctx, "tenant_id", funcStep.TenantId, avars, "string", funcStep.Route.TokenSecretKey)
+		if apErr != nil {
+			// ignore error if it is no value
+			if apErr.Error() != "Template returned <no value>" {
+				tErrs = append(tErrs, apErr.Error())
+			}
+		}
+		if string(output) != "" {
+			path, pErr := strconv.Unquote(string(output))
+			if pErr != nil {
+				logs.WithContext(ctx).Info(pErr.Error())
+				path = string(output)
+			}
+			funcStep.Route.RewriteUrl = strings.Replace(funcStep.Route.RewriteUrl, funcStep.TenantId, path, 1)
+		}
+	}
+
+	if strings.HasPrefix(funcStep.ToolName, "{{") {
+		avars := &FuncTemplateVars{}
+		avars.Vars = vars
+		avars.ResVars = resVars
+		avars.ReqVars = reqVars
+		output, apErr := processTemplate(ctx, "tool_name", funcStep.ToolName, avars, "string", funcStep.Route.TokenSecretKey)
+		if apErr != nil {
+			// ignore error if it is no value
+			if apErr.Error() != "Template returned <no value>" {
+				tErrs = append(tErrs, apErr.Error())
+			}
+		}
+		if string(output) != "" {
+			path, pErr := strconv.Unquote(string(output))
+			if pErr != nil {
+				logs.WithContext(ctx).Info(pErr.Error())
+				path = string(output)
+			}
+			funcStep.Route.RewriteUrl = strings.Replace(funcStep.Route.RewriteUrl, funcStep.ToolName, path, 1)
+		}
+	}
+
+	if strings.HasPrefix(funcStep.AgentName, "{{") {
+		avars := &FuncTemplateVars{}
+		avars.Vars = vars
+		avars.ResVars = resVars
+		avars.ReqVars = reqVars
+		output, apErr := processTemplate(ctx, "agent_name", funcStep.AgentName, avars, "string", funcStep.Route.TokenSecretKey)
+		if apErr != nil {
+			// ignore error if it is no value
+			if apErr.Error() != "Template returned <no value>" {
+				tErrs = append(tErrs, apErr.Error())
+			}
+		}
+		if string(output) != "" {
+			path, pErr := strconv.Unquote(string(output))
+			if pErr != nil {
+				logs.WithContext(ctx).Info(pErr.Error())
+				path = string(output)
+			}
+			funcStep.Route.RewriteUrl = strings.Replace(funcStep.Route.RewriteUrl, funcStep.AgentName, path, 1)
 		}
 	}
 

@@ -92,3 +92,10 @@ func (storage *Storage) SetKms(ctx context.Context, kmsObj kms.KmsStoreI) (err e
 	storage.KmsKey = kmsObj
 	return
 }
+
+func (storage *Storage) UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+	

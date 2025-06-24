@@ -354,15 +354,9 @@ func JWKHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			err = s.SaveStore(r.Context(), projectId, "", s)
-			if err != nil {
-				server_handlers.FormatResponse(w, 400)
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			}
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"keys": keys})
 		}
-		return
 	}
 }
 

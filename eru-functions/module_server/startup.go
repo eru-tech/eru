@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/eru-tech/eru/eru-functions/module_store"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/eru-tech/eru/eru-functions/module_store"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 const StoreTableName = "erufunctions_config"
@@ -23,6 +24,13 @@ func StartUp() (module_store.ModuleStoreI, error) {
 		logs.WithContext(context.Background()).Info("'eruqlbaseurl' environment variable not found - setting default value as http://localhost:8087")
 	}
 	module_store.Eruqlbaseurl = eruqlbaseurl
+
+	eruaibaseurl := os.Getenv("ERUAI_BASEURL")
+	if eruaibaseurl == "" {
+		eruaibaseurl = "http://localhost:8088"
+		logs.WithContext(context.Background()).Info("'eruaibaseurl' environment variable not found - setting default value as http://localhost:8088")
+	}
+	module_store.Eruaibaseurl = eruaibaseurl
 
 	funcThreads := os.Getenv("FUNC_THREADS")
 	if funcThreads == "" {
@@ -48,7 +56,7 @@ func StartUp() (module_store.ModuleStoreI, error) {
 		module_store.LoopThreads = 3
 	}
 
-	eventThreads := os.Getenv("LOOP_THREADS")
+	eventThreads := os.Getenv("EVENT_THREADS")
 	if eventThreads == "" {
 		eventThreads = "3"
 		logs.WithContext(context.Background()).Info("'EVENT_THREADS' environment variable not found - setting default value as 3")

@@ -11,10 +11,13 @@ import (
 	"time"
 
 	"github.com/eru-tech/eru/eru-cache/cache"
+	db "github.com/eru-tech/eru/eru-db/db"
 	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-read-write/validator"
 	repos "github.com/eru-tech/eru/eru-repos/repos"
+	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	kms "github.com/eru-tech/eru/eru-secret-manager/kms"
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	utils "github.com/eru-tech/eru/eru-utils"
@@ -22,6 +25,12 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jmoiron/sqlx"
 	"github.com/tidwall/gjson"
+)
+
+const (
+	SELECT_REQUEST = "select * from eru_requests where project_id=??? and tenant_id=??? and resource_name=??? and (request_name=??? or 'ALL'=???)"
+	SAVE_REQUEST   = "insert into eru_requests (request_id, request_name, resource_name, project_id, tenant_id, request_json) values (???, ???, ???, ???, ???, ???) on conflict (request_id) do update set request_json=EXCLUDED.request_json , request_name=EXCLUDED.request_name"
+	DELETE_REQUEST = "delete from eru_requests where request_id=??? returning request_id"
 )
 
 type StoreI interface {
@@ -80,11 +89,12 @@ type StoreI interface {
 	RemoveEvent(ctx context.Context, projectId string, eventName string, cloudDelete bool, s StoreI) (err error)
 	PublishEvent(ctx context.Context, projectId string, eventName string, msg interface{}, s StoreI) (msgId string, err error)
 	PollEvent(ctx context.Context, projectId string, eventName string, s StoreI) (err error)
-
-	//SaveProject(projectId string, realStore StoreI) error
-	//RemoveProject(projectId string, realStore StoreI) error
-	//GetProjectConfig(projectId string) (*model.ProjectI, error)
-	//GetProjectList() []map[string]interface{}
+	SaveScheduler(ctx context.Context, projectId string, schedulerObj scheduler.SchedulerI, s StoreI, persist bool) (err error)
+	FetchScheduler(ctx context.Context, projectId string) (schedulerObj scheduler.SchedulerI, err error)
+	InitScheduler(ctx context.Context, s StoreI) (err error)
+	SaveRequest(ctx context.Context, request models.SampleRequest, projectId string, tenantId string, s StoreI) (err error)
+	GetRequests(ctx context.Context, projectId string, tenantId string, resourceName string, s StoreI) (requests []models.SampleRequest, err error)
+	RemoveRequest(ctx context.Context, requestId string, s StoreI) (err error)
 }
 
 type Store struct {
@@ -95,6 +105,7 @@ type Store struct {
 	ProjectRepos      map[string]repos.RepoI              `json:"repos"`
 	ProjectRepoTokens map[string]repos.RepoToken          `json:"repo_token"`
 	SecretManager     map[string]sm.SmStoreI              `json:"secret_manager"`
+	Scheduler         map[string]scheduler.SchedulerI     `json:"scheduler"`
 	KMS               map[string]map[string]kms.KmsStoreI `json:"kms"`
 	Events            map[string]map[string]events.EventI `json:"events"`
 	CacheStore        map[string]cache.CacheStoreI        `json:"-"`
@@ -249,8 +260,9 @@ type EnvVars struct {
 }
 
 type Secrets struct {
-	Key   string `json:"key"`
-	Value string `json:"-"`
+	Key         string `json:"key"`
+	Value       string `json:"-"`
+	SecretValue string `json:"secret_value"`
 }
 
 func (store *Store) GetDbType() string {
@@ -412,9 +424,20 @@ func (store *Store) SaveSecret(ctx context.Context, projectId string, newSecret 
 	if v.Secrets == nil {
 		v.Secrets = make(map[string]Secrets)
 	}
+
+	sv := newSecret.SecretValue
+	newSecret.SecretValue = ""
 	v.Secrets[newSecret.Key] = newSecret
+
 	store.Variables[projectId] = v
 	err = s.SaveStore(ctx, projectId, "", s)
+
+	if sm, ok := store.SecretManager[projectId]; ok {
+		smValue := make(map[string]string)
+		smValue[newSecret.Key] = sv
+		store.SetSmValue(ctx, projectId, sm.GetSecretName(), smValue)
+	}
+
 	return
 }
 
@@ -439,6 +462,11 @@ func (store *Store) RemoveSecret(ctx context.Context, projectId string, key stri
 	}
 	delete(store.Variables[projectId].Secrets, key)
 	err = s.SaveStore(ctx, projectId, "", s)
+
+	if sm, ok := store.SecretManager[projectId]; ok {
+		store.UnsetSmValue(ctx, projectId, sm.GetSecretName(), key)
+	}
+
 	return
 }
 
@@ -780,10 +808,29 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 		}
 	}
 
-	if smObjClone, smObjCloneOk := smObjI.(sm.SmStoreI); smObjCloneOk {
-		if store.TenantVariables != nil {
-			for prjId, _ := range store.TenantVariables {
-				if projectId == prjId || projectId == "" {
+	//if smObjClone, smObjCloneOk := smObjI.(sm.SmStoreI); smObjCloneOk {
+	if store.TenantVariables != nil {
+		for prjId, _ := range store.TenantVariables {
+			if projectId == prjId || projectId == "" {
+
+				if store.SecretManager == nil {
+					err = errors.New("no secret manager defined in store")
+					smFound = false
+					logs.WithContext(ctx).Error(err.Error())
+				} else if smObj, smObjOk := store.SecretManager[prjId]; !smObjOk {
+					err = errors.New(fmt.Sprint("Secret Manager not defined for project :", prjId))
+					smFound = false
+					logs.WithContext(ctx).Error(err.Error())
+				} else {
+					if smObj != nil {
+						smObjI, err = utils.CloneInterface(ctx, smObj)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+
+						}
+					}
+				}
+				if smObjClone, smObjCloneOk := smObjI.(sm.SmStoreI); smObjCloneOk {
 					logs.WithContext(ctx).Info(fmt.Sprint("loading tenant secrets for :", prjId))
 					for tenantId, _ := range store.TenantVariables[prjId] {
 						smValues, err := smObjClone.GetSmValues(ctx, tenantId)
@@ -802,9 +849,10 @@ func (store *Store) LoadSmValue(ctx context.Context, projectId string) (err erro
 				}
 			}
 		}
-	} else {
-		logs.WithContext(ctx).Error("failed to clone secret manager")
 	}
+	//} else {
+	//	logs.WithContext(ctx).Error("failed to clone secret manager")
+	//}
 
 	return
 }
@@ -1479,51 +1527,114 @@ func (store *Store) GetStoreWithoutTenants(ctx context.Context, ms StoreI) (b []
 	return
 }
 
-/*
-func (store *Store) SaveProject(projectId string, realStore StoreI) error {
-	//TODO to handle edit project once new project attributes are finalized
-	if _, ok := store.Projects[projectId]; !ok {
-		project := new(model.Project)
-		project.ProjectId = projectId
-		if store.Projects == nil {
-			store.Projects = make(map[string]*model.Project)
+func (store *Store) SaveScheduler(ctx context.Context, projectId string, schedulerObj scheduler.SchedulerI, s StoreI, persist bool) (err error) {
+	logs.WithContext(ctx).Debug("SaveScheduler - Start")
+	if persist {
+		s.GetMutex().Lock()
+		defer s.GetMutex().Unlock()
+	}
+	if store.Scheduler == nil {
+		store.Scheduler = make(map[string]scheduler.SchedulerI)
+	}
+	store.Scheduler[projectId] = schedulerObj
+	if persist {
+		err = s.SaveStore(ctx, projectId, "", s)
+	}
+	return
+}
+func (store *Store) FetchScheduler(ctx context.Context, projectId string) (schedulerObj scheduler.SchedulerI, err error) {
+	logs.WithContext(ctx).Debug("FetchScheduler - Start")
+	if store.Scheduler == nil {
+		err = errors.New("no scheduler defined in store")
+		logs.Err(ctx, err, "no scheduler defined in store")
+		return nil, err
+	}
+	ok := false
+	if schedulerObj, ok = store.Scheduler[projectId]; !ok {
+		err = errors.New(fmt.Sprint("scheduler not defined for project :", projectId))
+		logs.Err(ctx, err, "scheduler not defined for project")
+		return nil, err
+	}
+	return
+}
+
+func (store *Store) InitScheduler(ctx context.Context, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("InitScheduler - Start")
+	for projectId, sch := range store.Scheduler {
+		schJson, err := json.Marshal(sch)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
 		}
-		store.Projects[projectId] = project
-		return realStore.SaveStore("")
-	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " already exists"))
+
+		schJsonStr := store.ReplaceVariables(ctx, projectId, schJson, nil)
+		rawMsg := json.RawMessage(schJsonStr)
+		err = sch.Init(ctx, &rawMsg)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			//return err
+		}
 	}
+	return nil
+}
+func (store *Store) SaveRequest(ctx context.Context, sampleRequest models.SampleRequest, projectId string, tenantId string, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveRequest - Start")
+	sampleRequestBytes, err := json.Marshal(sampleRequest.RequestBody)
+	if err != nil {
+		err = logs.Err(ctx, err, "error marshalling sample request")
+		return
+	}
+	var saveQueries []*models.Queries
+	saveQueryFuncRequest := models.Queries{}
+	saveQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SAVE_REQUEST)
+	saveQueryFuncRequest.Vals = append(saveQueryFuncRequest.Vals, sampleRequest.RequestId, sampleRequest.RequestName, sampleRequest.ResourceName, projectId, tenantId, (string)(sampleRequestBytes))
+	saveQueryFuncRequest.Rank = 1
+	saveQueries = append(saveQueries, &saveQueryFuncRequest)
+	_, err = utils.ExecuteDbSave(ctx, s.GetConn(), saveQueries)
+	if err != nil {
+		return
+	}
+	return
 }
 
-func (store *Store) RemoveProject(projectId string, realStore StoreI) error {
-	if _, ok := store.Projects[projectId]; ok {
-		delete(store.Projects, projectId)
-		return realStore.SaveStore("")
-	} else {
-		return errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+func (store *Store) RemoveRequest(ctx context.Context, requestId string, s StoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveRequest - Start")
+	var deleteQueries []*models.Queries
+	deleteQueryFuncRequest := models.Queries{}
+	deleteQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, DELETE_REQUEST)
+	deleteQueryFuncRequest.Vals = append(deleteQueryFuncRequest.Vals, requestId)
+	deleteQueryFuncRequest.Rank = 1
+	deleteQueries = append(deleteQueries, &deleteQueryFuncRequest)
+	var delResult [][]map[string]interface{}
+	delResult, err = utils.ExecuteDbSave(ctx, s.GetConn(), deleteQueries)
+	if err != nil {
+		return
 	}
+	if len(delResult[0]) == 0 {
+		err = logs.Err(ctx, fmt.Errorf("func request not found %s", requestId), "")
+		return
+	}
+	return
 }
 
-func (store *Store) GetProjectConfig(projectId string) (*model.ProjectI, error) {
-	if _, ok := store.Projects[projectId]; ok {
-		var p model.ProjectI
-		p = store.Projects[projectId]
-		return &p, nil
-	} else {
-		return nil, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+func (store *Store) GetRequests(ctx context.Context, projectId string, tenantId string, resourceName string, s StoreI) (requests []models.SampleRequest, err error) {
+	logs.WithContext(ctx).Debug("GetRequests - Start")
+	selectQueryFuncRequest := models.Queries{}
+	selectQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SELECT_REQUEST)
+	selectQueryFuncRequest.Vals = append(selectQueryFuncRequest.Vals, projectId, tenantId, resourceName, "ALL", "ALL")
+	selectQueryFuncRequest.Rank = 1
+	output, err := utils.ExecuteDbFetch(ctx, s.GetConn(), selectQueryFuncRequest)
+	if err != nil {
+		return
 	}
-}
-
-func (store *Store) GetProjectList() []map[string]interface{} {
-	projects := make([]map[string]interface{}, len(store.Projects))
-	i := 0
-	for k := range store.Projects {
-		project := make(map[string]interface{})
-		project["projectName"] = k
-		//project["lastUpdateDate"] = time.Now()
-		projects[i] = project
-		i++
+	requests = []models.SampleRequest{}
+	for _, request := range output {
+		requests = append(requests, models.SampleRequest{
+			RequestId:    utils.GetStringField(request, "request_id"),
+			RequestName:  utils.GetStringField(request, "request_name"),
+			RequestBody:  utils.GetMapField(request, "request_json"),
+			ResourceName: utils.GetStringField(request, "resource_name"),
+		})
 	}
-	return projects
+	return
 }
-*/

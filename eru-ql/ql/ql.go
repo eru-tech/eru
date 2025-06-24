@@ -103,7 +103,7 @@ func (qld *QLData) ProcessTransformRule(ctx context.Context, tr module_model.Tra
 	return
 }
 
-func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, vars map[string]interface{}, mainTableName string, ctjMap map[string]string) (outputStr string, templates []string, err error) {
+func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, vars map[string]interface{}, mainTableName string, ctjMap map[string]string) (outputStr string, templates []string, ptables []string, err error) {
 	logs.WithContext(ctx).Debug("processSecurityRule - Start")
 	if sr.RuleType == module_model.RULETYPE_NONE {
 		err = errors.New("Security Rule Set to NONE")
@@ -113,7 +113,7 @@ func processSecurityRule(ctx context.Context, sr security_rule.SecurityRule, var
 		//do nothing
 		return
 	} else if sr.RuleType == module_model.RULETYPE_CUSTOM {
-		outputStr, templates, err = sr.Stringify(ctx, vars, false, mainTableName, ctjMap)
+		outputStr, templates, ptables, err = sr.Stringify(ctx, vars, false, mainTableName, ctjMap)
 
 	}
 	return
@@ -250,7 +250,13 @@ func (qld *QLData) secureSQL(ctx context.Context, query string, projectId string
 				table.TableName = fmt.Sprint(sr.DefaultSchemaName(), table.TableName)
 			}
 			sRulesStr, srJoins, srErr := getTableSecurityRule(ctx, projectId, datasource.DbAlias, table.TableName, s, "query", qld.FinalVariables, table.TableName)
-			if srErr == nil && sRulesStr != "" {
+			if srErr != nil {
+				logs.WithContext(ctx).Info(srErr.Error())
+				if !strings.HasPrefix(srErr.Error(), "TableSecurityRule not defined for "+table.TableName) {
+					return
+				}
+			}
+			if sRulesStr != "" {
 				q := fmt.Sprint("select  ", table.TableName, ".* from ", table.TableName)
 				for _, srJoin := range srJoins {
 					tj, e := datasource.GetTableJoins(ctx, table.TableName, srJoin, make(map[string]string))
@@ -267,11 +273,18 @@ func (qld *QLData) secureSQL(ctx context.Context, query string, projectId string
 					q = fmt.Sprint(q, " left join ", srJoin, " on ", oc)
 				}
 				q = fmt.Sprint(q, " where ", sRulesStr)
+				query = strings.Replace(query, fmt.Sprint(table.TableKeyPrefix, table.TableKey, table.TableKeySuffix), fmt.Sprint(table.TableKeyPrefix, " (", q, ") ", table.AliasName, " ", table.TableKeySuffix), -1)
+
+				makeJsonArrayFnStrKeyWord, err := sr.GetMakeJsonArrayFnStr()
+				if err != nil {
+					makeJsonArrayFnStrKeyWord = ""
+				}
+				query = strings.Replace(query, module_model.MAKE_JSON_ARRAY_FN_STR, makeJsonArrayFnStrKeyWord, -1)
+
 				makeJsonArrayFnKeyWord, err := sr.GetMakeJsonArrayFn()
 				if err != nil {
 					makeJsonArrayFnKeyWord = ""
 				}
-				query = strings.Replace(query, fmt.Sprint(table.TableKeyPrefix, table.TableKey, table.TableKeySuffix), fmt.Sprint(table.TableKeyPrefix, " (", q, ") ", table.AliasName, " ", table.TableKeySuffix), -1)
 				query = strings.Replace(query, module_model.MAKE_JSON_ARRAY_FN, makeJsonArrayFnKeyWord, -1)
 			}
 		} else {

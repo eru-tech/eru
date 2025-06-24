@@ -134,13 +134,13 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 		if sqd.OutputType == eru_writes.OutputTypeCsv || sqd.OutputType == eru_writes.OutputTypeExcel {
 			result, err = sr.ExecuteQueryForCsv(ctx, sqd.Query, datasource, "Results")
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, err, "")
 			}
 			res = append(res, result)
 		} else {
 			result, err = sr.ExecutePreparedQuery(ctx, sqd.Query, datasource)
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, err, "")
 			}
 			res = append(res, result)
 		}

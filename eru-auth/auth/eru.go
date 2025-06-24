@@ -7,15 +7,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"sort"
+	"strings"
+	"time"
+
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
-	"net/http"
-	"sort"
-	"strings"
-	"time"
 )
 
 const (
@@ -172,14 +173,14 @@ func (eruAuth *EruAuth) Register(ctx context.Context, registerUser RegisterUser,
 	insertPQuery := models.Queries{}
 	insertPQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, INSERT_IDENTITY_PASSWORD)
 
-	passwordBytes, passwordErr := b64.StdEncoding.DecodeString(registerUser.Password)
-	if passwordErr != nil {
-		logs.WithContext(ctx).Error(passwordErr.Error())
-		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
-	}
-	passwordHash := hex.EncodeToString(erusha.NewSHA512(passwordBytes))
+	// passwordBytes, passwordErr := b64.StdEncoding.DecodeString(registerUser.Password)
+	// if passwordErr != nil {
+	// 	logs.WithContext(ctx).Error(passwordErr.Error())
+	// 	return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+	// }
+	// passwordHash := hex.EncodeToString(erusha.NewSHA512(passwordBytes))
 
-	insertPQuery.Vals = append(insertPQuery.Vals, uuid.New().String(), identity.Id, passwordHash)
+	insertPQuery.Vals = append(insertPQuery.Vals, uuid.New().String(), identity.Id, registerUser.Password)
 	insertPQuery.Rank = 5
 	insertQueries = append(insertQueries, &insertPQuery)
 
