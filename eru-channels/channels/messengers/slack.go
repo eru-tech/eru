@@ -1,4 +1,4 @@
-package channel
+package messengers
 
 import (
 	"context"

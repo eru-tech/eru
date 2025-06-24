@@ -3,6 +3,7 @@ module eru-logs
 go 1.22
 
 require (
+	github.com/google/uuid v1.3.0
 	go.opentelemetry.io/otel v1.14.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.14.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.14.0

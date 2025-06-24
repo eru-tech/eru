@@ -110,7 +110,6 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 	}
 
 	idToken := ""
-
 	if lMap, lMapOk := loginRes.(map[string]interface{}); lMapOk {
 
 		if lToken, lTokensOk := lMap["id_token"]; lTokensOk {
@@ -145,6 +144,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 		query := models.Queries{}
 		query.Query = msAuth.AuthDb.GetDbQuery(ctx, SELECT_IDENTITY_SUB)
 		query.Vals = append(query.Vals, sub)
+		logs.WithContext(ctx).Info(fmt.Sprint(tokenMap))
 		if tokenEmail, tokenEmailOk := tokenMap[msAuth.MsConfig.Identifiers.Email.IdpMapper]; tokenEmailOk {
 			query.Vals = append(query.Vals, tokenEmail)
 		} else {
@@ -339,6 +339,34 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 		return identity, eruTokens, nil
 	}
 	return identity, LoginSuccess{}, nil
+}
+
+func (msAuth *MsAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error) {
+	logs.WithContext(ctx).Debug("IdpToken - Start")
+
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	msLoginFormBody := make(map[string]string)
+	msLoginFormBody["client_id"] = msAuth.MsConfig.ClientId
+	msLoginFormBody["client_secret"] = msAuth.MsConfig.ClientSecret
+	msLoginFormBody["redirect_uri"] = msAuth.MsConfig.RedirectURI
+	msLoginFormBody["scope"] = msAuth.MsConfig.Scope
+	if renewFlag {
+		msLoginFormBody["grant_type"] = "refresh_token"
+		msLoginFormBody["refresh_token"] = loginPostBody.RefreshToken
+	} else {
+		msLoginFormBody["code"] = loginPostBody.IdpCode
+		msLoginFormBody["code_verifier"] = loginPostBody.CodeVerifier
+		msLoginFormBody["grant_type"] = "authorization_code"
+	}
+
+	loginRes, _, _, _, loginErr := utils.CallHttp(ctx, http.MethodPost, msAuth.MsConfig.TokenUrl, headers, msLoginFormBody, nil, nil, nil)
+	if loginErr != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint(map[string]interface{}{"request_id": loginPostBody.IdpRequestId, "error": fmt.Sprint(loginErr)}))
+		return nil, errors.New("something went wrong - please try again")
+	}
+	return loginRes, nil
 }
 
 func (msAuth *MsAuth) GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error) {

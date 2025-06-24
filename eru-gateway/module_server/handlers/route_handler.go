@@ -3,15 +3,16 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+
 	"github.com/eru-tech/eru/eru-gateway/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
 	utils "github.com/eru-tech/eru/eru-utils"
-	"io"
-	"net/http"
-	"strconv"
-	"strings"
 )
 
 var httpClient = http.Client{
@@ -35,8 +36,15 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		logs.WithContext(r.Context()).Info(fmt.Sprint("authorizer.AuthorizerName = ", authorizer.AuthorizerName))
 		if authorizer.AuthorizerName != "" {
-			token := r.Header.Get(authorizer.TokenHeaderKey)
-			if token == "" {
+			accessToken := r.Header.Get(authorizer.TokenHeaderKey)
+			idToken := r.Header.Get(authorizer.IdTokenKey)
+			token := ""
+			if idToken != "" {
+				token = idToken
+			} else {
+				token = accessToken
+			}
+			if token == "" || accessToken == "" {
 				logs.WithContext(r.Context()).Info("token = \"\"")
 				server_handlers.FormatResponse(w, http.StatusUnauthorized)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
@@ -44,12 +52,63 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 
-			claims, err := authorizer.VerifyToken(r.Context(), r.Header.Get(authorizer.TokenHeaderKey), r.Header.Get(authorizer.KidHeaderKey))
+			accessClaims, err := authorizer.VerifyToken(r.Context(), accessToken, r.Header.Get(authorizer.KidHeaderKey))
 			if err != nil {
+				logs.WithContext(r.Context()).Error("access token verification failed")
 				server_handlers.FormatResponse(w, http.StatusUnauthorized)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
 			}
+			accessClaimsMap, accessClaimsMapOk := accessClaims.(map[string]interface{})
+			if !accessClaimsMapOk {
+				logs.WithContext(r.Context()).Error("access token is not a map")
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			accessSub, accessSubOk := accessClaimsMap["sub"]
+			if !accessSubOk {
+				err = fmt.Errorf("access token sub is not set")
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+
+			claims, err := authorizer.VerifyToken(r.Context(), token, r.Header.Get(authorizer.KidHeaderKey))
+			if err != nil {
+				logs.WithContext(r.Context()).Error("id token verification failed")
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+
+			claimsMap, claimsMapOk := claims.(map[string]interface{})
+			if !claimsMapOk {
+				logs.WithContext(r.Context()).Error("id token is not a map")
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			idSub, idSubOk := claimsMap["sub"]
+			if !idSubOk {
+				err = fmt.Errorf("id token sub is not set")
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+
+			if idSub.(string) != accessSub.(string) {
+				err = fmt.Errorf("sub mismatch")
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+
 			claimsBytes, err := json.Marshal(claims)
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
@@ -57,7 +116,17 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
 			}
-			r.Header.Add("claims", string(claimsBytes))
+			r.Header.Set("claims", string(claimsBytes))
+
+			if authorizer.KidHeaderKey == "" {
+				valid := authorizer.VerifyAccessToken(r.Context(), accessToken)
+				if !valid {
+					logs.WithContext(r.Context()).Info("invalid access token")
+					server_handlers.FormatResponse(w, http.StatusUnauthorized)
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
+					return
+				}
+			}
 		}
 
 		for _, v := range addHeaders {
@@ -66,14 +135,14 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				goTmpl := gotemplate.GoTemplate{v.Key, v.Value}
 				outputObj, err := goTmpl.Execute(r.Context(), *r, "string")
 				if err != nil {
-					logs.WithContext(r.Context()).Error(err.Error())
+					err = logs.Err(r.Context(), err, "")
 					server_handlers.FormatResponse(w, http.StatusBadRequest)
 					_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 					return
 				} else {
 					output, err := json.Marshal(outputObj)
 					if err != nil {
-						logs.WithContext(r.Context()).Error(err.Error())
+						err = logs.Err(r.Context(), err, "")
 						server_handlers.FormatResponse(w, http.StatusBadRequest)
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 						return

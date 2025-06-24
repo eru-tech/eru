@@ -14,8 +14,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_models "github.com/eru-tech/eru/eru-models"
 	models "github.com/eru-tech/eru/eru-models"
 	"github.com/google/go-cmp/cmp"
 	"github.com/jmoiron/sqlx"
@@ -28,11 +30,11 @@ const (
 	applicationJson = "application/json"
 )
 
-var httpClient = http.Client{
+/* var httpClient = http.Client{
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	},
-}
+} */
 
 func getAttr(ctx context.Context, obj interface{}, fieldName string) reflect.Value {
 	logs.WithContext(ctx).Debug("getAttr - Start")
@@ -138,6 +140,7 @@ func ReplaceUnderscoresWithDots(str string) string {
 func PrintResponseBody(ctx context.Context, response *http.Response, msg string) {
 	logs.WithContext(ctx).Debug("PrintResponseBody - Start")
 	logs.WithContext(ctx).Info(msg)
+	logs.WithContext(ctx).Info(fmt.Sprintf("response: %+v", response))
 	if response != nil {
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
@@ -163,19 +166,31 @@ func PrintResponseBody(ctx context.Context, response *http.Response, msg string)
 
 func PrintRequestBody(ctx context.Context, request *http.Request, msg string) {
 	logs.WithContext(ctx).Debug("PrintRequestBody - Start")
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-	}
 	logs.WithContext(ctx).Info(msg)
-	logs.WithContext(ctx).Info(fmt.Sprint(request.URL))
-	cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
-	if cl > 1000 && len(string(body)) > 1000 {
-		logs.WithContext(ctx).Info(string(body)[0:1000])
+	logs.WithContext(ctx).Info(fmt.Sprintf("request.Header: %+v", request.Header))
+	logs.WithContext(ctx).Info(fmt.Sprintf("request.URL: %+v", request.URL))
+
+	if request != nil {
+		if request.Body != nil {
+			body, err := io.ReadAll(request.Body)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+
+			logs.WithContext(ctx).Info(fmt.Sprint(request.URL))
+			cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
+			if cl > 1000 && len(string(body)) > 1000 {
+				logs.WithContext(ctx).Info(string(body)[0:1000])
+			} else {
+				logs.WithContext(ctx).Info(string(body))
+			}
+			request.Body = io.NopCloser(bytes.NewReader(body))
+		} else {
+			logs.WithContext(ctx).Info("request body is nil")
+		}
 	} else {
-		logs.WithContext(ctx).Info(string(body))
+		logs.WithContext(ctx).Info("request is nil")
 	}
-	request.Body = io.NopCloser(bytes.NewReader(body))
 }
 
 func CallParallelHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}, rc chan *http.Response) (err error) {
@@ -198,13 +213,95 @@ func ExecuteParallelHttp(ctx context.Context, req *http.Request, rc chan *http.R
 
 func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("ExecuteHttp - Start")
-	//req = req.WithContext(ctx)
+	//logs.WithContext(ctx).Info(fmt.Sprintf("ctx: %+v", ctx))
+
+	req = req.WithContext(ctx)
+
+	/*
+			host := req.URL.Host
+			ips, err := net.LookupIP(host)
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("DNS lookup failed: %v", err))
+			} else {
+				logs.WithContext(ctx).Info(fmt.Sprintf("DNS resolution for %s: %v", host, ips))
+			}
+
+			 cmd := exec.Command("traceroute", "-n", host)
+		    output, err := cmd.CombinedOutput()
+		    if err != nil {
+		        logs.WithContext(ctx).Error(fmt.Sprintf("Traceroute failed: %v", err))
+		    } else {
+		        logs.WithContext(ctx).Info(fmt.Sprintf("Network path to %s:\n%s", host, string(output)))
+		    }
+
+			transport := &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					start := time.Now()
+					logs.WithContext(ctx).Info(fmt.Sprintf("Attempting connection to %s at %v", addr, start))
+
+					dialer := &net.Dialer{
+						Timeout:   30 * time.Second,
+						KeepAlive: 30 * time.Second,
+					}
+
+					conn, err := dialer.DialContext(ctx, network, addr)
+					if err != nil {
+						logs.WithContext(ctx).Error(fmt.Sprintf("Connection failed to %s after %v: %v",
+							addr, time.Since(start), err))
+						return nil, err
+					}
+
+					logs.WithContext(ctx).Info(fmt.Sprintf("Connection established to %s in %v",
+						addr, time.Since(start)))
+
+					// Log connection details
+					if tcpConn, ok := conn.(*net.TCPConn); ok {
+						localAddr := tcpConn.LocalAddr().String()
+						remoteAddr := tcpConn.RemoteAddr().String()
+						logs.WithContext(ctx).Info(fmt.Sprintf("TCP Connection: Local=%s, Remote=%s",
+							localAddr, remoteAddr))
+					}
+
+					return conn, nil
+				},
+			} */
+	/* tr := &http.Transport{
+		TLSNextProto: make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
+	} */
+	PrintRequestBody(ctx, req, "printing request just before utils.ExecuteHttp")
+	//Transport: otelhttp.NewTransport(http.DefaultTransport),
+	/* client := &http.Client{
+		Transport: http.DefaultTransport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err = client.Do(req) */
+
 	//resp, err = httpClient.Do(req)
 	//for _, c := range req.Cookies() {
 	//	logs.WithContext(ctx).Info(c.String())
 	//}
 
 	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
+
+	//resp, err = otelhttp.NewTransport(http.DefaultTransport).RoundTrip(req)
+
+	//resp, err = http.DefaultTransport.RoundTrip(req)
+	/* client := &http.Client{
+		Transport: HTTPClientTransporter(http.DefaultTransport),
+		//Transport: transport,
+		Timeout:   300 * time.Second, // Add timeout
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // Keep your existing redirect policy
+		},
+	} */
+
+	//resp, err = client.Do(req)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+	}
+	PrintResponseBody(ctx, resp, "printing response immediately after utils.ExecuteHttp")
 
 	allowedOriginsI := ctx.Value("allowed_origins")
 	originI := ctx.Value("origin")
@@ -330,8 +427,8 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 	defer resp.Body.Close()
 	//todo - check if below change from reqContentType to header.get breaks anything
 	//todo - merge conflict - main had below first if commented
-	contentType := strings.Split(headers.Get("Content-type"), ";")[0]
-	respcontentType := strings.Split(resp.Header.Get("Content-type"), ";")[0]
+	contentType := strings.Split(headers.Get("Content-Type"), ";")[0]
+	respcontentType := strings.Split(resp.Header.Get("Content-Type"), ";")[0]
 	if resp.ContentLength > 0 || contentType == encodedForm || contentType == applicationJson {
 		if respcontentType == applicationJson {
 			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
@@ -458,7 +555,10 @@ func CloneInterface(ctx context.Context, i interface{}) (iClone interface{}, err
 
 func ExecuteDbFetch(ctx context.Context, db *sqlx.DB, query models.Queries) (output []map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ExecuteDbFetch - Start")
-
+	if db == nil {
+		logs.WithContext(ctx).Error("db connection is nil")
+		return nil, errors.New("db connection is nil")
+	}
 	rows, err := db.Queryx(query.Query, query.Vals...)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -507,6 +607,10 @@ func ExecuteDbFetch(ctx context.Context, db *sqlx.DB, query models.Queries) (out
 
 func ExecuteDbSave(ctx context.Context, db *sqlx.DB, queries []*models.Queries) (output [][]map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ExecuteDbSave - Start")
+	if db == nil {
+		logs.WithContext(ctx).Error("db connection is nil")
+		return nil, errors.New("db connection is nil")
+	}
 	tx := db.MustBegin()
 	for _, q := range queries {
 		stmt, err := tx.PreparexContext(ctx, q.Query)
@@ -601,14 +705,14 @@ func GetNestedFieldValue(ctx context.Context, data interface{}, fieldPath string
 	return val.Interface(), nil
 }
 
-func GetJsonSchemaObject(ctx context.Context, jsonSchema string) (map[string]interface{}, error) {
+func GetJsonSchemaObject(ctx context.Context, jsonSchema string) (eru_models.JSONSchema, error) {
 	logs.WithContext(ctx).Debug("GetJsonSchemaObject - Start")
 	logs.WithContext(ctx).Info(fmt.Sprint(jsonSchema))
-	jsonSchemaMap := make(map[string]interface{})
+	jsonSchemaMap := eru_models.JSONSchema{}
 	err := json.Unmarshal([]byte(jsonSchema), &jsonSchemaMap)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return eru_models.JSONSchema{}, err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint(jsonSchemaMap))
 	return jsonSchemaMap, nil
@@ -634,4 +738,135 @@ func ReplaceVariables(ctx context.Context, str string, vars map[string]interface
 		resStr = strings.Replace(resStr, "$"+k, fmt.Sprint(v), -1)
 	}
 	return
+}
+
+func UnqotePlanText(ctx context.Context, response *http.Response) (responseNew *http.Response, err error) {
+	logs.WithContext(ctx).Debug("UnqotePlanText - Start")
+	if response != nil {
+		if response.Header.Get("Content-Type") == "text/plain" {
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			bodyStr := string(body)
+			bodyStr, err = strconv.Unquote(bodyStr)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			response.ContentLength = int64(len(bodyStr))
+			response.Header.Set("Content-Length", fmt.Sprint(len(bodyStr)))
+			response.Body = io.NopCloser(strings.NewReader(bodyStr))
+		}
+	} else {
+		logs.WithContext(ctx).Info("response is nil")
+	}
+	return response, nil
+}
+
+func GenerateJSONSchema(ctx context.Context, data map[string]interface{}) eru_models.JSONSchema {
+	logs.WithContext(ctx).Debug("GenerateJSONSchema - Start")
+	schema := eru_models.JSONSchema{
+		Type:       "object",
+		Properties: make(map[string]eru_models.JSONSchema),
+	}
+
+	for key, value := range data {
+		fieldSchema := eru_models.JSONSchema{}
+
+		switch v := value.(type) {
+		case map[string]interface{}:
+			// Recursively handle nested objects
+			fieldSchema = GenerateJSONSchema(ctx, v)
+		case []interface{}:
+			// Handle arrays
+			fieldSchema.Type = "array"
+			if len(v) > 0 {
+				// Check first element to determine items schema
+				switch firstElem := v[0].(type) {
+				case map[string]interface{}:
+					// If array contains objects, recursively generate schema
+					itemsSchema := GenerateJSONSchema(ctx, firstElem)
+					fieldSchema.Items = &itemsSchema
+				default:
+					// For primitive types in array
+					itemsSchema := eru_models.JSONSchema{
+						Type: getTypeFromValue(firstElem),
+					}
+					fieldSchema.Items = &itemsSchema
+				}
+			} else {
+				// Empty array - use string as default type
+				itemsSchema := eru_models.JSONSchema{
+					Type: "string",
+				}
+				fieldSchema.Items = &itemsSchema
+			}
+		default:
+			// Handle primitive types
+			fieldSchema.Type = getTypeFromValue(v)
+		}
+
+		schema.Properties[key] = fieldSchema
+	}
+
+	return schema
+}
+
+func getTypeFromValue(value interface{}) string {
+	switch value.(type) {
+	case string:
+		return "string"
+	case float64:
+		return "number"
+	case int, int32, int64:
+		return "integer"
+	case bool:
+		return "boolean"
+	case nil:
+		return "null"
+	default:
+		return "string" // Default to string for unknown types
+	}
+}
+
+// Helper functions for safe type assertions
+func GetStringField(m map[string]interface{}, key string) string {
+	if val, exists := m[key]; exists {
+		if str, ok := val.(string); ok {
+			return str
+		}
+		_ = logs.Err(context.Background(), fmt.Errorf("GetStringField - %s is not a string ", key), "")
+		return ""
+	}
+	_ = logs.Err(context.Background(), fmt.Errorf("GetStringField - %s not found ", key), "")
+	return ""
+}
+
+func GetMapField(m map[string]interface{}, key string) map[string]interface{} {
+	if val, exists := m[key]; exists {
+		if val == nil {
+			return make(map[string]interface{})
+		}
+		// Handle pointer to map
+		if ptr, ok := val.(*map[string]interface{}); ok {
+			if ptr == nil {
+				return make(map[string]interface{})
+			}
+			return *ptr
+		}
+		// Handle direct map
+		if mapVal, ok := val.(map[string]interface{}); ok {
+			return mapVal
+		}
+		_ = logs.Err(context.Background(), fmt.Errorf("GetMapField - %s is not a map %+v", key, val), "")
+		return make(map[string]interface{})
+	}
+	_ = logs.Err(context.Background(), fmt.Errorf("GetMapField - %s not found ", key), "")
+	return make(map[string]interface{})
+}
+
+func GetCronStr(ctx context.Context, nextRun time.Time) string {
+	cronStr := fmt.Sprintf("%d %d %d %d *", nextRun.Minute(), nextRun.Hour(), nextRun.Day(), nextRun.Month())
+	logs.WithContext(ctx).Info(fmt.Sprint("Scheduling job to run at: ", nextRun.Format(time.RFC3339)))
+	return cronStr
 }

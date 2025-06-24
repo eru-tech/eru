@@ -360,3 +360,6 @@ func (awsSmStore *AwsSmStore) GetSmValues(ctx context.Context, secretName string
 	}
 	return
 }
+func (awsSmStore *AwsSmStore) GetSecretName() string {
+	return awsSmStore.SmName
+}

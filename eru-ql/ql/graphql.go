@@ -125,8 +125,12 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 			if singleTxn && i == len(op.SelectionSet.Selections)-1 {
 				closeTxn = true
 			}
-			//TODO - to handle if no directive/dbalias is received - conn is not getting closed as there is panic error in below line
-			dbAlias := v.(*ast.Field).Directives[0].Name.Value
+			dbAlias := ""
+			if len(v.(*ast.Field).Directives) > 0 {
+				dbAlias = v.(*ast.Field).Directives[0].Name.Value
+			} else {
+				logs.WithContext(ctx).Info(fmt.Sprint("No dbAlias found for ", v.(*ast.Field).Name.Value))
+			}
 			datasource := datasources[dbAlias]
 			if datasource == nil {
 				return nil, nil, errors.New(fmt.Sprint("dbAlias ", dbAlias, " not found"))
@@ -208,13 +212,13 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					if gqd.OutputType == eru_writes.OutputTypeCsv || gqd.OutputType == eru_writes.OutputTypeExcel {
 						result, err = graphQLs[i].ExecuteQueryForCsv(ctx, qrm.SQLQuery, datasource, mainAliasNames[i])
 						if err != nil {
-							logs.WithContext(ctx).Error(err.Error())
+							err = logs.Err(ctx, err, "")
 						}
 					} else {
 						result, err = graphQLs[i].ExecuteQuery(ctx, datasource, qrm)
 					}
 					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
+						err = logs.Err(ctx, err, "")
 						errMsg = err.Error()
 						errFound = true
 					}
@@ -244,8 +248,8 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 						}
 						sqlObj.OverwriteDoc[sqlObj.MainTableName], err = gqd.setOverwriteDoc(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, sqlObj.QueryType, gqd.FinalVariables[docKeyword])
 						if err != nil {
+							err = logs.Err(ctx, err, "")
 							errMsg = err.Error()
-							logs.WithContext(ctx).Error(err.Error())
 							errFound = true
 						}
 					default:
@@ -268,7 +272,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					//todo consider passing token from finalvariables
 					if err != nil {
 						errFound = true
-						logs.WithContext(ctx).Error(err.Error())
+						err = logs.Err(ctx, err, "")
 						errMsg = err.Error()
 					}
 				}
@@ -301,14 +305,14 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					results, err = graphQLs[i].ExecuteMutationQuery(ctx, datasource, graphQLs[i], mrm)
 					if err != nil {
 						errFound = true
-						logs.WithContext(ctx).Error(err.Error())
+						err = logs.Err(ctx, err, "")
 						errMsg = err.Error()
 						// no need to return here - error is returned as part of result - if asked in the query.
 					}
 				} else if errFound {
 					rollBackErr := graphQLs[i].RollbackQuery(ctx)
 					if rollBackErr != nil {
-						logs.WithContext(ctx).Error(rollBackErr.Error())
+						rollBackErr = logs.Err(ctx, rollBackErr, "")
 						errMsg = rollBackErr.Error()
 					}
 					breakForLoop = true
@@ -698,8 +702,8 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 				if len(tableNameParts) > 1 {
 					ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
 				}
-				if mainTableName != ruleTableName {
-					if !(v.Operator == "ex" || v.Operator == "nex") {
+				if mainTableName != ruleTableName && !strings.HasPrefix(ruleTableName, "token") {
+					if !(v.Operator == "ex_in" || v.Operator == "nex_in" || v.Operator == "ex_jin" || v.Operator == "nex_jin" || v.Operator == "ex_pj" || v.Operator == "nex_pj") {
 						ruleJoinTables = append(ruleJoinTables, ruleTableName)
 					} else {
 						ruleJoinChildTables = append(ruleJoinChildTables, ruleTableName)
@@ -717,8 +721,8 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 				if len(tableNameParts) > 1 {
 					ruleTableName = strings.Join(tableNameParts[:len(tableNameParts)-1], ".")
 				}
-				if mainTableName != ruleTableName {
-					if !(v.Operator == "ex" || v.Operator == "nex") {
+				if mainTableName != ruleTableName && !strings.HasPrefix(ruleTableName, "token") {
+					if !(v.Operator == "ex_in" || v.Operator == "nex_in" || v.Operator == "ex_jin" || v.Operator == "nex_jin" || v.Operator == "ex_pj" || v.Operator == "nex_pj") {
 						ruleJoinTables = append(ruleJoinTables, ruleTableName)
 					} else {
 						ruleJoinChildTables = append(ruleJoinChildTables, ruleTableName)
@@ -747,8 +751,8 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 			oc, _ := processWhereClause(ctx, onClause, "", mainTableName, true, false)
 			ctjObjMap[ctj] = oc
 		}
-
-		ruleOutput, templates, err = processSecurityRule(ctx, sr.Select, vars, mainTableName, ctjObjMap)
+		var ptables []string
+		ruleOutput, templates, ptables, err = processSecurityRule(ctx, sr.Select, vars, mainTableName, ctjObjMap)
 
 		for _, t := range templates {
 			ro, rj, rerr := getTableSecurityRule(ctx, projectId, dbAlias, t, s, op, vars, tableName)
@@ -759,8 +763,31 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 			ruleJoinTables = append(ruleJoinTables, rj...)
 			ruleOutput = strings.Replace(ruleOutput, fmt.Sprint("$TEMPLATE_", t), ro, -1)
 		}
+
+		for _, p := range ptables {
+			ro, rjt, roerr := getTableSecurityRule(ctx, projectId, dbAlias, p, s, op, vars, p)
+			q := fmt.Sprint("select  ", p, ".* from ", p)
+			if roerr == nil && ro != "" {
+				for _, srJoin := range rjt {
+					tj, e := ds.GetTableJoins(ctx, p, srJoin, make(map[string]string))
+					if e != nil {
+						logs.WithContext(ctx).Error(e.Error())
+						return
+					}
+					onClause, er := processMapVariable(ctx, tj.GetOnClause(ctx), vars)
+					if er != nil {
+						logs.WithContext(ctx).Error(er.Error())
+						return
+					}
+					oc, _ := processWhereClause(ctx, onClause, "", p, true, false)
+					q = fmt.Sprint(q, " left join ", srJoin, " on ", oc)
+				}
+				q = fmt.Sprint(q, " where ", ro)
+			}
+			ruleOutput = strings.Replace(ruleOutput, fmt.Sprint("$", p, "$"), fmt.Sprint("( ", q, " ) pj "), -1)
+		}
 	} else if op == "mutation" {
-		ruleOutput, templates, err = processSecurityRule(ctx, sr.Insert, vars, mainTableName, nil) //todo to change it as per query type
+		ruleOutput, templates, _, err = processSecurityRule(ctx, sr.Insert, vars, mainTableName, nil) //todo to change it as per query type
 		_ = templates
 	} else {
 		err = errors.New(fmt.Sprint("Invalid Query Type : ", op))

@@ -479,41 +479,41 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 						} else {
 							op := ""
 							switch v {
-							case "$btw":
+							case "$btw", "_btw":
 								op = " between "
-							case "$gte":
+							case "$gte", "_gte":
 								op = " >= "
-							case "$lte":
+							case "$lte", "_lte":
 								op = " <= "
-							case "$gt":
+							case "$gt", "_gt":
 								op = " > "
-							case "$lt":
+							case "$lt", "_lt":
 								op = " < "
-							case "$eq":
+							case "$eq", "_eq":
 								op = " = "
-							case "$ne":
+							case "$ne", "_ne":
 								op = " <> "
-							case "$in":
+							case "$in", "_in":
 								op = " in "
-							case "$nin":
+							case "$nin", "_nin":
 								op = " not in "
-							case "$inc":
+							case "$inc", "_inc":
 								op = " in "
-							case "$ninc":
+							case "$ninc", "_ninc":
 								op = " not in "
-							case "$jin":
+							case "$jin", "_jin":
 								op = module_model.MAKE_JSON_ARRAY_FN
-							case "$jnin":
+							case "$jnin", "_jnin":
 								op = module_model.MAKE_JSON_ARRAY_FN
-							case "$like":
+							case "$like", "_like":
 								op = " like "
-							case "$nlike":
+							case "$nlike", "_nlike":
 								op = " not like "
 							default:
 								op = ""
 							}
 							switch v {
-							case "$gte", "$lte", "$gt", "$lt", "$eq", "$ne":
+							case "$gte", "$lte", "$gt", "$lt", "$eq", "$ne", "_gte", "_lte", "_gt", "_lt", "_eq", "_ne":
 								valType := reflect.ValueOf(newVal).Kind()
 								logs.WithContext(ctx).Info(fmt.Sprint(valType.String()))
 								switch valType {
@@ -535,9 +535,9 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 									valSuffix = ""
 								}
 								tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, fmt.Sprint(newVal), valSuffix))
-							case "$like", "$nlike":
+							case "$like", "$nlike", "_like", "_nlike":
 								tempArray = append(tempArray, fmt.Sprint(parentKey, op, valPrefix, "%", reflect.ValueOf(newVal), "%", valSuffix))
-							case "$btw":
+							case "$btw", "_btw":
 								btwClause, ok := reflect.ValueOf(newVal).Interface().(map[string]interface{})
 								if !ok {
 									logs.WithContext(ctx).Warn("between clause is not a map")
@@ -553,20 +553,43 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 								}
 								btwClauseStr := fmt.Sprint(preFix, btwClause["from"], preFix, " and ", preFix, btwClause["to"], preFix)
 								tempArray = append(tempArray, fmt.Sprint(parentKey, op, btwClauseStr))
-							case "$null":
+							case "$null", "_null":
 								nullValue := fmt.Sprint(reflect.ValueOf(newVal))
 								if nullValue == "true" {
 									tempArray = append(tempArray, fmt.Sprint(parentKey, " IS NULL "))
 								} else {
 									tempArray = append(tempArray, fmt.Sprint(parentKey, " IS NOT NULL "))
 								}
-							case "$inc", "$ninc", "$in", "$nin", "$jin", "$jnin": //TODO to pass json variable aaray and check if the replaced array is passed as single string or string of values to sql
+							case "$inc", "$ninc", "$in", "$nin", "$jin", "$jnin", "_inc", "_ninc", "_in", "_nin", "_jin", "_jnin": //TODO to pass json variable aaray and check if the replaced array is passed as single string or string of values to sql
 								switch reflect.TypeOf(newVal).Kind() {
 								case reflect.String:
 									s := reflect.ValueOf(newVal)
-									if strings.HasPrefix(s.String(), "$") {
+									//TODO - do we need this then implement variable replacement for $jin and $jnin
+									/* if strings.HasPrefix(s.String(), "$") {
 
+									} */
+									op = module_model.MAKE_JSON_ARRAY_FN_STR
+									valPrefix = "'"
+									valSuffix = "'"
+									if strings.HasPrefix(s.String(), "FIELD_") {
+										valPrefix = ""
+										valSuffix = ""
 									}
+									str := ""
+									//TODO to make this from db specific syntax
+									if v == "$jnin" || v == "$jin" || v == "_jnin" || v == "_jin" {
+										parentKey = strings.Replace(parentKey, "->>", "->", -1)
+										str = fmt.Sprint(parentKey, op, valPrefix, strings.Replace(s.String(), "FIELD_", "", -1), valSuffix)
+									} else {
+										var temp []string
+										temp = append(temp, s.String())
+										str = fmt.Sprint(parentKey, op, "(", valPrefix, strings.Join(temp, " , "), valSuffix, ")")
+									}
+
+									if v == "$jnin" || v == "_jnin" {
+										str = fmt.Sprint(" not (", str, ") ")
+									}
+									tempArray = append(tempArray, str)
 								case reflect.Slice:
 									s := reflect.ValueOf(newVal)
 									temp := make([]string, s.Len())
@@ -580,14 +603,14 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 									}
 									str := ""
 									//TODO to make this from db specific syntax
-									if v == "$jnin" || v == "$jin" {
+									if v == "$jnin" || v == "$jin" || v == "_jnin" || v == "_jin" {
 										parentKey = strings.Replace(parentKey, "->>", "->", -1)
 										str = fmt.Sprint(parentKey, op, "[", strings.Join(temp, " , "), "]")
 									} else {
 										str = fmt.Sprint(parentKey, op, "(", strings.Join(temp, " , "), ")")
 									}
 
-									if v == "$jnin" {
+									if v == "$jnin" || v == "_jnin" {
 										str = fmt.Sprint(" not (", str, ") ")
 									}
 									tempArray = append(tempArray, str)
@@ -840,10 +863,18 @@ func (sqlObj *SQLObjectQ) MakeQuery(ctx context.Context, sqlMaker ds.SqlMakerI, 
 	sqlObj.DBQuery = fmt.Sprint(withClause, "select ", strDistinct, strColums, " from ", fromTable, " ", strJoinClause, " ", strWhereClause, " ", strGroupClause, strSortClause)
 
 	sqlObj.DBQuery = sqlMaker.AddLimitSkipClause(ctx, sqlObj.DBQuery, sqlObj.Limit, sqlObj.Skip, 1000)
+
+	makeJsonArrayFnStrKeyWord, err := sqlMaker.GetMakeJsonArrayFnStr()
+	if err != nil {
+		makeJsonArrayFnStrKeyWord = ""
+	}
+	sqlObj.DBQuery = strings.Replace(sqlObj.DBQuery, module_model.MAKE_JSON_ARRAY_FN_STR, makeJsonArrayFnStrKeyWord, -1)
+
 	makeJsonArrayFnKeyWord, err := sqlMaker.GetMakeJsonArrayFn()
 	if err != nil {
 		makeJsonArrayFnKeyWord = ""
 	}
 	sqlObj.DBQuery = strings.Replace(sqlObj.DBQuery, module_model.MAKE_JSON_ARRAY_FN, makeJsonArrayFnKeyWord, -1)
+
 	return err
 }

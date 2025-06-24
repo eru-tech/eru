@@ -119,31 +119,52 @@ func (azureStorage *AzureStorage) Init(ctx context.Context) (err error) {
 }
 
 func (azureStorage *AzureStorage) UploadFileB64(ctx context.Context, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
-	logs.WithContext(ctx).Info("UploadFileB64 - Start")
+
+	logs.WithContext(ctx).Debug("UploadFileB64 - Start")
+
+
+
 	if _, err := azureStorage.BucketExists(ctx); err != nil {
 		logs.WithContext(ctx).Info("Bucket Not Exist")
 		return "Bucket Not Exist", err
 	}
+
 	containerName := folderPath
 	enc := ""
 	finalFileName := ""
 	docId = ksuid.New().String()
+
 	bucketName := azureStorage.BucketName
-	BucketUrl := fmt.Sprintf("https://%s.blob.core.windows.net/", bucketName)
-	// create storage client
+
+	accountURL := fmt.Sprintf("https://%s.blob.core.windows.net/", bucketName)
+
+	// Create credential using the service principal
 	cred, err := azidentity.NewClientSecretCredential(azureStorage.TenantId, azureStorage.ClientId, azureStorage.ClientSecret, nil)
 	if err != nil {
-		logs.WithContext(ctx).Info("Failed to get credential")
-		return
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to create credential: %v", err))
+		return docId, err
 	}
-	serviceClient, err := azblob.NewClient(BucketUrl, cred, nil)
-	if err != nil {
-		logs.WithContext(ctx).Info("Failed to get serviceClient")
 
+	// Create blob service client
+	serviceClient, err := azblob.NewClient(accountURL, cred, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to create blob service client: %v", err))
+		return docId, err
 	}
+
+
+
 	containerClient := serviceClient.ServiceClient().NewContainerClient(containerName)
 	// check if container exists
 	isContainerExist, err := azureStorage.ContainerExists(ctx, *containerClient)
+
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to check container existence: %v", err))
+		return docId, err
+	}
+
+
+
 	if isContainerExist {
 		if azureStorage.EncryptFiles {
 			enc = ".enc"
@@ -151,7 +172,11 @@ func (azureStorage *AzureStorage) UploadFileB64(ctx context.Context, file []byte
 			finalFileName = fmt.Sprintf("%s_%s%s", docId, fileName, enc)
 			file, fileKey, err = azureStorage.encrypt(ctx, file, keyName)
 			if err != nil {
-				logs.WithContext(ctx).Info(fmt.Sprintf("Failed To encrypt file %s, error: %s", fileName, err.Error()))
+
+				logs.WithContext(ctx).Error(fmt.Sprintf("Failed to encrypt file: %v", err))
+
+
+
 				return docId, err
 			}
 			file = append(file, []byte("___eru___")...)
@@ -162,18 +187,28 @@ func (azureStorage *AzureStorage) UploadFileB64(ctx context.Context, file []byte
 
 		blobClient := containerClient.NewBlockBlobClient(finalFileName)
 		reader := bytes.NewReader(file)
+
 		_, err = blobClient.UploadStream(ctx, reader, nil)
 		if err != nil {
-			logs.WithContext(ctx).Info(fmt.Sprintf("Failed To Upload File on %s , error: %s", containerName, err.Error()))
-			return
-		} else {
-			logs.WithContext(ctx).Info(fmt.Sprintf("File Uploaded Successfully on %s , status: %s", containerName, "success"))
+
+			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to upload file: %v", err))
+			return docId, err
+
+		
 		}
-		return
+		logs.WithContext(ctx).Info("File uploaded successfully")
+		return docId, nil
 	} else {
-		//Create new container and upload file
-		logs.WithContext(ctx).Info("Container is not present, Container creation started...")
-		containerClient, createContainerResponse, _ := azureStorage.CreateContainer(ctx, containerName, *containerClient)
+
+		logs.WithContext(ctx).Debug("Container does not exist, creating...")
+		containerClient, createContainerResponse, err := azureStorage.CreateContainer(ctx, containerName, *containerClient)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to create container: %v", err))
+			return docId, err
+		}
+
+
+	
 		if createContainerResponse.Date != nil {
 			if azureStorage.EncryptFiles {
 				enc = ".enc"
@@ -181,7 +216,10 @@ func (azureStorage *AzureStorage) UploadFileB64(ctx context.Context, file []byte
 				finalFileName = fmt.Sprintf("%s_%s%s", docId, fileName, enc)
 				file, fileKey, err = azureStorage.encrypt(ctx, file, keyName)
 				if err != nil {
-					logs.WithContext(ctx).Info(fmt.Sprintf("Failed To encrypt file %s, error: %s", fileName, err.Error()))
+
+					logs.WithContext(ctx).Error(fmt.Sprintf("Failed to encrypt file: %v", err))
+
+
 					return docId, err
 				}
 				file = append(file, []byte("___eru___")...)
@@ -189,20 +227,23 @@ func (azureStorage *AzureStorage) UploadFileB64(ctx context.Context, file []byte
 			} else {
 				finalFileName = fmt.Sprintf("%s_%s", docId, fileName)
 			}
+
 			blobClient := containerClient.NewBlockBlobClient(finalFileName)
 			reader := bytes.NewReader(file)
+
 			_, err = blobClient.UploadStream(ctx, reader, nil)
 			if err != nil {
-				logs.WithContext(ctx).Info(fmt.Sprintf("Failed To Upload File on %s , error: %s", containerName, err.Error()))
-				return docId, err
-			} else {
-				logs.WithContext(ctx).Info(fmt.Sprintf("File Uploaded Successfully on %s , status: %s", containerName, "success"))
-			}
-			return docId, err
-		}
 
+				logs.WithContext(ctx).Error(fmt.Sprintf("Failed to upload file: %v", err))
+				return docId, err
+
+
+			}
+			logs.WithContext(ctx).Info("File uploaded successfully")
+			return docId, nil
+		}
+		return docId, fmt.Errorf("failed to create container")
 	}
-	return docId, err
 }
 
 func (azureStorage *AzureStorage) UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {

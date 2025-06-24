@@ -35,23 +35,26 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.28.6 // indirect
 	github.com/aws/smithy-go v1.20.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
+	github.com/confluentinc/confluent-kafka-go/v2 v2.3.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/eru-tech/eru/eru-cache v0.0.0-00010101000000-000000000000 // indirect
+	github.com/eru-tech/eru/eru-db v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-events v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000 // indirect
+	github.com/eru-tech/eru/eru-scheduler v0.0.0-00010101000000-000000000000 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/goccy/go-json v0.9.6 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.1 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/uuid v1.3.0 // indirect
+	github.com/google/uuid v1.3.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0 // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
-	github.com/jmoiron/sqlx v1.3.4 // indirect
+	github.com/jmoiron/sqlx v1.3.5 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.0 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
@@ -91,19 +94,23 @@ require (
 	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/sys v0.17.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
+	google.golang.org/genproto v0.0.0-20230331144136-dcfb400f0633 // indirect
 	google.golang.org/grpc v1.55.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
+
 )
 
 replace (
 	github.com/eru-tech/eru/eru-cache => ../eru-cache
 	github.com/eru-tech/eru/eru-crypto => ../eru-crypto
+	github.com/eru-tech/eru/eru-db => ../eru-db
 	github.com/eru-tech/eru/eru-events => ../eru-events
+	github.com/eru-tech/eru/eru-events/events => ../eru-events/events
 	github.com/eru-tech/eru/eru-logs => ../eru-logs
 	github.com/eru-tech/eru/eru-models => ../eru-models
 	github.com/eru-tech/eru/eru-read-write => ../eru-read-write
 	github.com/eru-tech/eru/eru-repos => ../eru-repos
+	github.com/eru-tech/eru/eru-scheduler => ../eru-scheduler
 	github.com/eru-tech/eru/eru-secret-manager => ../eru-secret-manager
 	github.com/eru-tech/eru/eru-server => ../eru-server
 	github.com/eru-tech/eru/eru-store => ../eru-store

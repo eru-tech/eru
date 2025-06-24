@@ -1,11 +1,12 @@
 package module_server
 
 import (
+	"net/http"
+
 	module_handlers "github.com/eru-tech/eru/eru-functions/module_server/handlers"
 	"github.com/eru-tech/eru/eru-functions/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
-	"net/http"
 )
 
 func SetServiceName() {
@@ -23,7 +24,16 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/save").HandlerFunc(module_handlers.FuncSaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/func/validate").HandlerFunc(module_handlers.FuncValidateHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/func/remove/{funcname}").HandlerFunc(module_handlers.FuncRemoveHandler(sh.Store))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run/{funcstepname}/{endfuncstepname}").HandlerFunc(module_handlers.SFuncRunHandler(sh.Store))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run/{funcstepname}").HandlerFunc(module_handlers.SFuncRunHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run").HandlerFunc(module_handlers.FuncRunHandler(sh.Store))
+
+	//storeRouter.Methods(http.MethodGet).Path("/{project}/func/{funcname}/request/list").HandlerFunc(module_handlers.FuncRequestListHandler(sh.Store))
+	//storeRouter.Methods(http.MethodPost).Path("/{project}/func/request/save").HandlerFunc(module_handlers.FuncRequestSaveHandler(sh.Store))
+	//storeRouter.Methods(http.MethodDelete).Path("/{project}/func/request/remove/{requestid}").HandlerFunc(module_handlers.FuncRequestRemoveHandler(sh.Store))
+	//storeRouter.Methods(http.MethodGet).Path("/{project}/{tenant}/func/{funcname}/request/list").HandlerFunc(module_handlers.FuncRequestListHandler(sh.Store))
+	//storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/func/request/save").HandlerFunc(module_handlers.FuncRequestSaveHandler(sh.Store))
+	//storeRouter.Methods(http.MethodDelete).Path("/{project}/{tenant}/func/request/remove/{requestid}").HandlerFunc(module_handlers.FuncRequestRemoveHandler(sh.Store))
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/wf/save").HandlerFunc(module_handlers.WfSaveHandler(sh.Store))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/wf/remove/{wfname}").HandlerFunc(module_handlers.WfRemoveHandler(sh.Store))
@@ -39,6 +49,11 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/template/execute").HandlerFunc(module_handlers.ExecuteTemplateHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/myquery/list").HandlerFunc(module_handlers.ProjectMyQueryListNamesHandler(sh.Store))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/func/list").HandlerFunc(module_handlers.ProjectFunctionListHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/route/list").HandlerFunc(module_handlers.ProjectRouteListHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/{tenant}/agent/list").HandlerFunc(module_handlers.ProjectAgentListNamesHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/agent/list").HandlerFunc(module_handlers.ProjectAgentListNamesHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/{tenant}/tool/list").HandlerFunc(module_handlers.ProjectToolListNamesHandler(sh.Store))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/tool/list").HandlerFunc(module_handlers.ProjectToolListNamesHandler(sh.Store))
 	// Adding routing handler to track all incoming requests
 	serverRouter.PathPrefix("/{project}/route/{routename}").HandlerFunc(module_handlers.RouteHandler(sh.Store))
 	//serverRouter.PathPrefix("/public/{project}/route/{routename}").HandlerFunc(module_handlers.RouteHandler(sh.Store))
@@ -47,6 +62,8 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	serverRouter.PathPrefix("/{project}/func/event/{eventname}").HandlerFunc(module_handlers.AsyncFuncHandler(sh.Store))
 	serverRouter.PathPrefix("/{project}/sfunc/{funcname}/{funcstepname}/{endfuncstepname}").HandlerFunc(module_handlers.SFuncHandler(sh.Store))
 	serverRouter.PathPrefix("/{project}/sfunc/{funcname}/{funcstepname}").HandlerFunc(module_handlers.SFuncHandler(sh.Store))
+	serverRouter.PathPrefix("/{project}/sfunc/{funcname}").HandlerFunc(module_handlers.SFuncHandler(sh.Store))
+	serverRouter.PathPrefix("/{project}/func/{funcname}/{eventname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
 	serverRouter.PathPrefix("/{project}/func/{funcname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
 	serverRouter.PathPrefix("/x/{project}/func/{funcname}").HandlerFunc(module_handlers.FuncHandler(sh.Store))
 	serverRouter.PathPrefix("/{project}/script").HandlerFunc(module_handlers.ScriptHandler(sh.Store))

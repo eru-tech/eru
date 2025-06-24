@@ -36,7 +36,7 @@ func main() {
 		}
 		defer func() {
 			if err = tp.Shutdown(context.Background()); err != nil {
-				logs.Logger.Error(fmt.Sprint("Error shutting down tracer provider: %v", err.Error()))
+				logs.Logger.Error(fmt.Sprintf("Error shutting down tracer provider: %v", err.Error()))
 			}
 		}()
 	}

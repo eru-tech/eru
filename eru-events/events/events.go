@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/jmoiron/sqlx"
 )
 
 const (
@@ -22,11 +25,14 @@ type EventI interface {
 	Poll(ctx context.Context) (eventMsgs []EventMsg, err error)
 	DeleteMessage(ctx context.Context, msgIdentifier string) (err error)
 	Clone(ctx context.Context) (cloneEvent EventI, err error)
+	SetCon(con *sqlx.DB, dbType string)
+	InitiatPollingInterval(ctx context.Context)
 }
 
 type Event struct {
-	EventType string `json:"event_type" eru:"required"`
-	EventName string `json:"event_name" eru:"required"`
+	EventType       string `json:"event_type" eru:"required"`
+	EventName       string `json:"event_name" eru:"required"`
+	PollingInterval int32  `json:"polling_interval" eru:"required"`
 }
 type EventMsg struct {
 	Msg          string `json:"msg" `
@@ -39,6 +45,8 @@ func (event *Event) GetAttribute(attributeName string) (attributeValue interface
 		return event.EventName, nil
 	case "event_type":
 		return event.EventType, nil
+	case "polling_interval":
+		return event.PollingInterval, nil
 	default:
 		return nil, errors.New("attribute not found")
 	}
@@ -50,6 +58,10 @@ func GetEvent(eventType string) EventI {
 		return new(AWS_SQS_Event)
 	case "AWS_SNS":
 		return new(AWS_SNS_Event)
+	case "DB":
+		return new(DB_Event)
+	case "KAFKA":
+		return new(Kafka_Event)
 	default:
 		return nil
 	}
@@ -98,4 +110,12 @@ func (event *Event) Clone(ctx context.Context) (cloneEvent EventI, err error) {
 	err = errors.New("Clone method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
+}
+
+func (event *Event) SetCon(con *sqlx.DB, dbType string) {
+	//do nothing
+}
+
+func (event *Event) InitiatPollingInterval(ctx context.Context) {
+	time.Sleep(time.Duration(event.PollingInterval) * time.Second)
 }

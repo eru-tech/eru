@@ -6,17 +6,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
+	"reflect"
+	"sort"
+	"strings"
+
 	auth_utils "github.com/eru-tech/eru/eru-auth/utils"
 	"github.com/eru-tech/eru/eru-crypto/jwt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
-	"net/http"
-	"net/url"
-	"reflect"
-	"sort"
-	"strings"
 )
 
 type OAuth struct {
@@ -26,18 +27,19 @@ type OAuth struct {
 }
 
 type OAuthConfig struct {
-	ClientId            string      `json:"client_id"`
-	ClientSecret        string      `json:"client_secret"`
-	RedirectURI         string      `json:"redirect_uri" eru:"required"`
-	CodeKey             string      `json:"code_key"`
-	TokenUrlContentType string      `json:"token_url_content_type"`
-	Scope               string      `json:"scope"`
-	SsoBaseUrl          string      `json:"sso_base_url" eru:"required"`
-	TokenUrl            string      `json:"token_url" eru:"required"`
-	JwkUrl              string      `json:"jwk_url"`
-	CheckSum            string      `json:"checksum"`
-	Identifiers         Identifiers `json:"identifiers"`
-	TokenKey            string      `json:"token_key"`
+	SsoUrlParams        map[string]string `json:"sso_url_params"`
+	ClientId            string            `json:"client_id"`
+	ClientSecret        string            `json:"client_secret"`
+	RedirectURI         string            `json:"redirect_uri" eru:"required"`
+	CodeKey             string            `json:"code_key"`
+	TokenUrlContentType string            `json:"token_url_content_type"`
+	Scope               string            `json:"scope"`
+	SsoBaseUrl          string            `json:"sso_base_url" eru:"required"`
+	TokenUrl            string            `json:"token_url" eru:"required"`
+	JwkUrl              string            `json:"jwk_url"`
+	CheckSum            string            `json:"checksum"`
+	Identifiers         Identifiers       `json:"identifiers"`
+	TokenKey            string            `json:"token_key"`
 }
 
 func (oAuth *OAuth) PerformPreSaveTask(ctx context.Context) (err error) {
@@ -89,6 +91,11 @@ func (oAuth *OAuth) GetUrl(ctx context.Context, state string) (urlStr string, oA
 			}
 		}
 	}
+
+	for k, v := range oAuth.OAuthConfig.SsoUrlParams {
+		params.Add(k, v)
+	}
+
 	urlStr = fmt.Sprint(oAuth.OAuthConfig.SsoBaseUrl, "?", params.Encode())
 	oAuthParams.Url = urlStr
 	return
@@ -543,4 +550,78 @@ func (oAuth *OAuth) GenerateTempCode(ctx context.Context, id string, tokens map[
 		return "", errors.New("invalid code")
 	}
 	return
+}
+func (oAuth *OAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error) {
+	logs.WithContext(ctx).Debug("IdpToken - Start")
+
+	headers := http.Header{}
+
+	contentType := "application/x-www-form-urlencoded"
+	if oAuth.OAuthConfig.TokenUrlContentType != "" {
+		contentType = oAuth.OAuthConfig.TokenUrlContentType
+	}
+	headers.Set("Content-Type", contentType)
+
+	oAuthLoginFormBody := make(map[string]string)
+	if oAuth.OAuthConfig.ClientId != "" {
+		oAuthLoginFormBody["client_id"] = oAuth.OAuthConfig.ClientId
+	}
+
+	if oAuth.OAuthConfig.ClientSecret != "" {
+		oAuthLoginFormBody["client_secret"] = oAuth.OAuthConfig.ClientSecret
+	}
+
+	if oAuth.OAuthConfig.RedirectURI != "" {
+		oAuthLoginFormBody["redirect_uri"] = oAuth.OAuthConfig.RedirectURI
+	}
+
+	if oAuth.OAuthConfig.CheckSum != "" {
+		e := reflect.ValueOf(&oAuth.OAuthConfig).Elem()
+
+		OAuthConfigMap := make(map[string]interface{})
+		for i := 0; i < e.NumField(); i++ {
+			k := e.Type().Field(i).Name
+			kTag := e.Type().Field(i).Tag.Get("json")
+			if kTag != "" {
+				k = kTag
+			}
+			OAuthConfigMap[k] = e.Field(i).Interface()
+		}
+		oAuthLoginFormBody["authorization_token"] = loginPostBody.IdpCode
+		cs, csErr := auth_utils.ExecuteTemplate(ctx, "oauth_checksum", oAuth.OAuthConfig.CheckSum, OAuthConfigMap, "string")
+		if csErr != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("error in checksum template : ", csErr.Error()))
+			return nil, errors.New("something went wrong - please try again")
+		}
+		oAuthLoginFormBody["checksum"] = string(cs)
+	}
+
+	if renewFlag {
+		oAuthLoginFormBody["grant_type"] = "refresh_token"
+		oAuthLoginFormBody["refresh_token"] = loginPostBody.RefreshToken
+	} else {
+		if loginPostBody.IdpCode != "" {
+			if oAuth.OAuthConfig.CodeKey == "" {
+				oAuthLoginFormBody["code"] = loginPostBody.IdpCode
+			} else {
+				oAuthLoginFormBody[oAuth.OAuthConfig.CodeKey] = loginPostBody.IdpCode
+			}
+		}
+		oAuthLoginFormBody["grant_type"] = "authorization_code"
+	}
+
+	var loginErr error
+	var loginRes interface{}
+	if contentType == "application/x-www-form-urlencoded" {
+		loginRes, _, _, _, loginErr = utils.CallHttp(ctx, http.MethodPost, oAuth.OAuthConfig.TokenUrl, headers, oAuthLoginFormBody, nil, nil, nil)
+	} else if contentType == "application/json" {
+		loginRes, _, _, _, loginErr = utils.CallHttp(ctx, http.MethodPost, oAuth.OAuthConfig.TokenUrl, headers, nil, nil, nil, oAuthLoginFormBody)
+	} else {
+		loginErr = errors.New("invalid token api content type")
+	}
+	if loginErr != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint(map[string]interface{}{"request_id": loginPostBody.IdpRequestId, "error": fmt.Sprint(loginErr)}))
+		return nil, errors.New("something went wrong - please try again")
+	}
+	return loginRes, nil
 }

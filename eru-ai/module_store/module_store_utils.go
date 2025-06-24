@@ -6,10 +6,14 @@ import (
 	"errors"
 	"fmt"
 
+	agents_factory "github.com/eru-tech/eru/eru-ai/agents/agents_factory"
 	models "github.com/eru-tech/eru/eru-ai/models"
 	module_model "github.com/eru-tech/eru/eru-ai/module_model"
+	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-repos/repos"
+	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	"github.com/eru-tech/eru/eru-secret-manager/kms"
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
@@ -58,6 +62,49 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 			}
 			msi.SetVars(ctx, vars)
 		}
+	}
+
+	var prjScheduler map[string]*json.RawMessage
+	if _, ok := storeMap["scheduler"]; ok {
+		if storeMap["scheduler"] != nil {
+			err = json.Unmarshal(*storeMap["scheduler"], &prjScheduler)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			for prj, schedulerJson := range prjScheduler {
+				var schedulerObj map[string]*json.RawMessage
+				err = json.Unmarshal(*schedulerJson, &schedulerObj)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return err
+				}
+				var schedulerType string
+				if _, stOk := schedulerObj["scheduler_type"]; stOk {
+					err = json.Unmarshal(*schedulerObj["scheduler_type"], &schedulerType)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return err
+					}
+					schedulerI := scheduler.GetScheduler(schedulerType)
+					err = schedulerI.MakeFromJson(ctx, schedulerJson)
+					if err == nil {
+						err = msi.SaveScheduler(ctx, prj, schedulerI, msi, false)
+						if err != nil {
+							return err
+						}
+					} else {
+						return err
+					}
+				} else {
+					logs.WithContext(ctx).Info("ignoring scheduler as scheduler_type attribute not found")
+				}
+			}
+		} else {
+			logs.WithContext(ctx).Info("scheduler attribute is nil")
+		}
+	} else {
+		logs.WithContext(ctx).Info("scheduler attribute not found in store")
 	}
 
 	var prjSm map[string]*json.RawMessage
@@ -247,37 +294,114 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 						logs.WithContext(ctx).Error(err.Error())
 						return err
 					}
+
 					var model map[string]*json.RawMessage
-					if _, ok = tenantConfigObj["model"]; ok {
-						err = json.Unmarshal(*tenantConfigObj["model"], &model)
-						if err != nil {
-							logs.WithContext(ctx).Error(err.Error())
-							return err
-						}
-						for _, modelJson := range model {
-							var modelObj map[string]*json.RawMessage
-							err = json.Unmarshal(*modelJson, &modelObj)
+					if _, ok = tenantConfigObj["models"]; ok {
+						if tenantConfigObj["models"] != nil {
+							err = json.Unmarshal(*tenantConfigObj["models"], &model)
 							if err != nil {
 								logs.WithContext(ctx).Error(err.Error())
 								return err
 							}
-							var llmName string
-							if _, ok := modelObj["llm_name"]; ok {
-								err = json.Unmarshal(*modelObj["llm_name"], &llmName)
+							for _, modelJson := range model {
+								var modelObj map[string]*json.RawMessage
+								err = json.Unmarshal(*modelJson, &modelObj)
 								if err != nil {
 									logs.WithContext(ctx).Error(err.Error())
 									return err
 								}
-							}
-							modelI := models.GetModel(llmName)
-							err = modelI.MakeFromJson(ctx, modelJson)
-							if err == nil {
-								err = msi.SaveModel(ctx, modelI, prj, tenantId, msi, false)
-								if err != nil {
+								var provider string
+								if _, ok := modelObj["provider"]; ok {
+									err = json.Unmarshal(*modelObj["provider"], &provider)
+									if err != nil {
+										logs.WithContext(ctx).Error(err.Error())
+										return err
+									}
+								}
+								modelI := models.GetModel(provider)
+								err = modelI.MakeFromJson(ctx, modelJson)
+								if err == nil {
+									err = msi.SaveModel(ctx, modelI, prj, tenantId, msi, false)
+									if err != nil {
+										return err
+									}
+								} else {
 									return err
 								}
-							} else {
+							}
+						}
+					}
+
+					var tool map[string]*json.RawMessage
+					if _, ok = tenantConfigObj["tools"]; ok {
+						if tenantConfigObj["tools"] != nil {
+							err = json.Unmarshal(*tenantConfigObj["tools"], &tool)
+							if err != nil {
+								logs.WithContext(ctx).Error(err.Error())
 								return err
+							}
+							for _, toolJson := range tool {
+								var toolObj map[string]*json.RawMessage
+								err = json.Unmarshal(*toolJson, &toolObj)
+								if err != nil {
+									logs.WithContext(ctx).Error(err.Error())
+									return err
+								}
+								var toolType string
+								if _, ok := toolObj["tool_type"]; ok {
+									err = json.Unmarshal(*toolObj["tool_type"], &toolType)
+									if err != nil {
+										logs.WithContext(ctx).Error(err.Error())
+										return err
+									}
+								}
+								toolI := tools_factory.GetTool(toolType)
+								err = toolI.MakeFromJson(ctx, toolJson)
+								if err == nil {
+									err = msi.SaveTool(ctx, toolI, prj, tenantId, msi, false)
+									if err != nil {
+										return err
+									}
+								} else {
+									return err
+								}
+							}
+						}
+					}
+
+					var agent map[string]*json.RawMessage
+					if _, ok = tenantConfigObj["agents"]; ok {
+						if tenantConfigObj["agents"] != nil {
+							err = json.Unmarshal(*tenantConfigObj["agents"], &agent)
+							if err != nil {
+								logs.WithContext(ctx).Error(err.Error())
+								return err
+							}
+							for _, agentJson := range agent {
+								var agentObj map[string]*json.RawMessage
+								err = json.Unmarshal(*agentJson, &agentObj)
+								if err != nil {
+									logs.WithContext(ctx).Error(err.Error())
+									return err
+								}
+								var agentType string
+								if _, ok := agentObj["agent_type"]; ok {
+									err = json.Unmarshal(*agentObj["agent_type"], &agentType)
+									if err != nil {
+										logs.WithContext(ctx).Error(err.Error())
+										return err
+									}
+								}
+								agentI := agents_factory.GetAgent(agentType)
+								err = agentI.MakeFromJson(ctx, agentJson)
+								if err == nil {
+									err = msi.SaveAgent(ctx, agentI, prj, tenantId, msi, false)
+									if err != nil {
+										return err
+									}
+								} else {
+									return err
+								}
 							}
 						}
 					}

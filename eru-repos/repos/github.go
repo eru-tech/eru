@@ -136,6 +136,8 @@ func (githubRepo *GithubRepo) GetBranch(ctx context.Context) (branch interface{}
 	headers := http.Header{}
 	headers.Set("Authorization", fmt.Sprint("Bearer ", githubRepo.AuthKey))
 	headers.Set("Content-Type", "application/json")
+	headers.Set("Accept", "application/vnd.github+json")
+	headers.Set("X-GitHub-Api-Version", "2022-11-28")
 	url := fmt.Sprint(baseUrl, "/repos/", githubRepo.RepoName, "/branches/", githubRepo.BranchName)
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, nil, nil, nil, nil)
 	if err != nil {
