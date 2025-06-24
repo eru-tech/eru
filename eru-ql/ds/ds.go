@@ -24,7 +24,7 @@ import (
 	"time"
 )
 
-var blockedWords = []string{"SELECT ", "SELECT*", "INSERT ", "UPDATE ", "DELETE FROM ", "CREATE ", "DROP TABLE", "DROP FUNTIONS", "DROP VIEW", "DROP INDEXES", "DROP SEQUENCES", "ALTER ", "TRUNCATE ", "RENAME ", "REVOKE ", "COMMIT ", "ROLLBACK ", "SAVEPOINT ", "\\U003CSCRIPT"}
+var blockedWords = []string{"SELECT ", "SELECT*", "INSERT ", "UPDATE ", "DELETE FROM ", "CREATE TABLE ", "CREATE FUNTIONS ", "CREATE PROCEDURE ", "CREATE VIEW ", "CREATE INDEXES ", "CREATE SEQUENCE ", "DROP TABLE", "DROP FUNTIONS", "DROP VIEW", "DROP INDEXES", "DROP SEQUENCES", "ALTER ", "TRUNCATE ", "RENAME ", "REVOKE ", "COMMIT ", "ROLLBACK ", "SAVEPOINT ", "\\U003CSCRIPT"}
 var blockedRegex = []string{"OR[ ]*'", "AND[ ]*'", "GRANT\\s+\\w+\\s+ON"}
 
 type tablesInQuery struct {
