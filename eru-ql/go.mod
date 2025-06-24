@@ -5,7 +5,7 @@ go 1.22.0
 require (
 	github.com/antlr4-go/antlr/v4 v4.13.1
 	github.com/eru-tech/eru/eru-crypto v0.0.0-00010101000000-000000000000
-	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-logs v0.0.0-20240208100022-6dc645d87403
 	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-secret-manager v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-security-rule v0.0.0-00010101000000-000000000000
