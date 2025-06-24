@@ -3,6 +3,9 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
+
 	"github.com/eru-tech/eru/eru-files/file_model"
 	"github.com/eru-tech/eru/eru-files/module_store"
 	"github.com/eru-tech/eru/eru-files/storage"
@@ -10,8 +13,6 @@ import (
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
-	"net/http"
-	"strconv"
 )
 
 type t interface {

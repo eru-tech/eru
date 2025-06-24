@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
 	"net/url"
 	"reflect"
 	"slices"
@@ -17,6 +18,8 @@ import (
 	"time"
 
 	"strconv"
+
+
 
 	"github.com/eru-tech/eru/eru-db/db"
 	"github.com/eru-tech/eru/eru-events/events"

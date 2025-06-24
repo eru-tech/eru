@@ -8,6 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"reflect"
+
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
 	"github.com/eru-tech/eru/eru-files/file_model"
@@ -18,10 +23,6 @@ import (
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/gobwas/glob"
-	"io"
-	"mime/multipart"
-	"net/http"
-	"reflect"
 )
 
 type StoreHolder struct {
