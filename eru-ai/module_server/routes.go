@@ -17,7 +17,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	//store functions specific to files
 	serverRouter.Methods(http.MethodGet).Path("/tools").HandlerFunc(module_handlers.ToolListHandler(sh.Store))
-	
+
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 	storeRouter.Methods(http.MethodPost).Path("/{project}/compare").HandlerFunc(module_handlers.StoreCompareHandler(sh.Store))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save").HandlerFunc(module_handlers.ProjectSaveHandler(sh.Store))
@@ -41,6 +41,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	aiRouter := serverRouter.PathPrefix("/{project}").Subrouter()
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/{model}/query").HandlerFunc(module_handlers.ModelQueryHandler(sh.Store))
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/{model}/{tool}/query").HandlerFunc(module_handlers.ModelQueryHandler(sh.Store))
+	aiRouter.Methods(http.MethodPost).PathPrefix("/login/{tenant}/execute/tool/{toolname}/{actionname}").HandlerFunc(module_handlers.ToolExecuteHandler(sh.Store))
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/execute/tool/{toolname}/{actionname}").HandlerFunc(module_handlers.ToolExecuteHandler(sh.Store))
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/execute/tool/{toolname}").HandlerFunc(module_handlers.ToolExecuteHandler(sh.Store))
 	aiRouter.Methods(http.MethodGet).PathPrefix("/{tenant}/cburl/tool/{toolname}").HandlerFunc(module_handlers.ToolCbUrlHandler(sh.Store))
