@@ -149,17 +149,18 @@ func (msEmailTool *MsEmailTool) ReadEmail(ctx context.Context, params map[string
 	url := fmt.Sprint(BaseUrl, "/v1.0/me/messages")
 	headers := http.Header{}
 	headers.Set("Authorization", fmt.Sprintf("Bearer %s", msEmailTool.EmailAccount.AccessToken))
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
+	headers.Set("Content-Type", "application/json")
+	strParams := make(map[string]string)
+	for k, v := range params {
+		strParams[k] = fmt.Sprint(v)
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("strParams: ", strParams))
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, strParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, false, err
 	}
 
-	resbytes, _ := json.Marshal(res)
-
-	logs.WithContext(ctx).Info(string(resbytes))
-
-	logs.WithContext(ctx).Info(msEmailTool.EmailAccount.AccessToken)
 	_ = url
 	toolResult = make(map[string]interface{})
 	toolResult["emails"] = res
@@ -226,7 +227,7 @@ func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, projectId st
 	logs.WithContext(ctx).Info(fmt.Sprint(res))
 
 	if unsubscribe {
-		jobName := fmt.Sprint(msEmailTool.Tool.Hooks.ARSU, "_", tenantId)
+		jobName := fmt.Sprint(msEmailTool.ToolName, "_", msEmailTool.Tool.Hooks.ARSU, "_", tenantId)
 		err = msEmailTool.Scheduler.Unschedule(ctx, "", jobName)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
@@ -277,7 +278,7 @@ func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, projectId st
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, persistStore, err
 		}
-		jobName := fmt.Sprint(msEmailTool.Tool.Hooks.ARSU, "_", tenantId)
+		jobName := fmt.Sprint(msEmailTool.ToolName, "_", msEmailTool.Tool.Hooks.ARSU, "_", tenantId)
 		err = msEmailTool.Scheduler.Unschedule(ctx, "", jobName)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
@@ -516,7 +517,7 @@ func (msEmailTool *MsEmailTool) Login(ctx context.Context, projectId string, ten
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, persistStore, err
 		}
-		jobName := fmt.Sprint(msEmailTool.Tool.Hooks.ARRT, "_", tenantId)
+		jobName := fmt.Sprint(msEmailTool.ToolName, "_", msEmailTool.Tool.Hooks.ARRT, "_", tenantId)
 		err = msEmailTool.Scheduler.Unschedule(ctx, "", jobName)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
@@ -592,7 +593,7 @@ func (msEmailTool *MsEmailTool) StopAutoRenew(ctx context.Context, projectId str
 		logs.Err(ctx, err, "")
 		return nil, false, err
 	}
-	msEmailTool.Scheduler.Unschedule(ctx, "", fmt.Sprint(msEmailTool.Tool.Hooks.ARRT, "_", tenantId))
+	msEmailTool.Scheduler.Unschedule(ctx, "", fmt.Sprint(msEmailTool.ToolName, "_", msEmailTool.Tool.Hooks.ARRT, "_", tenantId))
 	toolResult = make(map[string]interface{})
 	toolResult["stop_auto_renew_status"] = "success"
 	msEmailTool.EmailAccount.TokenExpirationDateTime = ""

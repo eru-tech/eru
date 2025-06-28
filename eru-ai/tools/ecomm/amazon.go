@@ -1053,7 +1053,7 @@ func (amazonTool *AmazonTool) Login(ctx context.Context, projectId string, tenan
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, persistStore, err
 		}
-		jobName := fmt.Sprint(amazonTool.Tool.Hooks.ARRT, "_", tenantId)
+		jobName := fmt.Sprint(amazonTool.ToolName, "_", amazonTool.Tool.Hooks.ARRT, "_", tenantId)
 		err = amazonTool.Scheduler.Unschedule(ctx, "", jobName)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
@@ -1075,8 +1075,8 @@ func (amazonTool *AmazonTool) Login(ctx context.Context, projectId string, tenan
 }
 
 func (amazonTool *AmazonTool) SetPrivateAttributes(ctx context.Context, realTool tools.Tooling) (err error) {
-	amazonTool.AmazonAccount.AccessToken = "$SECRET_amazon_access_token"
-	amazonTool.AmazonAccount.RefreshToken = "$SECRET_amazon_refresh_token"
+	amazonTool.AmazonAccount.AccessToken = fmt.Sprint("$SECRET_", amazonTool.ToolName, "_access_token")
+	amazonTool.AmazonAccount.RefreshToken = fmt.Sprint("$SECRET_", amazonTool.ToolName, "_refresh_token")
 	return nil
 }
 
@@ -1126,7 +1126,7 @@ func (amazonTool *AmazonTool) StopAutoRenew(ctx context.Context, projectId strin
 		logs.Err(ctx, err, "")
 		return nil, false, err
 	}
-	amazonTool.Scheduler.Unschedule(ctx, "", fmt.Sprint(amazonTool.Tool.Hooks.ARRT, "_", tenantId))
+	amazonTool.Scheduler.Unschedule(ctx, "", fmt.Sprint(amazonTool.ToolName, "_", amazonTool.Tool.Hooks.ARRT, "_", tenantId))
 	toolResult = make(map[string]interface{})
 	toolResult["stop_auto_renew_status"] = "success"
 	amazonTool.AmazonAccount.TokenExpirationDateTime = ""
