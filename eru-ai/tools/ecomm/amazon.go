@@ -1019,12 +1019,12 @@ func (amazonTool *AmazonTool) Login(ctx context.Context, projectId string, tenan
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, false, err
 	}
-	err = amazonTool.saveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(amazonTool.AuthName, "_access_token"), amazonTokens.AccessToken)
+	err = amazonTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(amazonTool.ToolName, "_access_token"), amazonTokens.AccessToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, false, err
 	}
-	err = amazonTool.saveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(amazonTool.AuthName, "_refresh_token"), amazonTokens.RefreshToken)
+	err = amazonTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(amazonTool.ToolName, "_refresh_token"), amazonTokens.RefreshToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, false, err
@@ -1072,24 +1072,6 @@ func (amazonTool *AmazonTool) Login(ctx context.Context, projectId string, tenan
 	toolResult = make(map[string]interface{})
 	toolResult["login_status"] = "success"
 	return toolResult, persistStore, nil
-}
-
-func (amazonTool *AmazonTool) saveTenantSecret(ctx context.Context, projectId string, tenantId string, secretName string, secretValue string) (err error) {
-	logs.WithContext(ctx).Debug("saveTenantSecret Execute - Start")
-	eruaiport := ctx.Value("eruaiport").(string)
-	url := fmt.Sprint("http://localhost:", eruaiport, "/store/", projectId, "/", tenantId, "/sm/set")
-	headers := http.Header{}
-	headers.Set("Content-Type", "application/json")
-	secretPost := make(map[string]interface{})
-	secretInnerPost := make(map[string]interface{})
-	secretInnerPost[secretName] = secretValue
-	secretPost["secret_value"] = secretInnerPost
-	_, _, _, _, err = utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, secretPost)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return err
-	}
-	return nil
 }
 
 func (amazonTool *AmazonTool) SetPrivateAttributes(ctx context.Context, realTool tools.Tooling) (err error) {

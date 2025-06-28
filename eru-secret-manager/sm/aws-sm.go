@@ -288,8 +288,10 @@ func (awsSmStore *AwsSmStore) GetSmValue(ctx context.Context, secretName string,
 		if awsSmStore.CacheStore == nil {
 			logs.WithContext(ctx).Info(fmt.Sprint("initializing sm cache"))
 			err = awsSmStore.InitCache(ctx)
+			forceFetch = true //since cache is not initialized, fetch from cloud
+		} else {
+			secretValue, err = awsSmStore.CacheStore.Get(ctx, fmt.Sprint(secretName, "_", secretKey))
 		}
-		secretValue, err = awsSmStore.CacheStore.Get(ctx, fmt.Sprint(secretName, "_", secretKey))
 	}
 	if err != nil || forceFetch {
 		logs.WithContext(ctx).Error(err.Error())

@@ -477,17 +477,17 @@ func (msEmailTool *MsEmailTool) Login(ctx context.Context, projectId string, ten
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, false, err
 	}
-	err = msEmailTool.saveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.AuthName, "_access_token"), msTokens.AccessToken)
+	err = msEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.AuthName, "_access_token"), msTokens.AccessToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, false, err
 	}
-	err = msEmailTool.saveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.AuthName, "_refresh_token"), msTokens.RefreshToken)
+	err = msEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.AuthName, "_refresh_token"), msTokens.RefreshToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, false, err
 	}
-	err = msEmailTool.saveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.AuthName, "_id_token"), msTokens.IdToken)
+	err = msEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.AuthName, "_id_token"), msTokens.IdToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, false, err
@@ -535,24 +535,6 @@ func (msEmailTool *MsEmailTool) Login(ctx context.Context, projectId string, ten
 	toolResult = make(map[string]interface{})
 	toolResult["login_status"] = "success"
 	return toolResult, persistStore, nil
-}
-
-func (msEmailTool *MsEmailTool) saveTenantSecret(ctx context.Context, projectId string, tenantId string, secretName string, secretValue string) (err error) {
-	logs.WithContext(ctx).Debug("saveTenantSecret Execute - Start")
-	eruaiport := ctx.Value("eruaiport").(string)
-	url := fmt.Sprint("http://localhost:", eruaiport, "/store/", projectId, "/", tenantId, "/sm/set")
-	headers := http.Header{}
-	headers.Set("Content-Type", "application/json")
-	secretPost := make(map[string]interface{})
-	secretInnerPost := make(map[string]interface{})
-	secretInnerPost[secretName] = secretValue
-	secretPost["secret_value"] = secretInnerPost
-	_, _, _, _, err = utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, secretPost)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return err
-	}
-	return nil
 }
 
 func (msEmailTool *MsEmailTool) SetPrivateAttributes(ctx context.Context, realTool tools.Tooling) (err error) {
