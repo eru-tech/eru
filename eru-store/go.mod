@@ -4,8 +4,10 @@ go 1.22.0
 
 require (
 	github.com/eru-tech/eru/eru-cache v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-db v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-events v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-scheduler v0.0.0-00010101000000-000000000000
@@ -34,8 +36,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.23.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.28.6 // indirect
 	github.com/aws/smithy-go v1.20.2 // indirect
-	github.com/eru-tech/eru/eru-db v0.0.0-00010101000000-000000000000 // indirect
-	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000 // indirect
+	github.com/confluentinc/confluent-kafka-go/v2 v2.3.0 // indirect
 	github.com/felixge/httpsnoop v1.0.2 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
