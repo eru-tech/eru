@@ -447,7 +447,7 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 								newVal = strings.Replace(newVal.(string), "\\.", ".", -1)
 							}
 						}
-						if v == "$or" || v == "or" {
+						if v == "$or" || v == "or" || v == "_or" {
 							if reflect.TypeOf(newVal).Kind().String() != "slice" {
 								errStr := "Error : or clause has single element"
 								logs.WithContext(ctx).Error(errStr)
@@ -543,13 +543,23 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 									logs.WithContext(ctx).Warn("between clause is not a map")
 								}
 								preFix := "'"
-								//checking only from value to determine with values recevied are int/float to avoid adding single quote in sql
-								_, Interr := strconv.Atoi(btwClause["from"].(string))
-								if Interr == nil {
+								//checking only "from" value to determine with values recevied are int/float to avoid adding single quote in sql
+								fromVal := btwClause["from"]
+								_, intOk := fromVal.(int)
+								_, int64Ok := fromVal.(int64)
+								_, float32Ok := fromVal.(float32)
+								_, float64Ok := fromVal.(float64)
+								isNumber := intOk || int64Ok || float32Ok || float64Ok
+								if isNumber {
 									preFix = ""
-								}
-								if _, flErr := strconv.ParseFloat(btwClause["from"].(string), 64); flErr == nil {
-									preFix = ""
+								} else {
+									_, Interr := strconv.Atoi(btwClause["from"].(string))
+									if Interr == nil {
+										preFix = ""
+									}
+									if _, flErr := strconv.ParseFloat(btwClause["from"].(string), 64); flErr == nil {
+										preFix = ""
+									}
 								}
 								btwClauseStr := fmt.Sprint(preFix, btwClause["from"], preFix, " and ", preFix, btwClause["to"], preFix)
 								tempArray = append(tempArray, fmt.Sprint(parentKey, op, btwClauseStr))

@@ -1006,6 +1006,7 @@ func (sqr *SqlMaker) ExecuteQuery(ctx context.Context, datasource *module_model.
 			}
 			_ = actualColType
 
+			// TODO : json boolean/numeric values are returned as TEXT by postgres - need to check if we can return BOOLEAN
 			if colType.DatabaseTypeName() == "NUMERIC" && mapping[colType.Name()] != nil {
 				f := 0.0
 				if reflect.TypeOf(mapping[colType.Name()]).String() == "[]uint8" {
