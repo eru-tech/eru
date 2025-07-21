@@ -107,12 +107,16 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(ctx context.Context, sel ast.Selection,
 		}
 	}
 	sqlCols := SQLCols{}
+	errMsg := ""
 	if field.SelectionSet == nil {
 		var tmpSelSet []ast.Selection
 		sqlCols, _ = sqlObj.processColumnList(ctx, tmpSelSet, sqlObj.MainTableName, vars, 0, 0, datasource, s, sqlMaker)
 		sqlCols.ColWithAlias = append(sqlCols.ColWithAlias, " * ")
 	} else {
-		sqlCols, _ = sqlObj.processColumnList(ctx, field.SelectionSet.Selections, sqlObj.MainTableName, vars, 0, 0, datasource, s, sqlMaker)
+		sqlCols, errMsg = sqlObj.processColumnList(ctx, field.SelectionSet.Selections, sqlObj.MainTableName, vars, 0, 0, datasource, s, sqlMaker)
+		if errMsg != "" {
+			return errors.New(errMsg)
+		}
 	}
 	sqlObj.Columns = sqlCols
 	err = sqlObj.MakeQuery(ctx, sqlMaker, withColAlias)
@@ -369,6 +373,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 				tj, e := datasource.GetTableJoins(ctx, tableName, colTableName, sqlObj.tableNames)
 				if e != nil {
 					logs.WithContext(ctx).Error(e.Error())
+					//TODO if join not found then consider not handling it as error - currrently sql is sent to db with no columns resulting in sql failing
 					return SQLCols{}, e.Error()
 				}
 				if sqlObj.SecurityClause == nil {
