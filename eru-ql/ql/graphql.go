@@ -191,7 +191,11 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				}
 				sqlObj.SecurityClause[sqlObj.MainTableName], _, err = getTableSecurityRule(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.FinalVariables, sqlObj.MainTableName)
 				if err != nil {
-					return nil, nil, err
+					if !strings.Contains(err.Error(), "TableSecurityRule not defined for") {
+						return nil, nil, err
+					} else {
+						err = nil
+					}
 				}
 
 				err = sqlObj.ProcessGraphQL(ctx, v, datasource, graphQLs[i], gqd.FinalVariables, s, gqd.ExecuteFlag) //TODO to handle if err recd.
@@ -765,6 +769,11 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 		for _, t := range templates {
 			ro, rj, rerr := getTableSecurityRule(ctx, projectId, dbAlias, t, s, op, vars, tableName)
 			if rerr != nil {
+				if !strings.Contains(rerr.Error(), "TableSecurityRule not defined for") {
+					return "", nil, rerr
+				} else {
+					rerr = nil
+				}
 				return "", nil, rerr
 			}
 			ruleJoinTables = append(ruleJoinTables, rj...)

@@ -385,6 +385,8 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 					//ignoring error if security rule not defined - simply execute without security rule
 					if !strings.Contains(e.Error(), "TableSecurityRule not defined for") {
 						return SQLCols{}, e.Error()
+					} else {
+						e = nil
 					}
 				}
 				//if sqlObj.JoinClause == nil {

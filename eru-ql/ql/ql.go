@@ -254,6 +254,8 @@ func (qld *QLData) secureSQL(ctx context.Context, query string, projectId string
 				logs.WithContext(ctx).Info(srErr.Error())
 				if !strings.HasPrefix(srErr.Error(), "TableSecurityRule not defined for "+table.TableName) {
 					return
+				} else {
+					srErr = nil
 				}
 			}
 			if sRulesStr != "" {
