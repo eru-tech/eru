@@ -291,13 +291,15 @@ func (awsSmStore *AwsSmStore) GetSmValue(ctx context.Context, secretName string,
 			forceFetch = true //since cache is not initialized, fetch from cloud
 		} else {
 			secretValue, err = awsSmStore.CacheStore.Get(ctx, fmt.Sprint(secretName, "_", secretKey))
-			if secretValue == nil {
+			if secretValue == "" {
 				forceFetch = true //since fetching from cache failed, fetch from cloud
 			}
 		}
 	}
-	if err != nil || forceFetch {
+	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
+	}
+	if err != nil || forceFetch {
 		logs.WithContext(ctx).Info(fmt.Sprint("fetch secret from cloud for : ", secretKey))
 		if awsSmStore.client == nil {
 			err = awsSmStore.Init(ctx)
