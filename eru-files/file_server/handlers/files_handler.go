@@ -14,7 +14,7 @@ import (
 	eru_reads "github.com/eru-tech/eru/eru-read-write/eru-reads"
 	"github.com/eru-tech/eru/eru-read-write/validator"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
-	"github.com/eru-tech/eru/eru-store/store"
+
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
 	"github.com/tidwall/gjson"
@@ -27,8 +27,9 @@ const (
 	multiPartForm = "multipart/form-data"
 )
 
-func StringToFileHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func StringToFileHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		defer r.Body.Close()
 		logs.WithContext(r.Context()).Debug("StringToFileHandler - Start")
 
@@ -55,8 +56,9 @@ func StringToFileHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func FileDownloadHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		defer r.Body.Close()
 		logs.WithContext(r.Context()).Debug("FileDownloadHandler - Start")
 		vars := mux.Vars(r)
@@ -80,7 +82,7 @@ func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		if dfFromObj.ExcelAsJson || dfFromObj.CsvAsJson {
-			file, err := s.DownloadFileAsJson(r.Context(), projectId, storageName, dfFromObj, s)
+			file, err := sh.Store.DownloadFileAsJson(r.Context(), projectId, storageName, dfFromObj, sh.Store)
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
 				server_handlers.FormatResponse(w, 400)
@@ -90,7 +92,7 @@ func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, http.StatusOK)
 			json.NewEncoder(w).Encode(map[string]interface{}{"file": file})
 		} else {
-			file, mimeType, err := s.DownloadFile(r.Context(), projectId, storageName, dfFromObj, s)
+			file, mimeType, err := sh.Store.DownloadFile(r.Context(), projectId, storageName, dfFromObj, sh.Store)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -105,8 +107,9 @@ func FileDownloadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func FileDownloadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
+func FileDownloadHandlerB64(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		defer r.Body.Close()
 		logs.WithContext(r.Context()).Debug("FileDownloadHandlerB64 - Start")
 		vars := mux.Vars(r)
@@ -130,7 +133,7 @@ func FileDownloadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		fileB64, mimeType, err := s.DownloadFileB64(r.Context(), projectId, storageName, dfFromObj, s)
+		fileB64, mimeType, err := sh.Store.DownloadFileB64(r.Context(), projectId, storageName, dfFromObj, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -140,8 +143,9 @@ func FileDownloadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 		json.NewEncoder(w).Encode(map[string]interface{}{"file": fileB64, "file_type": mimeType})
 	}
 }
-func FileDownloadHandlerUnzip(s module_store.ModuleStoreI) http.HandlerFunc {
+func FileDownloadHandlerUnzip(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		defer r.Body.Close()
 		logs.WithContext(r.Context()).Debug("FileDownloadHandlerUnzip - Start")
 		vars := mux.Vars(r)
@@ -169,7 +173,7 @@ func FileDownloadHandlerUnzip(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		files, err := s.DownloadFileUnzip(r.Context(), projectId, storageName, dfFromObj, s)
+		files, err := sh.Store.DownloadFileUnzip(r.Context(), projectId, storageName, dfFromObj, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -180,8 +184,9 @@ func FileDownloadHandlerUnzip(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func FileUploadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
+func FileUploadHandlerB64(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		defer r.Body.Close()
 		logs.WithContext(r.Context()).Debug("FileUploadHandlerB64 - Start")
 		vars := mux.Vars(r)
@@ -233,7 +238,7 @@ func FileUploadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": "base64 decode failed"})
 			return
 		}
-		docId, err := s.UploadFileB64(r.Context(), projectId, storageName, fileBytes, fileName, docType, folderPath, s)
+		docId, err := sh.Store.UploadFileB64(r.Context(), projectId, storageName, fileBytes, fileName, docType, folderPath, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -246,8 +251,9 @@ func FileUploadHandlerB64(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func FileUploadHandlerFromUrl(s module_store.ModuleStoreI) http.HandlerFunc {
+func FileUploadHandlerFromUrl(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		defer r.Body.Close()
 		logs.WithContext(r.Context()).Debug("FileUploadHandlerFromUrl - Start")
 		vars := mux.Vars(r)
@@ -302,7 +308,7 @@ func FileUploadHandlerFromUrl(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": "folder_path attribute missing"})
 			return
 		}
-		docId, err := s.UploadFileFromUrl(r.Context(), projectId, storageName, url, fileName, docType, folderPath, fileType, s)
+		docId, err := sh.Store.UploadFileFromUrl(r.Context(), projectId, storageName, url, fileName, docType, folderPath, fileType, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -315,8 +321,9 @@ func FileUploadHandlerFromUrl(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func FileUploadHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		defer r.Body.Close()
 		logs.WithContext(r.Context()).Debug("FileUploadHandler - Start")
 		vars := mux.Vars(r)
@@ -355,7 +362,7 @@ func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 					return
 				}
 				//TODO - check for file size and check for file meme
-				docId, err := s.UploadFile(r.Context(), projectId, storageName, file, f, docType, folderPath, s)
+				docId, err := sh.Store.UploadFile(r.Context(), projectId, storageName, file, f, docType, folderPath, sh.Store)
 				if err != nil {
 					server_handlers.FormatResponse(w, 400)
 					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -377,9 +384,8 @@ func FileUploadHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ExcelToJsonHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ExcelToJsonHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
 		defer r.Body.Close()
 		logs.WithContext(r.Context()).Debug("FileUploadHandler - Start")
 		vars := mux.Vars(r)
@@ -426,7 +432,7 @@ func ExcelToJsonHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 						return
 					}
 					//TODO - check for file size and check for file meme
-					fileJson, err := s.ExcelToJson(r.Context(), projectId, file, f, fdr, s)
+					fileJson, err := sh.Store.ExcelToJson(r.Context(), projectId, file, f, fdr, sh.Store)
 					if err != nil {
 						server_handlers.FormatResponse(w, 400)
 						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -449,8 +455,9 @@ func ExcelToJsonHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
-func CsvDataToJsonHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func CsvDataToJsonHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		var err error
@@ -480,7 +487,7 @@ func CsvDataToJsonHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		fdr.CsvAsJson = true
 
 		logs.WithContext(r.Context()).Info(fmt.Sprint(fdr))
-		fileJson, err := s.BytesToJson(r.Context(), projectId, csvBytes, fdr, s)
+		fileJson, err := sh.Store.BytesToJson(r.Context(), projectId, csvBytes, fdr, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -494,8 +501,9 @@ func CsvDataToJsonHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ExcelToJsonB64Handler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ExcelToJsonB64Handler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		var err error
@@ -535,7 +543,7 @@ func ExcelToJsonB64Handler(s module_store.ModuleStoreI) http.HandlerFunc {
 			fdr.ExcelSheets["*"]["*"] = rd
 		}
 		logs.WithContext(r.Context()).Info(fmt.Sprint(fdr))
-		fileJson, err := s.BytesToJson(r.Context(), projectId, fileBytes, fdr, s)
+		fileJson, err := sh.Store.BytesToJson(r.Context(), projectId, fileBytes, fdr, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -549,8 +557,9 @@ func ExcelToJsonB64Handler(s module_store.ModuleStoreI) http.HandlerFunc {
 		return
 	}
 }
-func JsonValidatorHandler(s store.StoreI) http.HandlerFunc {
+func JsonValidatorHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("JsonValidatorHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]

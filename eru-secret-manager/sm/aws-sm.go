@@ -56,7 +56,7 @@ func (awsSmStore *AwsSmStore) Init(ctx context.Context) (err error) {
 }
 func (awsSmStore *AwsSmStore) InitCache(ctx context.Context) (err error) {
 	if awsSmStore.CacheStoreType == "" {
-		awsSmStore.CacheStoreType = "ERU"
+		awsSmStore.CacheStoreType = "INMEMORY"
 	}
 	awsSmStore.SetCacheStore(cache.GetCacheStore(awsSmStore.CacheStoreType))
 	logs.WithContext(ctx).Info(fmt.Sprint(awsSmStore.CacheStore))

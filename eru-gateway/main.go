@@ -3,15 +3,20 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
+	"runtime/debug"
+	"time"
+
+	"github.com/eru-tech/eru/eru-cache/cache"
 	"github.com/eru-tech/eru/eru-gateway/module_server"
+	"github.com/eru-tech/eru/eru-gateway/module_server/handlers"
 	"github.com/eru-tech/eru/eru-gateway/module_store"
+	"github.com/eru-tech/eru/eru-gateway/registry"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eruotel "github.com/eru-tech/eru/eru-logs/eru-otel"
 	"github.com/eru-tech/eru/eru-server/server"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
-	"log"
-	"os"
-	"runtime/debug"
 )
 
 var port = "8086"
@@ -24,7 +29,8 @@ func main() {
 		}
 	}()
 	module_server.SetServiceName()
-	logs.LogInit(server_handlers.ServerName)
+	server_handlers.SetInstanceId()
+	logs.LogInit(server_handlers.ServerName, server_handlers.InstanceId)
 	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
 	traceUrl := os.Getenv("TRACE_URL")
 	if traceUrl != "" {
@@ -50,8 +56,25 @@ func main() {
 	}
 	sh := new(module_store.StoreHolder)
 	sh.Store = store
+
+	// Create the service registry
+	registryType := os.Getenv("REGISTRY_TYPE")
+	if registryType == "" {
+		registryType = "INMEMORY" // Default to in-memory if not specified or invalid
+	}
+	logs.Logger.Info(fmt.Sprintf("Using %s registry", registryType))
+
+	registryCache := cache.GetCacheStore(registryType)
+	logs.Logger.Info(fmt.Sprintf("registryCache: %v", registryCache))
+	if registryCache == nil {
+		logs.Logger.Error(fmt.Sprintf("failed to connect to registry cache: %v - fallback to in-memory", registryType))
+		registryCache = cache.GetCacheStore("INMEMORY")
+	}
+	serviceRegistry := registry.NewRegistry(registryCache, 90*time.Second)
+	rh := &handlers.RegistryHandler{Registry: serviceRegistry}
+
 	sr, _, e := server.Init(sh.Store)
-	module_server.AddModuleRoutes(sr, sh)
+	module_server.AddModuleRoutes(sr, sh, rh)
 	if e != nil {
 		logs.Logger.Error(e.Error())
 	}

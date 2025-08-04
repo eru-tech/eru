@@ -12,7 +12,7 @@ import (
 
 // Enterprise Kafka configuration examples for production environments
 func main() {
-	logs.LogInit("eru-events-enterprise-examples")
+	logs.LogInit("eru-events-enterprise-examples", "eru-events-enterprise-examples-123")
 
 	fmt.Println("🏢 Enterprise Kafka Configuration Examples")
 	fmt.Println("==========================================")
@@ -241,25 +241,25 @@ func transactionalExample() {
 
 func demonstrateConfig(name string, configJSON string) {
 	ctx := context.Background()
-	
+
 	// Parse configuration
 	var rawMsg json.RawMessage = []byte(configJSON)
-	
+
 	// Create and configure event
 	kafkaEvent := events.GetEvent("KAFKA")
 	if kafkaEvent == nil {
 		log.Printf("❌ Failed to create %s event", name)
 		return
 	}
-	
+
 	err := kafkaEvent.MakeFromJson(ctx, &rawMsg)
 	if err != nil {
 		log.Printf("❌ Failed to configure %s event: %v", name, err)
 		return
 	}
-	
+
 	fmt.Printf("✅ %s configuration loaded successfully\n", name)
-	
+
 	// Display key configuration details
 	brokers, _ := kafkaEvent.GetAttribute("brokers")
 	securityProtocol, _ := kafkaEvent.GetAttribute("security_protocol")
@@ -267,7 +267,7 @@ func demonstrateConfig(name string, configJSON string) {
 	partitions, _ := kafkaEvent.GetAttribute("partitions")
 	acks, _ := kafkaEvent.GetAttribute("acks")
 	compressionType, _ := kafkaEvent.GetAttribute("compression_type")
-	
+
 	fmt.Printf("   📡 Brokers: %v\n", brokers)
 	if securityProtocol != "" {
 		fmt.Printf("   🔒 Security: %v", securityProtocol)
@@ -285,6 +285,6 @@ func demonstrateConfig(name string, configJSON string) {
 	if compressionType != "" {
 		fmt.Printf("   🗜️  Compression: %v\n", compressionType)
 	}
-	
+
 	fmt.Println("   🎯 Ready for production use with eru-functions")
 }

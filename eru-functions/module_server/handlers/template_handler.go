@@ -25,7 +25,7 @@ type TemplateVars struct {
 	Body   interface{}
 }
 
-func ExecuteTemplateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ExecuteTemplateHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ExecuteTemplateHandler - Start")
 

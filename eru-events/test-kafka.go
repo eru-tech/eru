@@ -12,8 +12,8 @@ import (
 )
 
 func main() {
-	logs.LogInit("eru-events-kafka-test")
-	
+	logs.LogInit("eru-events-kafka-test", "eru-events-kafka-test-123")
+
 	fmt.Println("🚀 Starting Kafka Event Test...")
 
 	testKafkaEvent()
@@ -27,12 +27,12 @@ func testKafkaEvent() {
 		"event_type":         "KAFKA",
 		"event_name":         "eru-test-topic",
 		"polling_interval":   5,
-		"brokers":           getBrokers(),
-		"topic":             "eru-test-topic",
-		"group_id":          "eru-test-group",
-		"partitions":        3,
+		"brokers":            getBrokers(),
+		"topic":              "eru-test-topic",
+		"group_id":           "eru-test-group",
+		"partitions":         3,
 		"replication_factor": 1,
-		"auto_offset_reset": "earliest",
+		"auto_offset_reset":  "earliest",
 		"enable_auto_commit": true,
 	}
 
@@ -164,7 +164,7 @@ func testCloning(ctx context.Context, event events.EventI) {
 
 func testPolling(ctx context.Context, event events.EventI) {
 	fmt.Println("   Polling for messages (will wait up to 10 seconds)...")
-	
+
 	// Poll for messages with timeout
 	for i := 0; i < 3; i++ {
 		eventMsgs, err := event.Poll(ctx)
@@ -176,7 +176,7 @@ func testPolling(ctx context.Context, event events.EventI) {
 		if len(eventMsgs) > 0 {
 			for j, msg := range eventMsgs {
 				fmt.Printf("   📨 Received message %d: %s\n", j+1, msg.Msg)
-				
+
 				// Acknowledge message (delete it)
 				err := event.DeleteMessage(ctx, msg.MsgIdentifer)
 				if err != nil {

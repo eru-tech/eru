@@ -14,8 +14,9 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func ToolListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ToolListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ToolListHandler - Start")
 		toolName := "MS_EMAIL" //get it from env variable
 		tool := tools_factory.GetTool(toolName)
@@ -24,8 +25,10 @@ func ToolListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"tools": mcpTools})
 	}
 }
-func ModelQueryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+
+func ModelQueryHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ModelSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -42,7 +45,7 @@ func ModelQueryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		modelObj, err := s.GetModel(r.Context(), projectId, tenantId, modelId, s)
+		modelObj, err := sh.Store.GetModel(r.Context(), projectId, tenantId, modelId, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -60,7 +63,7 @@ func ModelQueryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(res)
 		} else {
-			tool, tErr := s.GetTool(r.Context(), projectId, tenantId, toolName, "", s)
+			tool, tErr := sh.Store.GetTool(r.Context(), projectId, tenantId, toolName, "", sh.Store)
 			if tErr != nil {
 				logs.WithContext(r.Context()).Error(tErr.Error())
 				server_handlers.FormatResponse(w, 400)
@@ -82,13 +85,14 @@ func ModelQueryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func AgentListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func AgentListNamesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("AgentListNamesHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		tenantID := vars["tenant"]
-		agents, err := s.GetAgentNames(r.Context(), projectID, tenantID)
+		agents, err := sh.Store.GetAgentNames(r.Context(), projectID, tenantID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -100,13 +104,33 @@ func AgentListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ToolListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func VectorStoreListNamesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("VectorStoreListNamesHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+		tenantID := vars["tenant"]
+		vectorStores, err := sh.Store.GetVectorStoreNames(r.Context(), projectID, tenantID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			logs.WithContext(r.Context()).Info(fmt.Sprintf("VectorStores: %v", vectorStores))
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"vectorstores": vectorStores})
+		}
+	}
+}
+
+func ToolListNamesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ToolListNamesHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		tenantID := vars["tenant"]
-		tools, err := s.GetToolNames(r.Context(), projectID, tenantID)
+		tools, err := sh.Store.GetToolNames(r.Context(), projectID, tenantID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

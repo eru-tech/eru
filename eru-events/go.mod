@@ -1,6 +1,6 @@
 module github.com/eru-tech/eru/eru-events
 
-go 1.22.0
+go 1.24
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.27.0

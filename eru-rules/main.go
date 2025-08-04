@@ -3,21 +3,23 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eruotel "github.com/eru-tech/eru/eru-logs/eru-otel"
 	"github.com/eru-tech/eru/eru-rules/module_server"
 	"github.com/eru-tech/eru/eru-rules/module_store"
 	"github.com/eru-tech/eru/eru-server/server"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
-	"log"
-	"os"
+	"github.com/google/uuid"
 )
 
 var port = "8084"
 
 func main() {
 	module_server.SetServiceName()
-	logs.LogInit(server_handlers.ServerName)
+	logs.LogInit(server_handlers.ServerName, fmt.Sprintf("%s-%s", server_handlers.ServerName, uuid.New().String()))
 	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
 	traceUrl := os.Getenv("TRACE_URL")
 	if traceUrl != "" {

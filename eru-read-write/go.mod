@@ -1,6 +1,6 @@
 module github.com/eru-tech/eru/eru-read-write
 
-go 1.22
+go 1.24
 
 require (
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/google/uuid v1.3.1 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/richardlehane/mscfb v1.0.4 // indirect
 	github.com/richardlehane/msoleps v1.0.3 // indirect

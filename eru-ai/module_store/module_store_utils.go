@@ -10,13 +10,13 @@ import (
 	models "github.com/eru-tech/eru/eru-ai/models"
 	module_model "github.com/eru-tech/eru/eru-ai/module_model"
 	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
-
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-repos/repos"
 	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	"github.com/eru-tech/eru/eru-secret-manager/kms"
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
+	vectorstore "github.com/eru-tech/eru/eru-vectorstore/vectorstore"
 )
 
 func (ms *ModuleStore) checkProjectExists(ctx context.Context, projectId string) error {
@@ -396,6 +396,43 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 								err = agentI.MakeFromJson(ctx, agentJson)
 								if err == nil {
 									err = msi.SaveAgent(ctx, agentI, prj, tenantId, msi, false)
+									if err != nil {
+										return err
+									}
+								} else {
+									return err
+								}
+							}
+						}
+					}
+
+					var vectorStore map[string]*json.RawMessage
+					if _, ok = tenantConfigObj["vector_stores"]; ok {
+						if tenantConfigObj["vector_stores"] != nil {
+							err = json.Unmarshal(*tenantConfigObj["vector_stores"], &vectorStore)
+							if err != nil {
+								logs.WithContext(ctx).Error(err.Error())
+								return err
+							}
+							for _, vectorStoreJson := range vectorStore {
+								var vectorStoreObj map[string]*json.RawMessage
+								err = json.Unmarshal(*vectorStoreJson, &vectorStoreObj)
+								if err != nil {
+									logs.WithContext(ctx).Error(err.Error())
+									return err
+								}
+								var vectorStoreType string
+								if _, ok := vectorStoreObj["vector_type"]; ok {
+									err = json.Unmarshal(*vectorStoreObj["vector_type"], &vectorStoreType)
+									if err != nil {
+										logs.WithContext(ctx).Error(err.Error())
+										return err
+									}
+								}
+								vectorStoreI := vectorstore.GetVectorStore(vectorStoreType)
+								err = vectorStoreI.MakeFromJson(ctx, vectorStoreJson)
+								if err == nil {
+									err = msi.SaveVectorStore(ctx, vectorStoreI, prj, tenantId, msi, false)
 									if err != nil {
 										return err
 									}

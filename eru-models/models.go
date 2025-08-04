@@ -34,3 +34,10 @@ type SampleRequest struct {
 	RequestBody  map[string]interface{} `json:"request_body" eru:"required"`
 	ResourceName string                 `json:"resource_name" eru:"required"`
 }
+
+// ServiceInstance represents the data sent to the registry.
+type ServiceInstance struct {
+	Id      string `json:"id"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
+}

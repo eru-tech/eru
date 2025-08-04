@@ -2,57 +2,65 @@ package cache
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"strings"
+	"time"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
-type CacheStore struct {
-	CacheStoreType string                `json:"cache_store_type" eru:"required"`
-	CacheValues    map[string]CacheValue `json:"cache_values" eru:"required"`
-}
-
-type CacheValue struct {
-	Key   string      `json:"key" eru:"required"`
-	Value interface{} `json:"key" eru:"required"`
-}
-
+// CacheStoreI defines the interface for a generic cache.
 type CacheStoreI interface {
-	Get(ctx context.Context, key string) (value interface{}, err error)
+	Get(ctx context.Context, key string) (value string, err error)
 	Set(ctx context.Context, key string, value interface{}) (err error)
+	SetWithTTL(ctx context.Context, key string, value interface{}, ttl time.Duration) (err error)
+	GetKeys(ctx context.Context, pattern string) ([]string, error)
+	Delete(ctx context.Context, key string) error
 }
 
-func GetCacheStore(cacheStoreType string) CacheStoreI {
-	logs.WithContext(context.TODO()).Info("GetCacheStore called")
-	switch cacheStoreType {
-	case "ERU":
-		cs := CacheStore{CacheStoreType: "ERU", CacheValues: make(map[string]CacheValue)}
-		return &cs
-	default:
-		return nil
-	}
+// CacheStore is a base struct to be embedded by specific implementations.
+type CacheStore struct {
+	CacheStoreType string `json:"cache_store_type"`
+}
+
+func (cs *CacheStore) Delete(ctx context.Context, key string) error {
 	return nil
 }
-
-func (cacheStore *CacheStore) Get(ctx context.Context, key string) (value interface{}, err error) {
-	if cacheStore.CacheValues != nil {
-		if cv, cvOk := cacheStore.CacheValues[key]; cvOk {
-			logs.WithContext(ctx).Info(fmt.Sprint("cache key ", key, " found"))
-			return cv.Value, nil
-		} else {
-			err = errors.New(fmt.Sprint("cache key ", key, " not found"))
-			return
-		}
-	} else {
-		err = errors.New("cache values map is not defined")
-		return
-	}
+func (cs *CacheStore) Get(ctx context.Context, key string) (value string, err error) {
+	return "", nil
+}
+func (cs *CacheStore) Set(ctx context.Context, key string, value interface{}) (err error) {
+	return nil
+}
+func (cs *CacheStore) SetWithTTL(ctx context.Context, key string, value interface{}, ttl time.Duration) (err error) {
+	return nil
+}
+func (cs *CacheStore) GetKeys(ctx context.Context, pattern string) ([]string, error) {
+	return nil, nil
 }
 
-func (cacheStore *CacheStore) Set(ctx context.Context, key string, value interface{}) (err error) {
-	if cacheStore.CacheValues == nil {
-		cacheStore.CacheValues = make(map[string]CacheValue)
+// GetCacheStore is a factory function that returns a cache implementation.
+func GetCacheStore(cacheStoreType string) CacheStoreI {
+	logs.WithContext(context.TODO()).Info(fmt.Sprintf("GetCacheStore called for type: %s", cacheStoreType))
+	switch strings.ToUpper(cacheStoreType) {
+	case "REDIS":
+		redisCache, err := NewRedisCache()
+		if err != nil {
+			logs.WithContext(context.TODO()).Error(fmt.Sprintf("failed to create redis cache: %v", err))
+			return nil
+		}
+		return redisCache
+	case "ETCD":
+		etcdCache, err := NewEtcdCache()
+		if err != nil {
+			logs.WithContext(context.TODO()).Error(fmt.Sprintf("failed to create etcd cache: %v", err))
+			return nil
+		}
+		return etcdCache
+	case "INMEMORY":
+		return new(InMemoryCache)
+	default:
+		logs.WithContext(context.TODO()).Error(fmt.Sprintf("unsupported cache type: %s", cacheStoreType))
+		return new(CacheStore)
 	}
-	cacheStore.CacheValues[key] = CacheValue{Key: key, Value: value}
-	return
 }

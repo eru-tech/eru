@@ -49,13 +49,13 @@ func DefaultDBSecurityRulesHandler() http.HandlerFunc {
 	}
 }
 
-func ProjectDataSourceConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceConfigHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceConfigHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		dbAlias := vars["dbalias"]
-		datasource, err := s.GetDataSource(r.Context(), projectId, dbAlias)
+		datasource, err := sh.Store.GetDataSource(r.Context(), projectId, dbAlias)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -67,8 +67,10 @@ func ProjectDataSourceConfigHandler(s module_store.ModuleStoreI) http.HandlerFun
 	}
 }
 
-func ProjectDataSourceSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -90,7 +92,7 @@ func ProjectDataSourceSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 				return
 			}
 		}
-		err := s.SaveDataSource(r.Context(), projectId, &datasource, s)
+		err := sh.Store.SaveDataSource(r.Context(), projectId, &datasource, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -102,14 +104,16 @@ func ProjectDataSourceSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 	}
 }
 
-func ProjectDataSourceRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		dbAlias := vars["dbalias"]
 
-		err := s.RemoveDataSource(r.Context(), projectId, dbAlias, s)
+		err := sh.Store.RemoveDataSource(r.Context(), projectId, dbAlias, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -121,13 +125,13 @@ func ProjectDataSourceRemoveHandler(s module_store.ModuleStoreI) http.HandlerFun
 	}
 }
 
-func ProjectDataSourceListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceListHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 
-		datasources, err := s.GetDataSources(r.Context(), projectId)
+		datasources, err := sh.Store.GetDataSources(r.Context(), projectId)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -139,14 +143,16 @@ func ProjectDataSourceListHandler(s module_store.ModuleStoreI) http.HandlerFunc 
 	}
 }
 
-func ProjectDataSourceSchemaHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceSchemaHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceSchemaHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		dbAlias := vars["dbalias"]
 
-		datasource, err := s.UpdateSchemaTables(r.Context(), projectId, dbAlias, s)
+		datasource, err := sh.Store.UpdateSchemaTables(r.Context(), projectId, dbAlias, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -158,15 +164,17 @@ func ProjectDataSourceSchemaHandler(s module_store.ModuleStoreI) http.HandlerFun
 	}
 }
 
-func ProjectDataSourceSchemaAddTableHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceSchemaAddTableHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceSchemaAddTableHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		dbAlias := vars["dbalias"]
 		tableName := vars["tablename"]
 
-		res, err := s.AddSchemaTable(r.Context(), projectId, dbAlias, tableName, s)
+		res, err := sh.Store.AddSchemaTable(r.Context(), projectId, dbAlias, tableName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -178,15 +186,17 @@ func ProjectDataSourceSchemaAddTableHandler(s module_store.ModuleStoreI) http.Ha
 	}
 }
 
-func ProjectDataSourceSchemaRemoveTableHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceSchemaRemoveTableHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceSchemaRemoveTableHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		dbAlias := vars["dbalias"]
 		tableName := vars["tablename"]
 
-		res, err := s.RemoveSchemaTable(r.Context(), projectId, dbAlias, tableName, s)
+		res, err := sh.Store.RemoveSchemaTable(r.Context(), projectId, dbAlias, tableName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -197,8 +207,10 @@ func ProjectDataSourceSchemaRemoveTableHandler(s module_store.ModuleStoreI) http
 		return
 	}
 }
-func ProjectDataSourceSchemaAddJoinHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceSchemaAddJoinHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceSchemaAddJoinHandler - Start")
 		vars := mux.Vars(r)
 
@@ -212,7 +224,7 @@ func ProjectDataSourceSchemaAddJoinHandler(s module_store.ModuleStoreI) http.Han
 			return
 		}
 
-		res, err := s.AddSchemaJoin(r.Context(), projectId, dbAlias, &tj, s)
+		res, err := sh.Store.AddSchemaJoin(r.Context(), projectId, dbAlias, &tj, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -224,8 +236,10 @@ func ProjectDataSourceSchemaAddJoinHandler(s module_store.ModuleStoreI) http.Han
 		return
 	}
 }
-func ProjectDataSourceSchemaRemoveJoinHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceSchemaRemoveJoinHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceSchemaRemoveJoinHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -238,7 +252,7 @@ func ProjectDataSourceSchemaRemoveJoinHandler(s module_store.ModuleStoreI) http.
 			return
 		}
 
-		res, err := s.RemoveSchemaJoin(r.Context(), projectId, dbAlias, &tj, s)
+		res, err := sh.Store.RemoveSchemaJoin(r.Context(), projectId, dbAlias, &tj, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -250,8 +264,10 @@ func ProjectDataSourceSchemaRemoveJoinHandler(s module_store.ModuleStoreI) http.
 	}
 }
 
-func ProjectDataSourceSchemaSaveTableHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceSchemaSaveTableHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceSchemaSaveTableHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -278,7 +294,7 @@ func ProjectDataSourceSchemaSaveTableHandler(s module_store.ModuleStoreI) http.H
 				}
 			}
 		}
-		err := s.SaveSchemaTable(r.Context(), projectId, dbAlias, tableName, tableObj, s)
+		err := sh.Store.SaveSchemaTable(r.Context(), projectId, dbAlias, tableName, tableObj, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -290,8 +306,10 @@ func ProjectDataSourceSchemaSaveTableHandler(s module_store.ModuleStoreI) http.H
 		return
 	}
 }
-func ProjectDataSourceSchemaTransformTableHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceSchemaTransformTableHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceSchemaTransformTableHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -318,7 +336,7 @@ func ProjectDataSourceSchemaTransformTableHandler(s module_store.ModuleStoreI) h
 				return
 			}
 		}
-		err := s.SaveTableTransformation(r.Context(), projectId, dbAlias, tableName, transformRules, s)
+		err := sh.Store.SaveTableTransformation(r.Context(), projectId, dbAlias, tableName, transformRules, sh.Store)
 
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
@@ -332,8 +350,10 @@ func ProjectDataSourceSchemaTransformTableHandler(s module_store.ModuleStoreI) h
 	}
 }
 
-func ProjectDataSourceSchemaMasColumnHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceSchemaMasColumnHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceSchemaMasColumnHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -361,7 +381,7 @@ func ProjectDataSourceSchemaMasColumnHandler(s module_store.ModuleStoreI) http.H
 				return
 			}
 		}
-		err := s.SaveColumnMasking(r.Context(), projectId, dbAlias, tableName, colName, columnMasking, s)
+		err := sh.Store.SaveColumnMasking(r.Context(), projectId, dbAlias, tableName, colName, columnMasking, sh.Store)
 
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
@@ -375,8 +395,10 @@ func ProjectDataSourceSchemaMasColumnHandler(s module_store.ModuleStoreI) http.H
 	}
 }
 
-func ProjectDataSourceRemoveSecureTableHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceRemoveSecureTableHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceRemoveSecureTableHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -387,7 +409,7 @@ func ProjectDataSourceRemoveSecureTableHandler(s module_store.ModuleStoreI) http
 		securityRulesFromReq := json.NewDecoder(r.Body)
 		securityRulesFromReq.DisallowUnknownFields()
 
-		err := s.RemoveTableSecurity(r.Context(), projectId, dbAlias, tableName, s)
+		err := sh.Store.RemoveTableSecurity(r.Context(), projectId, dbAlias, tableName, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -399,8 +421,10 @@ func ProjectDataSourceRemoveSecureTableHandler(s module_store.ModuleStoreI) http
 	}
 }
 
-func ProjectDataSourceGetSecureTableHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceGetSecureTableHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceGetSecureTableHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -411,7 +435,7 @@ func ProjectDataSourceGetSecureTableHandler(s module_store.ModuleStoreI) http.Ha
 		securityRulesFromReq := json.NewDecoder(r.Body)
 		securityRulesFromReq.DisallowUnknownFields()
 
-		sr, err := s.GetTableSecurity(r.Context(), projectId, dbAlias, tableName)
+		sr, err := sh.Store.GetTableSecurity(r.Context(), projectId, dbAlias, tableName)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -423,8 +447,10 @@ func ProjectDataSourceGetSecureTableHandler(s module_store.ModuleStoreI) http.Ha
 	}
 }
 
-func ProjectDataSourceSchemaSecureTableHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceSchemaSecureTableHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceSchemaSecureTableHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -451,7 +477,7 @@ func ProjectDataSourceSchemaSecureTableHandler(s module_store.ModuleStoreI) http
 				return
 			}
 		}
-		err := s.SaveTableSecurity(r.Context(), projectId, dbAlias, tableName, securityRules, s)
+		err := sh.Store.SaveTableSecurity(r.Context(), projectId, dbAlias, tableName, securityRules, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -464,8 +490,10 @@ func ProjectDataSourceSchemaSecureTableHandler(s module_store.ModuleStoreI) http
 	}
 }
 
-func ProjectDataSourceSchemaDropTableHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectDataSourceSchemaDropTableHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceSchemaDropTableHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -473,7 +501,7 @@ func ProjectDataSourceSchemaDropTableHandler(s module_store.ModuleStoreI) http.H
 		tableName := vars["tablename"]
 		tableName = strings.Replace(tableName, "___", ".", 1)
 
-		err := s.DropSchemaTable(r.Context(), projectId, dbAlias, tableName, s)
+		err := sh.Store.DropSchemaTable(r.Context(), projectId, dbAlias, tableName, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)

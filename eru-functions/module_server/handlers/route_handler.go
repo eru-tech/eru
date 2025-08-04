@@ -3,18 +3,21 @@ package handlers
 import (
 	"context"
 	"fmt"
+
 	//"bytes"
 	"encoding/json"
+	"io"
+	"net/http"
+
 	"github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
-	"io"
-	"net/http"
 )
 
-func RouteForwardHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func RouteForwardHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Info("RouteForwardHandler - Start")
 		defer r.Body.Close()
 		// Extract the host and url from incoming request
@@ -24,8 +27,9 @@ func RouteForwardHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func RouteAsyncTestHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func RouteAsyncTestHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("RouteAsyncTestHandler - Start")
 		defer r.Body.Close()
 		// Extract the host and url from incoming request
@@ -35,8 +39,9 @@ func RouteAsyncTestHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func RouteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("RouteHandler - Start")
 		ctx := context.WithValue(r.Context(), "allowed_origins", server_handlers.AllowedOrigins)
 		ctx = context.WithValue(ctx, "origins", r.Header.Get("Origin"))
@@ -50,7 +55,7 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		routeName := vars["routename"]
 
 		// Lookup a route based on host and url
-		route, err := s.GetAndValidateRoute(ctx, routeName, projectId, host, url, r.Method, r.Header, s)
+		route, err := sh.Store.GetAndValidateRoute(ctx, routeName, projectId, host, url, r.Method, r.Header, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})

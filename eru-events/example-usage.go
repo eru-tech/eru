@@ -13,13 +13,13 @@ import (
 // Example demonstrates how to use Kafka events in eru-functions
 // NO environment variables needed - everything comes from JSON configuration
 func main() {
-	logs.LogInit("eru-events-example")
+	logs.LogInit("eru-events-example", "eru-events-example-123")
 
 	// Example 1: Basic Kafka Event Configuration
 	fmt.Println("=== Example 1: Basic Kafka Configuration ===")
 	basicKafkaExample()
 
-	// Example 2: Secure Kafka Event Configuration  
+	// Example 2: Secure Kafka Event Configuration
 	fmt.Println("\n=== Example 2: Secure Kafka Configuration ===")
 	secureKafkaExample()
 
@@ -90,36 +90,36 @@ func productionKafkaExample() {
 
 func demonstrateUsage(name string, configJSON string) {
 	ctx := context.Background()
-	
+
 	// Convert JSON string to RawMessage (this is what eru-functions would do)
 	var rawMsg json.RawMessage = []byte(configJSON)
-	
+
 	// Create event instance
 	kafkaEvent := events.GetEvent("KAFKA")
 	if kafkaEvent == nil {
 		log.Printf("❌ Failed to create %s event", name)
 		return
 	}
-	
+
 	// Configure from JSON (no environment variables!)
 	err := kafkaEvent.MakeFromJson(ctx, &rawMsg)
 	if err != nil {
 		log.Printf("❌ Failed to configure %s event: %v", name, err)
 		return
 	}
-	
+
 	// Display configuration
 	fmt.Printf("✅ %s event configured successfully\n", name)
-	
+
 	// Show key attributes
 	brokers, _ := kafkaEvent.GetAttribute("brokers")
 	topic, _ := kafkaEvent.GetAttribute("topic")
 	groupId, _ := kafkaEvent.GetAttribute("group_id")
-	
+
 	fmt.Printf("   Brokers: %v\n", brokers)
 	fmt.Printf("   Topic: %v\n", topic)
 	fmt.Printf("   Group ID: %v\n", groupId)
-	
+
 	// NOTE: We don't call Init() here since we might not have the actual brokers running
 	// In eru-functions, you would call:
 	// err = kafkaEvent.Init(ctx)

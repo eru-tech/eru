@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"reflect"
+	"strings"
+	"sync"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
@@ -14,6 +18,7 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	"github.com/eru-tech/eru/eru-store/store"
+	vectorstore "github.com/eru-tech/eru/eru-vectorstore/vectorstore"
 )
 
 var Erufuncbaseurl = "http://localhost:8083"
@@ -21,6 +26,7 @@ var Eruauthbaseurl = "http://localhost:8085"
 var Eruaiport = "8088"
 
 type StoreHolder struct {
+	sync.RWMutex
 	Store ModuleStoreI
 }
 type ModuleStoreI interface {
@@ -36,6 +42,9 @@ type ModuleStoreI interface {
 	SaveAgent(ctx context.Context, agentObj agents.AgentI, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
 	RemoveAgent(ctx context.Context, agentName string, projectId string, tenantId string, realStore ModuleStoreI) error
 	GetAgent(ctx context.Context, projectId string, tenantId string, agentName string, s ModuleStoreI) (agents.AgentI, error)
+	SaveVectorStore(ctx context.Context, vectorStoreObj vectorstore.VectorStoreI, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
+	RemoveVectorStore(ctx context.Context, vectorStoreName string, projectId string, tenantId string, realStore ModuleStoreI) error
+	GetVectorStoreNames(ctx context.Context, projectID string, tenantID string) (vectorStoreNames []string, err error)
 	SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error
 	RemoveTenants()
 	SaveTool(ctx context.Context, tooling tools.Tooling, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
@@ -376,6 +385,19 @@ func (ms *ModuleStore) GetToolCloneObject(ctx context.Context, projectId string,
 	}
 	return iCloneI.Elem().Interface().(tools.Tooling), nil */
 }
+func (ms *ModuleStore) GetVectorStoreCloneObject(ctx context.Context, projectId string, tenantId string, vectorStoreObj vectorstore.VectorStoreI, s ModuleStoreI) (vectorStoreObjClone vectorstore.VectorStoreI, err error) {
+	logs.WithContext(ctx).Debug("GetVectorStoreCloneObject - Start")
+
+	vectorStoreObjJson, vectorStoreObjJsonErr := vectorStoreObj.GetBytes(ctx)
+	if vectorStoreObjJsonErr != nil {
+		return
+	}
+	vectorStoreObjJson = s.ReplaceTenantVariables(ctx, projectId, tenantId, vectorStoreObjJson)
+	vectorStoreObjJson = s.ReplaceVariables(ctx, projectId, vectorStoreObjJson, nil)
+
+	return vectorStoreObj.BytesToVectorStore(ctx, vectorStoreObjJson)
+
+}
 func (ms *ModuleStore) GetTool(ctx context.Context, projectId string, tenantId string, toolName string, actionName string, s ModuleStoreI) (toolObjClone tools.Tooling, err error) {
 	logs.WithContext(ctx).Debug("GetTool - Start")
 	return ms.GetToolClone(ctx, projectId, tenantId, toolName, actionName, s)
@@ -600,4 +622,128 @@ func (ms *ModuleStore) GetToolNames(ctx context.Context, projectId string, tenan
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
+}
+
+func (ms *ModuleStore) SaveVectorStore(ctx context.Context, vectorStoreObj vectorstore.VectorStoreI, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error {
+	logs.WithContext(ctx).Debug("SaveVectorStore - Start")
+	if persist {
+		realStore.GetMutex().Lock()
+		defer realStore.GetMutex().Unlock()
+	}
+
+	prj, err := ms.GetProjectConfig(ctx, projectId)
+	if err != nil {
+		return err
+	}
+
+	isNew, err := prj.AddVectorStore(ctx, tenantId, vectorStoreObj)
+	if err != nil {
+		return err
+	}
+	if isNew && persist {
+		vectorStoreObjClone, err := ms.GetVectorStoreCloneObject(ctx, projectId, tenantId, vectorStoreObj, realStore)
+		if err != nil {
+			return err
+		}
+		err = vectorStoreObjClone.CreateIndex(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	if persist {
+		return realStore.SaveTenantStore(ctx, projectId, tenantId, "", prj.Tenants[tenantId])
+	}
+	return nil
+}
+
+func (ms *ModuleStore) RemoveVectorStore(ctx context.Context, vectorStoreName string, projectId string, tenantId string, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveVectorStore - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
+
+	if prj, ok := ms.Projects[projectId]; ok {
+		if _, ok := prj.Tenants[tenantId]; !ok {
+			err = errors.New("tenant " + tenantId + " does not exists")
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+		if vs, ok := prj.Tenants[tenantId].VectorStores[vectorStoreName]; !ok {
+			err = errors.New("VectorStore " + vectorStoreName + " does not exists")
+			logs.WithContext(ctx).Info(err.Error())
+			return err
+		} else {
+			err = prj.RemoveVectorStore(ctx, tenantId, vectorStoreName)
+			if err != nil {
+				return err
+			} else {
+				vectorStoreClone, err := ms.GetVectorStoreCloneObject(ctx, projectId, tenantId, vs, realStore)
+				if err != nil {
+					return err
+				}
+				err = vectorStoreClone.DeleteIndex(ctx, vs.GetAttribute(ctx, "index_name"))
+				if err != nil {
+					return err
+				}
+			}
+			return realStore.SaveTenantStore(ctx, projectId, tenantId, "", prj.Tenants[tenantId])
+		}
+	} else {
+		err = errors.New("Project " + projectId + " does not exists")
+		logs.WithContext(ctx).Info(err.Error())
+		return err
+	}
+}
+
+func (ms *ModuleStore) GetVectorStoreNames(ctx context.Context, projectId string, tenantId string) (vectorStoreNames []string, err error) {
+	logs.WithContext(ctx).Debug("GetVectorStoreNames - Start")
+
+	if prj, ok := ms.Projects[projectId]; ok {
+		for _, tenant := range prj.Tenants {
+			if tenantId == "" || tenantId == tenant.TenantId {
+				for vectorStoreName := range tenant.VectorStores {
+					vectorStoreNames = append(vectorStoreNames, vectorStoreName)
+				}
+			}
+		}
+		return vectorStoreNames, nil
+	} else {
+		err = errors.New("Project " + projectId + " does not exist")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+}
+func LoadStore(StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
+	logs.WithContext(context.Background()).Info("Loading store")
+	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
+	if storeType == "" {
+		storeType = "STANDALONE"
+		logs.WithContext(context.Background()).Info("STORE_TYPE environment variable not found - loading default standlone store")
+	}
+	var myStore ModuleStoreI
+	var err error
+	switch storeType {
+	case "POSTGRES":
+		myStore = new(ModuleDbStore)
+		myStore.SetDbType(storeType)
+		myStore.SetStoreTableName(StoreTableName)
+		myStore.SetStoreTenantTableName(StoreTenantTableName)
+		myStore.CreateConn()
+	case "STANDALONE":
+		// myStore, err = store.LoadStoreFromFile()
+		myStore = new(ModuleFileStore)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.New(fmt.Sprint("Invalid STORE_TYPE ", storeType))
+	}
+	storeBytes, err := myStore.GetStoreByteArray("")
+	if err == nil {
+		UnMarshalStore(context.Background(), storeBytes, myStore)
+	} else {
+		logs.WithContext(context.Background()).Error(err.Error())
+	}
+	//s.Store = myStore
+	return myStore, err
 }

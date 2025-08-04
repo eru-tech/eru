@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	httpurl "net/url"
+	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -869,4 +871,83 @@ func GetCronStr(ctx context.Context, nextRun time.Time) string {
 	cronStr := fmt.Sprintf("%d %d %d %d *", nextRun.Minute(), nextRun.Hour(), nextRun.Day(), nextRun.Month())
 	logs.WithContext(ctx).Info(fmt.Sprint("Scheduling job to run at: ", nextRun.Format(time.RFC3339)))
 	return cronStr
+}
+
+// GetServiceAddress automatically detects the service's IP address and port
+// Returns a URL in the format "http://ip:port" or "https://ip:port"
+func GetServiceAddress(ctx context.Context, port string) (string, error) {
+	logs.WithContext(ctx).Debug("GetServiceAddress - Start")
+
+	// Get local IP address
+	localIP, err := getLocalIP()
+	if err != nil {
+		return "", fmt.Errorf("failed to get local IP: %w", err)
+	}
+
+	// Determine scheme (http or https)
+	scheme := "http"
+	if os.Getenv("HTTPS_ENABLED") == "true" {
+		scheme = "https"
+	}
+
+	// Construct service address
+	serviceAddress := fmt.Sprintf("%s://%s:%s", scheme, localIP, port)
+	logs.WithContext(ctx).Info(fmt.Sprintf("Detected service address: %s", serviceAddress))
+
+	return serviceAddress, nil
+}
+
+// getLocalIP returns the local IP address that can be reached from other machines
+func getLocalIP() (string, error) {
+	// Try to get the IP from environment variable first (useful for Docker/K8s)
+	if envIP := os.Getenv("SERVICE_IP"); envIP != "" {
+		return envIP, nil
+	}
+
+	// Try to get IP from Kubernetes downward API
+	if k8sIP := os.Getenv("POD_IP"); k8sIP != "" {
+		return k8sIP, nil
+	}
+
+	// Try to get IP from Docker environment
+	if dockerIP := os.Getenv("HOST_IP"); dockerIP != "" {
+		return dockerIP, nil
+	}
+
+	// Get all network interfaces
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+
+	// Look for a non-loopback interface with a valid IP
+	for _, iface := range interfaces {
+		// Skip loopback and down interfaces
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			switch v := addr.(type) {
+			case *net.IPNet:
+				// Skip IPv6 and loopback addresses
+				if v.IP.To4() != nil && !v.IP.IsLoopback() {
+					return v.IP.String(), nil
+				}
+			case *net.IPAddr:
+				// Skip IPv6 and loopback addresses
+				if v.IP.To4() != nil && !v.IP.IsLoopback() {
+					return v.IP.String(), nil
+				}
+			}
+		}
+	}
+
+	// Fallback to localhost if no external IP found
+	return "localhost", nil
 }

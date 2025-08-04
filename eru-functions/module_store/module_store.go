@@ -10,16 +10,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-
 	"net/url"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"strconv"
-
-
 
 	"github.com/eru-tech/eru/eru-db/db"
 	"github.com/eru-tech/eru/eru-events/events"
@@ -48,6 +47,7 @@ const (
 )
 
 type StoreHolder struct {
+	sync.RWMutex
 	Store ModuleStoreI
 }
 
@@ -1034,64 +1034,45 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 	return
 }
 
-/* func (ms *ModuleStore) SaveFuncRequest(ctx context.Context, sampleRequest module_model.SampleRequest, projectId string, tenantId string, s ModuleStoreI) (err error) {
-	logs.WithContext(ctx).Debug("SaveFuncRequest - Start")
-	sampleRequestBytes, err := json.Marshal(sampleRequest.RequestBody)
-	if err != nil {
-		err = logs.Err(ctx, err, "error marshalling sample request")
-		return
+func LoadStore(StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
+	logs.WithContext(context.Background()).Info("Loading store")
+	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
+	if storeType == "" {
+		storeType = "STANDALONE"
+		logs.WithContext(context.Background()).Info("STORE_TYPE environment variable not found - loading default standlone store")
 	}
-	var saveQueries []*models.Queries
-	saveQueryFuncRequest := models.Queries{}
-	saveQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SAVE_FUNC_REQUEST)
-	saveQueryFuncRequest.Vals = append(saveQueryFuncRequest.Vals, sampleRequest.RequestId, sampleRequest.RequestName, sampleRequest.FuncGroupName, projectId, tenantId, (string)(sampleRequestBytes))
-	saveQueryFuncRequest.Rank = 1
-	saveQueries = append(saveQueries, &saveQueryFuncRequest)
-	_, err = eru_utils.ExecuteDbSave(ctx, s.GetConn(), saveQueries)
-	if err != nil {
-		return
+	var myStore ModuleStoreI
+	var err error
+	switch storeType {
+	case "POSTGRES":
+		myStore = new(ModuleDbStore)
+		myStore.SetDbType(storeType)
+		myStore.SetStoreTableName(StoreTableName)
+		//myStore.SetStoreTenantTableName(StoreTenantTableName)
+		myStore.CreateConn()
+	case "STANDALONE":
+		// myStore, err = store.LoadStoreFromFile()
+		myStore = new(ModuleFileStore)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.New(fmt.Sprint("Invalid STORE_TYPE ", storeType))
 	}
-	return
+	storeBytes, err := myStore.GetStoreByteArray("")
+	if err == nil {
+		err = json.Unmarshal(storeBytes, myStore)
+		if err != nil {
+			logs.WithContext(context.Background()).Error(err.Error())
+		}
+		err = myStore.SetStoreFromBytes(context.Background(), storeBytes, myStore)
+		if err != nil {
+			logs.WithContext(context.Background()).Error(err.Error())
+			return nil, err
+		}
+	} else {
+		logs.WithContext(context.Background()).Error(err.Error())
+	}
+	//s.Store = myStore
+	return myStore, err
 }
-
-func (ms *ModuleStore) RemoveFuncRequest(ctx context.Context, requestId string, s ModuleStoreI) (err error) {
-	logs.WithContext(ctx).Debug("RemoveFuncRequest - Start")
-	var deleteQueries []*models.Queries
-	deleteQueryFuncRequest := models.Queries{}
-	deleteQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, DELETE_FUNC_REQUEST)
-	deleteQueryFuncRequest.Vals = append(deleteQueryFuncRequest.Vals, requestId)
-	deleteQueryFuncRequest.Rank = 1
-	deleteQueries = append(deleteQueries, &deleteQueryFuncRequest)
-	var delResult [][]map[string]interface{}
-	delResult, err = eru_utils.ExecuteDbSave(ctx, s.GetConn(), deleteQueries)
-	if err != nil {
-		return
-	}
-	if len(delResult[0]) == 0 {
-		err = logs.Err(ctx, fmt.Errorf("func request not found %s", requestId), "")
-		return
-	}
-	return
-}
-
-func (ms *ModuleStore) GetFuncRequests(ctx context.Context, projectId string, tenantId string, funcName string, s ModuleStoreI) (requests []module_model.SampleRequest, err error) {
-	logs.WithContext(ctx).Debug("GetFuncRequests - Start")
-	selectQueryFuncRequest := models.Queries{}
-	selectQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SELECT_FUNC_REQUEST)
-	selectQueryFuncRequest.Vals = append(selectQueryFuncRequest.Vals, projectId, tenantId, funcName, "ALL", "ALL")
-	selectQueryFuncRequest.Rank = 1
-	output, err := eru_utils.ExecuteDbFetch(ctx, s.GetConn(), selectQueryFuncRequest)
-	if err != nil {
-		return
-	}
-	requests = []module_model.SampleRequest{}
-	for _, request := range output {
-		requests = append(requests, module_model.SampleRequest{
-			RequestId:     eru_utils.GetStringField(request, "request_id"),
-			RequestName:   eru_utils.GetStringField(request, "request_name"),
-			RequestBody:   eru_utils.GetMapField(request, "request_json"),
-			FuncGroupName: eru_utils.GetStringField(request, "func_group_name"),
-		})
-	}
-	return
-} */

@@ -19,10 +19,12 @@ import (
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
 
 var ServerName = "unkown"
+var InstanceId = "unkown"
 var RepoName = "unkown.json"
 var AllowedOrigins = ""
 var RequestIdKey = "request_id"
@@ -39,7 +41,9 @@ func HelloHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, fmt.Sprint("Hello ", ServerName))
 }
-
+func SetInstanceId() {
+	InstanceId = fmt.Sprintf("%s-%s", ServerName, uuid.New().String())
+}
 func EnvHandler(s store.StoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("EnvHandler - Start")

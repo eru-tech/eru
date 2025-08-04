@@ -15,12 +15,36 @@ import (
 	"github.com/gorilla/mux"
 )
 
-type t interface {
-	t1()
-}
+const StoreTableName = "erufiles_config"
+const StoreTenantTableName = "erufiles_config_tenant"
 
-func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func StoreLoadHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("StoreLoadHandler - Start")
+
+		// Load new store from DB
+		newStore, err := module_store.LoadStore(StoreTableName, StoreTenantTableName)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(fmt.Sprintf("Failed to load store: %v", err))
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		// Update the global StoreHolder with the new store
+		sh.Store = newStore
+
+		logs.WithContext(r.Context()).Info("Store loaded and replaced successfully")
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(newStore)
+	}
+}
+func StoreCompareHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("StoreCompareHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
@@ -38,7 +62,7 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		storeCompare := file_model.StoreCompare{}
-		myPrj, err := s.GetExtendedProjectConfig(r.Context(), projectID, s)
+		myPrj, err := sh.Store.GetExtendedProjectConfig(r.Context(), projectID, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -55,12 +79,15 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 	}
 }
-func ProjectSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("ProjectSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		err := s.SaveProject(r.Context(), projectID, s, true)
+		err := sh.Store.SaveProject(r.Context(), projectID, sh.Store, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -72,12 +99,15 @@ func ProjectSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ProjectRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("ProjectRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		err := s.RemoveProject(r.Context(), projectID, s)
+		err := sh.Store.RemoveProject(r.Context(), projectID, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -89,21 +119,23 @@ func ProjectRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ProjectListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ProjectListHandler - Start")
-		projectIds := s.GetProjectList(r.Context())
+		projectIds := sh.Store.GetProjectList(r.Context())
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"projects": projectIds})
 	}
 }
 
-func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectConfigHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ProjectConfigHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		project, err := s.GetExtendedProjectConfig(r.Context(), projectID, s)
+		project, err := sh.Store.GetExtendedProjectConfig(r.Context(), projectID, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -114,8 +146,11 @@ func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func StorageSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func StorageSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("StorageSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -140,12 +175,12 @@ func StorageSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			//}
 		}
 		//err := storageObj.Save(s,projectId,storageName)
-		err := s.SaveStorage(r.Context(), storageObj, projectId, s, true)
+		err := sh.Store.SaveStorage(r.Context(), storageObj, projectId, sh.Store, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore(r.Context(), projectId, "", s)
+			sh.Store.SaveStore(r.Context(), projectId, "", sh.Store)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("storage config for ", storageName, " saved successfully")})
 		}
@@ -153,8 +188,11 @@ func StorageSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func StorageRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func StorageRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("StorageRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -169,12 +207,12 @@ func StorageRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		if forceDelete == "true" {
 			fd = true
 		}
-		err := s.RemoveStorage(r.Context(), storageName, projectId, cd, fd, s)
+		err := sh.Store.RemoveStorage(r.Context(), storageName, projectId, cd, fd, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore(r.Context(), projectId, "", s)
+			sh.Store.SaveStore(r.Context(), projectId, "", sh.Store)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("storage config for ", storageName, " removed successfully")})
 		}
@@ -182,8 +220,11 @@ func StorageRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func RsaKeyPairGenerateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func RsaKeyPairGenerateHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("RsaKeyPairGenerateHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
@@ -215,7 +256,7 @@ func RsaKeyPairGenerateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		kp, err := s.GenerateRsaKeyPair(r.Context(), projectID, keyPairName, bitsInt, overwriteB, s)
+		kp, err := sh.Store.GenerateRsaKeyPair(r.Context(), projectID, keyPairName, bitsInt, overwriteB, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -225,8 +266,11 @@ func RsaKeyPairGenerateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
-func AesKeyGenerateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func AesKeyGenerateHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("AesKeyGenerateHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
@@ -252,7 +296,7 @@ func AesKeyGenerateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		aesKey, err := s.GenerateAesKey(r.Context(), projectID, keyName, bitsInt, overwriteB, s)
+		aesKey, err := sh.Store.GenerateAesKey(r.Context(), projectID, keyName, bitsInt, overwriteB, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -263,8 +307,11 @@ func AesKeyGenerateHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectSetingsSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("ProjectSetingsSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -290,7 +337,7 @@ func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		err := s.SaveProjectSettings(r.Context(), projectId, projectSettings, s)
+		err := sh.Store.SaveProjectSettings(r.Context(), projectId, projectSettings, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)

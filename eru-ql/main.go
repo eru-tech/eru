@@ -26,7 +26,8 @@ func main() {
 	}()
 
 	module_server.SetServiceName()
-	logs.LogInit(server_handlers.ServerName)
+	server_handlers.SetInstanceId()
+	logs.LogInit(server_handlers.ServerName, server_handlers.InstanceId)
 	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
 	traceUrl := os.Getenv("TRACE_URL")
 	if traceUrl != "" {

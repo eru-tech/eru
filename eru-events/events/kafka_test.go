@@ -25,8 +25,8 @@ func TestKafkaEventCreation(t *testing.T) {
 }
 
 func TestKafkaEventMakeFromJson(t *testing.T) {
-	logs.LogInit("eru-events-test")
-	
+	logs.LogInit("eru-events-test", "eru-events-test-123")
+
 	jsonData := `{
 		"event_type": "KAFKA",
 		"event_name": "test-topic",
@@ -42,7 +42,7 @@ func TestKafkaEventMakeFromJson(t *testing.T) {
 
 	var rawMsg json.RawMessage = []byte(jsonData)
 	event := GetEvent("KAFKA")
-	
+
 	err := event.MakeFromJson(context.Background(), &rawMsg)
 	if err != nil {
 		t.Fatalf("Failed to make from JSON: %v", err)
@@ -102,8 +102,8 @@ func TestKafkaEventGetAttribute(t *testing.T) {
 }
 
 func TestKafkaEventClone(t *testing.T) {
-	logs.LogInit("eru-events-test")
-	
+	logs.LogInit("eru-events-test", "eru-events-test-123")
+
 	kafkaEvent := &Kafka_Event{
 		Event: Event{
 			EventType:       "KAFKA",

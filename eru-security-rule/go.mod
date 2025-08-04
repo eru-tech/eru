@@ -1,6 +1,6 @@
 module github.com/eru-tech/eru/eru-security-rule
 
-go 1.22.0
+go 1.24
 
 require (
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
@@ -32,13 +32,13 @@ require (
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-secret-manager v0.0.0-00010101000000-000000000000 // indirect
-	github.com/felixge/httpsnoop v1.0.2 // indirect
-	github.com/go-logr/logr v1.2.3 // indirect
+	github.com/felixge/httpsnoop v1.0.3 // indirect
+	github.com/go-logr/logr v1.3.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/goccy/go-json v0.9.6 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.1 // indirect
-	github.com/google/go-cmp v0.5.9 // indirect
-	github.com/google/uuid v1.3.0 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
 	github.com/jmoiron/sqlx v1.3.4 // indirect
@@ -59,17 +59,15 @@ require (
 	github.com/xuri/efp v0.0.0-20231025114914-d1ff6096ae53 // indirect
 	github.com/xuri/excelize/v2 v2.8.1 // indirect
 	github.com/xuri/nfp v0.0.0-20230919160717-d98342af3f05 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.25.0 // indirect
-	go.opentelemetry.io/otel v1.14.0 // indirect
-	go.opentelemetry.io/otel/internal/metric v0.24.0 // indirect
-	go.opentelemetry.io/otel/metric v0.24.0 // indirect
-	go.opentelemetry.io/otel/trace v1.14.0 // indirect
-	go.uber.org/atomic v1.10.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0 // indirect
+	go.opentelemetry.io/otel v1.21.0 // indirect
+	go.opentelemetry.io/otel/metric v1.21.0 // indirect
+	go.opentelemetry.io/otel/trace v1.21.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/crypto v0.19.0 // indirect
-	golang.org/x/net v0.21.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	go.uber.org/zap v1.27.0 // indirect
+	golang.org/x/crypto v0.36.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 )
 
 replace (
