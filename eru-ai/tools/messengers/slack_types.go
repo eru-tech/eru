@@ -42,6 +42,35 @@ type SlackEvent struct {
 	Blocks []interface{} `json:"blocks,omitempty"`
 }
 
+// SlackMessagePayload represents the payload for chat.postMessage API
+type SlackMessagePayload struct {
+	// Required fields
+	Channel string `json:"channel" eru:"required"`
+
+	// Content fields (at least one required: text, blocks, or attachments)
+	Text        string        `json:"text,omitempty"`
+	Blocks      []interface{} `json:"blocks,omitempty"`
+	Attachments []interface{} `json:"attachments,omitempty"`
+
+	// Optional fields
+	ThreadTs       string `json:"thread_ts,omitempty"`
+	ReplyBroadcast bool   `json:"reply_broadcast,omitempty"`
+	UnfurlLinks    bool   `json:"unfurl_links,omitempty"`
+	UnfurlMedia    bool   `json:"unfurl_media,omitempty"`
+	LinkNames      bool   `json:"link_names,omitempty"`
+	Parse          string `json:"parse,omitempty"` // "none" or "full"
+	Mrkdwn         bool   `json:"mrkdwn,omitempty"`
+
+	// Legacy fields
+	Username  string `json:"username,omitempty"`
+	AsUser    bool   `json:"as_user,omitempty"`
+	IconURL   string `json:"icon_url,omitempty"`
+	IconEmoji string `json:"icon_emoji,omitempty"`
+
+	// Metadata
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+
 type SlackMessageResponse struct {
 	Ok      bool   `json:"ok"`
 	Channel string `json:"channel,omitempty"`

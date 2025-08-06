@@ -8,7 +8,7 @@ const (
 	GetBusinessProfile  = "get_business_profile"
 	GetMessageTemplates = "get_message_templates"
 	Callback            = "callback"
-
+	ReadMessages        = "read_messages"
 	// Slack-specific actions
 	ListChannels    = "list_channels"
 	ListUsers       = "list_users"
