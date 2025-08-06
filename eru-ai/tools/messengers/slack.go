@@ -32,14 +32,8 @@ type slackToolWithToken struct {
 
 func (slackTool *SlackTool) GetActionsList() []string {
 	actions := []string{}
-	actions = append(actions, SendMessage)
-	actions = append(actions, SubscribeWebhooks)
-	actions = append(actions, ListChannels)
-	actions = append(actions, ListUsers)
-	actions = append(actions, CreateChannel)
-	actions = append(actions, InviteToChannel)
-	actions = append(actions, UploadMedia)
-	actions = append(actions, Callback)
+	actions = append(actions, SendMessage, Login, GetSsoUrl, SubscribeWebhooks,
+		ListChannels, ListUsers, CreateChannel, InviteToChannel, UploadMedia, Callback)
 	return actions
 }
 
@@ -94,9 +88,103 @@ func (slackTool *SlackTool) Execute(ctx context.Context, projectId string, tenan
 		return slackTool.InviteToChannel(ctx, params)
 	case UploadMedia:
 		return slackTool.UploadMedia(ctx, params)
+	case Login:
+		return slackTool.Login(ctx, projectId, tenantId, params, "")
+	case GetSsoUrl:
+		return slackTool.GetSsoUrl(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+}
+func (slackTool *SlackTool) GetSsoUrl(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("GetSsoUrl Execute - Start")
+	if slackTool.AuthName == "" {
+		err = errors.New("auth name is required")
+		logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+	eruauthUrl := ctx.Value("eruauthbaseurl").(string)
+	url := fmt.Sprint(eruauthUrl, "/", projectId, "/", slackTool.AuthName, "/getssourl")
+	logs.WithContext(ctx).Info(fmt.Sprint("url: ", url))
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	qParams := make(map[string]string)
+	if params["state"] != nil {
+		qParams["state"] = params["state"].(string)
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, qParams, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+	toolResultOk := false
+	toolResult, toolResultOk = res.(map[string]interface{})
+	if !toolResultOk {
+		err = errors.New("toolResult is not a map")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("toolResult: ", toolResult))
+	return toolResult, false, nil
+}
+func (slackTool *SlackTool) Login(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, renewStr string) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("Login Execute - Start")
+	if slackTool.AuthName == "" {
+		err = errors.New("auth name is required")
+		logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+	eruauthUrl := ctx.Value("eruauthbaseurl").(string)
+	url := fmt.Sprint(eruauthUrl, "/", projectId, "/", slackTool.AuthName, "/idptoken", renewStr)
+	logs.WithContext(ctx).Info(fmt.Sprint("url: ", url))
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, params)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+
+	var slackTokens SlackTokens
+	resBytes, _ := json.Marshal(res)
+	err = json.Unmarshal(resBytes, &slackTokens)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+	if !slackTokens.Ok {
+		err = logs.Err(ctx, errors.New(slackTokens.Error), "")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+
+	err = slackTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprintf("%s_authed_user_access_token", slackTool.ToolName), slackTokens.AuthedUser.AccessToken)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+	err = slackTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprintf("%s_authed_user_id", slackTool.ToolName), slackTokens.AuthedUser.Id)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+	err = slackTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprintf("%s_bot_access_token", slackTool.ToolName), slackTokens.AccessToken)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+	err = slackTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprintf("%s_bot_user_id", slackTool.ToolName), slackTokens.BotUserId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+
+	//slackTool.EmailAccount.TokenExpirationDateTime = time.Now().UTC().Add(time.Duration(msTokens.ExpiresIn) * time.Second).Format(time.RFC3339)
+	persistStore = true
+
+	toolResult = make(map[string]interface{})
+	toolResult["login_status"] = "success"
+	return toolResult, persistStore, nil
 }
 
 func (slackTool *SlackTool) SendMessage(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
@@ -113,7 +201,7 @@ func (slackTool *SlackTool) SendMessage(ctx context.Context, params map[string]i
 
 	url := fmt.Sprintf("%s/chat.postMessage", SLACK_BASE_URL)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AccessToken))
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AuthedUserAccessToken))
 	headers.Set("Content-Type", "application/json")
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, messagePayload)
@@ -155,7 +243,7 @@ func (slackTool *SlackTool) SubscribeWebhooks(ctx context.Context, projectId str
 
 	toolResult = make(map[string]interface{})
 	toolResult["webhook_url"] = webhookUrl
-	toolResult["verification_token"] = slackTool.SlackAccount.WebhookVerifyToken
+	//toolResult["verification_token"] = slackTool.SlackAccount.WebhookVerifyToken
 	toolResult["status"] = "configured"
 	toolResult["instructions"] = "Configure this webhook URL in your Slack app's Event Subscriptions with the provided verification token"
 
@@ -167,7 +255,7 @@ func (slackTool *SlackTool) ListChannels(ctx context.Context, params map[string]
 
 	url := fmt.Sprintf("%s/conversations.list", SLACK_BASE_URL)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AccessToken))
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AuthedUserAccessToken))
 
 	queryParams := map[string]string{}
 	if limit, limitOk := params["limit"]; limitOk {
@@ -194,7 +282,7 @@ func (slackTool *SlackTool) ListUsers(ctx context.Context, params map[string]int
 
 	url := fmt.Sprintf("%s/users.list", SLACK_BASE_URL)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AccessToken))
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AuthedUserAccessToken))
 
 	queryParams := map[string]string{}
 	if limit, limitOk := params["limit"]; limitOk {
@@ -225,7 +313,7 @@ func (slackTool *SlackTool) CreateChannel(ctx context.Context, params map[string
 
 	url := fmt.Sprintf("%s/conversations.create", SLACK_BASE_URL)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AccessToken))
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AuthedUserAccessToken))
 	headers.Set("Content-Type", "application/json")
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, channelPayload)
@@ -252,7 +340,7 @@ func (slackTool *SlackTool) InviteToChannel(ctx context.Context, params map[stri
 
 	url := fmt.Sprintf("%s/conversations.invite", SLACK_BASE_URL)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AccessToken))
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AuthedUserAccessToken))
 	headers.Set("Content-Type", "application/json")
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, invitePayload)
@@ -346,28 +434,28 @@ func (slackTool *SlackTool) Callback(ctx context.Context, projectId string, tena
 
 				// Structure event data based on type for consistent processing
 				eventDetails := map[string]interface{}{
-					"event_type":    eventPayload.Event.Type,
-					"event_ts":      eventPayload.Event.EventTs,
-					"user":          eventPayload.Event.User,
-					"channel":       eventPayload.Event.Channel,
-					"channel_type":  eventPayload.Event.ChannelType,
-					"team_id":       eventPayload.TeamId,
-					"api_app_id":    eventPayload.ApiAppId,
-					"event_id":      eventPayload.EventId,
-					"event_time":    eventPayload.EventTime,
-					"tenant_id":     tenantId,
-					"project_id":    projectId,
+					"event_type":   eventPayload.Event.Type,
+					"event_ts":     eventPayload.Event.EventTs,
+					"user":         eventPayload.Event.User,
+					"channel":      eventPayload.Event.Channel,
+					"channel_type": eventPayload.Event.ChannelType,
+					"team_id":      eventPayload.TeamId,
+					"api_app_id":   eventPayload.ApiAppId,
+					"event_id":     eventPayload.EventId,
+					"event_time":   eventPayload.EventTime,
+					"tenant_id":    tenantId,
+					"project_id":   projectId,
 				}
 
 				// Add event-specific data based on event type
 				switch eventPayload.Event.Type {
 				case "message":
 					eventDetails["message"] = map[string]interface{}{
-						"text":         eventPayload.Event.Text,
-						"ts":           eventPayload.Event.Ts,
+						"text":          eventPayload.Event.Text,
+						"ts":            eventPayload.Event.Ts,
 						"client_msg_id": eventPayload.Event.ClientMsgId,
-						"thread_ts":    eventPayload.Event.Thread_ts,
-						"blocks":       eventPayload.Event.Blocks,
+						"thread_ts":     eventPayload.Event.Thread_ts,
+						"blocks":        eventPayload.Event.Blocks,
 					}
 					logs.WithContext(bgCtx).Info(fmt.Sprintf("Message from user %s: %s", eventPayload.Event.User, eventPayload.Event.Text))
 
@@ -410,10 +498,10 @@ func (slackTool *SlackTool) Callback(ctx context.Context, projectId string, tena
 				}
 
 				hookBody := map[string]interface{}{
-					"type":        "slack_event",
-					"event":       eventDetails,
-					"tenant_id":   tenantId,
-					"event_time":  eventPayload.EventTime,
+					"type":       "slack_event",
+					"event":      eventDetails,
+					"tenant_id":  tenantId,
+					"event_time": eventPayload.EventTime,
 				}
 
 				hookResult, err := slackTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, hookBody, params)
@@ -434,8 +522,11 @@ func (slackTool *SlackTool) GetToolCbUrl(projectId string, tenantId string) stri
 }
 
 func (slackTool *SlackTool) SetPrivateAttributes(ctx context.Context, realTool tools.Tooling) (err error) {
-	slackTool.SlackAccount.AccessToken = "$SECRET_slack_access_token"
-	slackTool.SlackAccount.WebhookVerifyToken = "$SECRET_slack_webhook_verify_token"
+	slackTool.SlackAccount.AuthedUserAccessToken = fmt.Sprintf("$SECRET_%s_authed_user_access_token", slackTool.ToolName)
+	slackTool.SlackAccount.AuthedUserId = fmt.Sprintf("$SECRET_%s_authed_user_id", slackTool.ToolName)
+	slackTool.SlackAccount.BotAccessToken = fmt.Sprintf("$SECRET_%s_bot_access_token", slackTool.ToolName)
+	slackTool.SlackAccount.BotUserId = fmt.Sprintf("$SECRET_%s_bot_user_id", slackTool.ToolName)
+
 	return nil
 }
 
@@ -443,12 +534,15 @@ func (slackTool *SlackTool) GetBytes(ctx context.Context) ([]byte, error) {
 	slackToolWithToken := slackToolWithToken{
 		Tool: slackTool.Tool,
 		SlackAccount: slackAccountWithToken{
-			TeamId:             slackTool.SlackAccount.TeamId,
-			BotUserId:          slackTool.SlackAccount.BotUserId,
-			AccessToken:        slackTool.SlackAccount.AccessToken,
-			WebhookVerifyToken: slackTool.SlackAccount.WebhookVerifyToken,
-			WebhookUrl:         slackTool.SlackAccount.WebhookUrl,
-			AppId:              slackTool.SlackAccount.AppId,
+			TeamId:                slackTool.SlackAccount.TeamId,
+			BotUserId:             slackTool.SlackAccount.BotUserId,
+			AuthedUserAccessToken: slackTool.SlackAccount.AuthedUserAccessToken,
+			BotAccessToken:        slackTool.SlackAccount.BotAccessToken,
+			AuthedUserId:          slackTool.SlackAccount.AuthedUserId,
+			TeamName:              slackTool.SlackAccount.TeamName,
+			Enterprise:            slackTool.SlackAccount.Enterprise,
+			IsEnterpriseInstall:   slackTool.SlackAccount.IsEnterpriseInstall,
+			AppId:                 slackTool.SlackAccount.AppId,
 		},
 		AuthName: slackTool.AuthName,
 	}
@@ -472,12 +566,15 @@ func (slackTool *SlackTool) BytesToTool(ctx context.Context, toolObjJson []byte)
 	slackTool = &SlackTool{
 		Tool: slackToolWithToken.Tool,
 		SlackAccount: SlackAccount{
-			TeamId:             slackToolWithToken.SlackAccount.TeamId,
-			BotUserId:          slackToolWithToken.SlackAccount.BotUserId,
-			AccessToken:        slackToolWithToken.SlackAccount.AccessToken,
-			WebhookVerifyToken: slackToolWithToken.SlackAccount.WebhookVerifyToken,
-			WebhookUrl:         slackToolWithToken.SlackAccount.WebhookUrl,
-			AppId:              slackToolWithToken.SlackAccount.AppId,
+			TeamId:                slackToolWithToken.SlackAccount.TeamId,
+			BotUserId:             slackToolWithToken.SlackAccount.BotUserId,
+			AuthedUserAccessToken: slackToolWithToken.SlackAccount.AuthedUserAccessToken,
+			BotAccessToken:        slackToolWithToken.SlackAccount.BotAccessToken,
+			AuthedUserId:          slackToolWithToken.SlackAccount.AuthedUserId,
+			TeamName:              slackToolWithToken.SlackAccount.TeamName,
+			Enterprise:            slackToolWithToken.SlackAccount.Enterprise,
+			IsEnterpriseInstall:   slackToolWithToken.SlackAccount.IsEnterpriseInstall,
+			AppId:                 slackToolWithToken.SlackAccount.AppId,
 		},
 		AuthName: slackToolWithToken.AuthName,
 	}

@@ -1,28 +1,28 @@
 package messengers
 
 type SlackEventPayload struct {
-	Token     string `json:"token"`
-	TeamId    string `json:"team_id"`
-	ApiAppId  string `json:"api_app_id"`
+	Token     string     `json:"token"`
+	TeamId    string     `json:"team_id"`
+	ApiAppId  string     `json:"api_app_id"`
 	Event     SlackEvent `json:"event"`
-	Type      string `json:"type"`
-	EventId   string `json:"event_id"`
-	EventTime int64  `json:"event_time"`
+	Type      string     `json:"type"`
+	EventId   string     `json:"event_id"`
+	EventTime int64      `json:"event_time"`
 }
 
 type SlackEvent struct {
-	Type      string `json:"type"`
-	Channel   string `json:"channel,omitempty"`
-	User      string `json:"user,omitempty"`
-	Text      string `json:"text,omitempty"`
-	Ts        string `json:"ts,omitempty"`
-	EventTs   string `json:"event_ts,omitempty"`
+	Type        string `json:"type"`
+	Channel     string `json:"channel,omitempty"`
+	User        string `json:"user,omitempty"`
+	Text        string `json:"text,omitempty"`
+	Ts          string `json:"ts,omitempty"`
+	EventTs     string `json:"event_ts,omitempty"`
 	ChannelType string `json:"channel_type,omitempty"`
-	
+
 	// Message-specific fields
 	ClientMsgId string `json:"client_msg_id,omitempty"`
 	Thread_ts   string `json:"thread_ts,omitempty"`
-	
+
 	// Reaction fields
 	Reaction string `json:"reaction,omitempty"`
 	Item     struct {
@@ -30,14 +30,14 @@ type SlackEvent struct {
 		Channel string `json:"channel"`
 		Ts      string `json:"ts"`
 	} `json:"item,omitempty"`
-	
+
 	// File fields
 	FileId string `json:"file_id,omitempty"`
 	File   struct {
 		Id   string `json:"id"`
 		Name string `json:"name"`
 	} `json:"file,omitempty"`
-	
+
 	// App mention fields
 	Blocks []interface{} `json:"blocks,omitempty"`
 }
@@ -64,21 +64,21 @@ type SlackErrorResponse struct {
 }
 
 type SlackChannel struct {
-	Id             string   `json:"id"`
-	Name           string   `json:"name"`
-	IsChannel      bool     `json:"is_channel"`
-	IsGroup        bool     `json:"is_group"`
-	IsIm           bool     `json:"is_im"`
-	Created        int64    `json:"created"`
-	IsArchived     bool     `json:"is_archived"`
-	IsGeneral      bool     `json:"is_general"`
-	Unlinked       int      `json:"unlinked"`
-	NameNormalized string   `json:"name_normalized"`
-	IsShared       bool     `json:"is_shared"`
-	IsPrivate      bool     `json:"is_private"`
-	IsMember       bool     `json:"is_member"`
-	IsOrgShared    bool     `json:"is_org_shared"`
-	Creator        string   `json:"creator"`
+	Id             string `json:"id"`
+	Name           string `json:"name"`
+	IsChannel      bool   `json:"is_channel"`
+	IsGroup        bool   `json:"is_group"`
+	IsIm           bool   `json:"is_im"`
+	Created        int64  `json:"created"`
+	IsArchived     bool   `json:"is_archived"`
+	IsGeneral      bool   `json:"is_general"`
+	Unlinked       int    `json:"unlinked"`
+	NameNormalized string `json:"name_normalized"`
+	IsShared       bool   `json:"is_shared"`
+	IsPrivate      bool   `json:"is_private"`
+	IsMember       bool   `json:"is_member"`
+	IsOrgShared    bool   `json:"is_org_shared"`
+	Creator        string `json:"creator"`
 	Topic          struct {
 		Value   string `json:"value"`
 		Creator string `json:"creator"`
@@ -93,9 +93,9 @@ type SlackChannel struct {
 }
 
 type SlackChannelsListResponse struct {
-	Ok       bool          `json:"ok"`
+	Ok       bool           `json:"ok"`
 	Channels []SlackChannel `json:"channels"`
-	Error    string        `json:"error,omitempty"`
+	Error    string         `json:"error,omitempty"`
 }
 
 type SlackUser struct {
@@ -124,14 +124,14 @@ type SlackUser struct {
 		Image192              string `json:"image_192"`
 		Image512              string `json:"image_512"`
 	} `json:"profile"`
-	IsAdmin           bool `json:"is_admin"`
-	IsOwner           bool `json:"is_owner"`
-	IsPrimaryOwner    bool `json:"is_primary_owner"`
-	IsRestricted      bool `json:"is_restricted"`
-	IsUltraRestricted bool `json:"is_ultra_restricted"`
-	IsBot             bool `json:"is_bot"`
+	IsAdmin           bool  `json:"is_admin"`
+	IsOwner           bool  `json:"is_owner"`
+	IsPrimaryOwner    bool  `json:"is_primary_owner"`
+	IsRestricted      bool  `json:"is_restricted"`
+	IsUltraRestricted bool  `json:"is_ultra_restricted"`
+	IsBot             bool  `json:"is_bot"`
 	Updated           int64 `json:"updated"`
-	IsAppUser         bool `json:"is_app_user"`
+	IsAppUser         bool  `json:"is_app_user"`
 }
 
 type SlackUsersListResponse struct {
@@ -148,4 +148,50 @@ type SlackFileUploadResponse struct {
 		Size int    `json:"size"`
 	} `json:"file"`
 	Error string `json:"error,omitempty"`
+}
+
+type SlackTokens struct {
+	Ok         bool   `json:"ok"`
+	Error      string `json:"error,omitempty"`
+	AppId      string `json:"app_id"`
+	AuthedUser struct {
+		Id          string `json:"id"`
+		Scope       string `json:"scope"`
+		AccessToken string `json:"access_token"`
+		TokenType   string `json:"token_type"`
+	} `json:"authed_user"`
+	Scope       string `json:"scope"`
+	TokenType   string `json:"token_type"`
+	AccessToken string `json:"access_token"`
+	BotUserId   string `json:"bot_user_id"`
+	Team        struct {
+		Id   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"team"`
+	Enterprise          interface{} `json:"enterprise"`
+	IsEnterpriseInstall bool        `json:"is_enterprise_install"`
+}
+
+type SlackAccount struct {
+	AppId                 string `json:"app_id"`
+	AuthedUserId          string `json:"-"`
+	AuthedUserAccessToken string `json:"-"`
+	BotAccessToken        string `json:"-"`
+	BotUserId             string `json:"-"`
+	TeamId                string `json:"team_id"`
+	TeamName              string `json:"team_name"`
+	Enterprise            string `json:"enterprise"`
+	IsEnterpriseInstall   bool   `json:"is_enterprise_install"`
+}
+
+type slackAccountWithToken struct {
+	AppId                 string `json:"app_id"`
+	AuthedUserId          string `json:"authed_user_id"`
+	AuthedUserAccessToken string `json:"authed_user_access_token"`
+	BotAccessToken        string `json:"bot_access_token"`
+	BotUserId             string `json:"bot_user_id"`
+	TeamId                string `json:"team_id"`
+	TeamName              string `json:"team_name"`
+	Enterprise            string `json:"enterprise"`
+	IsEnterpriseInstall   bool   `json:"is_enterprise_install"`
 }
