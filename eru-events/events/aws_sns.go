@@ -42,7 +42,8 @@ type AwsSnsSubscriber struct {
 	Endpoint           string                 `json:"endpoint" eru:"required"`             // URL, email, phone, ARN, etc.
 	FilterPolicy       map[string]interface{} `json:"filter_policy" eru:"optional"`        // JSON filter policy for message filtering
 	RawMessageDelivery bool                   `json:"raw_message_delivery" eru:"optional"` // Deliver raw message instead of JSON
-	SubscriptionArn    string                 `json:"subscription_arn" eru:"optional"`     // Subscription ARN returned from AWS (populated after subscription)
+	SubscriptionArn    string                 `json:"subscription_arn" eru:"optional"`
+	UnsubscribeURL     string                 `json:"unsubscribe_url" eru:"optional"` // Subscription ARN returned from AWS (populated after subscription)
 }
 
 type AWS_SNS_Event struct {
@@ -359,18 +360,9 @@ func (aws_sns_event *AWS_SNS_Event) Subscribe(ctx context.Context, subscription 
 	}
 	logs.WithContext(ctx).Info(fmt.Sprintf("Subscribed to: %s", *result.SubscriptionArn))
 	logs.WithContext(ctx).Info(fmt.Sprintf("Result: %+v", result))
-	found := false
-	for _, sub := range aws_sns_event.Subscribers {
-		if sub.Endpoint == subscriber.Endpoint {
-			sub.SubscriptionArn = *result.SubscriptionArn
-			found = true
-			break
-		}
-	}
+
 	subscriber.SubscriptionArn = *result.SubscriptionArn
-	if !found {
-		aws_sns_event.Subscribers = append(aws_sns_event.Subscribers, subscriber)
-	}
+	aws_sns_event.Subscribers = append(aws_sns_event.Subscribers, subscriber)
 	return
 }
 
@@ -428,7 +420,7 @@ func (aws_sns_event *AWS_SNS_Event) ListSubscriptions(ctx context.Context) (subs
 
 	return subscriptions, nil
 }
-func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg interface{}) (notification map[string]EventNotification, confirmation bool, err error) {
+func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg interface{}, endPoint string) (notification map[string]EventNotification, confirmation bool, err error) {
 	confirmation = false
 	msgBytes, err := json.Marshal(msg)
 	if err != nil {
@@ -482,9 +474,23 @@ func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg
 				logs.Logger.Error("subscription ARN not found in response")
 				return nil, confirmation, err
 			}
-			aws_sns_event.Subscribers = append(aws_sns_event.Subscribers, AwsSnsSubscriber{
-				SubscriptionArn: subscriptionArn,
-			})
+			found := false
+			for _, sub := range aws_sns_event.Subscribers {
+				if sub.Endpoint == endPoint {
+					sub.SubscriptionArn = subscriptionArn
+					sub.UnsubscribeURL = msgEnvelope.UnsubscribeURL
+					found = true
+					break
+				}
+			}
+			if !found {
+				aws_sns_event.Subscribers = append(aws_sns_event.Subscribers, AwsSnsSubscriber{
+					SubscriptionArn: subscriptionArn,
+					Endpoint:        endPoint,
+					Protocol:        "https",
+					UnsubscribeURL:  msgEnvelope.UnsubscribeURL,
+				})
+			}
 			confirmation = true
 			logs.Logger.Info(fmt.Sprintf("Subscription confirmed (GET %s -> %d) SubscriptionArn: %s", url, respStatus, subscriptionArn))
 			//}(msgEnvelope.SubscribeURL)

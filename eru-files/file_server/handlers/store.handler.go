@@ -47,7 +47,7 @@ func ConfigSyncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			logs.Logger.Error(fmt.Sprintf("Failed to fetch config event: %v", err))
 		} else {
 			logs.Logger.Info(fmt.Sprintf("tmplBody: %v", tmplBody))
-			notification, confirmation, err := configEvent.ProcessNotification(context.Background(), tmplBody)
+			notification, confirmation, err := configEvent.ProcessNotification(context.Background(), tmplBody, r.Host)
 			if err != nil {
 				logs.Logger.Error(fmt.Sprintf("failed to process notification: %v", err))
 			}
