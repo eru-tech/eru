@@ -121,18 +121,21 @@ func Init(store store.StoreI) (*mux.Router, *Server, error) {
 				"filter_policy": string(fpJson),
 			}
 
-			err = configEvent.Subscribe(context.Background(), subscription)
-			if err != nil {
-				logs.Logger.Error(fmt.Sprintf("Failed to subscribe to config sync event: %v", err))
-				err = nil
-			} else {
+			// Run subscription asynchronously with 1 second delay
+			go func() {
+				time.Sleep(1 * time.Second)
+				err := configEvent.Subscribe(context.Background(), subscription)
+				if err != nil {
+					logs.Logger.Error(fmt.Sprintf("Failed to subscribe to config sync event: %v", err))
+					return
+				}
 				logs.WithContext(context.Background()).Info(fmt.Sprintf("Subscribed to config sync event: %v", configEvent))
 				err = store.SaveStore(context.Background(), project_id, "", store)
 				if err != nil {
 					logs.Logger.Error(fmt.Sprintf("Failed to save store after subscribing to %s event: %v", handlers.ConfigSyncEvent, err))
 					err = nil
 				}
-			}
+			}()
 		}
 	}
 

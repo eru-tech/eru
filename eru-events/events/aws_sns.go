@@ -359,8 +359,18 @@ func (aws_sns_event *AWS_SNS_Event) Subscribe(ctx context.Context, subscription 
 	}
 	logs.WithContext(ctx).Info(fmt.Sprintf("Subscribed to: %s", *result.SubscriptionArn))
 	logs.WithContext(ctx).Info(fmt.Sprintf("Result: %+v", result))
+	found := false
+	for _, sub := range aws_sns_event.Subscribers {
+		if sub.Endpoint == subscriber.Endpoint {
+			sub.SubscriptionArn = *result.SubscriptionArn
+			found = true
+			break
+		}
+	}
 	subscriber.SubscriptionArn = *result.SubscriptionArn
-	aws_sns_event.Subscribers = append(aws_sns_event.Subscribers, subscriber)
+	if !found {
+		aws_sns_event.Subscribers = append(aws_sns_event.Subscribers, subscriber)
+	}
 	return
 }
 
