@@ -428,8 +428,8 @@ func (aws_sns_event *AWS_SNS_Event) ListSubscriptions(ctx context.Context) (subs
 
 	return subscriptions, nil
 }
-func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg interface{}) (notification map[string]EventNotification, err error) {
-
+func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg interface{}) (notification map[string]EventNotification, confirmation bool, err error) {
+	confirmation = false
 	msgBytes, err := json.Marshal(msg)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -452,15 +452,26 @@ func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg
 					logs.Logger.Error(fmt.Sprintf("confirm http.MethodGet failed: %v", err))
 					return
 				}
+				respMap, respMapOk := resp.(map[string]interface{})
+				if !respMapOk {
+					logs.Logger.Error("subscription confirmation response is not a map")
+					return
+				}
+				respBody, respBodyOk := respMap["body"]
+				if !respBodyOk {
+					logs.Logger.Error("subscription confirmation response body not found")
+					return
+				}
 
 				// Parse XML response to extract subscription ARN
 				var confirmResp ConfirmSubscriptionResponse
-				respBytes, err := json.Marshal(resp)
-				if err != nil {
-					logs.Logger.Error(fmt.Sprintf("failed to marshal response: %v", err))
+				respBodyStr, respBodyStrOk := respBody.(string)
+				if !respBodyStrOk {
+					logs.Logger.Error("response body is not a string")
 					return
 				}
-				if err := xml.Unmarshal(respBytes, &confirmResp); err != nil {
+				logs.Logger.Info(fmt.Sprintf("response: %s", respBodyStr))
+				if err := xml.Unmarshal([]byte(respBodyStr), &confirmResp); err != nil {
 					logs.Logger.Error(fmt.Sprintf("failed to parse XML response: %v", err))
 					return
 				}
@@ -476,7 +487,7 @@ func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg
 				logs.Logger.Info(fmt.Sprintf("Subscription confirmed (GET %s -> %d) SubscriptionArn: %s", url, respStatus, subscriptionArn))
 			}(msgEnvelope.SubscribeURL)
 		}
-		return nil, err
+		return nil, confirmation, err
 	case "Notification":
 		logs.Logger.Info(fmt.Sprintf("SNS Notification %s subject=%q", msgEnvelope.MessageId, msgEnvelope.Subject))
 		// Print attributes (if any)
@@ -490,11 +501,11 @@ func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg
 		}
 	case "UnsubscribeConfirmation":
 		logs.Logger.Info(fmt.Sprintf("[SNS] UnsubscribeConfirmation: %s", msgEnvelope.UnsubscribeURL))
-		return nil, nil
+		return nil, confirmation, err
 	default:
 		err = fmt.Errorf("[SNS] Unknown Type=%s", msgEnvelope.Type)
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return nil, confirmation, err
 	}
-	return notification, nil
+	return notification, confirmation, nil
 }

@@ -47,10 +47,11 @@ func ConfigSyncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			logs.Logger.Error(fmt.Sprintf("Failed to fetch config event: %v", err))
 		} else {
 			logs.Logger.Info(fmt.Sprintf("tmplBody: %v", tmplBody))
-			notification, err := configEvent.ProcessNotification(context.Background(), tmplBody)
+			notification, confirmation, err := configEvent.ProcessNotification(context.Background(), tmplBody)
 			if err != nil {
 				logs.Logger.Error(fmt.Sprintf("failed to process notification: %v", err))
 			}
+			logs.Logger.Info(fmt.Sprintf("confirmation: %v, configEvent: %v", confirmation, configEvent))
 			nInstanceId := ""
 			nServiceName := ""
 			if notification != nil {
@@ -67,8 +68,6 @@ func ConfigSyncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			if nInstanceId != server_handlers.InstanceId && nServiceName == server_handlers.ServerName {
 				sh.Lock()
 				defer sh.Unlock()
-
-				logs.WithContext(r.Context()).Debug("StoreLoadHandler - Start")
 
 				// Load new store from DB
 				newStore, err := module_store.LoadStore(StoreTableName, StoreTenantTableName)
