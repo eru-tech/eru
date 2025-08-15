@@ -445,12 +445,12 @@ func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg
 
 				// Parse XML response to extract subscription ARN
 				var confirmResp ConfirmSubscriptionResponse
-				respStr, ok := resp.(string)
-				if !ok {
-					logs.Logger.Error("response is not a string")
+				respBytes, err := json.Marshal(resp)
+				if err != nil {
+					logs.Logger.Error(fmt.Sprintf("failed to marshal response: %v", err))
 					return
 				}
-				if err := xml.Unmarshal([]byte(respStr), &confirmResp); err != nil {
+				if err := xml.Unmarshal(respBytes, &confirmResp); err != nil {
 					logs.Logger.Error(fmt.Sprintf("failed to parse XML response: %v", err))
 					return
 				}
