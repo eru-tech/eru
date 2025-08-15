@@ -115,7 +115,7 @@ func Init(store store.StoreI) (*mux.Router, *Server, error) {
 
 			subscription := map[string]interface{}{
 				"protocol":      "https",
-				"endpoint":      handlers.BaseUrl + "/" + handlers.ConfigSyncEvent,
+				"endpoint":      fmt.Sprintf("%s/%s?instance_id=%s", handlers.BaseUrl, handlers.ConfigSyncEvent, handlers.InstanceId),
 				"filter_policy": string(fpJson),
 			}
 
