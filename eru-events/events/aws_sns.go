@@ -475,10 +475,10 @@ func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg
 				return nil, confirmation, err
 			}
 			found := false
-			for _, sub := range aws_sns_event.Subscribers {
+			for i, sub := range aws_sns_event.Subscribers {
 				if sub.Endpoint == endPoint {
-					sub.SubscriptionArn = subscriptionArn
-					sub.UnsubscribeURL = msgEnvelope.UnsubscribeURL
+					aws_sns_event.Subscribers[i].SubscriptionArn = subscriptionArn
+					aws_sns_event.Subscribers[i].UnsubscribeURL = msgEnvelope.UnsubscribeURL
 					found = true
 					break
 				}
