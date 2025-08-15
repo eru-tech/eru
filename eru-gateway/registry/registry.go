@@ -45,7 +45,9 @@ func (r *Registry) Register(ctx context.Context, instance eru_models.ServiceInst
 func (r *Registry) Deregister(ctx context.Context, serviceId string) error {
 	key := generateKey(serviceId)
 	if _, err := r.cache.Get(ctx, key); err != nil {
-		return fmt.Errorf("service with id %s not found", serviceId)
+		err = fmt.Errorf("service with id %s not found", serviceId)
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 	return r.cache.Delete(ctx, key)
 }
@@ -55,14 +57,18 @@ func (r *Registry) Heartbeat(ctx context.Context, serviceID string) error {
 	key := generateKey(serviceID)
 	val, err := r.cache.Get(ctx, key)
 	if err != nil {
-		return fmt.Errorf("service with Id %s not found, please re-register", serviceID)
+		err = fmt.Errorf("service with Id %s not found, please re-register", serviceID)
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 
 	var instance eru_models.ServiceInstance
 	if err := json.Unmarshal([]byte(val), &instance); err != nil {
-		return fmt.Errorf("failed to unmarshal service instance data: %w", err)
+		err = fmt.Errorf("failed to unmarshal service instance data: %w", err)
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
-
+	instance.HeartbeatTTL = instance.HeartbeatTTL.Add(r.heartbeatTTL)
 	// Set it again to refresh the TTL
 	return r.cache.SetWithTTL(ctx, key, instance, r.heartbeatTTL)
 }

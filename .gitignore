@@ -36,3 +36,5 @@ config.json
 .gitignore
 eru-ql/eru-ql.log
 .gitignore
+eru-sql-llm-analysis.md
+*.md

@@ -86,9 +86,11 @@ func (pvs *PineconeVectorStore) CreateIndex(ctx context.Context) error {
 
 	// Create index using Pinecone API directly
 	createIndexPayload := map[string]interface{}{
-		"name":      pvs.Index.Name,
-		"dimension": pvs.Index.Dimension,
-		"metric":    pvs.Index.Metric,
+		"name":                pvs.Index.Name,
+		"dimension":           pvs.Index.Dimension,
+		"metric":              pvs.Index.Metric,
+		"deletion_protection": pvs.Index.DeletionProtection,
+		"tags":                pvs.Index.Tags,
 		"spec": map[string]interface{}{
 			"serverless": map[string]interface{}{
 				"cloud":  pvs.Index.ServerlessSpec.Cloud,
@@ -168,7 +170,53 @@ func (pvs *PineconeVectorStore) MakeFromJson(ctx context.Context, rj *json.RawMe
 func (pvs *PineconeVectorStore) EditIndex(ctx context.Context) error {
 	logs.WithContext(ctx).Debug("PineconeVectorStore Edit - Start")
 
+	// Initialize Pinecone client
+	if err := pvs.initClient(ctx); err != nil {
+		return err
+	}
+
+	// Create index using Pinecone API directly
+	editIndexPayload := map[string]interface{}{
+		"deletion_protection": pvs.Index.DeletionProtection,
+		"tags":                pvs.Index.Tags,
+	}
+	if pvs.Index.PodSpec.PodType != "" {
+		editIndexPayload["spec"] = map[string]interface{}{
+			"pod": map[string]interface{}{
+				"pod_type":        pvs.Index.PodSpec.PodType,
+				"replicas":        pvs.Index.PodSpec.Replicas,
+				"shards":          pvs.Index.PodSpec.Shards,
+				"pods":            pvs.Index.PodSpec.Pods,
+				"environment":     pvs.Index.PodSpec.Environment,
+				"metadata_config": pvs.Index.PodSpec.MetadataConfig,
+			},
+		}
+	}
+
+	// Use Pinecone API endpoint directly
+	url := fmt.Sprintf("%s/indexes/%s", baseUrl, pvs.Index.Name)
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Api-Key", pvs.APIKey)
+
+	_, _, _, _, err := utils.CallHttp(ctx, "PATCH", url, headers, nil, nil, nil, editIndexPayload)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return err
+	}
+
 	logs.WithContext(ctx).Info("PineconeVectorStore edit completed")
+	return nil
+}
+func (pvs *PineconeVectorStore) UpdateVectorStore(ctx context.Context, updatedVectorStore VectorStoreI) error {
+	logs.WithContext(ctx).Debug("PineconeVectorStore Edit - Start")
+	updatedPineconeVectorStore, ok := updatedVectorStore.(*PineconeVectorStore)
+	if !ok {
+		return logs.Err(ctx, fmt.Errorf("invalid vector store type"), "")
+	}
+	pvs.Index.DeletionProtection = updatedPineconeVectorStore.Index.DeletionProtection
+	pvs.Index.Tags = updatedPineconeVectorStore.Index.Tags
+	pvs.APIKey = updatedPineconeVectorStore.APIKey
 	return nil
 }
 func (pvs *PineconeVectorStore) GetBytes(ctx context.Context) ([]byte, error) {
@@ -201,14 +249,4 @@ func (pvs *PineconeVectorStore) GetAttribute(ctx context.Context, attributeName 
 	default:
 		return ""
 	}
-}
-func (pvs *PineconeVectorStore) ValidateEditIndex(ctx context.Context, updatedVectorStore VectorStoreI) error {
-	logs.WithContext(ctx).Debug("ValidateEditIndex - Start")
-
-	_, ok := updatedVectorStore.(*PineconeVectorStore)
-	if !ok {
-		return logs.Err(ctx, fmt.Errorf("invalid vector store type"), "")
-	}
-
-	return nil
 }

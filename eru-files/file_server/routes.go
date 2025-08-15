@@ -15,6 +15,7 @@ func SetServiceName() {
 func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	//store functions specific to files
+	serverRouter.Methods(http.MethodPost).Path("/{event_name}").HandlerFunc(file_handlers.ConfigSyncHandler(sh))
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 	storeRouter.Methods(http.MethodGet).Path("/load").HandlerFunc(file_handlers.StoreLoadHandler(sh))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/compare").HandlerFunc(file_handlers.StoreCompareHandler(sh))

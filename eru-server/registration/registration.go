@@ -18,7 +18,7 @@ type RegistryClient struct {
 }
 
 // NewRegistryClient creates a new client for the service registry.
-func NewRegistryClient(registryURL, serviceName, port, instanceId string) (*RegistryClient, error) {
+func NewRegistryClient(registryURL, serviceName, port, instanceId string, heartbeatTTL time.Time, configUpdateAt string) (*RegistryClient, error) {
 	// Automatically detect service address
 	serviceAddress, err := eru_utils.GetServiceAddress(context.Background(), port)
 	if err != nil {
@@ -28,9 +28,11 @@ func NewRegistryClient(registryURL, serviceName, port, instanceId string) (*Regi
 	return &RegistryClient{
 		RegistryURL: registryURL,
 		Instance: eru_models.ServiceInstance{
-			Id:      instanceId,
-			Name:    serviceName,
-			Address: serviceAddress,
+			Id:             instanceId,
+			Name:           serviceName,
+			Address:        serviceAddress,
+			HeartbeatTTL:   heartbeatTTL,
+			ConfigUpdateAt: configUpdateAt,
 		},
 	}, nil
 }

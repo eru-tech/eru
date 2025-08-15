@@ -1,5 +1,7 @@
 package eru_models
 
+import "time"
+
 type Queries struct {
 	Query string
 	Vals  []interface{}
@@ -37,7 +39,9 @@ type SampleRequest struct {
 
 // ServiceInstance represents the data sent to the registry.
 type ServiceInstance struct {
-	Id      string `json:"id"`
-	Name    string `json:"name"`
-	Address string `json:"address"`
+	Id             string    `json:"id"`
+	Name           string    `json:"name"`
+	Address        string    `json:"address"`
+	HeartbeatTTL   time.Time `json:"heartbeat_ttl"`
+	ConfigUpdateAt string    `json:"config_update_at"`
 }

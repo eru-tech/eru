@@ -28,6 +28,9 @@ func main() {
 	server_handlers.SetInstanceId()
 	logs.LogInit(server_handlers.ServerName, server_handlers.InstanceId)
 	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
+
+	server_handlers.BaseUrl = os.Getenv("ERUFILE_BASE_URL")
+
 	traceUrl := os.Getenv("TRACE_URL")
 	if traceUrl != "" {
 		tp, err := eruotel.TracerTempoInit(traceUrl)
@@ -57,5 +60,5 @@ func main() {
 	if e != nil {
 		logs.Logger.Error(e.Error())
 	}
-	server.Launch(sr, port)
+	server.Launch(sr, port, sh.Store)
 }

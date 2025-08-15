@@ -20,7 +20,7 @@ type VectorStoreI interface {
 	GetAttribute(ctx context.Context, attributeName string) string
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	EditIndex(ctx context.Context) error
-	ValidateEditIndex(ctx context.Context, updatedVectorStore VectorStoreI) error
+	UpdateVectorStore(ctx context.Context, updatedVectorStore VectorStoreI) error
 	GetBytes(ctx context.Context) ([]byte, error)
 	BytesToVectorStore(ctx context.Context, vectorStoreObjJson []byte) (VectorStoreI, error)
 }
@@ -51,6 +51,8 @@ func GetVectorStore(vectorType string) VectorStoreI {
 	switch strings.ToLower(vectorType) {
 	case "pinecone":
 		return new(PineconeVectorStore)
+	case "chromadb":
+		return new(ChromaDBVectorStore)
 	case "s3vector":
 		return new(S3VectorStore)
 	case "pgvector":
@@ -124,15 +126,17 @@ func (vs *VectorStore) MakeFromJson(ctx context.Context, rj *json.RawMessage) er
 }
 
 func (vs *VectorStore) EditIndex(ctx context.Context) error {
-	logs.WithContext(ctx).Debug("EditIndex - Start")
+	logs.WithContext(ctx).Error("EditIndex not implemented")
 
 	return nil
 }
-func (vs *VectorStore) ValidateEditIndex(ctx context.Context, updatedVectorStore VectorStoreI) error {
-	logs.WithContext(ctx).Debug("ValidateEditIndex - Start")
+
+func (vs *VectorStore) UpdateVectorStore(ctx context.Context, updatedVectorStore VectorStoreI) error {
+	logs.WithContext(ctx).Error("UpdateVectorStore not implemented")
 
 	return nil
 }
+
 func (vs *VectorStore) GetBytes(ctx context.Context) ([]byte, error) {
 	vectorStoreJson, err := json.Marshal(vs)
 	if err != nil {

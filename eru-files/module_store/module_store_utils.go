@@ -10,6 +10,7 @@ import (
 
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
 	erursa "github.com/eru-tech/eru/eru-crypto/rsa"
+	events "github.com/eru-tech/eru/eru-events/events"
 	"github.com/eru-tech/eru/eru-files/storage"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-repos/repos"
@@ -26,6 +27,62 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return err
+	}
+
+	var prjEvents map[string]*json.RawMessage
+	if _, ok := storeMap["events"]; ok {
+		if storeMap["events"] != nil {
+			logs.WithContext(ctx).Info("inside event loop")
+			err = json.Unmarshal(*storeMap["events"], &prjEvents)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			for prj, eventJson := range prjEvents {
+				if eventJson != nil {
+					var eventObj map[string]*json.RawMessage
+					err = json.Unmarshal(*eventJson, &eventObj)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return err
+					}
+					for _, eJson := range eventObj {
+						var eObj map[string]*json.RawMessage
+						err = json.Unmarshal(*eJson, &eObj)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+							return err
+						}
+						var eventType string
+						if _, stOk := eObj["event_type"]; stOk {
+							err = json.Unmarshal(*eObj["event_type"], &eventType)
+							if err != nil {
+								logs.WithContext(ctx).Error(err.Error())
+								return err
+							}
+							eventI := events.GetEvent(eventType)
+							if eventI != nil {
+								err = eventI.MakeFromJson(ctx, eJson)
+								if err == nil {
+									err = msi.SaveEvent(ctx, prj, eventI, msi, false)
+									if err != nil {
+										return err
+									}
+								} else {
+									return err
+								}
+							}
+						} else {
+							logs.WithContext(ctx).Info("ignoring event as event_type attribute not found")
+						}
+					}
+				}
+			}
+		} else {
+			logs.WithContext(ctx).Info("event attribute is nil")
+		}
+	} else {
+		logs.WithContext(ctx).Info("event attribute not found in store")
 	}
 
 	var vars map[string]store.Variables

@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
-	"strconv"
-	"strings"
 )
 
 type AWS_SQS_Event struct {
@@ -210,5 +211,5 @@ func (aws_sqs_event *AWS_SQS_Event) Clone(ctx context.Context) (cloneEvent Event
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	return new(AWS_SNS_Event), nil
+	return new(AWS_SQS_Event), nil
 }

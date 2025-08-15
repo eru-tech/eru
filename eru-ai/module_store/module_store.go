@@ -636,24 +636,29 @@ func (ms *ModuleStore) SaveVectorStore(ctx context.Context, vectorStoreObj vecto
 		return err
 	}
 
-	isNew, err := prj.AddVectorStore(ctx, tenantId, vectorStoreObj)
+	isNew, updatedVectorStoreObj, err := prj.AddVectorStore(ctx, tenantId, vectorStoreObj)
 	if err != nil {
 		return err
 	}
-	if isNew && persist {
-		vectorStoreObjClone, err := ms.GetVectorStoreCloneObject(ctx, projectId, tenantId, vectorStoreObj, realStore)
-		if err != nil {
-			return err
-		}
-		err = vectorStoreObjClone.CreateIndex(ctx)
-		if err != nil {
-			return err
-		}
-	}
-
 	if persist {
+		vectorStoreObjClone, err := ms.GetVectorStoreCloneObject(ctx, projectId, tenantId, updatedVectorStoreObj, realStore)
+		if err != nil {
+			return err
+		}
+		if isNew {
+			err = vectorStoreObjClone.CreateIndex(ctx)
+			if err != nil {
+				return err
+			}
+		} else {
+			err = vectorStoreObjClone.EditIndex(ctx)
+			if err != nil {
+				return err
+			}
+		}
 		return realStore.SaveTenantStore(ctx, projectId, tenantId, "", prj.Tenants[tenantId])
 	}
+
 	return nil
 }
 

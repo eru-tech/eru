@@ -33,6 +33,11 @@ const (
 	DELETE_REQUEST = "delete from eru_requests where request_id=??? returning request_id"
 )
 
+var InstanceId = "unknown"
+var ServiceName = "unknown"
+var BaseUrl = "unknown"
+var ConfigSyncEvent = "unknown"
+
 type StoreI interface {
 	LoadStore(fp string, ms StoreI) (err error)
 	GetStoreByteArray(fp string) (b []byte, err error)
@@ -95,6 +100,11 @@ type StoreI interface {
 	SaveRequest(ctx context.Context, request models.SampleRequest, projectId string, tenantId string, s StoreI) (err error)
 	GetRequests(ctx context.Context, projectId string, tenantId string, resourceName string, s StoreI) (requests []models.SampleRequest, err error)
 	RemoveRequest(ctx context.Context, requestId string, s StoreI) (err error)
+	SetServiceName(serviceName string)
+	SetInstanceId(instanceId string)
+	SetBaseUrl(baseUrl string)
+	SetConfigSyncEvent(configSyncEvent string)
+	GetUpdateTime() time.Time
 }
 
 type Store struct {
@@ -122,6 +132,9 @@ type StoreCompare struct {
 	MismatchSecretManager map[string]interface{} `json:"mismatch_secret_manager"`
 }
 
+func (store *Store) GetUpdateTime() time.Time {
+	return time.Time{}
+}
 func (storeCompare *StoreCompare) CompareSecretManager(ctx context.Context, orgSm sm.SmStoreI, compareSm sm.SmStoreI) {
 	var diffR utils.DiffReporter
 	if !cmp.Equal(orgSm, compareSm, cmpopts.IgnoreUnexported(sm.AwsSmStore{}), cmp.Reporter(&diffR)) {
@@ -1637,4 +1650,16 @@ func (store *Store) GetRequests(ctx context.Context, projectId string, tenantId 
 		})
 	}
 	return
+}
+func (store *Store) SetServiceName(serviceName string) {
+	ServiceName = serviceName
+}
+func (store *Store) SetInstanceId(instanceId string) {
+	InstanceId = instanceId
+}
+func (store *Store) SetBaseUrl(baseUrl string) {
+	BaseUrl = baseUrl
+}
+func (store *Store) SetConfigSyncEvent(configSyncEvent string) {
+	ConfigSyncEvent = configSyncEvent
 }

@@ -176,7 +176,7 @@ func (prj *Project) RemoveAgent(ctx context.Context, tenantId string, agentName 
 	return nil
 }
 
-func (prj *Project) AddVectorStore(ctx context.Context, tenantId string, vectorStoreObj vectorstore.VectorStoreI) (isNew bool, err error) {
+func (prj *Project) AddVectorStore(ctx context.Context, tenantId string, vectorStoreObj vectorstore.VectorStoreI) (isNew bool, updatedVectorStoreObj vectorstore.VectorStoreI, err error) {
 	logs.WithContext(ctx).Debug("AddVectorStore - Start")
 	isNew = false
 	if prj.Tenants == nil {
@@ -194,17 +194,20 @@ func (prj *Project) AddVectorStore(ctx context.Context, tenantId string, vectorS
 	}
 	vectorStoreName := vectorStoreObj.GetAttribute(ctx, "vector_name")
 	if vectorStoreName == "" {
-		return isNew, errors.New("vectorstore name cannot be blank")
+		return isNew, nil, errors.New("vectorstore name cannot be blank")
 	}
 
 	if vs, ok := prj.Tenants[tenantId].VectorStores[vectorStoreName]; !ok {
 		isNew = true
+		prj.Tenants[tenantId].VectorStores[vectorStoreName] = vectorStoreObj
 	} else {
-		vs.EditIndex(ctx)
+		err = vs.UpdateVectorStore(ctx, vectorStoreObj)
+		if err != nil {
+			return false, nil, err
+		}
+		vectorStoreObj = vs
 	}
-
-	prj.Tenants[tenantId].VectorStores[vectorStoreName] = vectorStoreObj
-	return isNew, nil
+	return isNew, vectorStoreObj, nil
 }
 
 func (prj *Project) RemoveVectorStore(ctx context.Context, tenantId string, vectorStoreName string) error {

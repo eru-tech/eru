@@ -7,11 +7,11 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.8.2
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.6.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.0
-	github.com/aws/aws-sdk-go-v2 v1.27.0
+	github.com/aws/aws-sdk-go-v2 v1.37.2
 	github.com/aws/aws-sdk-go-v2/config v1.27.11
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.11
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.48.1
-	github.com/aws/smithy-go v1.20.2
+	github.com/aws/smithy-go v1.22.5
 	github.com/eru-tech/eru/eru-crypto v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000
@@ -31,8 +31,8 @@ require (
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.3.3 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.5.4 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.1 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.7 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.7 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.2 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.2 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.0 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.2.10 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.11.2 // indirect
@@ -41,6 +41,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.16.10 // indirect
 	github.com/aws/aws-sdk-go-v2/service/kms v1.31.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.28.6 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sns v1.36.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.32.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.20.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.23.4 // indirect
@@ -57,7 +58,7 @@ require (
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-scheduler v0.0.0-00010101000000-000000000000 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
@@ -75,27 +76,27 @@ require (
 	github.com/xuri/efp v0.0.0-20231025114914-d1ff6096ae53 // indirect
 	github.com/xuri/excelize/v2 v2.8.1 // indirect
 	github.com/xuri/nfp v0.0.0-20230919160717-d98342af3f05 // indirect
-	go.etcd.io/etcd/api/v3 v3.6.3 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.6.3 // indirect
-	go.etcd.io/etcd/client/v3 v3.6.3 // indirect
+	go.etcd.io/etcd/api/v3 v3.6.4 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.6.4 // indirect
+	go.etcd.io/etcd/client/v3 v3.6.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0 // indirect
-	go.opentelemetry.io/otel v1.34.0 // indirect
+	go.opentelemetry.io/otel v1.36.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.21.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.21.0 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.21.0 // indirect
-	go.opentelemetry.io/otel/metric v1.34.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.34.0 // indirect
-	go.opentelemetry.io/otel/trace v1.34.0 // indirect
+	go.opentelemetry.io/otel/metric v1.36.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.36.0 // indirect
+	go.opentelemetry.io/otel/trace v1.36.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.0.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/crypto v0.36.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/crypto v0.40.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
+	golang.org/x/text v0.27.0 // indirect
 	google.golang.org/genproto v0.0.0-20230331144136-dcfb400f0633 // indirect
-	google.golang.org/grpc v1.71.1 // indirect
-	google.golang.org/protobuf v1.36.6 // indirect
+	google.golang.org/grpc v1.74.2 // indirect
+	google.golang.org/protobuf v1.36.7 // indirect
 )
 
 require (
@@ -104,7 +105,7 @@ require (
 	github.com/jmoiron/sqlx v1.3.5 // indirect
 	github.com/lib/pq v1.2.0 // indirect
 	github.com/rs/cors v1.7.0 // indirect
-	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/net v0.42.0 // indirect
 )
 
 replace (

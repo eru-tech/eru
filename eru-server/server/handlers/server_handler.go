@@ -28,6 +28,8 @@ var InstanceId = "unkown"
 var RepoName = "unkown.json"
 var AllowedOrigins = ""
 var RequestIdKey = "request_id"
+var ConfigSyncEvent = "unknown"
+var BaseUrl = ""
 
 func HelloHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/hello" {
@@ -733,7 +735,29 @@ func PublishEventHandler(s store.StoreI) http.HandlerFunc {
 
 func PollEventHandler(s store.StoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		logs.WithContext(r.Context()).Debug("PublishEventHandler - Start")
+		logs.WithContext(r.Context()).Debug("PollEventHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		eventName := vars["eventname"]
+
+		err := s.PollEvent(r.Context(), projectId, eventName, s)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("event polled for project ", projectId, ".")})
+	}
+}
+
+func SubscribeEventHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SubscribeEventHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		if projectId == "" {
@@ -744,7 +768,35 @@ func PollEventHandler(s store.StoreI) http.HandlerFunc {
 		eventJson := json.NewDecoder(r.Body)
 		eventJson.DisallowUnknownFields()
 
-		err := s.PollEvent(r.Context(), projectId, eventName, s)
+		subscription := make(map[string]interface{})
+		eventI := events.GetEvent(eventName)
+		if err := eventJson.Decode(&subscription); err == nil {
+			err = eventI.Subscribe(r.Context(), subscription)
+			if err != nil {
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		}
+
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("subscription for event ", eventName, " for project ", projectId, " subscribed successfully.")})
+	}
+}
+
+func UnsubscribeEventHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("UnsubscribeEventHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		eventName := vars["eventname"]
+		subscriptionId := vars["subscriptionid"]
+
+		eventI := events.GetEvent(eventName)
+		err := eventI.Unsubscribe(r.Context(), subscriptionId)
 		if err != nil {
 			FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -752,7 +804,28 @@ func PollEventHandler(s store.StoreI) http.HandlerFunc {
 		}
 
 		FormatResponse(w, 200)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("event message processed for project ", projectId, ".")})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("subscription for event ", eventName, " for project ", projectId, " unsubscribed successfully.")})
+	}
+}
+
+func ListSubscriptionsEventHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ListSubscriptionsEventHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		eventName := vars["eventname"]
+		eventI := events.GetEvent(eventName)
+		subscriptions, err := eventI.ListSubscriptions(r.Context())
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(subscriptions)
 	}
 }
 

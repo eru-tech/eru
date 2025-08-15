@@ -2,9 +2,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -19,7 +21,7 @@ type Server struct {
 	Store store.StoreI
 }
 
-func Launch(serverRouter *mux.Router, port string) {
+func Launch(serverRouter *mux.Router, port string, store store.StoreI) {
 
 	// Initialize logger with instance ID
 	logs.LogInit(handlers.ServerName, handlers.InstanceId)
@@ -30,7 +32,7 @@ func Launch(serverRouter *mux.Router, port string) {
 		registryURL := os.Getenv("ERUGATEWAY_URL")
 
 		if registryURL != "" {
-			regClient, err := registration.NewRegistryClient(registryURL, handlers.ServerName, port, handlers.InstanceId)
+			regClient, err := registration.NewRegistryClient(registryURL, handlers.ServerName, port, handlers.InstanceId, time.Now(), fmt.Sprintf("%v", store.GetUpdateTime()))
 			if err != nil {
 				logs.Logger.Error(fmt.Sprintf("Failed to create registry client: %v", err))
 				// Continue without registration
@@ -61,6 +63,7 @@ func Launch(serverRouter *mux.Router, port string) {
 			logs.Logger.Warn("ERUGATEWAY_URL not set. Skipping service registration.")
 		}
 	}
+
 	// Allow cors
 	handlers.AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
 	logs.Logger.Info(fmt.Sprint("AllowedOrigins = ", handlers.AllowedOrigins))
@@ -78,7 +81,48 @@ func Launch(serverRouter *mux.Router, port string) {
 func Init(store store.StoreI) (*mux.Router, *Server, error) {
 	_ = store.LoadSmValue(context.Background(), "")
 	_ = store.LoadEnvValue(context.Background(), "")
+
 	//ignore error from LoadSmValue and LoadEnvValue as server has to start even if load has failed.
+	store.SetServiceName(handlers.ServerName)
+	store.SetInstanceId(handlers.InstanceId)
+	store.SetBaseUrl(handlers.BaseUrl)
+	handlers.ConfigSyncEvent = os.Getenv("CONFIG_SYNC_EVENT")
+	store.SetConfigSyncEvent(handlers.ConfigSyncEvent)
+
+	if handlers.ConfigSyncEvent != "unknown" && handlers.BaseUrl != "" {
+		project_id := ""
+		event_name := ""
+
+		splitEventText := strings.Split(handlers.ConfigSyncEvent, "__")
+		if len(splitEventText) == 2 {
+			project_id = splitEventText[0]
+			event_name = splitEventText[1]
+		}
+		configEvent, err := store.FetchEvent(context.Background(), project_id, event_name)
+		if err != nil {
+			logs.Logger.Error(fmt.Sprintf("Failed to fetch config event: %v", err))
+			err = nil
+		} else {
+
+			fp := map[string][]string{
+				"service_name": {handlers.ServerName},
+			}
+			fpJson, err := json.Marshal(fp)
+			if err != nil {
+				logs.Logger.Error(fmt.Sprintf("Failed to marshal filter policy: %v", err))
+				err = nil
+			}
+
+			subscription := map[string]interface{}{
+				"protocol":      "https",
+				"endpoint":      handlers.BaseUrl + "/" + handlers.ConfigSyncEvent,
+				"filter_policy": string(fpJson),
+			}
+
+			configEvent.Subscribe(context.Background(), subscription)
+		}
+	}
+
 	s := new(Server)
 	s.Store = store
 	serverRouter := s.GetRouter()
