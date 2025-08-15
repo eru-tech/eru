@@ -446,47 +446,49 @@ func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg
 		logs.Logger.Info(fmt.Sprintf("SNS SubscriptionConfirmation for topic %s", msgEnvelope.TopicArn))
 		// Confirm by calling SubscribeURL
 		if msgEnvelope.SubscribeURL != "" {
-			go func(url string) {
-				resp, _, _, respStatus, err := eru_utils.CallHttp(ctx, http.MethodGet, url, nil, nil, nil, nil, nil)
-				if err != nil {
-					logs.Logger.Error(fmt.Sprintf("confirm http.MethodGet failed: %v", err))
-					return
-				}
-				respMap, respMapOk := resp.(map[string]interface{})
-				if !respMapOk {
-					logs.Logger.Error("subscription confirmation response is not a map")
-					return
-				}
-				respBody, respBodyOk := respMap["body"]
-				if !respBodyOk {
-					logs.Logger.Error("subscription confirmation response body not found")
-					return
-				}
+			//go func(url string) {
+			url := msgEnvelope.SubscribeURL
+			resp, _, _, respStatus, err := eru_utils.CallHttp(ctx, http.MethodGet, url, nil, nil, nil, nil, nil)
+			if err != nil {
+				logs.Logger.Error(fmt.Sprintf("confirm http.MethodGet failed: %v", err))
+				return nil, confirmation, err
+			}
+			respMap, respMapOk := resp.(map[string]interface{})
+			if !respMapOk {
+				logs.Logger.Error("subscription confirmation response is not a map")
+				return nil, confirmation, err
+			}
+			respBody, respBodyOk := respMap["body"]
+			if !respBodyOk {
+				logs.Logger.Error("subscription confirmation response body not found")
+				return nil, confirmation, err
+			}
 
-				// Parse XML response to extract subscription ARN
-				var confirmResp ConfirmSubscriptionResponse
-				respBodyStr, respBodyStrOk := respBody.(string)
-				if !respBodyStrOk {
-					logs.Logger.Error("response body is not a string")
-					return
-				}
-				logs.Logger.Info(fmt.Sprintf("response: %s", respBodyStr))
-				if err := xml.Unmarshal([]byte(respBodyStr), &confirmResp); err != nil {
-					logs.Logger.Error(fmt.Sprintf("failed to parse XML response: %v", err))
-					return
-				}
+			// Parse XML response to extract subscription ARN
+			var confirmResp ConfirmSubscriptionResponse
+			respBodyStr, respBodyStrOk := respBody.(string)
+			if !respBodyStrOk {
+				logs.Logger.Error("response body is not a string")
+				return nil, confirmation, err
+			}
+			logs.Logger.Info(fmt.Sprintf("response: %s", respBodyStr))
+			if err := xml.Unmarshal([]byte(respBodyStr), &confirmResp); err != nil {
+				logs.Logger.Error(fmt.Sprintf("failed to parse XML response: %v", err))
+				return nil, confirmation, err
+			}
 
-				subscriptionArn := confirmResp.ConfirmSubscriptionResult.SubscriptionArn
-				if subscriptionArn == "" {
-					logs.Logger.Error("subscription ARN not found in response")
-					return
-				}
-				aws_sns_event.Subscribers = append(aws_sns_event.Subscribers, AwsSnsSubscriber{
-					SubscriptionArn: subscriptionArn,
-				})
-				confirmation = true
-				logs.Logger.Info(fmt.Sprintf("Subscription confirmed (GET %s -> %d) SubscriptionArn: %s", url, respStatus, subscriptionArn))
-			}(msgEnvelope.SubscribeURL)
+			subscriptionArn := confirmResp.ConfirmSubscriptionResult.SubscriptionArn
+			if subscriptionArn == "" {
+				logs.Logger.Error("subscription ARN not found in response")
+				return nil, confirmation, err
+			}
+			aws_sns_event.Subscribers = append(aws_sns_event.Subscribers, AwsSnsSubscriber{
+				SubscriptionArn: subscriptionArn,
+			})
+			confirmation = true
+			logs.Logger.Info(fmt.Sprintf("Subscription confirmed (GET %s -> %d) SubscriptionArn: %s", url, respStatus, subscriptionArn))
+			//}(msgEnvelope.SubscribeURL)
+			return nil, confirmation, nil
 		}
 		return nil, confirmation, err
 	case "Notification":
