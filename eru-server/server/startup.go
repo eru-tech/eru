@@ -89,6 +89,8 @@ func Init(store store.StoreI) (*mux.Router, *Server, error) {
 	handlers.ConfigSyncEvent = os.Getenv("CONFIG_SYNC_EVENT")
 	store.SetConfigSyncEvent(handlers.ConfigSyncEvent)
 
+	logs.Logger.Info(fmt.Sprintf("Config sync event: %s", handlers.ConfigSyncEvent))
+	logs.Logger.Info(fmt.Sprintf("Base url: %s", handlers.BaseUrl))
 	if handlers.ConfigSyncEvent != "unknown" && handlers.BaseUrl != "" {
 		project_id := ""
 		event_name := ""
