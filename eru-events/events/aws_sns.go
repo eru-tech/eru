@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"net/http"
@@ -60,6 +61,17 @@ type AWS_SNS_Event struct {
 	Fifo                      bool `json:"fifo" eru:"optional"`                        // Enable FIFO topic with message ordering
 	ContentBasedDeduplication bool `json:"content_based_deduplication" eru:"optional"` // Enable automatic deduplication based on message content
 	HighThroughputFIFO        bool `json:"high_throughput_fifo" eru:"optional"`        // Enable High Throughput FIFO for improved performance (up to 300 msg/sec without batching)
+}
+
+// ConfirmSubscriptionResponse represents the XML response from SNS subscription confirmation
+type ConfirmSubscriptionResponse struct {
+	XMLName                   xml.Name `xml:"ConfirmSubscriptionResponse"`
+	ConfirmSubscriptionResult struct {
+		SubscriptionArn string `xml:"SubscriptionArn"`
+	} `xml:"ConfirmSubscriptionResult"`
+	ResponseMetadata struct {
+		RequestId string `xml:"RequestId"`
+	} `xml:"ResponseMetadata"`
 }
 
 func (aws_sns_event *AWS_SNS_Event) Init(ctx context.Context) (err error) {
@@ -286,7 +298,7 @@ func (aws_sns_event *AWS_SNS_Event) Subscribe(ctx context.Context, subscription 
 			return
 		}
 	}
-
+	logs.WithContext(ctx).Info(fmt.Sprintf("Subscription: %+v", subscription))
 	subscriber := AwsSnsSubscriber{}
 	if protocol, ok := subscription["protocol"]; ok {
 		if protocolStr, ok := protocol.(string); ok {
@@ -344,7 +356,8 @@ func (aws_sns_event *AWS_SNS_Event) Subscribe(ctx context.Context, subscription 
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to subscribe subscriber: %s", err.Error()))
 		return err
 	}
-
+	logs.WithContext(ctx).Info(fmt.Sprintf("Subscribed to: %s", *result.SubscriptionArn))
+	logs.WithContext(ctx).Info(fmt.Sprintf("Result: %+v", result))
 	subscriber.SubscriptionArn = *result.SubscriptionArn
 	aws_sns_event.Subscribers = append(aws_sns_event.Subscribers, subscriber)
 	return
@@ -428,7 +441,28 @@ func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg
 					logs.Logger.Error(fmt.Sprintf("confirm GET failed: %v", err))
 					return
 				}
-				logs.Logger.Info(fmt.Sprintf("Subscription confirmed (GET %s -> %d) %s", url, respStatus, resp))
+
+				// Parse XML response to extract subscription ARN
+				var confirmResp ConfirmSubscriptionResponse
+				respStr, ok := resp.(string)
+				if !ok {
+					logs.Logger.Error("response is not a string")
+					return
+				}
+				if err := xml.Unmarshal([]byte(respStr), &confirmResp); err != nil {
+					logs.Logger.Error(fmt.Sprintf("failed to parse XML response: %v", err))
+					return
+				}
+
+				subscriptionArn := confirmResp.ConfirmSubscriptionResult.SubscriptionArn
+				if subscriptionArn == "" {
+					logs.Logger.Error("subscription ARN not found in response")
+					return
+				}
+				aws_sns_event.Subscribers = append(aws_sns_event.Subscribers, AwsSnsSubscriber{
+					SubscriptionArn: subscriptionArn,
+				})
+				logs.Logger.Info(fmt.Sprintf("Subscription confirmed (GET %s -> %d) SubscriptionArn: %s", url, respStatus, subscriptionArn))
 			}(msgEnvelope.SubscribeURL)
 		}
 		return nil, err
