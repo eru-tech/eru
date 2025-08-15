@@ -421,7 +421,7 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 	resp, err := callHttp(ctx, method, url, headers, formData, reqCookies, params, postBody)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, resp.Header, resp.Cookies(), resp.StatusCode, err
+		return nil, nil, nil, 0, err
 	}
 	statusCode = resp.StatusCode
 	respHeaders = resp.Header
