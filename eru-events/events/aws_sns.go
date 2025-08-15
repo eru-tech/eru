@@ -343,13 +343,14 @@ func (aws_sns_event *AWS_SNS_Event) Subscribe(ctx context.Context, subscription 
 		}
 		attributes["FilterPolicy"] = string(filterPolicyBytes)
 	}
-
+	logs.WithContext(ctx).Info(fmt.Sprintf("Attributes: %+v", attributes))
 	input := &sns.SubscribeInput{
 		TopicArn:   aws.String(aws_sns_event.TopicArn),
 		Protocol:   aws.String(subscriber.Protocol),
 		Endpoint:   aws.String(subscriber.Endpoint),
 		Attributes: attributes,
 	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("Input: %v", input))
 
 	result, err := aws_sns_event.client.Subscribe(context.Background(), input)
 	if err != nil {
@@ -438,7 +439,7 @@ func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg
 			go func(url string) {
 				resp, _, _, respStatus, err := eru_utils.CallHttp(ctx, url, http.MethodGet, nil, nil, nil, nil, nil)
 				if err != nil {
-					logs.Logger.Error(fmt.Sprintf("confirm GET failed: %v", err))
+					logs.Logger.Error(fmt.Sprintf("confirm http.MethodGet failed: %v", err))
 					return
 				}
 
