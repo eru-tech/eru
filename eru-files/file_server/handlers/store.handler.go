@@ -52,6 +52,12 @@ func ConfigSyncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				logs.Logger.Error(fmt.Sprintf("failed to process notification: %v", err))
 			}
 			logs.Logger.Info(fmt.Sprintf("confirmation: %v, configEvent: %v", confirmation, configEvent))
+			if confirmation {
+				err = sh.Store.SaveStore(context.Background(), project_id, "", sh.Store)
+				if err != nil {
+					logs.Logger.Error(fmt.Sprintf("failed to save store after confirmation: %v", err))
+				}
+			}
 			nInstanceId := ""
 			nServiceName := ""
 			if notification != nil {
