@@ -484,6 +484,7 @@ func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg
 				aws_sns_event.Subscribers = append(aws_sns_event.Subscribers, AwsSnsSubscriber{
 					SubscriptionArn: subscriptionArn,
 				})
+				confirmation = true
 				logs.Logger.Info(fmt.Sprintf("Subscription confirmed (GET %s -> %d) SubscriptionArn: %s", url, respStatus, subscriptionArn))
 			}(msgEnvelope.SubscribeURL)
 		}
