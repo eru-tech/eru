@@ -29,7 +29,7 @@ type ModuleStoreI interface {
 	RemoveListenerRule(ctx context.Context, listenerRuleName string, realStore ModuleStoreI) error
 	GetListenerRules(ctx context.Context) []*module_model.ListenerRule
 	GetListenerRule(ctx context.Context, listenerRuleName string) (*module_model.ListenerRule, error)
-	GetTargetGroupAuthorizer(ctx context.Context, r *http.Request) (module_model.TargetHost, module_model.Authorizer, []module_model.MapStructCustom, error)
+	GetTargetGroupAuthorizer(ctx context.Context, r *http.Request) (module_model.TargetHost, module_model.Authorizer, []module_model.MapStructCustom, string, error)
 	SaveAuthorizer(ctx context.Context, authorizer module_model.Authorizer, realStore ModuleStoreI, persist bool) error
 	RemoveAuthorizer(ctx context.Context, authorizerName string, realStore ModuleStoreI) error
 	GetAuthorizer(ctx context.Context, authorizerName string) (module_model.Authorizer, error)
@@ -65,9 +65,10 @@ type ModuleDbStore struct {
 	ModuleStore
 }
 
-func (ms *ModuleStore) GetTargetGroupAuthorizer(ctx context.Context, r *http.Request) (module_model.TargetHost, module_model.Authorizer, []module_model.MapStructCustom, error) {
+func (ms *ModuleStore) GetTargetGroupAuthorizer(ctx context.Context, r *http.Request) (module_model.TargetHost, module_model.Authorizer, []module_model.MapStructCustom, string, error) {
 	logs.WithContext(ctx).Debug("GetTargetGroupAuthorizer - Start")
 	listenerRuleFound := false
+	instanceId := ""
 	if ms.ListenerRules != nil {
 		for _, v := range ms.ListenerRules {
 			//TODO to sort the array on RuleRank before looping
@@ -122,10 +123,13 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(ctx context.Context, r *http.Req
 					break
 				}
 			}
+			if r.Header.Get("instance_id") != "" {
+				instanceId = r.Header.Get("instance_id")
+			}
 			//check for Params
+			reqParams := r.URL.Query()
 			for _, param := range v.Params {
 				//resetting listenerRuleFound to false as Headers array length > 1 - so it has to pass this match too
-				reqParams := r.URL.Query()
 				listenerRuleFound = false
 				if reqParams.Get(param.Key) == param.Value {
 					listenerRuleFound = true
@@ -133,8 +137,11 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(ctx context.Context, r *http.Req
 					r.URL.RawQuery = reqParams.Encode()
 					break
 				}
-				r.URL.RawQuery = reqParams.Encode()
 			}
+			if reqParams.Get("instance_id") != "" {
+				instanceId = reqParams.Get("instance_id")
+			}
+			r.URL.RawQuery = reqParams.Encode()
 
 			//check for SourceIP
 			for _, sourceIP := range v.SourceIP {
@@ -170,20 +177,21 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(ctx context.Context, r *http.Req
 					}
 				}
 				if pathExceptionFound || v.AuthorizerName == "" {
-					return v.TargetHosts[0], module_model.Authorizer{}, v.AddHeaders, nil
+					return v.TargetHosts[0], module_model.Authorizer{}, v.AddHeaders, instanceId, nil
 				} else {
 					authorizer, err := ms.GetAuthorizer(ctx, v.AuthorizerName)
 					if err != nil {
-						return module_model.TargetHost{}, module_model.Authorizer{}, nil, err
+						return module_model.TargetHost{}, module_model.Authorizer{}, nil, instanceId, err
 					}
-					return v.TargetHosts[0], authorizer, v.AddHeaders, nil
+					return v.TargetHosts[0], authorizer, v.AddHeaders, instanceId, nil
 				}
 			}
 		}
 	}
 	err := errors.New(fmt.Sprint("Listener Rule not found for request host = ", r.Host, " and path = ", r.URL))
 	logs.WithContext(ctx).Error(err.Error())
-	return module_model.TargetHost{}, module_model.Authorizer{}, nil, err
+	//TODO add_headers
+	return module_model.TargetHost{}, module_model.Authorizer{}, nil, instanceId, err
 }
 
 func (ms *ModuleStore) GetListenerRule(ctx context.Context, listenerRuleName string) (*module_model.ListenerRule, error) {
