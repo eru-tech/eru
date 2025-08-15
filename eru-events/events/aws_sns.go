@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -422,7 +423,7 @@ func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg
 		// Confirm by calling SubscribeURL
 		if msgEnvelope.SubscribeURL != "" {
 			go func(url string) {
-				resp, _, _, respStatus, err := eru_utils.CallHttp(ctx, url, "GET", nil, nil, nil, nil, nil)
+				resp, _, _, respStatus, err := eru_utils.CallHttp(ctx, url, http.MethodGet, nil, nil, nil, nil, nil)
 				if err != nil {
 					logs.Logger.Error(fmt.Sprintf("confirm GET failed: %v", err))
 					return
