@@ -29,7 +29,7 @@ func main() {
 	logs.LogInit(server_handlers.ServerName, server_handlers.InstanceId)
 	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
 
-	server_handlers.BaseUrl = os.Getenv("ERUAUTH_BASE_URL")
+	server_handlers.BaseUrl = os.Getenv("ERUAUTH_PUB_BASE_URL")
 
 	traceUrl := os.Getenv("TRACE_URL")
 	if traceUrl != "" {
