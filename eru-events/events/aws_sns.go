@@ -437,7 +437,7 @@ func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg
 		// Confirm by calling SubscribeURL
 		if msgEnvelope.SubscribeURL != "" {
 			go func(url string) {
-				resp, _, _, respStatus, err := eru_utils.CallHttp(ctx, url, http.MethodGet, nil, nil, nil, nil, nil)
+				resp, _, _, respStatus, err := eru_utils.CallHttp(ctx, http.MethodGet, url, nil, nil, nil, nil, nil)
 				if err != nil {
 					logs.Logger.Error(fmt.Sprintf("confirm http.MethodGet failed: %v", err))
 					return
