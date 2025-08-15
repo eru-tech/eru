@@ -112,7 +112,7 @@ func Init(store store.StoreI) (*mux.Router, *Server, error) {
 				logs.Logger.Error(fmt.Sprintf("Failed to marshal filter policy: %v", err))
 				err = nil
 			}
-
+			logs.Logger.Info(fmt.Sprintf("Config sync endpoint: %s/%s?instance_id=%s", handlers.BaseUrl, handlers.ConfigSyncEvent, handlers.InstanceId))
 			subscription := map[string]interface{}{
 				"protocol":      "https",
 				"endpoint":      fmt.Sprintf("%s/%s?instance_id=%s", handlers.BaseUrl, handlers.ConfigSyncEvent, handlers.InstanceId),
