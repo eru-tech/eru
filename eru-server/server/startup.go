@@ -50,11 +50,36 @@ func Launch(serverRouter *mux.Router, port string, store store.StoreI) {
 
 					// Deregister on shutdown
 					defer func() {
-						logs.Logger.Info("Attempting to deregister service...")
+						logs.Logger.Info("Attempting to deregister service and unsubscribe from config sync event")
 						deregisterCtx, deregisterCancel := context.WithTimeout(context.Background(), 5*time.Second)
 						defer deregisterCancel()
 						if err := regClient.Deregister(deregisterCtx); err != nil {
 							logs.Logger.Error(err.Error())
+							err = nil
+						}
+
+						project_id := ""
+						event_name := ""
+
+						splitEventText := strings.Split(handlers.ConfigSyncEvent, "__")
+						if len(splitEventText) == 2 {
+							project_id = splitEventText[0]
+							event_name = splitEventText[1]
+						}
+
+						eventI, err := store.FetchEvent(context.Background(), project_id, event_name)
+						if err != nil {
+							logs.Logger.Error(err.Error())
+							err = nil
+						}
+						err = eventI.Unsubscribe(context.Background(), handlers.InstanceId)
+						if err != nil {
+							logs.Logger.Error(err.Error())
+						} else {
+							err = store.SaveStore(context.Background(), "", "", store)
+							if err != nil {
+								logs.Logger.Error(err.Error())
+							}
 						}
 					}()
 				}

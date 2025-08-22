@@ -423,6 +423,15 @@ func (slackTool *SlackTool) ListChannels(ctx context.Context, params map[string]
 	if types, typesOk := params["types"]; typesOk {
 		queryParams["types"] = fmt.Sprintf("%v", types)
 	}
+	if team_id, team_idOk := params["team_id"]; team_idOk {
+		queryParams["team_id"] = fmt.Sprintf("%v", team_id)
+	}
+	if exclude_archived, exclude_archivedOk := params["exclude_archived"]; exclude_archivedOk {
+		queryParams["exclude_archived"] = fmt.Sprintf("%v", exclude_archived)
+	}
+	if cursor, cursorOk := params["cursor"]; cursorOk {
+		queryParams["cursor"] = fmt.Sprintf("%v", cursor)
+	}
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {

@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	OpenAIApiUrl = "https://api.openai.com/v1/chat/completions"
+	OpenAIApiUrl          = "https://api.openai.com/v1/chat/completions"
+	OpenAIEmbeddingApiUrl = "https://api.openai.com/v1/embeddings"
 )
 
 type OpenAIModel struct {
@@ -250,6 +251,34 @@ type OpenAICompletionTokensDetails struct {
 type OpenAIPromptTokensDetails struct {
 	AudioTokens  int `json:"audio_tokens"`
 	CachedTokens int `json:"cached_tokens"`
+}
+
+// OpenAI Embedding Request
+type OpenAIEmbeddingRequest struct {
+	Input          interface{} `json:"input" eru:"required"`
+	Model          string      `json:"model" eru:"required"`
+	EncodingFormat string      `json:"encoding_format,omitempty"`
+	Dimensions     int         `json:"dimensions,omitempty"`
+	User           string      `json:"user,omitempty"`
+}
+
+// OpenAI Embedding Response
+type OpenAIEmbeddingResponse struct {
+	Object string                `json:"object"`
+	Data   []OpenAIEmbeddingData `json:"data"`
+	Model  string                `json:"model"`
+	Usage  OpenAIEmbeddingUsage  `json:"usage"`
+}
+
+type OpenAIEmbeddingData struct {
+	Object    string    `json:"object"`
+	Embedding []float64 `json:"embedding"`
+	Index     int       `json:"index"`
+}
+
+type OpenAIEmbeddingUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
 }
 
 func (openaiModel *OpenAIModel) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
@@ -490,4 +519,50 @@ func (openaiModel *OpenAIModel) QueryModelWithTool(ctx context.Context, chatRequ
 		Role:    "assistant",
 	}
 	return
+}
+
+func (openaiModel *OpenAIModel) GenerateEmbedding(ctx context.Context, text string) (embedding []float64, err error) {
+	logs.WithContext(ctx).Debug("GenerateEmbedding - Start")
+
+	// Create embedding request
+	embeddingRequest := OpenAIEmbeddingRequest{
+		Input: text,
+		Model: "text-embedding-ada-002", // Default OpenAI embedding model
+	}
+
+	// Make HTTP request to OpenAI embedding API
+	reqHeader := http.Header{}
+	reqHeader.Add("Authorization", "Bearer "+openaiModel.LLMSecret)
+	reqHeader.Add("Content-Type", "application/json")
+
+	response, _, _, _, err := utils.CallHttp(ctx, "POST", OpenAIEmbeddingApiUrl, reqHeader, nil, nil, nil, embeddingRequest)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to call OpenAI embedding API: %v", err))
+		return nil, err
+	}
+
+	// Parse response
+	responseJson, err := json.Marshal(response)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to marshal response: %v", err))
+		return nil, err
+	}
+
+	var embeddingResponse OpenAIEmbeddingResponse
+	err = json.Unmarshal(responseJson, &embeddingResponse)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to unmarshal embedding response: %v", err))
+		return nil, err
+	}
+
+	// Check if we have embedding data
+	if len(embeddingResponse.Data) == 0 {
+		err = fmt.Errorf("no embedding data received from OpenAI")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+
+	embedding = embeddingResponse.Data[0].Embedding
+	logs.WithContext(ctx).Debug(fmt.Sprintf("Generated embedding with %d dimensions", len(embedding)))
+	return embedding, nil
 }

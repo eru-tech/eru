@@ -19,6 +19,7 @@ var port = "8082"
 
 func main() {
 	defer func() {
+		logs.Logger.Info("attempting to deregister service and unsubscribe from config sync event")
 		if r := recover(); r != nil {
 			logs.Logger.Error(fmt.Sprint("Panic: ", r, " : ", string(debug.Stack())))
 			os.Exit(1)

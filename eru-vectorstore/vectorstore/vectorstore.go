@@ -10,35 +10,84 @@ import (
 )
 
 type VectorStoreI interface {
-	Search(ctx context.Context, query []float64, topK int, filter map[string]interface{}) ([]VectorResult, error)
-	Insert(ctx context.Context, vectors []Vector) error
-	Update(ctx context.Context, vectors []Vector) error
-	Delete(ctx context.Context, ids []string) error
-	CreateIndex(ctx context.Context) error
+	ListVectors(ctx context.Context, vectorRecordsList VectorRecordsList) (VectorResults, error)
+	SearchVectors(ctx context.Context, vectorRecordsSearch VectorRecordsSearch) (VectorResults, error)
+	SaveVectors(ctx context.Context, vectorRecords VectorRecords) error
+	DeleteVectors(ctx context.Context, vectorRecordsDelete VectorRecordsDelete) error
+	CreateIndex(ctx context.Context, cloneVectorStore VectorStoreI) error
 	DeleteIndex(ctx context.Context, indexName string) error
 	GetStats(ctx context.Context) (VectorStats, error)
 	GetAttribute(ctx context.Context, attributeName string) string
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
-	EditIndex(ctx context.Context) error
+	EditIndex(ctx context.Context, cloneVectorStore VectorStoreI) error
 	UpdateVectorStore(ctx context.Context, updatedVectorStore VectorStoreI) error
 	GetBytes(ctx context.Context) ([]byte, error)
 	BytesToVectorStore(ctx context.Context, vectorStoreObjJson []byte) (VectorStoreI, error)
+	SyncIndexDefinition(ctx context.Context, cloneVectorStore VectorStoreI) error
+	CheckRemoteStoreExists(ctx context.Context) (exists bool, err error)
 }
 
 type Vector struct {
-	VectorType string                 `json:"vector_type" eru:"required"`
-	Name       string                 `json:"name" eru:"required"`
-	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+	Id           string    `json:"id" eru:"required"`
+	Values       []float64 `json:"values,omitempty"`
+	SparceValues struct {
+		Indices []int     `json:"indices"`
+		Values  []float64 `json:"values"`
+	} `json:"sparce_values,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+type VectorRecords struct {
+	Vectors   []Vector `json:"vectors" eru:"required"`
+	Namespace string   `json:"namespace" eru:"required"`
+}
+
+type VectorRecordsDelete struct {
+	Ids       []string               `json:"ids"`
+	Namespace string                 `json:"namespace"`
+	Filter    map[string]interface{} `json:"filter,omitempty"`
+	DeleteAll bool                   `json:"delete_all,omitempty"`
+}
+type VectorRecordsList struct {
+	Ids            []string `json:"ids"`
+	ReturnVector   bool     `json:"return_vector,omitempty"`
+	ReturnMetadata bool     `json:"return_metadata,omitempty"`
+}
+
+type VectorRecordsSearch struct {
+	Id              string                 `json:"query_id,omitempty"`
+	Namespace       string                 `json:"namespace" eru:"required"`
+	Filter          map[string]interface{} `json:"filter,omitempty"`
+	Fields          []string               `json:"fields,omitempty"`
+	Inputs          map[string]string      `json:"inputs,omitempty"`
+	TopK            int                    `json:"top_k,omitempty"`
+	IncludeValues   bool                   `json:"include_values,omitempty"`
+	IncludeMetadata bool                   `json:"include_metadata,omitempty"`
+	ReturnDistance  bool                   `json:"return_distance,omitempty"`
+	Vector          []float64              `json:"vector,omitempty"`
+	SparceVector    struct {
+		Indices []int     `json:"indices"`
+		Values  []float64 `json:"values"`
+	} `json:"sparce_vector,omitempty"`
+	ReRank struct {
+		Model      string                 `json:"model,omitempty"`
+		RankFields []string               `json:"rank_fields,omitempty"`
+		TopN       int                    `json:"top_n,omitempty"`
+		Parameters map[string]interface{} `json:"parameters,omitempty"`
+		Query      string                 `json:"query,omitempty"`
+	} `json:"rerank,omitempty"`
 }
 
 type VectorIndexI interface {
 	GetAttribute(ctx context.Context, attributeName string) string
 }
-
+type VectorResults struct {
+	Records []VectorResult    `json:"records"`
+	Usage   map[string]string `json:"usage"`
+}
 type VectorResult struct {
-	Vector
-	Values []float64 `json:"values"`
-	Score  float64   `json:"score"`
+	Id       string                 `json:"id"`
+	Values   []float64              `json:"values,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type VectorStats struct {
@@ -67,27 +116,32 @@ type VectorStore struct {
 	VectorType string `json:"vector_type" eru:"required"`
 }
 
-func (vs *VectorStore) Search(ctx context.Context, query []float64, topK int, filter map[string]interface{}) ([]VectorResult, error) {
-	logs.WithContext(ctx).Info("Search method not implemented")
-	return nil, nil
+func (vs *VectorStore) SearchVectors(ctx context.Context, vectorRecordsSearch VectorRecordsSearch) (VectorResults, error) {
+	logs.WithContext(ctx).Info("SearchVectors method not implemented")
+	return VectorResults{
+		Records: []VectorResult{},
+		Usage:   map[string]string{},
+	}, nil
+}
+func (vs *VectorStore) ListVectors(ctx context.Context, vectorRecordsList VectorRecordsList) (VectorResults, error) {
+	logs.WithContext(ctx).Info("ListVectors method not implemented")
+	return VectorResults{
+		Records: []VectorResult{},
+		Usage:   map[string]string{},
+	}, nil
 }
 
-func (vs *VectorStore) Insert(ctx context.Context, vectors []Vector) error {
-	logs.WithContext(ctx).Info("Insert method not implemented")
+func (vs *VectorStore) SaveVectors(ctx context.Context, vectorRecords VectorRecords) error {
+	logs.WithContext(ctx).Info("SaveVectors method not implemented")
 	return nil
 }
 
-func (vs *VectorStore) Update(ctx context.Context, vectors []Vector) error {
-	logs.WithContext(ctx).Info("Update method not implemented")
+func (vs *VectorStore) DeleteVectors(ctx context.Context, vectorRecordsDelete VectorRecordsDelete) error {
+	logs.WithContext(ctx).Info("DeleteVectors method not implemented")
 	return nil
 }
 
-func (vs *VectorStore) Delete(ctx context.Context, ids []string) error {
-	logs.WithContext(ctx).Info("Delete method not implemented")
-	return nil
-}
-
-func (vs *VectorStore) CreateIndex(ctx context.Context) error {
+func (vs *VectorStore) CreateIndex(ctx context.Context, cloneVectorStore VectorStoreI) error {
 	logs.WithContext(ctx).Info("CreateIndex method not implemented")
 	return nil
 }
@@ -125,7 +179,7 @@ func (vs *VectorStore) MakeFromJson(ctx context.Context, rj *json.RawMessage) er
 	return nil
 }
 
-func (vs *VectorStore) EditIndex(ctx context.Context) error {
+func (vs *VectorStore) EditIndex(ctx context.Context, cloneVectorStore VectorStoreI) error {
 	logs.WithContext(ctx).Error("EditIndex not implemented")
 
 	return nil
@@ -153,4 +207,12 @@ func (vs *VectorStore) BytesToVectorStore(ctx context.Context, vectorStoreObjJso
 		return nil, err
 	}
 	return iCloneI.Elem().Interface().(VectorStoreI), nil
+}
+func (vs *VectorStore) SyncIndexDefinition(ctx context.Context, cloneVectorStore VectorStoreI) error {
+	logs.WithContext(ctx).Info("SyncIndexDefinition method not implemented")
+	return nil
+}
+func (vs *VectorStore) CheckRemoteStoreExists(ctx context.Context) (exists bool, err error) {
+	logs.WithContext(ctx).Info("CheckRemoteStoreExists method not implemented")
+	return false, nil
 }

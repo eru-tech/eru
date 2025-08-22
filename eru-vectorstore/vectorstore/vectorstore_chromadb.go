@@ -56,10 +56,10 @@ func (cvs *ChromaDBVectorStore) initClient(ctx context.Context) error {
 	return nil
 }
 
-func (cvs *ChromaDBVectorStore) Search(ctx context.Context, query []float64, topK int, filter map[string]interface{}) ([]VectorResult, error) {
+func (cvs *ChromaDBVectorStore) SearchVectors(ctx context.Context, vectorRecordsSearch VectorRecordsSearch) (VectorResults, error) {
 	logs.WithContext(ctx).Debug("ChromaDBVectorStore Search - Start")
 
-	if err := cvs.initClient(ctx); err != nil {
+	/* if err := cvs.initClient(ctx); err != nil {
 		return nil, logs.Err(ctx, err, "Failed to initialize ChromaDB client")
 	}
 
@@ -83,8 +83,7 @@ func (cvs *ChromaDBVectorStore) Search(ctx context.Context, query []float64, top
 			for j, doc := range docList {
 				result := VectorResult{
 					Vector: Vector{
-						VectorType: cvs.VectorType,
-						Name:       string(doc), // Document content as name
+						Id: string(doc), // Document content as name
 					},
 					Values: make([]float64, 0), // ChromaDB doesn't return embeddings by default
 					Score:  1.0,                // Default score for Get operation
@@ -108,16 +107,19 @@ func (cvs *ChromaDBVectorStore) Search(ctx context.Context, query []float64, top
 				break
 			}
 		}
-	}
+	} */
 
-	logs.WithContext(ctx).Info(fmt.Sprintf("ChromaDB search returned %d results", len(results)))
-	return results, nil
+	//logs.WithContext(ctx).Info(fmt.Sprintf("ChromaDB search returned %d results", len(results)))
+	return VectorResults{
+		Records: []VectorResult{},
+		Usage:   map[string]string{},
+	}, nil
 }
 
-func (cvs *ChromaDBVectorStore) Insert(ctx context.Context, vectors []Vector) error {
-	logs.WithContext(ctx).Debug("ChromaDBVectorStore Insert - Start")
+func (cvs *ChromaDBVectorStore) SaveVectors(ctx context.Context, vectorRecords VectorRecords) error {
+	logs.WithContext(ctx).Debug("ChromaDBVectorStore SaveVectors - Start")
 
-	if err := cvs.initClient(ctx); err != nil {
+	/* if err := cvs.initClient(ctx); err != nil {
 		return logs.Err(ctx, err, "Failed to initialize ChromaDB client")
 	}
 
@@ -152,9 +154,9 @@ func (cvs *ChromaDBVectorStore) Insert(ctx context.Context, vectors []Vector) er
 	_, err = col.Add(ctx, nil, metadatas, documents, ids)
 	if err != nil {
 		return logs.Err(ctx, err, "Failed to insert vectors")
-	}
+	} */
 
-	logs.WithContext(ctx).Info(fmt.Sprintf("Successfully inserted %d vectors", len(vectors)))
+	//logs.WithContext(ctx).Info(fmt.Sprintf("Successfully inserted %d vectors", len(vectors)))
 	return nil
 }
 
@@ -194,10 +196,10 @@ func (cvs *ChromaDBVectorStore) Update(ctx context.Context, vectors []Vector) er
 	return nil
 }
 
-func (cvs *ChromaDBVectorStore) Delete(ctx context.Context, ids []string) error {
+func (cvs *ChromaDBVectorStore) DeleteVectors(ctx context.Context, vectorRecordsDelete VectorRecordsDelete) error {
 	logs.WithContext(ctx).Debug("ChromaDBVectorStore Delete - Start")
 
-	if err := cvs.initClient(ctx); err != nil {
+	/* if err := cvs.initClient(ctx); err != nil {
 		return logs.Err(ctx, err, "Failed to initialize ChromaDB client")
 	}
 
@@ -213,11 +215,11 @@ func (cvs *ChromaDBVectorStore) Delete(ctx context.Context, ids []string) error 
 		return logs.Err(ctx, err, "Failed to delete vectors")
 	}
 
-	logs.WithContext(ctx).Info(fmt.Sprintf("Successfully deleted %d vectors", len(ids)))
+	logs.WithContext(ctx).Info(fmt.Sprintf("Successfully deleted %d vectors", len(ids))) */
 	return nil
 }
 
-func (cvs *ChromaDBVectorStore) CreateIndex(ctx context.Context) error {
+func (cvs *ChromaDBVectorStore) CreateIndex(ctx context.Context, cloneVectorStore VectorStoreI) error {
 	logs.WithContext(ctx).Debug("ChromaDBVectorStore CreateIndex - Start")
 
 	if err := cvs.initClient(ctx); err != nil {
@@ -308,7 +310,7 @@ func (cvs *ChromaDBVectorStore) MakeFromJson(ctx context.Context, rj *json.RawMe
 	return nil
 }
 
-func (cvs *ChromaDBVectorStore) EditIndex(ctx context.Context) error {
+func (cvs *ChromaDBVectorStore) EditIndex(ctx context.Context, cloneVectorStore VectorStoreI) error {
 	logs.WithContext(ctx).Debug("ChromaDBVectorStore EditIndex - Start")
 
 	// Update configurable fields

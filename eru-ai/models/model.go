@@ -16,6 +16,7 @@ type ModelI interface {
 	PerformPreDeleteTask(ctx context.Context) (err error)
 	QueryModel(ctx context.Context, chatRequest ChatRequest) (response Message, err error)
 	QueryModelWithTool(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (response JsonMessage, err error)
+	GenerateEmbedding(ctx context.Context, text string) (embedding []float64, err error)
 }
 
 type Model struct {
@@ -107,6 +108,12 @@ func (model *Model) QueryModel(ctx context.Context, chatRequest ChatRequest) (re
 
 func (model *Model) QueryModelWithTool(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (response JsonMessage, err error) {
 	err = errors.New("QueryModelWithTool Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
+func (model *Model) GenerateEmbedding(ctx context.Context, text string) (embedding []float64, err error) {
+	err = errors.New("GenerateEmbedding Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
 }

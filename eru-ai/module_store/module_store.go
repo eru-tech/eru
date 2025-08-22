@@ -44,7 +44,12 @@ type ModuleStoreI interface {
 	GetAgent(ctx context.Context, projectId string, tenantId string, agentName string, s ModuleStoreI) (agents.AgentI, error)
 	SaveVectorStore(ctx context.Context, vectorStoreObj vectorstore.VectorStoreI, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
 	RemoveVectorStore(ctx context.Context, vectorStoreName string, projectId string, tenantId string, realStore ModuleStoreI) error
+	SyncVectorStore(ctx context.Context, vectorStoreName string, projectId string, tenantId string, realStore ModuleStoreI) error
 	GetVectorStoreNames(ctx context.Context, projectID string, tenantID string) (vectorStoreNames []string, err error)
+	SaveVectors(ctx context.Context, vectorRecords vectorstore.VectorRecords, vectorName string, projectId string, tenantId string, realStore ModuleStoreI) error
+	RemoveVectors(ctx context.Context, vectorRecords vectorstore.VectorRecordsDelete, vectorName string, projectId string, tenantId string, realStore ModuleStoreI) error
+	SearchVectors(ctx context.Context, vectorRecords vectorstore.VectorRecordsSearch, vectorName string, projectId string, tenantId string, realStore ModuleStoreI) (vectorstore.VectorResults, error)
+	ListVectors(ctx context.Context, vectorRecords vectorstore.VectorRecordsList, vectorName string, projectId string, tenantId string, realStore ModuleStoreI) (vectorstore.VectorResults, error)
 	SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error
 	RemoveTenants()
 	SaveTool(ctx context.Context, tooling tools.Tooling, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
@@ -646,12 +651,12 @@ func (ms *ModuleStore) SaveVectorStore(ctx context.Context, vectorStoreObj vecto
 			return err
 		}
 		if isNew {
-			err = vectorStoreObjClone.CreateIndex(ctx)
+			err = updatedVectorStoreObj.CreateIndex(ctx, vectorStoreObjClone)
 			if err != nil {
 				return err
 			}
 		} else {
-			err = vectorStoreObjClone.EditIndex(ctx)
+			err = updatedVectorStoreObj.EditIndex(ctx, vectorStoreObjClone)
 			if err != nil {
 				return err
 			}
@@ -660,6 +665,39 @@ func (ms *ModuleStore) SaveVectorStore(ctx context.Context, vectorStoreObj vecto
 	}
 
 	return nil
+}
+func (ms *ModuleStore) SyncVectorStore(ctx context.Context, vectorStoreName string, projectId string, tenantId string, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("SyncVectorStore - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
+
+	if prj, ok := ms.Projects[projectId]; ok {
+		if _, ok := prj.Tenants[tenantId]; !ok {
+			err = errors.New("tenant " + tenantId + " does not exists")
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+		if vs, ok := prj.Tenants[tenantId].VectorStores[vectorStoreName]; !ok {
+			err = errors.New("VectorStore " + vectorStoreName + " does not exists")
+			logs.WithContext(ctx).Info(err.Error())
+			return err
+		} else {
+			vectorStoreClone, err := ms.GetVectorStoreCloneObject(ctx, projectId, tenantId, vs, realStore)
+			if err != nil {
+				return err
+			}
+			err = vs.SyncIndexDefinition(ctx, vectorStoreClone)
+			if err != nil {
+				return err
+			}
+			logs.WithContext(ctx).Info(fmt.Sprint(vs))
+		}
+		return realStore.SaveTenantStore(ctx, projectId, tenantId, "", prj.Tenants[tenantId])
+	} else {
+		err = errors.New("Project " + projectId + " does not exists")
+		logs.WithContext(ctx).Info(err.Error())
+		return err
+	}
 }
 
 func (ms *ModuleStore) RemoveVectorStore(ctx context.Context, vectorStoreName string, projectId string, tenantId string, realStore ModuleStoreI) (err error) {
@@ -686,10 +724,8 @@ func (ms *ModuleStore) RemoveVectorStore(ctx context.Context, vectorStoreName st
 				if err != nil {
 					return err
 				}
-				err = vectorStoreClone.DeleteIndex(ctx, vs.GetAttribute(ctx, "index_name"))
-				if err != nil {
-					return err
-				}
+				_ = vectorStoreClone.DeleteIndex(ctx, vs.GetAttribute(ctx, "index_name"))
+				// ignore error from DeleteIndex and still persists the vectorstore
 			}
 			return realStore.SaveTenantStore(ctx, projectId, tenantId, "", prj.Tenants[tenantId])
 		}
@@ -699,7 +735,133 @@ func (ms *ModuleStore) RemoveVectorStore(ctx context.Context, vectorStoreName st
 		return err
 	}
 }
+func (ms *ModuleStore) SaveVectors(ctx context.Context, vectorRecords vectorstore.VectorRecords, vectorName string, projectId string, tenantId string, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveVectors - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
 
+	if prj, ok := ms.Projects[projectId]; ok {
+		if _, ok := prj.Tenants[tenantId]; !ok {
+			err = errors.New("tenant " + tenantId + " does not exists")
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+		if vs, ok := prj.Tenants[tenantId].VectorStores[vectorName]; !ok {
+			err = errors.New("VectorStore " + vectorName + " does not exists")
+			logs.WithContext(ctx).Info(err.Error())
+			return err
+		} else {
+			vectorStoreClone, err := ms.GetVectorStoreCloneObject(ctx, projectId, tenantId, vs, realStore)
+			if err != nil {
+				return err
+			}
+			err = vectorStoreClone.SaveVectors(ctx, vectorRecords)
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		err = errors.New("Project " + projectId + " does not exists")
+		logs.WithContext(ctx).Info(err.Error())
+		return err
+	}
+	return nil
+}
+func (ms *ModuleStore) RemoveVectors(ctx context.Context, vectorRecordsDelete vectorstore.VectorRecordsDelete, vectorName string, projectId string, tenantId string, realStore ModuleStoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveVectors - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
+
+	if prj, ok := ms.Projects[projectId]; ok {
+		if _, ok := prj.Tenants[tenantId]; !ok {
+			err = errors.New("tenant " + tenantId + " does not exists")
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+		if vs, ok := prj.Tenants[tenantId].VectorStores[vectorName]; !ok {
+			err = errors.New("VectorStore " + vectorName + " does not exists")
+			logs.WithContext(ctx).Info(err.Error())
+			return err
+		} else {
+			vectorStoreClone, err := ms.GetVectorStoreCloneObject(ctx, projectId, tenantId, vs, realStore)
+			if err != nil {
+				return err
+			}
+			err = vectorStoreClone.DeleteVectors(ctx, vectorRecordsDelete)
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		err = errors.New("Project " + projectId + " does not exists")
+		logs.WithContext(ctx).Info(err.Error())
+		return err
+	}
+	return nil
+
+}
+func (ms *ModuleStore) ListVectors(ctx context.Context, vectorRecordsList vectorstore.VectorRecordsList, vectorName string, projectId string, tenantId string, realStore ModuleStoreI) (vectorResults vectorstore.VectorResults, err error) {
+	logs.WithContext(ctx).Debug("ListVectors - Start")
+
+	if prj, ok := ms.Projects[projectId]; ok {
+		if _, ok := prj.Tenants[tenantId]; !ok {
+			err = errors.New("tenant " + tenantId + " does not exists")
+			logs.WithContext(ctx).Error(err.Error())
+			return vectorstore.VectorResults{}, err
+		}
+		if vs, ok := prj.Tenants[tenantId].VectorStores[vectorName]; !ok {
+			err = errors.New("VectorStore " + vectorName + " does not exists")
+			logs.WithContext(ctx).Info(err.Error())
+			return vectorstore.VectorResults{}, err
+		} else {
+			vectorStoreClone, err := ms.GetVectorStoreCloneObject(ctx, projectId, tenantId, vs, realStore)
+			if err != nil {
+				return vectorstore.VectorResults{}, err
+			}
+			vectorResults, err = vectorStoreClone.ListVectors(ctx, vectorRecordsList)
+			if err != nil {
+				return vectorstore.VectorResults{}, err
+			}
+		}
+	} else {
+		err = errors.New("Project " + projectId + " does not exists")
+		logs.WithContext(ctx).Info(err.Error())
+		return vectorstore.VectorResults{}, err
+	}
+	return vectorResults, nil
+
+}
+
+func (ms *ModuleStore) SearchVectors(ctx context.Context, vectorRecords vectorstore.VectorRecordsSearch, vectorName string, projectId string, tenantId string, realStore ModuleStoreI) (vectorResults vectorstore.VectorResults, err error) {
+	logs.WithContext(ctx).Debug("SearchVectors - Start")
+
+	if prj, ok := ms.Projects[projectId]; ok {
+		if _, ok := prj.Tenants[tenantId]; !ok {
+			err = errors.New("tenant " + tenantId + " does not exists")
+			logs.WithContext(ctx).Error(err.Error())
+			return vectorstore.VectorResults{}, err
+		}
+		if vs, ok := prj.Tenants[tenantId].VectorStores[vectorName]; !ok {
+			err = errors.New("VectorStore " + vectorName + " does not exists")
+			logs.WithContext(ctx).Info(err.Error())
+			return vectorstore.VectorResults{}, err
+		} else {
+			vectorStoreClone, err := ms.GetVectorStoreCloneObject(ctx, projectId, tenantId, vs, realStore)
+			if err != nil {
+				return vectorstore.VectorResults{}, err
+			}
+			vectorResults, err = vectorStoreClone.SearchVectors(ctx, vectorRecords)
+			if err != nil {
+				return vectorstore.VectorResults{}, err
+			}
+		}
+	} else {
+		err = errors.New("Project " + projectId + " does not exists")
+		logs.WithContext(ctx).Info(err.Error())
+		return vectorstore.VectorResults{}, err
+	}
+	return vectorResults, nil
+}
 func (ms *ModuleStore) GetVectorStoreNames(ctx context.Context, projectId string, tenantId string) (vectorStoreNames []string, err error) {
 	logs.WithContext(ctx).Debug("GetVectorStoreNames - Start")
 

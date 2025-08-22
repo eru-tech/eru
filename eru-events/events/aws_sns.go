@@ -374,16 +374,26 @@ func (aws_sns_event *AWS_SNS_Event) Unsubscribe(ctx context.Context, subscriptio
 			return err
 		}
 	}
-
+	subscriptionArn := ""
+	for i, sub := range aws_sns_event.Subscribers {
+		if sub.SubscriptionArn == subscriptionId || strings.Contains(sub.Endpoint, subscriptionId) {
+			subscriptionArn = sub.SubscriptionArn
+			aws_sns_event.Subscribers = append(aws_sns_event.Subscribers[:i], aws_sns_event.Subscribers[i+1:]...)
+			break
+		}
+	}
+	if subscriptionArn == "" {
+		subscriptionArn = subscriptionId
+	}
 	_, err = aws_sns_event.client.Unsubscribe(context.Background(), &sns.UnsubscribeInput{
-		SubscriptionArn: aws.String(subscriptionId),
+		SubscriptionArn: aws.String(subscriptionArn),
 	})
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 
-	logs.WithContext(ctx).Info(fmt.Sprintf("Unsubscribed from: %s", subscriptionId))
+	logs.WithContext(ctx).Info(fmt.Sprintf("Unsubscribed from: %s", subscriptionArn))
 	return nil
 }
 

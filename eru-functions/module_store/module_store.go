@@ -26,9 +26,11 @@ import (
 	"github.com/eru-tech/eru/eru-functions/module_model"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	"github.com/eru-tech/eru/eru-scheduler/scheduler"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/eru-tech/eru/eru-store/store"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -39,11 +41,10 @@ var LoopThreads = 3
 var EventThreads = 3
 
 const (
-	UPDATE_FUNC_ASYNC = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
-	SELECT_FUNC_ASYNC = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
-	//SELECT_FUNC_REQUEST = "select * from erufunctions_requests where project_id=??? and tenant_id=??? and func_group_name=??? and (request_name=??? or 'ALL'=???)"
-	//SAVE_FUNC_REQUEST   = "insert into erufunctions_requests (request_id, request_name, func_group_name, project_id, tenant_id, request_json) values (???, ???, ???, ???, ???, ???) on conflict (request_id) do update set request_json=EXCLUDED.request_json , request_name=EXCLUDED.request_name"
-	//DELETE_FUNC_REQUEST = "delete from erufunctions_requests where request_id=??? returning request_id"
+	UPDATE_FUNC_ASYNC    = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
+	SELECT_FUNC_ASYNC    = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
+	INSERT_FUNC_SCHEDULE = "insert into erufunctions_schedules (schedule_id, project_id, tenant_id, func_group_name, func_step_name, event_msg, scheduler_name, job_id, start_date, end_date) values (???, ???, ???, ???, ???, ???, ???, ???, ???, ???)"
+	DELETE_FUNC_SCHEDULE = "delete from erufunctions_schedules where job_id=???"
 )
 
 type StoreHolder struct {
@@ -76,6 +77,8 @@ type ModuleStoreI interface {
 	RemoveRoute(ctx context.Context, routeName string, projectId string, realStore ModuleStoreI) error
 	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route functions.Route, err error)
 	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
+	ScheduleFunc(ctx context.Context, funcSchedule scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, realStore ModuleStoreI) error
+	UnScheduleFunc(ctx context.Context, projectId string, jobId string, realStore ModuleStoreI) error
 	GetWf(ctx context.Context, wfName string, projectId string, s ModuleStoreI) (wfObj functions.Workflow, err error)
 	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
 	SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
@@ -223,7 +226,17 @@ func (ms *ModuleStore) GetExtendedProjectConfig(ctx context.Context, projectId s
 	ePrj = module_model.ExtendedProject{}
 	if prj, ok := ms.Projects[projectId]; ok {
 		ePrj.Variables, err = realStore.FetchVars(ctx, projectId)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		ePrj.SecretManager, err = realStore.FetchSm(ctx, projectId)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		ePrj.Scheduler, err = realStore.FetchScheduler(ctx, projectId)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		ePrj.ProjectId = prj.ProjectId
 		ePrj.ProjectSettings = prj.ProjectSettings
 		ePrj.Routes = prj.Routes
@@ -1075,4 +1088,91 @@ func LoadStore(StoreTableName string, StoreTenantTableName string) (ModuleStoreI
 	}
 	//s.Store = myStore
 	return myStore, err
+}
+func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Info("ScheduleFunc - Start")
+	scheduleId := uuid.New().String()
+	scheduler, err := realStore.FetchScheduler(ctx, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	reqBodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	jobName := fmt.Sprintf("%s_%s_%s_%s_%s", projectId, scheduleConfig.TenantId, funcName, scheduleConfig.SchedulerName, scheduleId)
+	cronStr := scheduleConfig.GetCronStr(ctx)
+	schedulerCommand := fmt.Sprint("CALL schedule_procedure('", funcName, "','", string(reqBodyBytes), "','", scheduleConfig.SchedulerName, "')")
+	jobId, err := scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
+	if err != nil {
+		return err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("ScheduleFunc - End : ", jobId))
+
+	reqBody["job_id"] = jobId
+	requestBody := map[string]interface{}{
+		"Vars": map[string]interface{}{
+			"Body":    reqBody,
+			"OrgBody": reqBody,
+		},
+		"ReqVars": map[string]interface{}{},
+		"ResVars": map[string]interface{}{},
+	}
+	reqBodyBytes, err = json.Marshal(requestBody)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	//recalling schedule with same jobname to edit the body with job id
+	schedulerCommand = fmt.Sprint("CALL schedule_procedure('", funcName, "','", string(reqBodyBytes), "','", scheduleConfig.SchedulerName, "')")
+	jobId, err = scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
+	if err != nil {
+		return err
+	}
+	ed := scheduleConfig.EndDate
+	if ed == "" {
+		ed = "2099-12-31"
+	}
+	var insertQueries []*models.Queries
+	insertScheduleLog := models.Queries{}
+	insertScheduleLog.Query = db.GetDb(realStore.GetDbType()).GetDbQuery(ctx, INSERT_FUNC_SCHEDULE)
+	insertScheduleLog.Vals = []interface{}{scheduleId, projectId, scheduleConfig.TenantId, funcName, "", string(reqBodyBytes), scheduleConfig.SchedulerName, jobId, scheduleConfig.StartDate, ed}
+	insertScheduleLog.Rank = 2
+	insertQueries = append(insertQueries, &insertScheduleLog)
+
+	insertOutput, insertOutputErr := eru_utils.ExecuteDbSave(ctx, realStore.GetConn(), insertQueries)
+	if insertOutputErr != nil {
+		return insertOutputErr
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("insertOutput : ", insertOutput))
+
+	return nil
+}
+func (ms *ModuleStore) UnScheduleFunc(ctx context.Context, projectId string, jobId string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Info("UnScheduleFunc - Start")
+	scheduler, err := realStore.FetchScheduler(ctx, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	err = scheduler.Unschedule(ctx, jobId, "")
+	if err != nil {
+		// do nothing and continue
+	}
+	var deleteQueries []*models.Queries
+	deleteScheduleLog := models.Queries{}
+	deleteScheduleLog.Query = db.GetDb(realStore.GetDbType()).GetDbQuery(ctx, DELETE_FUNC_SCHEDULE)
+	deleteScheduleLog.Vals = []interface{}{jobId}
+	deleteScheduleLog.Rank = 1
+	deleteQueries = append(deleteQueries, &deleteScheduleLog)
+
+	deleteOutput, deleteOutputErr := eru_utils.ExecuteDbSave(ctx, realStore.GetConn(), deleteQueries)
+	if deleteOutputErr != nil {
+		return deleteOutputErr
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("deleteOutput : ", deleteOutput))
+
+	return nil
 }

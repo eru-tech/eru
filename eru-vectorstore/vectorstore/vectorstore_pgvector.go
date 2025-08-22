@@ -23,31 +23,28 @@ type PGVectorIndex struct {
 	Name string `json:"name"`
 }
 
-func (pgvs *PGVectorStore) Search(ctx context.Context, query []float64, topK int, filter map[string]interface{}) ([]VectorResult, error) {
+func (pgvs *PGVectorStore) SearchVectors(ctx context.Context, vectorRecordsSearch VectorRecordsSearch) (VectorResults, error) {
 	logs.WithContext(ctx).Info("Searching vectors in PGVector")
 
-	return nil, nil
+	return VectorResults{
+		Records: []VectorResult{},
+		Usage:   map[string]string{},
+	}, nil
 }
 
-func (pgvs *PGVectorStore) Insert(ctx context.Context, vectors []Vector) error {
-	logs.WithContext(ctx).Info("Inserting vectors to PGVector")
+func (pgvs *PGVectorStore) SaveVectors(ctx context.Context, vectorRecords VectorRecords) error {
+	logs.WithContext(ctx).Info("Saving vectors to PGVector")
 
 	return nil
 }
 
-func (pgvs *PGVectorStore) Update(ctx context.Context, vectors []Vector) error {
-	logs.WithContext(ctx).Info("Updating vectors in PGVector")
-
-	return nil
-}
-
-func (pgvs *PGVectorStore) Delete(ctx context.Context, ids []string) error {
+func (pgvs *PGVectorStore) DeleteVectors(ctx context.Context, vectorRecordsDelete VectorRecordsDelete) error {
 	logs.WithContext(ctx).Info("Deleting vectors from PGVector")
 
 	return nil
 }
 
-func (pgvs *PGVectorStore) CreateIndex(ctx context.Context) error {
+func (pgvs *PGVectorStore) CreateIndex(ctx context.Context, cloneVectorStore VectorStoreI) error {
 	logs.WithContext(ctx).Info("Creating PGVector index")
 	//pgvs.IndexName = indexName
 

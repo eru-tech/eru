@@ -325,7 +325,158 @@ func AgentRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		}
 	}
 }
+func VectorSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 
+		logs.WithContext(r.Context()).Debug("VectorSaveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		vectorStoreName := vars["vectorstorename"]
+
+		vectorFromReq := json.NewDecoder(r.Body)
+		vectorFromReq.DisallowUnknownFields()
+
+		var vectorRecords vectorstore.VectorRecords
+		if err := vectorFromReq.Decode(&vectorRecords); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err = utils.ValidateStruct(r.Context(), vectorRecords, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		err := sh.Store.SaveVectors(r.Context(), vectorRecords, vectorStoreName, projectId, tenantId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("vectors saved successfully for vectorstore ", vectorStoreName)})
+	}
+}
+func VectorRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("VectorRemoveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		vectorStoreName := vars["vectorstorename"]
+
+		vectorFromReq := json.NewDecoder(r.Body)
+		vectorFromReq.DisallowUnknownFields()
+
+		var vectorRecordsDelete vectorstore.VectorRecordsDelete
+		if err := vectorFromReq.Decode(&vectorRecordsDelete); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err = utils.ValidateStruct(r.Context(), vectorRecordsDelete, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		err := sh.Store.RemoveVectors(r.Context(), vectorRecordsDelete, vectorStoreName, projectId, tenantId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("vectors deleted successfully for vectorstore ", vectorStoreName)})
+	}
+}
+func VectorListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("VectorListHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		vectorStoreName := vars["vectorstorename"]
+
+		vectorFromReq := json.NewDecoder(r.Body)
+		vectorFromReq.DisallowUnknownFields()
+
+		var vectorRecordsList vectorstore.VectorRecordsList
+		if err := vectorFromReq.Decode(&vectorRecordsList); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err = utils.ValidateStruct(r.Context(), vectorRecordsList, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		records, err := sh.Store.ListVectors(r.Context(), vectorRecordsList, vectorStoreName, projectId, tenantId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(records)
+	}
+}
+func VectorSearchHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("VectorSearchHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		vectorStoreName := vars["vectorstorename"]
+
+		vectorFromReq := json.NewDecoder(r.Body)
+		vectorFromReq.DisallowUnknownFields()
+
+		var vectorRecordsSearch vectorstore.VectorRecordsSearch
+		if err := vectorFromReq.Decode(&vectorRecordsSearch); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err = utils.ValidateStruct(r.Context(), vectorRecordsSearch, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		records, err := sh.Store.SearchVectors(r.Context(), vectorRecordsSearch, vectorStoreName, projectId, tenantId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(records)
+	}
+}
 func VectorStoreSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sh.Lock()
@@ -387,7 +538,26 @@ func VectorStoreSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		}
 	}
 }
+func VectorStoreSyncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 
+		logs.WithContext(r.Context()).Debug("VectorStoreSyncHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		vectorStoreName := vars["vectorstorename"]
+		err := sh.Store.SyncVectorStore(r.Context(), vectorStoreName, projectId, tenantId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("vectorstore ", vectorStoreName, " synced successfully")})
+		}
+	}
+}
 func VectorStoreRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sh.Lock()
@@ -403,7 +573,6 @@ func VectorStoreRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			sh.Store.SaveStore(r.Context(), projectId, "", sh.Store)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("vectorstore ", vectorStoreName, " removed successfully")})
 		}

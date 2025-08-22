@@ -794,9 +794,23 @@ func UnsubscribeEventHandler(s store.StoreI) http.HandlerFunc {
 		}
 		eventName := vars["eventname"]
 		subscriptionId := vars["subscriptionid"]
+		logs.WithContext(r.Context()).Info(fmt.Sprintf("eventname: %s", eventName))
+		logs.WithContext(r.Context()).Info(fmt.Sprintf("subscriptionid: %s", subscriptionId))
+		eventI, err := s.FetchEvent(r.Context(), projectId, eventName)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		logs.WithContext(r.Context()).Info(fmt.Sprintf("eventI: %v", eventI))
+		err = eventI.Unsubscribe(r.Context(), subscriptionId)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
 
-		eventI := events.GetEvent(eventName)
-		err := eventI.Unsubscribe(r.Context(), subscriptionId)
+		err = s.SaveStore(r.Context(), projectId, "", s)
 		if err != nil {
 			FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

@@ -1,6 +1,7 @@
 package vectorstore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 )
 
 const baseUrl = "https://api.pinecone.io"
+const pinecone_api_version = "2025-04"
 
 type PineconeVectorStore struct {
 	VectorStore
@@ -20,7 +22,6 @@ type PineconeVectorStore struct {
 	Index  PineconeVectorIndex `json:"index"`
 }
 type PineconeVectorIndex struct {
-	Name      string `json:"name"`
 	Dimension int    `json:"dimension"`
 	Metric    string `json:"metric"`
 	Status    struct {
@@ -44,61 +45,351 @@ type PineconeVectorIndex struct {
 	} `json:"pod_spec"`
 	DeletionProtection string            `json:"deletion_protection"`
 	Tags               map[string]string `json:"tags"`
-	VectorType         string            `json:"vector_type"`
+	Embed              struct {
+		Model           string                 `json:"model"`
+		FieldMap        map[string]string      `json:"field_map"`
+		Metric          string                 `json:"metric"`
+		Dimension       int                    `json:"dimension"`
+		ReadParameters  map[string]interface{} `json:"read_parameters"`
+		WriteParameters map[string]interface{} `json:"write_parameters"`
+		Cloud           string                 `json:"cloud"`
+		Region          string                 `json:"region"`
+	} `json:"embed"`
+}
+type PineconeVectorResultHit struct {
+	Id     string                 `json:"_id"`
+	Values []float64              `json:"values"`
+	Score  float64                `json:"_score"`
+	Fields map[string]interface{} `json:"fields"`
+}
+type PineconeVectorResult struct {
+	Namespace string `json:"namespace"`
+	Result    struct {
+		Hits []PineconeVectorResultHit `json:"hits,omitempty"`
+	} `json:"result,omitempty"`
+	Usage struct {
+		ReadUnits        int `json:"read_units"`
+		RerankUnits      int `json:"rerank_units"`
+		EmbedTotalTokens int `json:"embed_total_tokens"`
+	} `json:"usage"`
+}
+type PineconeVectorMatch struct {
+	Namespace string `json:"namespace"`
+	Matches   []struct {
+		Id           string    `json:"id"`
+		Values       []float64 `json:"values"`
+		SparceValues struct {
+			Indices []int     `json:"indices"`
+			Values  []float64 `json:"values"`
+		} `json:"sparce_values"`
+		Score    float64                `json:"score"`
+		Metadata map[string]interface{} `json:"metadata,omitempty"`
+	} `json:"matches,omitempty"`
+	Usage struct {
+		ReadUnits        int `json:"read_units"`
+		RerankUnits      int `json:"rerank_units"`
+		EmbedTotalTokens int `json:"embed_total_tokens"`
+	} `json:"usage"`
 }
 
-func (pvs *PineconeVectorStore) initClient(ctx context.Context) error {
-	// Client initialization for future SDK integration
-	return nil
-}
-
-func (pvs *PineconeVectorStore) Search(ctx context.Context, query []float64, topK int, filter map[string]interface{}) ([]VectorResult, error) {
+func (pvs *PineconeVectorStore) SearchVectors(ctx context.Context, vectorRecordsSearch VectorRecordsSearch) (VectorResults, error) {
 	logs.WithContext(ctx).Debug("PineconeVectorStore Search - Start")
+	if pvs.Index.Host == "" {
+		err := pvs.SyncIndexDefinition(ctx, pvs)
+		if err != nil {
+			return VectorResults{}, err
+		}
+		if pvs.Index.Host == "" {
+			return VectorResults{}, logs.Err(ctx, fmt.Errorf("index host is empty"), "")
+		}
+	}
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Api-Key", pvs.APIKey)
+	headers.Set("X-Pinecone-API-Version", pinecone_api_version)
+	url := fmt.Sprintf("https://%s/query", pvs.Index.Host)
+	vectorSearchBody := map[string]interface{}{}
+	isQuery := false
+	if vectorRecordsSearch.Inputs != nil {
+		isQuery = true
 
-	return nil, nil
+		headers.Set("Accept", "application/json")
+
+		url = fmt.Sprintf("https://%s/records/namespaces/%s/search", pvs.Index.Host, vectorRecordsSearch.Namespace)
+		vectorSearchBodyQuery := make(map[string]interface{})
+		vectorSearchBodyQuery["inputs"] = vectorRecordsSearch.Inputs
+		vectorSearchBodyQuery["top_k"] = vectorRecordsSearch.TopK
+		vectorSearchBodyQuery["filter"] = vectorRecordsSearch.Filter
+		//vectorSearchBodyQueryVector := make(map[string]interface{})
+		//vectorSearchBodyQueryVector["values"] = vectorRecordsSearch.Vector
+		//vectorSearchBodyQueryVector["sparce_values"] = vectorRecordsSearch.SparceVector
+		//vectorSearchBodyQueryVector["sparse_indices"] = vectorRecordsSearch.SparceVector.Indices
+		//vectorSearchBodyQuery["vector"] = vectorSearchBodyQueryVector
+		//vectorSearchBodyQuery["id"] = vectorRecordsSearch.Id
+		vectorSearchBody["query"] = vectorSearchBodyQuery
+		vectorSearchBody["fields"] = vectorRecordsSearch.Fields
+		if vectorRecordsSearch.ReRank.Model != "" {
+			vectorSearchBodyReRank := map[string]interface{}{
+				"model":       vectorRecordsSearch.ReRank.Model,
+				"rank_fields": vectorRecordsSearch.ReRank.RankFields,
+			}
+			if vectorRecordsSearch.ReRank.TopN > 0 {
+				vectorSearchBodyReRank["top_n"] = vectorRecordsSearch.ReRank.TopN
+			}
+			if vectorRecordsSearch.ReRank.Parameters != nil {
+				vectorSearchBodyReRank["parameters"] = vectorRecordsSearch.ReRank.Parameters
+			}
+			if vectorRecordsSearch.ReRank.Query != "" {
+				vectorSearchBodyReRank["query"] = vectorRecordsSearch.ReRank.Query
+			}
+			vectorSearchBody["rerank"] = vectorSearchBodyReRank
+		}
+	} else {
+
+		vectorSearchBody["topK"] = vectorRecordsSearch.TopK
+		if vectorRecordsSearch.Id != "" {
+			vectorSearchBody["id"] = vectorRecordsSearch.Id
+		}
+		if vectorRecordsSearch.Namespace != "" {
+			vectorSearchBody["namespace"] = vectorRecordsSearch.Namespace
+		}
+		if vectorRecordsSearch.Filter != nil {
+			vectorSearchBody["filter"] = vectorRecordsSearch.Filter
+		}
+		vectorSearchBody["includeValues"] = vectorRecordsSearch.IncludeValues
+		vectorSearchBody["includeMetadata"] = vectorRecordsSearch.IncludeMetadata
+		if len(vectorRecordsSearch.Vector) > 0 {
+			vectorSearchBody["vector"] = vectorRecordsSearch.Vector
+		}
+		if len(vectorRecordsSearch.SparceVector.Values) > 0 {
+			vectorSearchBody["sparceValues"] = vectorRecordsSearch.SparceVector
+		}
+	}
+	resp, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, nil, nil, nil, vectorSearchBody)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return VectorResults{}, err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(resp))
+	var records []VectorResult
+	var vectorResults VectorResults
+	if isQuery {
+		// Parse response into PineconeVectorResult
+		var pineconeResult PineconeVectorResult
+		resultBytes, err := json.Marshal(resp)
+		if err != nil {
+			err = logs.Err(ctx, err, "Failed to marshal response")
+			return VectorResults{}, err
+		}
+
+		if err := json.Unmarshal(resultBytes, &pineconeResult); err != nil {
+			err = logs.Err(ctx, err, "Failed to unmarshal response into PineconeVectorResult")
+			return VectorResults{}, err
+		}
+
+		for _, hit := range pineconeResult.Result.Hits {
+			metadata := make(map[string]interface{})
+			metadata["score"] = hit.Score
+			metadata["fields"] = hit.Fields
+			record := VectorResult{
+				Id:       hit.Id,
+				Values:   hit.Values,
+				Metadata: metadata,
+			}
+			records = append(records, record)
+		}
+		usage := map[string]string{}
+		usage["read_units"] = fmt.Sprintf("%d", pineconeResult.Usage.ReadUnits)
+		usage["rerank_units"] = fmt.Sprintf("%d", pineconeResult.Usage.RerankUnits)
+		usage["embed_total_tokens"] = fmt.Sprintf("%d", pineconeResult.Usage.EmbedTotalTokens)
+		vectorResults = VectorResults{
+			Records: records,
+			Usage:   usage,
+		}
+	} else {
+		var pineconeMatch PineconeVectorMatch
+		resultBytes, err := json.Marshal(resp)
+		if err != nil {
+			err = logs.Err(ctx, err, "Failed to marshal response")
+			return VectorResults{}, err
+		}
+
+		if err := json.Unmarshal(resultBytes, &pineconeMatch); err != nil {
+			err = logs.Err(ctx, err, "Failed to unmarshal response into PineconeVectorResult")
+			return VectorResults{}, err
+		}
+
+		// Convert PineconeVectorResult to []VectorResult
+		for _, match := range pineconeMatch.Matches {
+			match.Metadata["score"] = match.Score
+			record := VectorResult{
+				Id:       match.Id,
+				Values:   match.Values,
+				Metadata: match.Metadata,
+			}
+			records = append(records, record)
+		}
+		usage := map[string]string{}
+		usage["read_units"] = fmt.Sprintf("%d", pineconeMatch.Usage.ReadUnits)
+		usage["rerank_units"] = fmt.Sprintf("%d", pineconeMatch.Usage.RerankUnits)
+		usage["embed_total_tokens"] = fmt.Sprintf("%d", pineconeMatch.Usage.EmbedTotalTokens)
+		vectorResults = VectorResults{
+			Records: records,
+			Usage:   usage,
+		}
+	}
+	return vectorResults, nil
 }
 
-func (pvs *PineconeVectorStore) Insert(ctx context.Context, vectors []Vector) error {
-	logs.WithContext(ctx).Debug("PineconeVectorStore Insert - Start")
+func (pvs *PineconeVectorStore) SaveVectors(ctx context.Context, vectorRecords VectorRecords) error {
+	logs.WithContext(ctx).Debug("PineconeVectorStore SaveVectors - Start")
+	if pvs.Index.Host == "" {
+		err := pvs.SyncIndexDefinition(ctx, pvs)
+		if err != nil {
+			return err
+		}
+		if pvs.Index.Host == "" {
+			return logs.Err(ctx, fmt.Errorf("index host is empty"), "")
+		}
+	}
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Api-Key", pvs.APIKey)
+	headers.Set("X-Pinecone-API-Version", pinecone_api_version)
+	url := fmt.Sprintf("https://%s/records/namespaces/%s/upsert", pvs.Index.Host, vectorRecords.Namespace)
+	var vectorSaveBody interface{}
+	useEmbed := true
+	if len(vectorRecords.Vectors[0].Values) > 0 || len(vectorRecords.Vectors[0].SparceValues.Values) > 0 {
+		// if vectors (dense or sparse) are provided, don't use embed
+		useEmbed = false
+	}
 
-	return nil
-}
+	if useEmbed {
+		if pvs.Index.Embed.Model == "" {
+			return logs.Err(ctx, fmt.Errorf("embed model is empty"), "")
+		}
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		// Optional: stable key order for deterministic output
+		enc.SetEscapeHTML(false)
+		for _, vector := range vectorRecords.Vectors {
+			vectorMap := map[string]interface{}{}
+			vectorMap["_id"] = vector.Id
+			for k, v := range vector.Metadata {
+				vectorMap[k] = v
+			}
+			// writes one object + '\n'
+			if err := enc.Encode(vectorMap); err != nil {
+				return logs.Err(ctx, fmt.Errorf("encode record: %w", err), "")
+			}
+		}
+		vectorSaveBody = buf.Bytes()
+		headers.Set("Content-Type", "application/x-ndjson")
+	} else {
+		if pvs.Index.Embed.Model != "" {
+			return logs.Err(ctx, fmt.Errorf("expected text but recevied vectors for embed model"), "")
+		}
+		url = fmt.Sprintf("https://%s/vectors/upsert", pvs.Index.Host)
+		vectors := []map[string]interface{}{}
+		for _, vector := range vectorRecords.Vectors {
+			vectors = append(vectors, map[string]interface{}{
+				"id":       vector.Id,
+				"values":   vector.Values,
+				"metadata": vector.Metadata,
+			})
+		}
+		vectorSaveBody = map[string]interface{}{
+			"vectors":   vectors,
+			"namespace": vectorRecords.Namespace,
+		}
+	}
+	// Use Pinecone API endpoint directly
 
-func (pvs *PineconeVectorStore) Update(ctx context.Context, vectors []Vector) error {
-	logs.WithContext(ctx).Debug("PineconeVectorStore Update - Start")
-
-	return nil
-}
-
-func (pvs *PineconeVectorStore) Delete(ctx context.Context, ids []string) error {
-	logs.WithContext(ctx).Debug("PineconeVectorStore Delete - Start")
-
-	return nil
-}
-
-func (pvs *PineconeVectorStore) CreateIndex(ctx context.Context) error {
-	logs.WithContext(ctx).Debug("CreateIndex - Start")
-
-	// Initialize Pinecone client
-	if err := pvs.initClient(ctx); err != nil {
+	resp, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, nil, nil, nil, vectorSaveBody)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
 		return err
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint(resp))
+	return nil
+}
+
+func (pvs *PineconeVectorStore) DeleteVectors(ctx context.Context, vectorRecordsDelete VectorRecordsDelete) error {
+	logs.WithContext(ctx).Debug("PineconeVectorStore Delete - Start")
+	if pvs.Index.Host == "" {
+		err := pvs.SyncIndexDefinition(ctx, pvs)
+		if err != nil {
+			return err
+		}
+		if pvs.Index.Host == "" {
+			return logs.Err(ctx, fmt.Errorf("index host is empty"), "")
+		}
+	}
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Api-Key", pvs.APIKey)
+	headers.Set("X-Pinecone-API-Version", pinecone_api_version)
+	url := fmt.Sprintf("https://%s/vectors/delete", pvs.Index.Host)
+	vectorDeleteBody := map[string]interface{}{}
+	if vectorRecordsDelete.DeleteAll {
+		vectorDeleteBody["deleteAll"] = true
+	}
+	if len(vectorRecordsDelete.Ids) > 0 {
+		vectorDeleteBody["ids"] = vectorRecordsDelete.Ids
+	}
+	if vectorRecordsDelete.Filter != nil {
+		vectorDeleteBody["filter"] = vectorRecordsDelete.Filter
+	}
+	if vectorRecordsDelete.Namespace != "" {
+		vectorDeleteBody["namespace"] = vectorRecordsDelete.Namespace
+	}
+	resp, _, _, _, err := utils.CallHttp(ctx, http.MethodDelete, url, headers, nil, nil, nil, vectorDeleteBody)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint(resp))
+	return nil
+}
+
+func (pvs *PineconeVectorStore) CreateIndex(ctx context.Context, cloneVectorStore VectorStoreI) error {
+	logs.WithContext(ctx).Debug("CreateIndex - Start")
 
 	// Create index using Pinecone API directly
 	createIndexPayload := map[string]interface{}{
-		"name":                pvs.Index.Name,
-		"dimension":           pvs.Index.Dimension,
-		"metric":              pvs.Index.Metric,
+		"name":                pvs.VectorName,
 		"deletion_protection": pvs.Index.DeletionProtection,
 		"tags":                pvs.Index.Tags,
-		"spec": map[string]interface{}{
+	}
+	embedUrl := ""
+	if pvs.Index.Embed.Model != "" {
+		embedUrl = "/create-for-model"
+		createIndexPayload["embed"] = map[string]interface{}{
+			"model":            pvs.Index.Embed.Model,
+			"field_map":        pvs.Index.Embed.FieldMap,
+			"metric":           pvs.Index.Embed.Metric,
+			"dimension":        pvs.Index.Embed.Dimension,
+			"read_parameters":  pvs.Index.Embed.ReadParameters,
+			"write_parameters": pvs.Index.Embed.WriteParameters,
+		}
+		createIndexPayload["cloud"] = pvs.Index.Embed.Cloud
+		createIndexPayload["region"] = pvs.Index.Embed.Region
+		/* createIndexPayload["spec"] = map[string]interface{}{
+			"serverless": map[string]interface{}{
+				"cloud":  pvs.Index.Embed.Cloud,
+				"region": pvs.Index.Embed.Region,
+			},
+		} */
+	} else if pvs.Index.ServerlessSpec.Cloud != "" {
+		createIndexPayload["spec"] = map[string]interface{}{
 			"serverless": map[string]interface{}{
 				"cloud":  pvs.Index.ServerlessSpec.Cloud,
 				"region": pvs.Index.ServerlessSpec.Region,
 			},
-		},
-	}
-	if pvs.Index.PodSpec.PodType != "" {
+		}
+		createIndexPayload["dimension"] = pvs.Index.Dimension
+		createIndexPayload["metric"] = pvs.Index.Metric
+	} else if pvs.Index.PodSpec.PodType != "" {
 		createIndexPayload["spec"] = map[string]interface{}{
 			"pod": map[string]interface{}{
 				"pod_type":        pvs.Index.PodSpec.PodType,
@@ -112,15 +403,35 @@ func (pvs *PineconeVectorStore) CreateIndex(ctx context.Context) error {
 	}
 
 	// Use Pinecone API endpoint directly
-	url := fmt.Sprintf("%s/indexes", baseUrl)
+	url := fmt.Sprintf("%s/indexes%s", baseUrl, embedUrl)
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
-	headers.Set("Api-Key", pvs.APIKey)
+	headers.Set("Api-Key", cloneVectorStore.GetAttribute(ctx, "api_key"))
+	headers.Set("X-Pinecone-API-Version", pinecone_api_version)
 
-	_, _, _, _, err := utils.CallHttp(ctx, "POST", url, headers, nil, nil, nil, createIndexPayload)
+	resp, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, nil, nil, nil, createIndexPayload)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return err
+	}
+	respMap, ok := resp.(map[string]interface{})
+	if !ok {
+		err = logs.Err(ctx, fmt.Errorf("resp is not a map"), "")
+		return err
+	}
+
+	if host, hostOk := respMap["host"].(string); hostOk {
+		pvs.Index.Host = host
+	}
+	if status, statusOk := respMap["status"]; statusOk {
+		if statusMap, statusMapOk := status.(map[string]interface{}); statusMapOk {
+			if ready, readyOk := statusMap["ready"].(bool); readyOk {
+				pvs.Index.Status.Ready = ready
+			}
+			if state, stateOk := statusMap["state"].(string); stateOk {
+				pvs.Index.Status.State = state
+			}
+		}
 	}
 	return nil
 }
@@ -128,15 +439,11 @@ func (pvs *PineconeVectorStore) CreateIndex(ctx context.Context) error {
 func (pvs *PineconeVectorStore) DeleteIndex(ctx context.Context, indexName string) error {
 	logs.WithContext(ctx).Debug("PineconeVectorStore DeleteIndex - Start")
 
-	// Initialize Pinecone client
-	if err := pvs.initClient(ctx); err != nil {
-		return err
-	}
-
 	// Delete index using Pinecone API directly
 	url := fmt.Sprintf("%s/indexes/%s", baseUrl, indexName)
 	headers := http.Header{}
 	headers.Set("Api-Key", pvs.APIKey)
+	headers.Set("X-Pinecone-API-Version", pinecone_api_version)
 
 	_, _, _, _, err := utils.CallHttp(ctx, "DELETE", url, headers, nil, nil, nil, nil)
 	if err != nil {
@@ -167,13 +474,8 @@ func (pvs *PineconeVectorStore) MakeFromJson(ctx context.Context, rj *json.RawMe
 	return nil
 }
 
-func (pvs *PineconeVectorStore) EditIndex(ctx context.Context) error {
+func (pvs *PineconeVectorStore) EditIndex(ctx context.Context, cloneVectorStore VectorStoreI) error {
 	logs.WithContext(ctx).Debug("PineconeVectorStore Edit - Start")
-
-	// Initialize Pinecone client
-	if err := pvs.initClient(ctx); err != nil {
-		return err
-	}
 
 	// Create index using Pinecone API directly
 	editIndexPayload := map[string]interface{}{
@@ -194,12 +496,13 @@ func (pvs *PineconeVectorStore) EditIndex(ctx context.Context) error {
 	}
 
 	// Use Pinecone API endpoint directly
-	url := fmt.Sprintf("%s/indexes/%s", baseUrl, pvs.Index.Name)
+	url := fmt.Sprintf("%s/indexes/%s", baseUrl, pvs.VectorName)
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
-	headers.Set("Api-Key", pvs.APIKey)
+	headers.Set("Api-Key", cloneVectorStore.GetAttribute(ctx, "api_key"))
+	headers.Set("X-Pinecone-API-Version", pinecone_api_version)
 
-	_, _, _, _, err := utils.CallHttp(ctx, "PATCH", url, headers, nil, nil, nil, editIndexPayload)
+	_, _, _, _, err := utils.CallHttp(ctx, http.MethodPatch, url, headers, nil, nil, nil, editIndexPayload)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return err
@@ -238,14 +541,52 @@ func (pvs *PineconeVectorStore) BytesToVectorStore(ctx context.Context, vectorSt
 	}
 	return iCloneI.Elem().Interface().(VectorStoreI), nil
 }
+func (pvs *PineconeVectorStore) SyncIndexDefinition(ctx context.Context, cloneVectorStore VectorStoreI) error {
+	logs.WithContext(ctx).Debug("PineconeVectorStore SyncIndexDefinition - Start")
+
+	// Use Pinecone API endpoint directly
+	url := fmt.Sprintf("%s/indexes/%s", baseUrl, pvs.VectorName)
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Api-Key", cloneVectorStore.GetAttribute(ctx, "api_key"))
+	headers.Set("X-Pinecone-API-Version", pinecone_api_version)
+
+	resp, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, nil, nil, nil, nil)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return err
+	}
+
+	respMap, ok := resp.(map[string]interface{})
+	if !ok {
+		err = logs.Err(ctx, fmt.Errorf("resp is not a map"), "")
+		return err
+	}
+
+	if host, hostOk := respMap["host"].(string); hostOk {
+		pvs.Index.Host = host
+	}
+	if status, statusOk := respMap["status"]; statusOk {
+		if statusMap, statusMapOk := status.(map[string]interface{}); statusMapOk {
+			if ready, readyOk := statusMap["ready"].(bool); readyOk {
+				pvs.Index.Status.Ready = ready
+			}
+			if state, stateOk := statusMap["state"].(string); stateOk {
+				pvs.Index.Status.State = state
+			}
+		}
+	}
+	logs.WithContext(ctx).Info("PineconeVectorStore edit completed")
+	return nil
+}
 func (pvs *PineconeVectorStore) GetAttribute(ctx context.Context, attributeName string) string {
 	switch attributeName {
 	case "vector_name":
 		return pvs.VectorName
 	case "vector_type":
 		return pvs.VectorType
-	case "index_name":
-		return pvs.Index.Name
+	case "api_key":
+		return pvs.APIKey
 	default:
 		return ""
 	}

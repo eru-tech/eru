@@ -32,6 +32,11 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/save/vectorstore").HandlerFunc(module_handlers.VectorStoreSaveHandler(sh))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/{tenant}/remove/vectorstore/{vectorstorename}").HandlerFunc(module_handlers.VectorStoreRemoveHandler(sh))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/sync/vectorstore/{vectorstorename}").HandlerFunc(module_handlers.VectorStoreSyncHandler(sh))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/save/vector/{vectorstorename}").HandlerFunc(module_handlers.VectorSaveHandler(sh))
+	storeRouter.Methods(http.MethodDelete).Path("/{project}/{tenant}/remove/vector/{vectorstorename}").HandlerFunc(module_handlers.VectorRemoveHandler(sh))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/search/vector/{vectorstorename}").HandlerFunc(module_handlers.VectorSearchHandler(sh))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/list/vector/{vectorstorename}").HandlerFunc(module_handlers.VectorListHandler(sh))
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/save/tool").HandlerFunc(module_handlers.ToolSaveHandler(sh))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/{tenant}/remove/tool/{toolname}").HandlerFunc(module_handlers.ToolRemoveHandler(sh))

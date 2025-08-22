@@ -7,6 +7,7 @@ require (
 	github.com/eru-tech/eru/eru-events v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-scheduler v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-secret-manager v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-server v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-store v0.0.0-00010101000000-000000000000
@@ -53,7 +54,6 @@ require (
 	github.com/eru-tech/eru/eru-crypto v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000 // indirect
-	github.com/eru-tech/eru/eru-scheduler v0.0.0-00010101000000-000000000000 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

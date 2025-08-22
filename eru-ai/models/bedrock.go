@@ -137,3 +137,9 @@ func (bedrockModel *BedrockModel) QueryModelWithTool(ctx context.Context, chatRe
 	logs.WithContext(ctx).Error(err.Error())
 	return
 }
+
+func (bedrockModel *BedrockModel) GenerateEmbedding(ctx context.Context, text string) (embedding []float64, err error) {
+	err = fmt.Errorf("GenerateEmbedding Method not implemented for AWS Bedrock")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}

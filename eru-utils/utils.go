@@ -93,9 +93,13 @@ func ValidateStruct(ctx context.Context, s interface{}, parentKey string) error 
 		if !isError && !isOptional {
 			switch f.Field(i).Kind().String() {
 			case "struct":
-				e := ValidateStruct(ctx, f.Field(i).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name))
-				if e != nil {
-					errs = append(errs, e.Error())
+				if f.Field(i).CanInterface() {
+					e := ValidateStruct(ctx, f.Field(i).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name))
+					if e != nil {
+						errs = append(errs, e.Error())
+					}
+				} else {
+					logs.WithContext(ctx).Error(fmt.Sprintf("field %s is not interface", f.Type().Field(i).Name))
 				}
 			case "slice":
 				ff := f.Field(i)
@@ -341,7 +345,13 @@ func HTTPClientTransporter(rt http.RoundTripper) http.RoundTripper {
 func callHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("callHttp - Start")
 	req := &http.Request{}
-	if postBody != nil {
+	if headers.Get("Content-Type") == "application/x-ndjson" {
+		if postBodyBytes, postBodyBytesOk := postBody.([]byte); postBodyBytesOk {
+			req, err = http.NewRequest(method, url, bytes.NewBuffer(postBodyBytes))
+		} else {
+			return nil, errors.New("postBody is not a []byte")
+		}
+	} else if postBody != nil {
 		reqBody, reqBodyerr := json.Marshal(postBody)
 		if reqBodyerr != nil {
 			logs.WithContext(ctx).Error(reqBodyerr.Error())

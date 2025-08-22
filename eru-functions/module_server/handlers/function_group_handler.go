@@ -20,6 +20,7 @@ import (
 	//"github.com/eru-tech/eru/eru-functions/module_model"
 	"github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
@@ -148,8 +149,10 @@ func AsyncFuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				bodyMap := make(map[string]interface{})
 
 				bodyMapOk := false
-				if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
-					logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
+				if asyncFuncData.EventMsg.Vars != nil {
+					if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
+						logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
+					}
 				}
 				funcGroup, err := sh.Store.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, host, url, r.Method, r.Header, bodyMap, sh.Store, true, "")
 				//	logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler for GetAndValidateFunc"))
@@ -269,7 +272,90 @@ func ScriptHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 
 	}
 }
+func FuncScheduleHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FuncScheduleHandler - Start")
+		defer r.Body.Close()
+		ctx := context.WithValue(r.Context(), "allowed_origins", server_handlers.AllowedOrigins)
+		ctx = context.WithValue(ctx, "origin", r.Header.Get("Origin"))
+		// Extract the host and url from incoming request
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		funcName := vars["funcname"]
 
+		reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
+		bodyMap := make(map[string]interface{})
+		if reqContentType == "application/json" && r.ContentLength > 0 {
+			tmplBodyFromReq := json.NewDecoder(r.Body)
+			tmplBodyFromReq.DisallowUnknownFields()
+			if err := tmplBodyFromReq.Decode(&bodyMap); err != nil {
+				logs.WithContext(r.Context()).Error(fmt.Sprint("error decode request body : ", err.Error()))
+				server_handlers.FormatResponse(w, http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to decode request body"})
+				return
+			}
+		}
+
+		var funcSchedule scheduler.ScheduleConfig
+		if scheduleObj, scheduleObjOk := bodyMap["schedule"]; !scheduleObjOk {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "schedule not found"})
+			return
+		} else if scheduleMap, scheduleMapOk := scheduleObj.(map[string]interface{}); !scheduleMapOk {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "incorrect schedule map"})
+			return
+		} else if scheduleMapJson, scheduleMapJsonErr := json.Marshal(scheduleMap); scheduleMapJsonErr != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to marshal schedule map"})
+			return
+		} else if err := json.Unmarshal(scheduleMapJson, &funcSchedule); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to unmarshal schedule map"})
+			return
+		}
+		if err := utils.ValidateStruct(ctx, funcSchedule, ""); err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		delete(bodyMap, "schedule")
+
+		err := sh.Store.ScheduleFunc(ctx, funcSchedule, projectId, funcName, bodyMap, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": fmt.Sprintf("function %s scheduled", funcName)})
+		return
+	}
+}
+
+func FuncUnScheduleHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FuncScheduleHandler - Start")
+		defer r.Body.Close()
+		ctx := context.WithValue(r.Context(), "allowed_origins", server_handlers.AllowedOrigins)
+		ctx = context.WithValue(ctx, "origin", r.Header.Get("Origin"))
+		// Extract the host and url from incoming request
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		jobId := vars["jobid"]
+
+		err := sh.Store.UnScheduleFunc(ctx, projectId, jobId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": fmt.Sprintf("scheduler with job id %s unscheduled", jobId)})
+		return
+	}
+}
 func FuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("FuncHandler - Start")
