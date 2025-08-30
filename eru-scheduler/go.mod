@@ -1,4 +1,4 @@
-module eru-scheduler
+module github.com/eru-tech/eru/eru-scheduler
 
 go 1.24
 

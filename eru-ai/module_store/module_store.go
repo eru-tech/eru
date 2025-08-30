@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -23,6 +24,7 @@ import (
 
 var Erufuncbaseurl = "http://localhost:8083"
 var Eruauthbaseurl = "http://localhost:8085"
+var Eruqlbaseurl = "http://localhost:8087"
 var Eruaiport = "8088"
 
 type StoreHolder struct {
@@ -44,6 +46,8 @@ type ModuleStoreI interface {
 	GetAgent(ctx context.Context, projectId string, tenantId string, agentName string, s ModuleStoreI) (agents.AgentI, error)
 	SaveVectorStore(ctx context.Context, vectorStoreObj vectorstore.VectorStoreI, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
 	RemoveVectorStore(ctx context.Context, vectorStoreName string, projectId string, tenantId string, realStore ModuleStoreI) error
+	GetVectorStore(ctx context.Context, projectId string, tenantId string, vectorStoreName string, realStore ModuleStoreI) (vectorstore.VectorStoreI, error)
+	GetVectorStoreCloneObject(ctx context.Context, projectId string, tenantId string, vectorStoreObj vectorstore.VectorStoreI, s ModuleStoreI) (vectorStoreObjClone vectorstore.VectorStoreI, err error)
 	SyncVectorStore(ctx context.Context, vectorStoreName string, projectId string, tenantId string, realStore ModuleStoreI) error
 	GetVectorStoreNames(ctx context.Context, projectID string, tenantID string) (vectorStoreNames []string, err error)
 	SaveVectors(ctx context.Context, vectorRecords vectorstore.VectorRecords, vectorName string, projectId string, tenantId string, realStore ModuleStoreI) error
@@ -650,6 +654,7 @@ func (ms *ModuleStore) SaveVectorStore(ctx context.Context, vectorStoreObj vecto
 		if err != nil {
 			return err
 		}
+
 		if isNew {
 			err = updatedVectorStoreObj.CreateIndex(ctx, vectorStoreObjClone)
 			if err != nil {
@@ -699,7 +704,28 @@ func (ms *ModuleStore) SyncVectorStore(ctx context.Context, vectorStoreName stri
 		return err
 	}
 }
+func (ms *ModuleStore) GetVectorStore(ctx context.Context, projectId string, tenantId string, vectorStoreName string, realStore ModuleStoreI) (vectorStore vectorstore.VectorStoreI, err error) {
+	logs.WithContext(ctx).Debug("GetVectorStore - Start")
 
+	if prj, ok := ms.Projects[projectId]; ok {
+		if _, ok := prj.Tenants[tenantId]; !ok {
+			err = errors.New("tenant " + tenantId + " does not exists")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		if vs, ok := prj.Tenants[tenantId].VectorStores[vectorStoreName]; !ok {
+			err = errors.New("VectorStore " + vectorStoreName + " does not exists")
+			logs.WithContext(ctx).Info(err.Error())
+			return
+		} else {
+			return vs, nil
+		}
+	} else {
+		err = errors.New("Project " + projectId + " does not exists")
+		logs.WithContext(ctx).Info(err.Error())
+		return nil, err
+	}
+}
 func (ms *ModuleStore) RemoveVectorStore(ctx context.Context, vectorStoreName string, projectId string, tenantId string, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("RemoveVectorStore - Start")
 	realStore.GetMutex().Lock()
@@ -755,6 +781,34 @@ func (ms *ModuleStore) SaveVectors(ctx context.Context, vectorRecords vectorstor
 			if err != nil {
 				return err
 			}
+
+			embed, err := vectorStoreClone.GetEmbed(ctx)
+			if err != nil {
+				return err
+			}
+
+			dimension := vectorStoreClone.GetAttribute(ctx, "dimension")
+			dimensionInt := 0
+			if dimension != "" {
+				dimensionInt, err = strconv.Atoi(dimension)
+				if err != nil {
+					return err
+				}
+			}
+			embed.Dimension = dimensionInt
+			embed.Metric = vectorStoreClone.GetAttribute(ctx, "metric")
+			if embed.ModelName != "" {
+				model, err := ms.GetModel(ctx, projectId, tenantId, embed.ModelName, realStore)
+				if err != nil {
+					return err
+				}
+				embed.Model = model
+				err = vectorStoreClone.SetEmbed(ctx, embed)
+				if err != nil {
+					return err
+				}
+			}
+
 			err = vectorStoreClone.SaveVectors(ctx, vectorRecords)
 			if err != nil {
 				return err
@@ -850,6 +904,34 @@ func (ms *ModuleStore) SearchVectors(ctx context.Context, vectorRecords vectorst
 			if err != nil {
 				return vectorstore.VectorResults{}, err
 			}
+
+			embed, err := vectorStoreClone.GetEmbed(ctx)
+			if err != nil {
+				return vectorstore.VectorResults{}, err
+			}
+
+			dimension := vectorStoreClone.GetAttribute(ctx, "dimension")
+			dimensionInt := 0
+			if dimension != "" {
+				dimensionInt, err = strconv.Atoi(dimension)
+				if err != nil {
+					return vectorstore.VectorResults{}, err
+				}
+			}
+			embed.Dimension = dimensionInt
+			embed.Metric = vectorStoreClone.GetAttribute(ctx, "metric")
+			if embed.ModelName != "" {
+				model, err := ms.GetModel(ctx, projectId, tenantId, embed.ModelName, realStore)
+				if err != nil {
+					return vectorstore.VectorResults{}, err
+				}
+				embed.Model = model
+				err = vectorStoreClone.SetEmbed(ctx, embed)
+				if err != nil {
+					return vectorstore.VectorResults{}, err
+				}
+			}
+
 			vectorResults, err = vectorStoreClone.SearchVectors(ctx, vectorRecords)
 			if err != nil {
 				return vectorstore.VectorResults{}, err

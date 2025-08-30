@@ -1,10 +1,11 @@
-package model
+package models
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 
+	chunking "github.com/eru-tech/eru/eru-ai/chunking"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
@@ -16,7 +17,7 @@ type ModelI interface {
 	PerformPreDeleteTask(ctx context.Context) (err error)
 	QueryModel(ctx context.Context, chatRequest ChatRequest) (response Message, err error)
 	QueryModelWithTool(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (response JsonMessage, err error)
-	GenerateEmbedding(ctx context.Context, text string) (embedding []float64, err error)
+	GenerateEmbeddings(ctx context.Context, inputs []EmbeddingInput, config chunking.ChunkingConfig, dimension int) (outputs []EmbeddingOutput, err error)
 }
 
 type Model struct {
@@ -46,6 +47,24 @@ type JsonMessage struct {
 	Role    string                 `json:"role"`
 	Content map[string]interface{} `json:"content"`
 	Name    string                 `json:"name"`
+}
+
+type EmbeddingInputRequest struct {
+	Inputs      []EmbeddingInput        `json:"inputs" eru:"required"`
+	ChunkConfig chunking.ChunkingConfig `json:"chunk_config"`
+	Dimension   int                     `json:"dimension"`
+}
+
+// Batch embedding input/output types
+type EmbeddingInput struct {
+	Id   string `json:"id"`
+	Text string `json:"text"`
+}
+
+type EmbeddingOutput struct {
+	Id     string    `json:"id"`
+	Text   string    `json:"text"`
+	Vector []float64 `json:"vector"`
 }
 
 func (model *Model) GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error) {
@@ -116,4 +135,38 @@ func (model *Model) GenerateEmbedding(ctx context.Context, text string) (embeddi
 	err = errors.New("GenerateEmbedding Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
+}
+
+func (model *Model) GenerateEmbeddings(ctx context.Context, inputs []EmbeddingInput, config chunking.ChunkingConfig, dimension int) (outputs []EmbeddingOutput, err error) {
+	err = errors.New("GenerateEmbeddings Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
+// averageEmbeddings averages multiple embeddings
+func (model *Model) averageEmbeddings(embeddings [][]float64) []float64 {
+	if len(embeddings) == 0 {
+		return nil
+	}
+
+	if len(embeddings) == 1 {
+		return embeddings[0]
+	}
+
+	// All embeddings should have the same dimension
+	dimension := len(embeddings[0])
+	result := make([]float64, dimension)
+
+	for _, embedding := range embeddings {
+		for i, value := range embedding {
+			result[i] += value
+		}
+	}
+
+	// Average the values
+	for i := range result {
+		result[i] /= float64(len(embeddings))
+	}
+
+	return result
 }

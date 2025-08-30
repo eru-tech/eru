@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	"github.com/eru-tech/eru/eru-ai/agents/agents_factory"
@@ -197,6 +198,11 @@ func (prj *Project) AddVectorStore(ctx context.Context, tenantId string, vectorS
 		return isNew, nil, errors.New("vectorstore name cannot be blank")
 	}
 
+	bn := vectorStoreObj.GetAttribute(ctx, "bucket_name")
+	if !strings.Contains(bn, tenantId) && bn != "" {
+		vectorStoreObj.SetAttribute(ctx, "bucket_name", bn+"-"+tenantId)
+	}
+
 	if vs, ok := prj.Tenants[tenantId].VectorStores[vectorStoreName]; !ok {
 		isNew = true
 		prj.Tenants[tenantId].VectorStores[vectorStoreName] = vectorStoreObj
@@ -218,6 +224,7 @@ func (prj *Project) RemoveVectorStore(ctx context.Context, tenantId string, vect
 	if _, ok := prj.Tenants[tenantId].VectorStores[vectorStoreName]; !ok {
 		return errors.New("vectorstore not found")
 	}
+
 	delete(prj.Tenants[tenantId].VectorStores, vectorStoreName)
 	return nil
 }

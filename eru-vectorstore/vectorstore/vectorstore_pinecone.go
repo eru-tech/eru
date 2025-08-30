@@ -156,8 +156,8 @@ func (pvs *PineconeVectorStore) SearchVectors(ctx context.Context, vectorRecords
 		if vectorRecordsSearch.Filter != nil {
 			vectorSearchBody["filter"] = vectorRecordsSearch.Filter
 		}
-		vectorSearchBody["includeValues"] = vectorRecordsSearch.IncludeValues
-		vectorSearchBody["includeMetadata"] = vectorRecordsSearch.IncludeMetadata
+		vectorSearchBody["includeValues"] = vectorRecordsSearch.ReturnValues
+		vectorSearchBody["includeMetadata"] = vectorRecordsSearch.ReturnMetadata
 		if len(vectorRecordsSearch.Vector) > 0 {
 			vectorSearchBody["vector"] = vectorRecordsSearch.Vector
 		}

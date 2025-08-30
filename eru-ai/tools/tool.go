@@ -86,6 +86,7 @@ type Tooling interface {
 	ValidateOutput(ctx context.Context, output json.RawMessage) error
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
+	SetAttribute(ctx context.Context, attributeName string, attributeValue interface{}) (err error)
 	GetToolCallback() ToolCallback
 	GetToolCbUrl(projectId string, tenantId string) string
 	ExecuteCallbackHook(ctx context.Context, projectId string, tenantId string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error)
@@ -223,6 +224,27 @@ func (tool *Tool) GetAttribute(ctx context.Context, attributeName string) (attri
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
+}
+func (tool *Tool) SetAttribute(ctx context.Context, attributeName string, attributeValue interface{}) (err error) {
+	switch attributeName {
+	case "tool_name":
+		tool.ToolName = attributeValue.(string)
+	case "tool_type":
+		tool.ToolType = attributeValue.(string)
+	case "system_prompt":
+		tool.SystemPrompt = attributeValue.(string)
+	case "output_schema":
+		tool.OutputSchema = attributeValue.(eru_models.JSONSchema)
+	case "parameters":
+		tool.Parameters = attributeValue.(eru_models.JSONSchema)
+	case "description":
+		tool.Description = attributeValue.(string)
+	default:
+		err = errors.New("attribute not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	return nil
 }
 
 func (tool *Tool) ValidateAction(ctx context.Context, actionName string, realTool Tooling) (err error) {

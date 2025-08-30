@@ -1,4 +1,4 @@
-package model
+package models
 
 import (
 	"context"
@@ -364,11 +364,5 @@ func (anthropicModel *AnthropicModel) queryModelTool(ctx context.Context, toolRe
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	return
-}
-
-func (anthropicModel *AnthropicModel) GenerateEmbedding(ctx context.Context, text string) (embedding []float64, err error) {
-	err = errors.New("GenerateEmbedding Method not implemented for Anthropic")
-	logs.WithContext(ctx).Error(err.Error())
 	return
 }

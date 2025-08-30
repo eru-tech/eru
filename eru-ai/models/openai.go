@@ -1,4 +1,4 @@
-package model
+package models
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
+	chunking "github.com/eru-tech/eru/eru-ai/chunking"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
@@ -276,6 +277,7 @@ type OpenAIEmbeddingData struct {
 	Index     int       `json:"index"`
 }
 
+// OpenAI Embedding Usage struct
 type OpenAIEmbeddingUsage struct {
 	PromptTokens int `json:"prompt_tokens"`
 	TotalTokens  int `json:"total_tokens"`
@@ -440,7 +442,7 @@ func (openaiModel *OpenAIModel) queryModel(ctx context.Context, chatRequest Open
 
 	logs.WithContext(ctx).Info(fmt.Sprint(chatRequest))
 	//response, respHeaders, respCookies, statusCode, err := utils.CallHttp(ctx, "POST", OpenAIApiUrl, reqHeader, nil, nil, nil, postBody)
-	response, _, _, _, err := utils.CallHttp(ctx, "POST", OpenAIApiUrl, reqHeader, nil, nil, nil, chatRequest)
+	response, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, OpenAIApiUrl, reqHeader, nil, nil, nil, chatRequest)
 
 	if err != nil {
 		return
@@ -472,7 +474,7 @@ func (openaiModel *OpenAIModel) queryModelTool(ctx context.Context, chatToolRequ
 
 	//logs.WithContext(ctx).Info(fmt.Sprint(chatToolRequest))
 	//response, respHeaders, respCookies, statusCode, err := utils.CallHttp(ctx, "POST", OpenAIApiUrl, reqHeader, nil, nil, nil, postBody)
-	response, _, _, _, err := utils.CallHttp(ctx, "POST", OpenAIApiUrl, reqHeader, nil, nil, nil, chatToolRequest)
+	response, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, OpenAIApiUrl, reqHeader, nil, nil, nil, chatToolRequest)
 
 	if err != nil {
 		return
@@ -521,13 +523,87 @@ func (openaiModel *OpenAIModel) QueryModelWithTool(ctx context.Context, chatRequ
 	return
 }
 
-func (openaiModel *OpenAIModel) GenerateEmbedding(ctx context.Context, text string) (embedding []float64, err error) {
+// GenerateEmbeddings allows users to specify chunking strategy for batch processing
+func (openaiModel *OpenAIModel) GenerateEmbeddings(ctx context.Context, inputs []EmbeddingInput, config chunking.ChunkingConfig, dimension int) (outputs []EmbeddingOutput, err error) {
+	logs.WithContext(ctx).Debug(fmt.Sprintf("GenerateEmbeddings - Start with %d inputs using %s strategy", len(inputs), config.Strategy))
+
+	if len(inputs) == 0 {
+		return []EmbeddingOutput{}, nil
+	}
+	if config.Strategy == "" {
+		config = chunking.DefaultChunkingConfig()
+	}
+
+	// Process each input
+	for _, input := range inputs {
+		embedding, err := openaiModel.GenerateEmbedding(ctx, input.Text, config, dimension)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to generate embedding for ID %s: %v", input.Id, err))
+			return nil, err
+		}
+
+		output := EmbeddingOutput{
+			Id:     input.Id,
+			Text:   input.Text,
+			Vector: embedding,
+		}
+		outputs = append(outputs, output)
+	}
+
+	logs.WithContext(ctx).Debug(fmt.Sprintf("Generated %d embeddings successfully using %s strategy", len(outputs), config.Strategy))
+	return outputs, nil
+}
+
+// GenerateEmbedding allows users to specify chunking strategy and configuration
+func (openaiModel *OpenAIModel) GenerateEmbedding(ctx context.Context, text string, config chunking.ChunkingConfig, dimension int) (embedding []float64, err error) {
 	logs.WithContext(ctx).Debug("GenerateEmbedding - Start")
 
+	// Get the appropriate chunking strategy
+	factory := &chunking.ChunkingFactory{}
+	chunker, err := factory.GetChunkingStrategy(config)
+	if err != nil {
+		logs.Err(ctx, fmt.Errorf("Failed to get chunking strategy: %v", err), "")
+		return nil, err
+	}
+
+	// Apply chunking based on user's strategy
+	chunkedTexts, err := chunker.ChunkText(text, config)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to chunk text: %v", err))
+		return nil, err
+	}
+
+	if len(chunkedTexts) == 1 {
+		// Single chunk, proceed normally
+		return openaiModel.generateSingleEmbedding(ctx, chunkedTexts[0], dimension)
+	}
+
+	// Multiple chunks, average the embeddings
+	var allEmbeddings [][]float64
+	for _, chunk := range chunkedTexts {
+		chunkEmbedding, err := openaiModel.generateSingleEmbedding(ctx, chunk, dimension)
+		if err != nil {
+			return nil, err
+		}
+		allEmbeddings = append(allEmbeddings, chunkEmbedding)
+	}
+
+	// Average the embeddings from all chunks
+	embedding = openaiModel.averageEmbeddings(allEmbeddings)
+	logs.WithContext(ctx).Debug(fmt.Sprintf("Generated averaged embedding from %d chunks using %s strategy with %d dimensions",
+		len(allEmbeddings), chunker.GetName(), len(embedding)))
+	return embedding, nil
+}
+
+// generateSingleEmbedding handles the actual API call for a single text
+func (openaiModel *OpenAIModel) generateSingleEmbedding(ctx context.Context, text string, dimension int) (embedding []float64, err error) {
 	// Create embedding request
 	embeddingRequest := OpenAIEmbeddingRequest{
 		Input: text,
-		Model: "text-embedding-ada-002", // Default OpenAI embedding model
+		Model: openaiModel.LLMName, // eg: text-embedding-ada-002
+	}
+	if openaiModel.supportsDimensions() {
+		embeddingRequest.Dimensions = getExpectedDimensions(openaiModel.LLMName, dimension)
 	}
 
 	// Make HTTP request to OpenAI embedding API
@@ -535,7 +611,7 @@ func (openaiModel *OpenAIModel) GenerateEmbedding(ctx context.Context, text stri
 	reqHeader.Add("Authorization", "Bearer "+openaiModel.LLMSecret)
 	reqHeader.Add("Content-Type", "application/json")
 
-	response, _, _, _, err := utils.CallHttp(ctx, "POST", OpenAIEmbeddingApiUrl, reqHeader, nil, nil, nil, embeddingRequest)
+	response, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, OpenAIEmbeddingApiUrl, reqHeader, nil, nil, nil, embeddingRequest)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to call OpenAI embedding API: %v", err))
 		return nil, err
@@ -563,6 +639,38 @@ func (openaiModel *OpenAIModel) GenerateEmbedding(ctx context.Context, text stri
 	}
 
 	embedding = embeddingResponse.Data[0].Embedding
-	logs.WithContext(ctx).Debug(fmt.Sprintf("Generated embedding with %d dimensions", len(embedding)))
+	logs.WithContext(ctx).Debug(fmt.Sprintf("Generated single embedding with %d dimensions", len(embedding)))
 	return embedding, nil
+}
+
+// getExpectedDimensions returns the expected dimensions for a given OpenAI embedding model
+func getExpectedDimensions(modelName string, dimension int) int {
+	switch modelName {
+	case "text-embedding-ada-002":
+		return 1536
+	case "text-embedding-3-small":
+		if dimension == 1536 || dimension == 3072 {
+			return dimension
+		}
+		return 1536
+	case "text-embedding-3-large":
+		if dimension == 1536 || dimension == 3072 || dimension == 4096 {
+			return dimension
+		}
+		return 3072
+	default:
+		return 0 // Unknown model, will use actual response dimensions
+	}
+}
+
+// supportsDimensions checks if the model supports custom dimensions
+func (openaiModel *OpenAIModel) supportsDimensions() bool {
+	switch openaiModel.LLMName {
+	case "text-embedding-3-small", "text-embedding-3-large":
+		return true
+	case "text-embedding-ada-002":
+		return false
+	default:
+		return false // Conservative default
+	}
 }

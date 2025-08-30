@@ -1,6 +1,10 @@
 package server
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/google/uuid"
@@ -8,7 +12,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"net/http"
+)
+
+const (
+	claimsKey       string = "claims"
+	eruqlbaseurlKey string = "eruqlbaseurl"
 )
 
 func requestIdMiddleWare(next http.Handler) http.Handler {
@@ -47,6 +55,9 @@ func otelMiddleWare(next http.Handler) http.Handler {
 
 		newCtx, span := otel.Tracer(server_handlers.ServerName).Start(r.Context(), "Initial", oteltrace.WithAttributes(attribute.String("requestID", requestID), attribute.String("traceID", pspan.SpanContext().TraceID().String()), attribute.String("spanID", pspan.SpanContext().SpanID().String())))
 		defer span.End()
+
+		newCtx = context.WithValue(newCtx, claimsKey, fmt.Sprint(r.Header.Get("claims")))
+		newCtx = context.WithValue(newCtx, eruqlbaseurlKey, fmt.Sprint(server_handlers.EruqlBaseUrl))
 		r = r.WithContext(newCtx)
 		//} else {
 		//	logs.WithContext(r.Context()).Info("making child span")

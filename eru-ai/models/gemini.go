@@ -1,4 +1,4 @@
-package model
+package models
 
 import (
 	"context"
@@ -405,11 +405,5 @@ func (geminiModel *GeminiModel) queryModelTool(ctx context.Context, toolRequest 
 	}
 
 	logs.WithContext(ctx).Info(fmt.Sprint(geminiResponse))
-	return
-}
-
-func (geminiModel *GeminiModel) GenerateEmbedding(ctx context.Context, text string) (embedding []float64, err error) {
-	err = fmt.Errorf("GenerateEmbedding Method not implemented for Gemini")
-	logs.WithContext(ctx).Error(err.Error())
 	return
 }

@@ -30,6 +30,7 @@ var AllowedOrigins = ""
 var RequestIdKey = "request_id"
 var ConfigSyncEvent = "unknown"
 var BaseUrl = ""
+var EruqlBaseUrl = ""
 
 func HelloHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/hello" {

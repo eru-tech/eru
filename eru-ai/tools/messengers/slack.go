@@ -412,62 +412,185 @@ func (slackTool *SlackTool) SubscribeWebhooks(ctx context.Context, projectId str
 func (slackTool *SlackTool) ListChannels(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("ListChannels Execute - Start")
 
-	url := fmt.Sprintf("%s/conversations.list", SLACK_BASE_URL)
-	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.getAccessToken(ctx, params)))
-	headers.Set("Content-Type", "application/json")
+	// Convert params to query parameters
 	queryParams := map[string]string{}
-	if limit, limitOk := params["limit"]; limitOk {
-		queryParams["limit"] = fmt.Sprintf("%v", limit)
-	}
-	if types, typesOk := params["types"]; typesOk {
-		queryParams["types"] = fmt.Sprintf("%v", types)
-	}
-	if team_id, team_idOk := params["team_id"]; team_idOk {
-		queryParams["team_id"] = fmt.Sprintf("%v", team_id)
-	}
-	if exclude_archived, exclude_archivedOk := params["exclude_archived"]; exclude_archivedOk {
-		queryParams["exclude_archived"] = fmt.Sprintf("%v", exclude_archived)
-	}
-	if cursor, cursorOk := params["cursor"]; cursorOk {
-		queryParams["cursor"] = fmt.Sprintf("%v", cursor)
+	for k, v := range params {
+		queryParams[k] = fmt.Sprintf("%v", v)
 	}
 
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+	// Call recursively to get all channels
+	consolidatedResponse, err := slackTool.getChannelsRecursive(ctx, queryParams, "")
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
 		return nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
-	toolResult["channels"] = res
-
+	toolResult["channels"] = consolidatedResponse
 	return toolResult, false, nil
+}
+
+func (slackTool *SlackTool) getChannelsRecursive(ctx context.Context, queryParams map[string]string, cursor string) ([]interface{}, error) {
+	logs.WithContext(ctx).Debug("getChannelsRecursive Execute - Start")
+	var allChannels []interface{}
+
+	url := fmt.Sprintf("%s/conversations.list", SLACK_BASE_URL)
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.getAccessToken(ctx, map[string]interface{}{})))
+	headers.Set("Content-Type", "application/json")
+
+	// Prepare query parameters based on whether cursor is provided
+	currentQueryParams := make(map[string]string)
+	if cursor != "" {
+		// When cursor is provided, only pass the cursor parameter
+		currentQueryParams["cursor"] = cursor
+	} else {
+		// For the first call, pass all original parameters
+		for k, v := range queryParams {
+			currentQueryParams[k] = v
+		}
+	}
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, currentQueryParams, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+
+	// Parse response to extract channels and next cursor
+	responseMap, ok := res.(map[string]interface{})
+	if !ok {
+		logs.WithContext(ctx).Error("Response is not a map")
+		return nil, errors.New("invalid response format")
+	}
+
+	// Extract channels from current response
+	if responseOk, exists := responseMap["ok"]; exists && responseOk.(bool) {
+		if channelsData, exists := responseMap["channels"]; exists {
+			if channelsList, ok := channelsData.([]interface{}); ok {
+				allChannels = append(allChannels, channelsList...)
+			}
+		}
+
+		// Check for next_cursor
+		if responseCursor, exists := responseMap["response_metadata"]; exists {
+			if metadataMap, ok := responseCursor.(map[string]interface{}); ok {
+				if nextCursor, exists := metadataMap["next_cursor"]; exists {
+					if nextCursorStr, ok := nextCursor.(string); ok && nextCursorStr != "" {
+						logs.WithContext(ctx).Info(fmt.Sprintf("Found next_cursor: %s, making recursive call", nextCursorStr))
+						// Recursive call with next_cursor
+						nextChannels, err := slackTool.getChannelsRecursive(ctx, queryParams, nextCursorStr)
+						if err != nil {
+							return nil, err
+						}
+						allChannels = append(allChannels, nextChannels...)
+					}
+				}
+			}
+		}
+	} else {
+		// Handle error response
+		if errorMsg, exists := responseMap["error"]; exists {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Slack API error: %v", errorMsg))
+			return nil, fmt.Errorf("slack API error: %v", errorMsg)
+		}
+	}
+
+	// No more next_cursor, return consolidated response
+	logs.WithContext(ctx).Debug(fmt.Sprintf("No more next_cursor found. Total channels collected: %d", len(allChannels)))
+
+	return allChannels, nil
 }
 
 func (slackTool *SlackTool) ListUsers(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("ListUsers Execute - Start")
 
-	url := fmt.Sprintf("%s/users.list", SLACK_BASE_URL)
-	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.getAccessToken(ctx, params)))
-	headers.Set("Content-Type", "application/json")
-
+	// Convert params to query parameters
 	queryParams := map[string]string{}
-	if limit, limitOk := params["limit"]; limitOk {
-		queryParams["limit"] = fmt.Sprintf("%v", limit)
+	for k, v := range params {
+		queryParams[k] = fmt.Sprintf("%v", v)
 	}
 
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+	// Call recursively to get all users
+	consolidatedResponse, err := slackTool.getUsersRecursive(ctx, queryParams, "")
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
 		return nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
-	toolResult["users"] = res
-
+	toolResult["users"] = consolidatedResponse
 	return toolResult, false, nil
+}
+
+func (slackTool *SlackTool) getUsersRecursive(ctx context.Context, queryParams map[string]string, cursor string) ([]interface{}, error) {
+	logs.WithContext(ctx).Debug("getUsersRecursive Execute - Start")
+	var allUsers []interface{}
+
+	url := fmt.Sprintf("%s/users.list", SLACK_BASE_URL)
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.getAccessToken(ctx, map[string]interface{}{})))
+	headers.Set("Content-Type", "application/json")
+
+	// Prepare query parameters based on whether cursor is provided
+	currentQueryParams := make(map[string]string)
+	if cursor != "" {
+		// When cursor is provided, only pass the cursor parameter
+		currentQueryParams["cursor"] = cursor
+	} else {
+		// For the first call, pass all original parameters
+		for k, v := range queryParams {
+			currentQueryParams[k] = v
+		}
+	}
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, currentQueryParams, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+
+	// Parse response to extract users and next cursor
+	responseMap, ok := res.(map[string]interface{})
+	if !ok {
+		logs.WithContext(ctx).Error("Response is not a map")
+		return nil, errors.New("invalid response format")
+	}
+
+	// Extract users from current response
+	if responseOk, exists := responseMap["ok"]; exists && responseOk.(bool) {
+		if usersData, exists := responseMap["members"]; exists {
+			if usersList, ok := usersData.([]interface{}); ok {
+				allUsers = append(allUsers, usersList...)
+			}
+		}
+
+		// Check for next_cursor
+		if responseCursor, exists := responseMap["response_metadata"]; exists {
+			if metadataMap, ok := responseCursor.(map[string]interface{}); ok {
+				if nextCursor, exists := metadataMap["next_cursor"]; exists {
+					if nextCursorStr, ok := nextCursor.(string); ok && nextCursorStr != "" {
+						logs.WithContext(ctx).Info(fmt.Sprintf("Found next_cursor: %s, making recursive call", nextCursorStr))
+						// Recursive call with next_cursor
+						nextUsers, err := slackTool.getUsersRecursive(ctx, queryParams, nextCursorStr)
+						if err != nil {
+							return nil, err
+						}
+						allUsers = append(allUsers, nextUsers...)
+					}
+				}
+			}
+		}
+	} else {
+		// Handle error response
+		if errorMsg, exists := responseMap["error"]; exists {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Slack API error: %v", errorMsg))
+			return nil, fmt.Errorf("slack API error: %v", errorMsg)
+		}
+	}
+
+	// No more next_cursor, return consolidated response
+	logs.WithContext(ctx).Debug(fmt.Sprintf("No more next_cursor found. Total users collected: %d", len(allUsers)))
+
+	return allUsers, nil
 }
 
 func (slackTool *SlackTool) CreateChannel(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {

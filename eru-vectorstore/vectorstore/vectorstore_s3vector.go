@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3vectors/types"
 	s3vt "github.com/aws/aws-sdk-go-v2/service/s3vectors/types"
 	"github.com/aws/smithy-go"
+	models "github.com/eru-tech/eru/eru-ai/models"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
@@ -76,17 +77,43 @@ func (svs *S3VectorStore) SearchVectors(ctx context.Context, vectorRecordsSearch
 			return
 		}
 	}
-	// Convert []float64 to []float32 for AWS SDK
-	float32Vector := make([]float32, len(vectorRecordsSearch.Vector))
+	var float32Vector []float32
+	if len(vectorRecordsSearch.Vector) == 0 {
+		// make embedding based on text in meta data
+		var embeddingInputs []models.EmbeddingInput
+		strSearch := ""
+		if vectorRecordsSearch.Inputs != nil {
+			for key, value := range vectorRecordsSearch.Inputs {
+				if key == "text" {
+					strSearch = value
+					break
+				}
+			}
+			embeddingInputs = append(embeddingInputs, models.EmbeddingInput{
+				Id:   "text",
+				Text: strSearch,
+			})
+		}
+		if strSearch != "" {
+			embeddingOutputs, err := svs.Embed.Model.GenerateEmbeddings(ctx, embeddingInputs, svs.Embed.ChunkingConfig, svs.Embed.Dimension)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return vectorResults, logs.Err(ctx, err, "")
+			}
+			vectorRecordsSearch.Vector = embeddingOutputs[0].Vector
+		}
+	}
+	float32Vector = make([]float32, len(vectorRecordsSearch.Vector))
 	for i, v := range vectorRecordsSearch.Vector {
 		float32Vector[i] = float32(v)
 	}
-
 	filterAnd, filterAndOk := vectorRecordsSearch.Filter["$and"]
 	if !filterAndOk {
 		existingFilter := vectorRecordsSearch.Filter
 		filterAndArray := make([]interface{}, 0)
-		filterAndArray = append(filterAndArray, existingFilter)
+		if existingFilter != nil {
+			filterAndArray = append(filterAndArray, existingFilter)
+		}
 		filterAndArray = append(filterAndArray, map[string]interface{}{"namespace": map[string]interface{}{"$eq": vectorRecordsSearch.Namespace}})
 		vectorRecordsSearch.Filter = map[string]interface{}{"$and": filterAndArray}
 	} else {
@@ -103,21 +130,20 @@ func (svs *S3VectorStore) SearchVectors(ctx context.Context, vectorRecordsSearch
 		QueryVector:      &types.VectorDataMemberFloat32{Value: float32Vector},
 		TopK:             aws.Int32(int32(vectorRecordsSearch.TopK)),
 		ReturnDistance:   vectorRecordsSearch.ReturnDistance,
-		ReturnMetadata:   vectorRecordsSearch.IncludeMetadata,
+		ReturnMetadata:   vectorRecordsSearch.ReturnMetadata,
 		Filter:           s3vdoc.NewLazyDocument(vectorRecordsSearch.Filter),
 	})
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return vectorResults, logs.Err(ctx, err, "")
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("results = ", results))
 	vectorResults.Records = make([]VectorResult, len(results.Vectors))
 	for i, result := range results.Vectors {
 		// Convert document interface to map if metadata exists
 		metadataMap := make(map[string]interface{})
 		if result.Metadata != nil {
 			// Extract metadata from document interface
-			metadataBytes, err := json.Marshal(result.Metadata)
+			metadataBytes, err := result.Metadata.MarshalSmithyDocument()
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
 				return vectorResults, logs.Err(ctx, err, "")
@@ -158,6 +184,38 @@ func (svs *S3VectorStore) SaveVectors(ctx context.Context, vectorRecords VectorR
 		err = svs.Init(ctx)
 		if err != nil {
 			return
+		}
+	}
+	if svs.Embed.Model != nil {
+		var embeddingInputs []models.EmbeddingInput
+		for _, vectorRecord := range vectorRecords.Vectors {
+			if vectorRecord.Metadata[svs.Embed.Field] == nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("metadata for vector %s is nil", vectorRecord.Id))
+				continue
+			}
+			strText, ok := vectorRecord.Metadata[svs.Embed.Field].(string)
+			if !ok {
+				logs.WithContext(ctx).Error(fmt.Sprintf("metadata for vector %s is not a string", vectorRecord.Id))
+				continue
+			}
+			embeddingInputs = append(embeddingInputs, models.EmbeddingInput{
+				Id:   vectorRecord.Id,
+				Text: strText,
+			})
+		}
+		var embeddingOutputs []models.EmbeddingOutput
+		embeddingOutputs, err = svs.Embed.Model.GenerateEmbeddings(ctx, embeddingInputs, svs.Embed.ChunkingConfig, svs.Embed.Dimension)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		for _, embeddingOutput := range embeddingOutputs {
+			for j, v := range vectorRecords.Vectors {
+				if v.Id == embeddingOutput.Id {
+					vectorRecords.Vectors[j].Values = embeddingOutput.Vector
+					break
+				}
+			}
 		}
 	}
 	var vectors []s3vt.PutInputVector
@@ -237,6 +295,7 @@ func (svs *S3VectorStore) CreateIndex(ctx context.Context, cloneVectorStore Vect
 	}
 
 	be := false
+
 	be, err = cloneVectorStore.CheckRemoteStoreExists(ctx)
 	if err != nil {
 
@@ -246,9 +305,6 @@ func (svs *S3VectorStore) CreateIndex(ctx context.Context, cloneVectorStore Vect
 	logs.WithContext(ctx).Info(fmt.Sprint("bucket exists = ", be))
 
 	if !be {
-
-		logs.WithContext(ctx).Info(svsClone.BucketName)
-		logs.WithContext(ctx).Info(svsClone.Region)
 
 		_, err = svs.session.CreateVectorBucket(ctx, &s3vectors.CreateVectorBucketInput{
 			VectorBucketName: aws.String(svsClone.BucketName),
@@ -312,17 +368,30 @@ func (svs *S3VectorStore) DeleteIndex(ctx context.Context, indexName string) (er
 	logs.WithContext(ctx).Info(fmt.Sprint("bucket exists = ", be))
 
 	if be {
-		_, err = svs.session.DeleteIndex(ctx, &s3vectors.DeleteIndexInput{
+		deleteIndexOutput, deleteIndexOutputErr := svs.session.DeleteIndex(ctx, &s3vectors.DeleteIndexInput{
 			VectorBucketName: aws.String(svs.BucketName),
 			IndexName:        aws.String(svs.VectorName),
 		})
-		if err != nil {
-			logs.WithContext(ctx).Info(err.Error())
+		if deleteIndexOutputErr != nil {
+			logs.WithContext(ctx).Info(deleteIndexOutputErr.Error())
 			err = errors.New("error while deleting AWS vector index")
+		}
+		logs.WithContext(ctx).Info(fmt.Sprint("deleteIndexOutput = ", deleteIndexOutput))
+		deleteVectorBucket, deleteVectorBucketErr := svs.session.DeleteVectorBucket(ctx, &s3vectors.DeleteVectorBucketInput{
+			VectorBucketName: aws.String(svs.BucketName),
+		})
+		if deleteVectorBucketErr != nil {
+			logs.WithContext(ctx).Info(deleteVectorBucketErr.Error())
+			if deleteIndexOutputErr != nil {
+				err = errors.New("error while deleting AWS vector index and bucket")
+			} else {
+				err = errors.New("error while deleting AWS vector bucket")
+			}
 			return
 		}
+		logs.WithContext(ctx).Info(fmt.Sprint("deleteVectorBucket = ", deleteVectorBucket))
 	}
-	return nil
+	return err
 }
 
 func (svs *S3VectorStore) GetStats(ctx context.Context) (VectorStats, error) {
@@ -493,4 +562,19 @@ func (svs *S3VectorStore) ListVectors(ctx context.Context, vectorRecordsList Vec
 		}
 	}
 	return vectorResults, nil
+}
+func (svs *S3VectorStore) SetAttribute(ctx context.Context, attributeName string, attributeValue string) error {
+	switch attributeName {
+	case "vector_name":
+		svs.VectorName = attributeValue
+	case "vector_type":
+		svs.VectorType = attributeValue
+	case "bucket_name":
+		svs.BucketName = attributeValue
+	case "region":
+		svs.Region = attributeValue
+	default:
+		return fmt.Errorf("invalid attribute name")
+	}
+	return nil
 }

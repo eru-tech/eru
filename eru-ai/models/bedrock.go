@@ -1,4 +1,4 @@
-package model
+package models
 
 import (
 	"context"
@@ -134,12 +134,6 @@ func (bedrockModel *BedrockModel) queryModel(ctx context.Context, chatRequest Be
 
 func (bedrockModel *BedrockModel) QueryModelWithTool(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (response JsonMessage, err error) {
 	err = fmt.Errorf("tool support not yet implemented for AWS Bedrock")
-	logs.WithContext(ctx).Error(err.Error())
-	return
-}
-
-func (bedrockModel *BedrockModel) GenerateEmbedding(ctx context.Context, text string) (embedding []float64, err error) {
-	err = fmt.Errorf("GenerateEmbedding Method not implemented for AWS Bedrock")
 	logs.WithContext(ctx).Error(err.Error())
 	return
 }

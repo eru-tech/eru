@@ -11,6 +11,7 @@ import (
 	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
 )
 
@@ -23,6 +24,48 @@ func ToolListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		mcpTools := tool.GetMcpTools()
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"tools": mcpTools})
+	}
+}
+func ModelEmbeddingsHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("ModelEmbeddingsHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		modelId := vars["model"]
+		embeddingFromReq := json.NewDecoder(r.Body)
+		embeddingFromReq.DisallowUnknownFields()
+
+		var embeddingInputRequest model.EmbeddingInputRequest
+		if err := embeddingFromReq.Decode(&embeddingInputRequest); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		err := utils.ValidateStruct(r.Context(), embeddingInputRequest, "")
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+			return
+		}
+		modelObj, err := sh.Store.GetModel(r.Context(), projectId, tenantId, modelId, sh.Store)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		embeddings, embeddingsErr := modelObj.GenerateEmbeddings(r.Context(), embeddingInputRequest.Inputs, embeddingInputRequest.ChunkConfig, embeddingInputRequest.Dimension)
+		if embeddingsErr != nil {
+			logs.WithContext(r.Context()).Error(embeddingsErr.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": embeddingsErr.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(embeddings)
 	}
 }
 

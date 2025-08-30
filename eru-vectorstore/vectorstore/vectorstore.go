@@ -3,9 +3,12 @@ package vectorstore
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 
+	"github.com/eru-tech/eru/eru-ai/chunking"
+	models "github.com/eru-tech/eru/eru-ai/models"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
@@ -18,6 +21,7 @@ type VectorStoreI interface {
 	DeleteIndex(ctx context.Context, indexName string) error
 	GetStats(ctx context.Context) (VectorStats, error)
 	GetAttribute(ctx context.Context, attributeName string) string
+	SetAttribute(ctx context.Context, attributeName string, attributeValue string) error
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	EditIndex(ctx context.Context, cloneVectorStore VectorStoreI) error
 	UpdateVectorStore(ctx context.Context, updatedVectorStore VectorStoreI) error
@@ -25,6 +29,8 @@ type VectorStoreI interface {
 	BytesToVectorStore(ctx context.Context, vectorStoreObjJson []byte) (VectorStoreI, error)
 	SyncIndexDefinition(ctx context.Context, cloneVectorStore VectorStoreI) error
 	CheckRemoteStoreExists(ctx context.Context) (exists bool, err error)
+	GetEmbed(ctx context.Context) (VectorStoreEmbed, error)
+	SetEmbed(ctx context.Context, embed VectorStoreEmbed) error
 }
 
 type Vector struct {
@@ -54,17 +60,17 @@ type VectorRecordsList struct {
 }
 
 type VectorRecordsSearch struct {
-	Id              string                 `json:"query_id,omitempty"`
-	Namespace       string                 `json:"namespace" eru:"required"`
-	Filter          map[string]interface{} `json:"filter,omitempty"`
-	Fields          []string               `json:"fields,omitempty"`
-	Inputs          map[string]string      `json:"inputs,omitempty"`
-	TopK            int                    `json:"top_k,omitempty"`
-	IncludeValues   bool                   `json:"include_values,omitempty"`
-	IncludeMetadata bool                   `json:"include_metadata,omitempty"`
-	ReturnDistance  bool                   `json:"return_distance,omitempty"`
-	Vector          []float64              `json:"vector,omitempty"`
-	SparceVector    struct {
+	Id             string                 `json:"query_id,omitempty"`
+	Namespace      string                 `json:"namespace" eru:"required"`
+	Filter         map[string]interface{} `json:"filter,omitempty"`
+	Fields         []string               `json:"fields,omitempty"`
+	Inputs         map[string]string      `json:"inputs,omitempty"`
+	TopK           int                    `json:"top_k,omitempty"`
+	ReturnValues   bool                   `json:"return_values,omitempty"`
+	ReturnMetadata bool                   `json:"return_metadata,omitempty"`
+	ReturnDistance bool                   `json:"return_distance,omitempty"`
+	Vector         []float64              `json:"vector,omitempty"`
+	SparceVector   struct {
 		Indices []int     `json:"indices"`
 		Values  []float64 `json:"values"`
 	} `json:"sparce_vector,omitempty"`
@@ -111,9 +117,18 @@ func GetVectorStore(vectorType string) VectorStoreI {
 	}
 }
 
+type VectorStoreEmbed struct {
+	Model          models.ModelI           `json:"-"`
+	ModelName      string                  `json:"model"`
+	Field          string                  `json:"field"`
+	ChunkingConfig chunking.ChunkingConfig `json:"chunking_config"`
+	Dimension      int                     `json:"-"`
+	Metric         string                  `json:"-"`
+}
 type VectorStore struct {
-	VectorName string `json:"vector_name" eru:"required"`
-	VectorType string `json:"vector_type" eru:"required"`
+	VectorName string           `json:"vector_name" eru:"required"`
+	VectorType string           `json:"vector_type" eru:"required"`
+	Embed      VectorStoreEmbed `json:"embed"`
 }
 
 func (vs *VectorStore) SearchVectors(ctx context.Context, vectorRecordsSearch VectorRecordsSearch) (VectorResults, error) {
@@ -169,6 +184,18 @@ func (vs *VectorStore) GetAttribute(ctx context.Context, attributeName string) s
 	}
 }
 
+func (vs *VectorStore) SetAttribute(ctx context.Context, attributeName string, attributeValue string) error {
+	switch attributeName {
+	case "vector_name":
+		vs.VectorName = attributeValue
+	case "vector_type":
+		vs.VectorType = attributeValue
+	default:
+		return fmt.Errorf("invalid attribute name")
+	}
+	return nil
+}
+
 func (vs *VectorStore) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
 	logs.WithContext(ctx).Debug("MakeFromJson - Start")
 	err := json.Unmarshal(*rj, &vs)
@@ -215,4 +242,11 @@ func (vs *VectorStore) SyncIndexDefinition(ctx context.Context, cloneVectorStore
 func (vs *VectorStore) CheckRemoteStoreExists(ctx context.Context) (exists bool, err error) {
 	logs.WithContext(ctx).Info("CheckRemoteStoreExists method not implemented")
 	return false, nil
+}
+func (vs *VectorStore) GetEmbed(ctx context.Context) (VectorStoreEmbed, error) {
+	return vs.Embed, nil
+}
+func (vs *VectorStore) SetEmbed(ctx context.Context, embed VectorStoreEmbed) error {
+	vs.Embed = embed
+	return nil
 }
