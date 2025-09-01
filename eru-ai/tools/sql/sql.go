@@ -22,12 +22,12 @@ type SqlAccount struct {
 const (
 	GenerateSql = "generate_sql"
 	Train       = "train"
+	Search      = "search"
 )
 
 func (sqlAccount *SqlAccount) GetActionsList() []string {
 	actions := []string{}
-	actions = append(actions, GenerateSql)
-	actions = append(actions, Train)
+	actions = append(actions, GenerateSql, Train, Search)
 	return actions
 }
 
@@ -52,6 +52,8 @@ func (sqlAccount *SqlAccount) Execute(ctx context.Context, projectId string, ten
 		return sqlAccount.GenerateSql(ctx, params)
 	case Train:
 		return sqlAccount.Train(ctx, params)
+	case Search:
+		return sqlAccount.Search(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -99,6 +101,18 @@ func (sqlAccount *SqlAccount) Train(ctx context.Context, params map[string]inter
 		"message": "vectors saved successfully",
 	}
 	return toolResult, false, nil
+}
+func (sqlAccount *SqlAccount) Search(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("SqlAccount Search - Start")
+	if sqlAccount.VectorStore == nil {
+		return nil, false, fmt.Errorf("vectorstore not found")
+	}
+	/* vectorSearch, err := json.Marshal(params)
+	if err != nil {
+		return nil, false, fmt.Errorf("error marshalling vectorrecords: %w", err)
+	} */
+	//sqlAccount.VectorStore.SearchVectors(ctx, vectorRecords)
+	return nil, false, nil
 }
 func (sqlAccount *SqlAccount) GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error) {
 	switch attributeName {

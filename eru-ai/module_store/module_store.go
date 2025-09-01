@@ -514,21 +514,21 @@ func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId 
 	if err != nil {
 		return nil, err
 	}
-	toolNamesI, err := agent.GetAttribute(ctx, "tools")
+	agentToolsI, err := agent.GetAttribute(ctx, "agent_tools")
 	if err != nil {
 		return nil, err
 	}
-	toolNames, ok := toolNamesI.([]string)
+	agentTools, ok := agentToolsI.([]agents.AgentTools)
 	if !ok {
-		return nil, errors.New("tools attribute is not an array")
+		return nil, errors.New("agent_tools attribute is not an array")
 	}
 	tools := make(map[string]tools.Tooling)
-	for _, tn := range toolNames {
-		tool, err := ms.GetTool(ctx, projectId, tenantId, tn, "", s)
+	for _, agentTool := range agentTools {
+		tool, err := ms.GetTool(ctx, projectId, tenantId, agentTool.ToolName, agentTool.ActionName, s)
 		if err != nil {
 			return nil, err
 		}
-		tools[tn] = tool
+		tools[agentTool.ToolName] = tool
 	}
 	agent.SetTools(tools)
 

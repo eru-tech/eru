@@ -66,6 +66,7 @@ type ModuleStoreI interface {
 	SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error
 	//SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error
 	SaveProjectSettings(ctx context.Context, projectId string, projectConfig module_model.ProjectSettings, realStore ModuleStoreI) error
+	GetProjectSettings(ctx context.Context, projectId string) (module_model.ProjectSettings, error)
 	RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error
 	//SaveProjectAuthorizer(ctx context.Context, projectId string, authorizer functions.Authorizer, realStore ModuleStoreI) error
 	//RemoveProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) error
@@ -77,7 +78,7 @@ type ModuleStoreI interface {
 	RemoveRoute(ctx context.Context, routeName string, projectId string, realStore ModuleStoreI) error
 	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route functions.Route, err error)
 	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
-	ScheduleFunc(ctx context.Context, funcSchedule scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, realStore ModuleStoreI) error
+	ScheduleFunc(ctx context.Context, funcSchedule scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) error
 	UnScheduleFunc(ctx context.Context, projectId string, jobId string, realStore ModuleStoreI) error
 	GetWf(ctx context.Context, wfName string, projectId string, s ModuleStoreI) (wfObj functions.Workflow, err error)
 	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
@@ -618,6 +619,16 @@ func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string
 	return realStore.SaveStore(ctx, projectId, "", realStore)
 }
 
+func (ms *ModuleStore) GetProjectSettings(ctx context.Context, projectId string) (module_model.ProjectSettings, error) {
+	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+	err := ms.checkProjectExists(ctx, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return module_model.ProjectSettings{}, err
+	}
+	return ms.Projects[projectId].ProjectSettings, nil
+}
+
 func (ms *ModuleStore) checkProjectExists(ctx context.Context, projectId string) error {
 	logs.WithContext(ctx).Debug("checkProjectExists - Start")
 	_, ok := ms.Projects[projectId]
@@ -1089,7 +1100,7 @@ func LoadStore(StoreTableName string, StoreTenantTableName string) (ModuleStoreI
 	//s.Store = myStore
 	return myStore, err
 }
-func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, realStore ModuleStoreI) error {
+func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Info("ScheduleFunc - Start")
 	scheduleId := uuid.New().String()
 	scheduler, err := realStore.FetchScheduler(ctx, projectId)
@@ -1111,11 +1122,19 @@ func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig schedule
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("ScheduleFunc - End : ", jobId))
 
+	tokenObj := map[string]interface{}{}
+	err = json.Unmarshal([]byte(tokenStr), &tokenObj)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+
 	reqBody["job_id"] = jobId
 	requestBody := map[string]interface{}{
 		"Vars": map[string]interface{}{
 			"Body":    reqBody,
 			"OrgBody": reqBody,
+			"Token":   tokenObj,
 		},
 		"ReqVars": map[string]interface{}{},
 		"ResVars": map[string]interface{}{},

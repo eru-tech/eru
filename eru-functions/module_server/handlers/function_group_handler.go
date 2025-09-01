@@ -322,7 +322,16 @@ func FuncScheduleHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		}
 		delete(bodyMap, "schedule")
 
-		err := sh.Store.ScheduleFunc(ctx, funcSchedule, projectId, funcName, bodyMap, sh.Store)
+		projectSettings, err := sh.Store.GetProjectSettings(ctx, projectId)
+		if err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		tokenStr := r.Header.Get(projectSettings.ClaimsKey)
+
+		err = sh.Store.ScheduleFunc(ctx, funcSchedule, projectId, funcName, bodyMap, tokenStr, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -330,7 +339,6 @@ func FuncScheduleHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		}
 		server_handlers.FormatResponse(w, http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": fmt.Sprintf("function %s scheduled", funcName)})
-		return
 	}
 }
 

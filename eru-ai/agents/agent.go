@@ -11,17 +11,22 @@ import (
 )
 
 type AgentMessage struct {
-	Content   string                 `json:"content,omitempty"`
-	Params    map[string]interface{} `json:"params,omitempty"`
-	Files     []models.FileMessage   `json:"files,omitempty"`
+	Content string                 `json:"content,omitempty"`
+	Params  map[string]interface{} `json:"params,omitempty"`
+	Files   []models.FileMessage   `json:"files,omitempty"`
 }
 
+type AgentTools struct {
+	ToolName       string       `json:"tool_name"`
+	ActionName     string       `json:"action_name"`
+	DependentTools []AgentTools `json:"dependent_tools"`
+}
 type Agent struct {
 	AgentType    string                   `json:"agent_type" eru:"required"`
 	AgentName    string                   `json:"agent_name" eru:"required"`
 	Description  string                   `json:"description"`
 	SystemPrompt string                   `json:"system_prompt"`
-	ToolNames    []string                 `json:"tools"`
+	AgentTools   []AgentTools             `json:"agent_tools"`
 	ModelName    string                   `json:"model"`
 	Model        models.ModelI            `json:"-"`
 	Tools        map[string]tools.Tooling `json:"-"`
@@ -67,8 +72,8 @@ func (agent *Agent) GetAttribute(ctx context.Context, attributeName string) (att
 		return agent.SystemPrompt, nil
 	case "description":
 		return agent.Description, nil
-	case "tools":
-		return agent.ToolNames, nil
+	case "agent_tools":
+		return agent.AgentTools, nil
 	case "model":
 		return agent.ModelName, nil
 	default:
