@@ -910,16 +910,12 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 			startTimeaid := time.Now()
 			ctx := context.WithoutCancel(nctx)
 			ctx = logs.NewContext(ctx, zap.String(server_handlers.RequestIdKey, async_id))
-			logs.WithContext(nctx).Info(fmt.Sprint("async_id = ", async_id))
 
 			asyncFuncData, err = ms.FetchAsyncEvent(ctx, async_id, aStatus, s)
-			logs.WithContext(ctx).Info(fmt.Sprint("after fetch event  = ", asyncFuncData.AsyncId))
 			if err != nil || asyncFuncData.AsyncId == "" {
 				failedCount = failedCount + 1
 				asyncStatus = "FAILED"
-				logs.WithContext(ctx).Error(fmt.Sprint("event not found", cnt, ":", jcnt))
 			} else {
-				logs.WithContext(ctx).Info(fmt.Sprint("event found", cnt, ":", jcnt))
 				bodyMap := make(map[string]interface{})
 				eventResponseBytes := []byte("{}")
 				bodyMapOk := false
@@ -934,8 +930,9 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 				} else {
 					var eventReq *http.Request
 					if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
-						logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
+						logs.WithContext(ctx).Error("Request Body could not be retrieved, setting it as blank")
 					}
+
 					if len(requestBytes) > 0 {
 						r := bufio.NewReader(bytes.NewBuffer(requestBytes))
 						if eventReq, err = http.ReadRequest(r); err != nil { // deserialize request
@@ -945,6 +942,29 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 							logs.WithContext(ctx).Error(err.Error())
 						}
 					} else {
+						projectSettings, err := ms.GetProjectSettings(ctx, projectId)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+							err = nil //ignore error and continue
+						}
+						headers := http.Header{}
+						headers.Set("Content-Type", "application/json")
+						var tokenMap map[string]interface{}
+						var tokenMapOk bool
+						if tokenMap, tokenMapOk = asyncFuncData.EventMsg.Vars.Token.(map[string]interface{}); !tokenMapOk {
+							logs.WithContext(ctx).Error("Request Toekn not be retrieved, setting it as blank")
+						} else {
+							if projectSettings.ClaimsKey != "" {
+								tokenBytes, err := json.Marshal(tokenMap)
+								if err != nil {
+									logs.WithContext(ctx).Error(err.Error())
+									err = nil //ignore error and continue
+								} else {
+									headers.Set(projectSettings.ClaimsKey, (string)(tokenBytes))
+								}
+							}
+						}
+
 						eventReq = &http.Request{
 							Method: "POST",
 							URL: &url.URL{
@@ -952,9 +972,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 								Host:   "localhost",
 								Path:   "/",
 							},
-							Header: http.Header{
-								"Content-Type": []string{"application/json"},
-							},
+							Header: headers,
 						}
 						body, err := json.Marshal(bodyMap)
 						if err != nil {
