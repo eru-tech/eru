@@ -25,7 +25,7 @@ func StoreLoadHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("StoreLoadHandler - Start")
 
 		// Load new store from DB
-		newStore, err := module_store.LoadStore(StoreTableName, StoreTenantTableName)
+		newStore, err := module_store.LoadStore(r.Context(), StoreTableName, StoreTenantTableName)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(fmt.Sprintf("Failed to load store: %v", err))
 			server_handlers.FormatResponse(w, 400)

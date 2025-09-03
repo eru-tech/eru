@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	server "github.com/eru-tech/eru/eru-server/server"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
@@ -219,16 +219,12 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 	go allocateFunc(ctx, request, funcSteps, reqVars, resVars, funcJobs, mainRouteName, funcThreads, loopThreads, funcStepName, endFuncStepName, started, fromAsync, inLoop)
 	done := make(chan bool)
 
-	go func(done chan bool, funcResults chan FuncResult) {
-		defer func() {
-			if r := recover(); r != nil {
-				logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in RunFuncSteps: ", r, " : ", string(debug.Stack())))
-			}
-		}()
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("run-func-steps-results", func(bgCtx context.Context) {
 		for res := range funcResults {
 			if res.response != nil {
 				if res.response.ContentLength > 0 {
-					logs.WithContext(ctx).Info(fmt.Sprint("adding response to array"))
+					logs.WithContext(bgCtx).Info(fmt.Sprint("adding response to array"))
 					responses = append(responses, res.response)
 				}
 			}
@@ -245,7 +241,7 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 			}
 		}
 		done <- true
-	}(done, funcResults)
+	}, server.ContinueOnMaxRetries)
 
 	//set it to one to run synchronously
 	noOfWorkers := funcThreads
@@ -511,18 +507,16 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 	var results = make(chan FuncResult, 10)
 
 	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep before allocateFuncInner for ", funcStep.FuncKey))
-	go allocateFuncInner(ctx, request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs, mainRouteName, FuncThread, LoopThread, strCond, funcStepName, endFuncStepName, started, fromAsync, inLoop)
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("allocate-func-inner", func(bgCtx context.Context) {
+		allocateFuncInner(bgCtx, request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs, mainRouteName, FuncThread, LoopThread, strCond, funcStepName, endFuncStepName, started, fromAsync, inLoop)
+	}, server.ContinueOnMaxRetries)
 	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep after allocateFuncInner for ", funcStep.FuncKey))
 	done := make(chan bool)
 	//go result(done,results,responses, trResVars,errs)
 	funcVarsMap = make(map[string]FuncTemplateVars)
 
-	go func(done chan bool, results chan FuncResult) {
-		defer func() {
-			if r := recover(); r != nil {
-				logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in RunFuncStep: ", r, " : ", string(debug.Stack())))
-			}
-		}()
+	gm.SafeGoWithRestartBehavior("run-func-step-results", func(bgCtx context.Context) {
 		var asyncBatch []AsyncFuncData
 		eventMsg := FuncTemplateVars{}
 		eventRequest := ""
@@ -548,35 +542,35 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 					asyncBatchInner = append(asyncBatchInner, asyncFuncData)
 					// TODO - change it to event parameter
 					if len(asyncBatchInner) == 1000 {
-						logs.WithContext(ctx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatchInner)))
-						err = funcStep.insertAsyncBatch(ctx, asyncBatchInner)
+						logs.WithContext(bgCtx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatchInner)))
+						err = funcStep.insertAsyncBatch(bgCtx, asyncBatchInner)
 						asyncBatchInner = nil
 					}
 				}
 				if len(asyncBatchInner) > 0 {
-					logs.WithContext(ctx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatchInner)))
-					err = funcStep.insertAsyncBatch(ctx, asyncBatchInner)
+					logs.WithContext(bgCtx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatchInner)))
+					err = funcStep.insertAsyncBatch(bgCtx, asyncBatchInner)
 				}
 				asyncBatch = nil
 			} else {
 				// TODO - change it to event parameter
 				if len(asyncBatch) == 1000 {
-					logs.WithContext(ctx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatch)))
+					logs.WithContext(bgCtx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatch)))
 					asyncBatch[0].EventMsg = eventMsg
 					asyncBatch[0].EventRequest = eventRequest
-					err = funcStep.insertAsyncBatch(ctx, asyncBatch)
+					err = funcStep.insertAsyncBatch(bgCtx, asyncBatch)
 					asyncBatch = nil
 				}
 			}
 		}
 		if len(asyncBatch) > 0 {
-			logs.WithContext(ctx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatch)))
+			logs.WithContext(bgCtx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatch)))
 			asyncBatch[0].EventMsg = eventMsg
 			asyncBatch[0].EventRequest = eventRequest
-			err = funcStep.insertAsyncBatch(ctx, asyncBatch)
+			err = funcStep.insertAsyncBatch(bgCtx, asyncBatch)
 		}
 		done <- true
-	}(done, results)
+	}, server.ContinueOnMaxRetries)
 
 	//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
 	noOfWorkers := 1

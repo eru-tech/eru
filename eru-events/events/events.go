@@ -69,8 +69,8 @@ func GetEvent(eventType string) EventI {
 		return new(AWS_SNS_Event)
 	case "DB":
 		return new(DB_Event)
-	case "KAFKA":
-		return new(Kafka_Event)
+	/* case "KAFKA":
+	return new(Kafka_Event) */
 	default:
 		return nil
 	}

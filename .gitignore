@@ -38,3 +38,5 @@ eru-ql/eru-ql.log
 .gitignore
 eru-sql-llm-analysis.md
 *.md
+eru-ai/app
+eru-gateway/app

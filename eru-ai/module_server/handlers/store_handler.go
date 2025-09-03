@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	agents_factory "github.com/eru-tech/eru/eru-ai/agents/agents_factory"
@@ -30,8 +29,10 @@ func StoreLoadHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 
 		logs.WithContext(r.Context()).Debug("StoreLoadHandler - Start")
 
+		panic("Forced panic")
+
 		// Load new store from DB
-		newStore, err := module_store.LoadStore(StoreTableName, StoreTenantTableName)
+		newStore, err := module_store.LoadStore(r.Context(), StoreTableName, StoreTenantTableName)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(fmt.Sprintf("Failed to load store: %v", err))
 			server_handlers.FormatResponse(w, 400)
@@ -690,7 +691,7 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				return
 			}
 			logs.WithContext(r.Context()).Info(fmt.Sprintf("AgentMessage: %v", agentMessage))
-			agentResult, err := agent.Execute(r.Context(), agentMessage)
+			agentResult, err := agent.Execute(r.Context(), agentMessage, projectId, tenantId)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -817,7 +818,7 @@ func ToolExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				}
 			}
 
-			vectorStoreName, _ := tool.GetAttribute(r.Context(), "vectorstore_name")
+			/* vectorStoreName, _ := tool.GetAttribute(r.Context(), "vectorstore_name")
 			if vectorStoreName != nil {
 				vectorStoreName := vectorStoreName.(string)
 				vectorStore, err := sh.Store.GetVectorStore(r.Context(), projectId, tenantId, vectorStoreName, sh.Store)
@@ -864,7 +865,7 @@ func ToolExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 					}
 				}
-			}
+			} */
 
 			toolResult, persistStore, err := tool.Execute(ctx, projectId, tenantId, actionName, toolParams.Params)
 			if err != nil {

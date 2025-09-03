@@ -7,8 +7,8 @@ import (
 	eru "github.com/eru-tech/eru/eru-ai/tools/eru"
 	messengers "github.com/eru-tech/eru/eru-ai/tools/messengers"
 	repositories "github.com/eru-tech/eru/eru-ai/tools/repositories"
-	sql "github.com/eru-tech/eru/eru-ai/tools/sql"
 	utiltiy "github.com/eru-tech/eru/eru-ai/tools/utility"
+	vectorstore "github.com/eru-tech/eru/eru-ai/tools/vectors"
 	web_scraping "github.com/eru-tech/eru/eru-ai/tools/web_scraping"
 )
 
@@ -30,8 +30,8 @@ func GetTool(toolType string) tools.Tooling {
 		return new(messengers.WhatsAppTool)
 	case "SLACK":
 		return new(messengers.SlackTool)
-	case "SQL":
-		return new(sql.SqlAccount)
+	case "VECTORSTORE":
+		return new(vectorstore.VectorstoreAccount)
 	case "ERUQL":
 		return new(eru.EruqlTool)
 	default:

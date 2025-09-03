@@ -30,3 +30,11 @@ func (soTool *StructuredOutputTool) Execute(ctx context.Context, projectId strin
 func (soTool *StructuredOutputTool) GetSpec() tools.Tooling {
 	return soTool
 }
+func (soTool *StructuredOutputTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
+	err := json.Unmarshal(toolObjJson, &soTool)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, err
+	}
+	return soTool, nil
+}

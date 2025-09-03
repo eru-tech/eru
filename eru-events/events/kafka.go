@@ -3,7 +3,7 @@
 
 package events
 
-import (
+/* import (
 	"context"
 	"encoding/json"
 	"errors"
@@ -581,4 +581,4 @@ func (kafkaEvent *Kafka_Event) applyConsumerConfig(ctx context.Context, config k
 	if kafkaEvent.IsolationLevel != "" {
 		config["isolation.level"] = kafkaEvent.IsolationLevel
 	}
-}
+} */

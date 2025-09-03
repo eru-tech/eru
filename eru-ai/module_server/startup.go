@@ -10,27 +10,27 @@ import (
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 )
 
-func StartUp() (module_store.ModuleStoreI, error) {
+func StartUp(ctx context.Context) (module_store.ModuleStoreI, error) {
 	erufuncbaseurl := os.Getenv("ERUFUNCTIONS_BASEURL")
 	if erufuncbaseurl == "" {
 		erufuncbaseurl = "http://localhost:8083"
-		logs.WithContext(context.Background()).Info("'ERUFUNCTIONS_BASEURL' environment variable not found - setting default value as http://localhost:8083")
+		logs.WithContext(ctx).Info("'ERUFUNCTIONS_BASEURL' environment variable not found - setting default value as http://localhost:8083")
 	}
 	module_store.Erufuncbaseurl = erufuncbaseurl
 
 	eruauthbaseurl := os.Getenv("ERUAUTH_BASEURL")
 	if eruauthbaseurl == "" {
 		eruauthbaseurl = "http://localhost:8085"
-		logs.WithContext(context.Background()).Info("'ERUAUTH_BASEURL' environment variable not found - setting default value as http://localhost:8085")
+		logs.WithContext(ctx).Info("'ERUAUTH_BASEURL' environment variable not found - setting default value as http://localhost:8085")
 	}
 	module_store.Eruauthbaseurl = eruauthbaseurl
 
 	eruqlbaseurl := os.Getenv("ERUQL_BASEURL")
 	if eruqlbaseurl == "" {
 		eruqlbaseurl = "http://localhost:8087"
-		logs.WithContext(context.Background()).Info("'ERUQL_BASEURL' environment variable not found - setting default value as http://localhost:8087")
+		logs.WithContext(ctx).Info("'ERUQL_BASEURL' environment variable not found - setting default value as http://localhost:8087")
 	}
 	server_handlers.EruqlBaseUrl = eruqlbaseurl
 
-	return module_store.LoadStore(handlers.StoreTableName, handlers.StoreTenantTableName)
+	return module_store.LoadStore(ctx, handlers.StoreTableName, handlers.StoreTenantTableName)
 }

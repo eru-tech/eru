@@ -27,6 +27,7 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-scheduler/scheduler"
+	server "github.com/eru-tech/eru/eru-server/server"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/eru-tech/eru/eru-store/store"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
@@ -826,7 +827,10 @@ func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI, c
 				eventName, err := e.GetAttribute("event_name")
 				if err == nil {
 					if slices.Contains(asyncEventsList, eventName.(string)) {
-						go ms.StartPolling(ctx, p.ProjectId, e, s, cnt)
+						gm := server.GetGlobalGoroutineManager(ctx)
+						gm.SafeGoWithRestartBehavior("fetch-project-events-polling", func(bgCtx context.Context) {
+							ms.StartPolling(bgCtx, p.ProjectId, e, s, cnt)
+						}, server.ContinueOnMaxRetries)
 					}
 				}
 			}
@@ -850,28 +854,24 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 		go functions.AllocateEvent(ctx, event, eventJobs, EventThreads)
 		done := make(chan bool)
 
-		go func(done chan bool, eventResults chan functions.EventResult) {
-			defer func() {
-				if r := recover(); r != nil {
-					logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in StartPolling: ", r))
-				}
-			}()
+		gm := server.GetGlobalGoroutineManager(ctx)
+		gm.SafeGoWithRestartBehavior("start-polling-events", func(bgCtx context.Context) {
 			cnt := 0
 			for res := range eventResults {
 				startTime := time.Now()
 				cnt = cnt + 1
-				err = ms.ProcessEvents(ctx, projectId, res.EventMsgs, event, s, cnt, jcnt)
+				err = ms.ProcessEvents(bgCtx, projectId, res.EventMsgs, event, s, cnt, jcnt)
 				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
+					logs.WithContext(bgCtx).Error(err.Error())
 					//ignore error and continue to poll
 					err = nil
 				}
 				endTime := time.Now()
 				diff := endTime.Sub(startTime)
-				logs.WithContext(ctx).Info(fmt.Sprint("result processing ending for ", eventName, " job worker ", cnt, " of ", jcnt, " is ", diff.Seconds(), "seconds"))
+				logs.WithContext(bgCtx).Info(fmt.Sprint("result processing ending for ", eventName, " job worker ", cnt, " of ", jcnt, " is ", diff.Seconds(), "seconds"))
 			}
 			done <- true
-		}(done, eventResults)
+		}, server.ContinueOnMaxRetries)
 
 		//set it to one to run synchronously
 		noOfWorkers := 1 //EventThreads
@@ -1076,12 +1076,12 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 	return
 }
 
-func LoadStore(StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
-	logs.WithContext(context.Background()).Info("Loading store")
+func LoadStore(ctx context.Context, StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
+	logs.WithContext(ctx).Info("Loading store")
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
 	if storeType == "" {
 		storeType = "STANDALONE"
-		logs.WithContext(context.Background()).Info("STORE_TYPE environment variable not found - loading default standlone store")
+		logs.WithContext(ctx).Info("STORE_TYPE environment variable not found - loading default standlone store")
 	}
 	var myStore ModuleStoreI
 	var err error
@@ -1105,15 +1105,15 @@ func LoadStore(StoreTableName string, StoreTenantTableName string) (ModuleStoreI
 	if err == nil {
 		err = json.Unmarshal(storeBytes, myStore)
 		if err != nil {
-			logs.WithContext(context.Background()).Error(err.Error())
+			logs.WithContext(ctx).Error(err.Error())
 		}
-		err = myStore.SetStoreFromBytes(context.Background(), storeBytes, myStore)
+		err = myStore.SetStoreFromBytes(ctx, storeBytes, myStore)
 		if err != nil {
-			logs.WithContext(context.Background()).Error(err.Error())
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 	} else {
-		logs.WithContext(context.Background()).Error(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 	}
 	//s.Store = myStore
 	return myStore, err

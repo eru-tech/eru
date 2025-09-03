@@ -499,8 +499,6 @@ func (sqr *SqlMaker) ProcessGraphQL(sel ast.Selection, vars map[string]interface
 
 func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datasource *module_model.DataSource, aliasName string) (res map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ExecuteQueryForCsv - Start")
-	//ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond) //TODO: to get context as argument
-	//defer cancel()
 	rows, e := datasource.Con.Queryx(query)
 	if e != nil {
 		e = logs.Err(ctx, e, "")
@@ -591,8 +589,6 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 func (sqr *SqlMaker) ExecutePreparedQuery(ctx context.Context, query string, datasource *module_model.DataSource) (res map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ExecutePreparedQuery - Start")
 	logs.WithContext(ctx).Info(query)
-	//ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond) //TODO: to get context as argument
-	//defer cancel()
 	rows, e := datasource.Con.Queryx(query)
 	if e != nil {
 		e = logs.Err(ctx, e, "")
@@ -670,8 +666,8 @@ func (sqr *SqlMaker) ExecuteMutationQuery(ctx context.Context, datasource *modul
 	sqr.DBQuery = mrm.DBQuery
 	sqr.PreparedQuery = mrm.PreparedQuery
 	var errMsgs []string
-	ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond) //TODO: to get context as argument
-	defer cancel()
+	//ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond) //TODO: to get context as argument
+	//defer cancel()
 	if sqr.openTxn || (sqr.TxnFlag && !sqr.SingleTxn) {
 		logs.WithContext(ctx).Debug("datasource.Con.MustBegin() called in ExecuteMutationQuery")
 		sqr.tx = datasource.Con.MustBegin() //begin txn only once for all queries OR begin txn outside for loop to insert all docs as single txn

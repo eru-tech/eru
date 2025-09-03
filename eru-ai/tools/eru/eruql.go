@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -14,11 +15,10 @@ import (
 )
 
 type EruqlToolParams struct {
-	QueryName string                 `json:"query_name"`
-	Query     string                 `json:"query"`
-	DbAlias   string                 `json:"db_alias"`
-	ProjectId string                 `json:"project_id"`
-	Vars      map[string]interface{} `json:"vars"`
+	QueryName string                 `json:"query_name" desc:"name of the query to be executed on eruql"`
+	Query     string                 `json:"query" desc:"actual graphql or sql query to be executed on eruql"`
+	ProjectId string                 `json:"project_id" eru:"required" desc:"project id in which the query is stored"`
+	Vars      map[string]interface{} `json:"vars" desc:"variables to execute the query with" default:"{}"`
 }
 
 type EruqlTool struct {
@@ -29,9 +29,24 @@ const (
 	ExecuteQuery = "execute_query"
 )
 
+var eruqlToolActions = []tools.ToolAction{
+	{
+		ActionName:   ExecuteQuery,
+		Description:  "Generate SQL query",
+		SystemPrompt: "Generate SQL query",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(EruqlToolParams{}))
+		},
+	},
+}
+
 func (eruqlTool *EruqlTool) GetActionsList() []string {
 	actions := []string{}
-	actions = append(actions, ExecuteQuery)
+	for _, action := range eruqlToolActions {
+		actions = append(actions, action.ActionName)
+	}
 	return actions
 }
 
@@ -70,15 +85,17 @@ func (eruqlTool *EruqlTool) BytesToTool(ctx context.Context, toolObjJson []byte)
 func (eruqlTool *EruqlTool) ExecuteQuery(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("eruqlTool ExecuteQuery - Start")
 	eruqlToolParams := EruqlToolParams{}
-	paramsBytes, err := json.Marshal(params)
-	if err != nil {
-		err = logs.Err(ctx, err, "")
-		return nil, false, err
-	}
-	err = json.Unmarshal(paramsBytes, &eruqlToolParams)
-	if err != nil {
-		err = logs.Err(ctx, err, "")
-		return nil, false, err
+	if eruqlParams, eruqlParamsOk := params["params"]; eruqlParamsOk {
+		eruqlParamsBytes, err := json.Marshal(eruqlParams)
+		if err != nil {
+			return nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
+		}
+
+		err = json.Unmarshal(eruqlParamsBytes, &eruqlToolParams)
+		if err != nil {
+			err = logs.Err(ctx, err, "")
+			return nil, false, err
+		}
 	}
 	headers := http.Header{}
 	claims := ctx.Value("claims")
@@ -162,4 +179,14 @@ func (eruqlTool *EruqlTool) GetBytes(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 	return toolJson, nil
+}
+
+func (eruqlTool *EruqlTool) SetToolAction(actionName string) {
+	for _, action := range eruqlToolActions {
+		if action.ActionName == actionName {
+			eruqlTool.ToolAction = action
+			return
+		}
+	}
+	eruqlTool.ToolAction = tools.ToolAction{}
 }

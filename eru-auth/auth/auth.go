@@ -489,7 +489,7 @@ func (auth *Auth) LoginApi(ctx context.Context, refreshToken string, userId stri
 	}
 
 	token := &oauth2.Token{RefreshToken: refreshToken}
-	newToken, err := outhConfig.TokenSource(context.Background(), token).Token()
+	newToken, err := outhConfig.TokenSource(ctx, token).Token()
 
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprint(fmt.Sprintf("Failed to refresh token: %v", err), http.StatusInternalServerError))

@@ -547,12 +547,12 @@ func (eMs *ExendedModuleStore) UnmarshalJSON(b []byte) error {
 
 	return nil
 }
-func LoadStore(StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
-	logs.WithContext(context.Background()).Info("Loading store")
+func LoadStore(ctx context.Context, StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
+	logs.WithContext(ctx).Info("Loading store")
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
 	if storeType == "" {
 		storeType = "STANDALONE"
-		logs.WithContext(context.Background()).Info("STORE_TYPE environment variable not found - loading default standlone store")
+		logs.WithContext(ctx).Info("STORE_TYPE environment variable not found - loading default standlone store")
 	}
 	var myStore ModuleStoreI
 	var err error
@@ -576,15 +576,15 @@ func LoadStore(StoreTableName string, StoreTenantTableName string) (ModuleStoreI
 	if err == nil {
 		err = json.Unmarshal(storeBytes, myStore)
 		if err != nil {
-			logs.WithContext(context.Background()).Error(err.Error())
+			logs.WithContext(ctx).Error(err.Error())
 		}
-		err = myStore.SetStoreFromBytes(context.Background(), storeBytes, myStore)
+		err = myStore.SetStoreFromBytes(ctx, storeBytes, myStore)
 		if err != nil {
-			logs.WithContext(context.Background()).Error(err.Error())
+			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 	} else {
-		logs.WithContext(context.Background()).Error(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 	}
 	//s.Store = myStore
 	return myStore, err

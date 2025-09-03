@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.11
 	github.com/aws/aws-sdk-go-v2/service/sns v1.36.0
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.32.3
-	github.com/confluentinc/confluent-kafka-go/v2 v2.3.0
+	//github.com/confluentinc/confluent-kafka-go/v2 v2.3.0
 	github.com/eru-tech/eru/eru-db v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000
@@ -40,10 +40,6 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/net v0.42.0 // indirect
-	golang.org/x/sys v0.34.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250728155136-f173205681a0 // indirect
-	google.golang.org/grpc v1.74.2 // indirect
 )
 
 replace (

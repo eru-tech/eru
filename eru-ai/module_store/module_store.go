@@ -358,6 +358,7 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 		toolObjClone, err = ms.GetToolCloneObject(ctx, projectId, tenantId, toolObj, s)
 		toolObjClone.SetToolDb(db.GetDb(s.GetDbType()))
 		toolObjClone.GetToolDb().SetConn(s.GetConn())
+		toolObjClone.SetToolAction(actionName)
 		if err != nil {
 			return
 		}
@@ -368,6 +369,56 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 		} else {
 			err = nil //ignore error and allow rest of object to be cloned
 		}
+
+		vectorStoreName, _ := toolObjClone.GetAttribute(ctx, "vectorstore_name")
+		if vectorStoreName != nil {
+			vectorStoreName := vectorStoreName.(string)
+			vectorStore, vectorStoreErr := s.GetVectorStore(ctx, projectId, tenantId, vectorStoreName, s)
+			if vectorStoreErr != nil {
+				err = vectorStoreErr
+				logs.WithContext(ctx).Error(err.Error())
+				return
+			}
+			vectorStoreClone, vectorStoreCloneErr := s.GetVectorStoreCloneObject(ctx, projectId, tenantId, vectorStore, s)
+			if vectorStoreCloneErr != nil {
+				err = vectorStoreCloneErr
+				logs.WithContext(ctx).Error(err.Error())
+				return
+			} else {
+				toolObjClone.SetAttribute(ctx, "vectorstore", vectorStoreClone)
+			}
+
+			embed, embedErr := vectorStoreClone.GetEmbed(ctx)
+			if embedErr != nil {
+				err = embedErr
+				logs.WithContext(ctx).Error(err.Error())
+				return
+			}
+
+			dimension := vectorStoreClone.GetAttribute(ctx, "dimension")
+			dimensionInt := 0
+			if dimension != "" {
+				dimensionInt, err = strconv.Atoi(dimension)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return
+				}
+			}
+			embed.Dimension = dimensionInt
+			embed.Metric = vectorStoreClone.GetAttribute(ctx, "metric")
+			if embed.ModelName != "" {
+				model, err := s.GetModel(ctx, projectId, tenantId, embed.ModelName, s)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
+				embed.Model = model
+				err = vectorStoreClone.SetEmbed(ctx, embed)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
+			}
+		}
+
 		return
 	}
 }
@@ -508,6 +559,30 @@ func (ms *ModuleStore) GetAgentCloneObject(ctx context.Context, projectId string
 	}
 	return iCloneI.Elem().Interface().(agents.AgentI), nil
 }
+
+// populateAgentTools recursively populates all tools including dependent tools
+func (ms *ModuleStore) populateAgentTools(ctx context.Context, projectId string, tenantId string, agentTools []agents.AgentTools, s ModuleStoreI) error {
+	for i, agentTool := range agentTools {
+		// Get the main tool
+		tool, err := ms.GetTool(ctx, projectId, tenantId, agentTool.ToolName, agentTool.ActionName, s)
+		if err != nil {
+			return err
+		}
+		agentTools[i].Tool = tool
+
+		// Recursively populate dependent tools if they exist
+		if len(agentTool.DependentTools) > 0 {
+			err = ms.populateAgentTools(ctx, projectId, tenantId, agentTool.DependentTools, s)
+			if err != nil {
+				return err
+			}
+			// Update the dependent tools in the current agent tool
+			agentTools[i].DependentTools = agentTool.DependentTools
+		}
+	}
+	return nil
+}
+
 func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId string, agentName string, s ModuleStoreI) (agents.AgentI, error) {
 	logs.WithContext(ctx).Debug("GetAgent - Start")
 	agent, err := ms.GetAgentClone(ctx, projectId, tenantId, agentName, s)
@@ -522,15 +597,12 @@ func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId 
 	if !ok {
 		return nil, errors.New("agent_tools attribute is not an array")
 	}
-	tools := make(map[string]tools.Tooling)
-	for _, agentTool := range agentTools {
-		tool, err := ms.GetTool(ctx, projectId, tenantId, agentTool.ToolName, agentTool.ActionName, s)
-		if err != nil {
-			return nil, err
-		}
-		tools[agentTool.ToolName] = tool
+
+	// Use the recursive function to populate all tools including dependent tools
+	err = ms.populateAgentTools(ctx, projectId, tenantId, agentTools, s)
+	if err != nil {
+		return nil, err
 	}
-	agent.SetTools(tools)
 
 	modelNameI, err := agent.GetAttribute(ctx, "model")
 	if err != nil {
@@ -962,12 +1034,13 @@ func (ms *ModuleStore) GetVectorStoreNames(ctx context.Context, projectId string
 		return nil, err
 	}
 }
-func LoadStore(StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
-	logs.WithContext(context.Background()).Info("Loading store")
+func LoadStore(ctx context.Context, StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
+	logs.WithContext(ctx).Info("Loading store")
+
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
 	if storeType == "" {
 		storeType = "STANDALONE"
-		logs.WithContext(context.Background()).Info("STORE_TYPE environment variable not found - loading default standlone store")
+		logs.WithContext(ctx).Info("STORE_TYPE environment variable not found - loading default standlone store")
 	}
 	var myStore ModuleStoreI
 	var err error
@@ -989,9 +1062,9 @@ func LoadStore(StoreTableName string, StoreTenantTableName string) (ModuleStoreI
 	}
 	storeBytes, err := myStore.GetStoreByteArray("")
 	if err == nil {
-		UnMarshalStore(context.Background(), storeBytes, myStore)
+		UnMarshalStore(ctx, storeBytes, myStore)
 	} else {
-		logs.WithContext(context.Background()).Error(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 	}
 	//s.Store = myStore
 	return myStore, err

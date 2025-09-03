@@ -8,7 +8,7 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
-func StartUp() (module_store.ModuleStoreI, error) {
-	logs.WithContext(context.Background()).Debug("StartUp - Start")
-	return module_store.LoadStore(handlers.StoreTableName, handlers.StoreTenantTableName)
+func StartUp(ctx context.Context) (module_store.ModuleStoreI, error) {
+	logs.WithContext(ctx).Debug("StartUp - Start")
+	return module_store.LoadStore(ctx, handlers.StoreTableName, handlers.StoreTenantTableName)
 }

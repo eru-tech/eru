@@ -378,11 +378,15 @@ func (openaiModel *OpenAIModel) makeOpenAIChatToolRequest(ctx context.Context, c
 	for _, tool := range tools {
 		toolNameI, _ := tool.GetAttribute(ctx, "tool_name")
 		toolDescriptionI, _ := tool.GetAttribute(ctx, "description")
-		toolParametersI, _ := tool.GetAttribute(ctx, "parameters")
+		//toolParametersI, _ := tool.GetAttribute(ctx, "parameters")
 		toolSystemPromptI, _ := tool.GetAttribute(ctx, "system_prompt")
 		toolName := toolNameI.(string)
 		toolDescription := toolDescriptionI.(string)
-		toolParameters := toolParametersI.(eru_models.JSONSchema)
+		//toolParameters := toolParametersI.(eru_models.JSONSchema)
+
+		toolParameters := tool.GetParameters()
+		toolParametersBytes, _ := json.Marshal(toolParameters)
+		logs.WithContext(ctx).Info(fmt.Sprint(string(toolParametersBytes)))
 
 		toolPrompt += fmt.Sprint("Tool prompt for Tool ", toolName, " is as follows :\n", toolSystemPromptI.(string))
 		reqTool := OpenAIRequestTools{
@@ -416,10 +420,14 @@ func (openaiModel *OpenAIModel) makeOpenAIChatToolRequest(ctx context.Context, c
 		}, */
 		Tools: openAIRequestTools,
 	}
+	if agentName == "" {
+		agentName = "Agent"
+	}
 	openAIChatToolRequest.Messages = append(openAIChatToolRequest.Messages, OpenAIRequestMessage{
 		Role: "system",
 		Content: openaiModel.makeOpenAIChatRequestContent(ctx, Message{
-			Content: fmt.Sprint(agentPrompt, "\n", toolPrompt),
+			Content: fmt.Sprint(toolPrompt, "\n", agentPrompt),
+			//Content: toolPrompt,
 		}),
 		Name: agentName,
 	})

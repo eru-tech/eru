@@ -94,7 +94,7 @@ func (svs *S3VectorStore) SearchVectors(ctx context.Context, vectorRecordsSearch
 				Text: strSearch,
 			})
 		}
-		if strSearch != "" {
+		if strSearch != "" && svs.Embed.Model != nil {
 			embeddingOutputs, err := svs.Embed.Model.GenerateEmbeddings(ctx, embeddingInputs, svs.Embed.ChunkingConfig, svs.Embed.Dimension)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())

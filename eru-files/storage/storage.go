@@ -22,7 +22,7 @@ type StorageI interface {
 	Init(ctx context.Context) error
 	SetKms(ctx context.Context, kmsObj kms.KmsStoreI) (err error)
 	BucketExists(ctx context.Context) (exists bool, err error)
-	EmptyBucket() error
+	EmptyBucket(ctx context.Context) (err error)
 }
 
 type Storage struct {
@@ -76,9 +76,9 @@ func (storage *Storage) BucketExists(ctx context.Context) (exists bool, err erro
 	return
 }
 
-func (storage *Storage) EmptyBucket() (err error) {
+func (storage *Storage) EmptyBucket(ctx context.Context) (err error) {
 	err = errors.New("method not implemented")
-	logs.WithContext(context.Background()).Error(err.Error())
+	logs.WithContext(ctx).Error(err.Error())
 	return
 }
 
@@ -98,4 +98,3 @@ func (storage *Storage) UploadFile(ctx context.Context, file multipart.File, hea
 	logs.WithContext(ctx).Error(err.Error())
 	return
 }
-	

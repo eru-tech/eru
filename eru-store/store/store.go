@@ -586,6 +586,7 @@ func (store *Store) ExecuteDbSave(ctx context.Context, queries []Queries) (outpu
 func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text []byte, varMap map[string]interface{}) (returnText []byte) {
 	logs.WithContext(ctx).Debug("ReplaceVariables - Start")
 	textStr := string(text)
+	textStr = strings.Replace(textStr, "$VAR_project_id", projectId, -1)
 	if _, prjVarsOk := store.Variables[projectId]; prjVarsOk {
 		for k, v := range store.Variables[projectId].Vars {
 			textStr = strings.Replace(textStr, fmt.Sprint("$VAR_", k), v.Value, -1)
@@ -610,6 +611,7 @@ func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text
 func (store *Store) ReplaceTenantVariables(ctx context.Context, projectId string, tenantId string, text []byte) (returnText []byte) {
 	logs.WithContext(ctx).Debug("ReplaceTenantVariables - Start")
 	textStr := string(text)
+	textStr = strings.Replace(textStr, "$VAR_tenant_id", tenantId, -1)
 	if _, prjVarsOk := store.TenantVariables[projectId]; prjVarsOk {
 		if _, tenantVarsOk := store.TenantVariables[projectId][tenantId]; tenantVarsOk {
 			for k, v := range store.TenantVariables[projectId][tenantId].Secrets {

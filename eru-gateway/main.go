@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"runtime/debug"
 	"time"
@@ -22,41 +21,64 @@ import (
 var port = "8086"
 
 func main() {
-	defer func() {
-		if r := recover(); r != nil {
-			logs.Logger.Error(fmt.Sprint("Panic: ", r, " : ", string(debug.Stack())))
-			os.Exit(1)
-		}
-	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Initialize service
 	module_server.SetServiceName()
 	server_handlers.SetInstanceId()
 	logs.LogInit(server_handlers.ServerName, server_handlers.InstanceId)
-	logs.Logger.Info(fmt.Sprint("inside main of ", server_handlers.ServerName))
+	logs.WithContext(ctx).Info(fmt.Sprintf("inside main of %s-%s", server_handlers.ServerName, server_handlers.InstanceId))
 
 	server_handlers.BaseUrl = os.Getenv("ERUGATEWAY_PUB_BASE_URL")
 
+	// Setup OpenTelemetry tracing
+	var tp interface{ Shutdown(context.Context) error }
+
+	// Production-ready panic handler (normal defer will handle cleanup)
+	defer func() {
+		if r := recover(); r != nil {
+			logs.Logger.Error(fmt.Sprint("FATAL: Main goroutine panic: ", r, " : ", string(debug.Stack())))
+			// Exit with specific code for orchestrator (2 = panic, 1 = error, 0 = normal)
+			os.Exit(2)
+		}
+	}()
+
+	// Common cleanup function for all exit scenarios
+	cleanup := func() {
+		if tp != nil {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			if err := tp.Shutdown(shutdownCtx); err != nil {
+				logs.Logger.Error(fmt.Sprint("Error shutting down tracer provider: ", err.Error()))
+			}
+		}
+	}
+	defer cleanup() // Handles cleanup for both normal exit and panic recovery
+
 	traceUrl := os.Getenv("TRACE_URL")
 	if traceUrl != "" {
-		tp, err := eruotel.TracerTempoInit(traceUrl)
+		var err error
+		tp, err = eruotel.TracerTempoInit(traceUrl)
 		if err != nil {
-			log.Fatal(err)
+			logs.WithContext(ctx).Error(err.Error())
 		}
-		defer func() {
-			if err = tp.Shutdown(context.Background()); err != nil {
-				logs.Logger.Error(fmt.Sprint("Error shutting down tracer provider: %v", err.Error()))
-			}
-		}()
 	}
+
+	// Configure port
 	envPort := os.Getenv("ERUGATEWAYPORT")
 	if envPort != "" {
 		port = envPort
 	}
-	store, e := module_server.StartUp()
+
+	// Initialize store and server
+	store, e := module_server.StartUp(ctx)
 	if e != nil {
-		logs.Logger.Error(e.Error())
-		logs.Logger.Error("Failed to Start Server - error while setting up config store")
+		logs.WithContext(ctx).Error(e.Error())
+		logs.WithContext(ctx).Error("Failed to Start Server - error while setting up config store")
 		return
 	}
+
 	sh := new(module_store.StoreHolder)
 	sh.Store = store
 
@@ -65,21 +87,26 @@ func main() {
 	if registryType == "" {
 		registryType = "INMEMORY" // Default to in-memory if not specified or invalid
 	}
-	logs.Logger.Info(fmt.Sprintf("Using %s registry", registryType))
+	logs.WithContext(ctx).Info(fmt.Sprintf("Using %s registry", registryType))
 
 	registryCache := cache.GetCacheStore(registryType)
-	logs.Logger.Info(fmt.Sprintf("registryCache: %v", registryCache))
+	logs.WithContext(ctx).Info(fmt.Sprintf("registryCache: %v", registryCache))
 	if registryCache == nil {
-		logs.Logger.Error(fmt.Sprintf("failed to connect to registry cache: %v - fallback to in-memory", registryType))
+		logs.WithContext(ctx).Error(fmt.Sprintf("failed to connect to registry cache: %v - fallback to in-memory", registryType))
 		registryCache = cache.GetCacheStore("INMEMORY")
 	}
 	serviceRegistry := registry.NewRegistry(registryCache, 90*time.Second)
 	rh := &handlers.RegistryHandler{Registry: serviceRegistry}
 
-	sr, _, e := server.Init(sh.Store)
-	module_server.AddModuleRoutes(sr, sh, rh)
+	sr, _, e := server.Init(ctx, sh.Store)
 	if e != nil {
-		logs.Logger.Error(e.Error())
+		logs.WithContext(ctx).Error(e.Error())
+		return
 	}
-	server.Launch(sr, port, sh.Store)
+
+	// Setup routes
+	module_server.AddModuleRoutes(sr, sh, rh)
+
+	// Let eru-server handle everything including signals, contexts, and graceful shutdown
+	server.LaunchWithContext(ctx, sr, port, sh.Store)
 }

@@ -175,11 +175,14 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 			instances, err := rh.Registry.ListAllServices(r.Context())
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
-				err = nil
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
 			} else {
+				instanceFound := false
 				for _, instance := range instances {
 					if instance.Id == instanceId {
-
+						instanceFound = true
 						tmpSplit1 := strings.Split(instance.Address, "://")
 						if tmpSplit1[0] == "http" || tmpSplit1[0] == "https" {
 							tmpSplit2 := strings.Split(tmpSplit1[1], ":")
@@ -195,6 +198,13 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 							break
 						}
 					}
+				}
+				if !instanceFound {
+					err = fmt.Errorf("instance not found")
+					logs.WithContext(r.Context()).Error(err.Error())
+					server_handlers.FormatResponse(w, 400)
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					return
 				}
 			}
 		}

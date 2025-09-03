@@ -37,7 +37,7 @@ type Tool struct {
 	SystemPrompt    string                `json:"system_prompt"`
 	OutputSchema    eru_models.JSONSchema `json:"output_schema"`
 	Parameters      eru_models.JSONSchema `json:"parameters"`
-	Actions         map[string]ToolAction `json:"actions"`
+	ToolAction      ToolAction            `json:"-" eru:"optional"`
 	Hooks           ToolHooks             `json:"hooks"`
 	HookAsyncEvent  string                `json:"hook_async_event"`
 	Scheduler       scheduler.SchedulerI  `json:"-"`
@@ -51,11 +51,12 @@ type ToolCallback struct {
 }
 
 type ToolAction struct {
-	ActionName   string                `json:"action_name" eru:"required"`
-	Description  string                `json:"description"`
-	SystemPrompt string                `json:"system_prompt"`
-	OutputSchema eru_models.JSONSchema `json:"output_schema"`
-	Parameters   eru_models.JSONSchema `json:"parameters"`
+	ActionName    string                       `json:"action_name" eru:"required"`
+	Description   string                       `json:"description"`
+	SystemPrompt  string                       `json:"system_prompt"`
+	OutputSchema  eru_models.JSONSchema        `json:"output_schema"`
+	Parameters    eru_models.JSONSchema        `json:"parameters"`
+	GetParameters func() eru_models.JSONSchema `json:"-"`
 }
 
 type ToolInput struct {
@@ -94,6 +95,19 @@ type Tooling interface {
 	SetToolDb(db.DbI)
 	SetScheduler(scheduler.SchedulerI)
 	SaveTenantSecret(ctx context.Context, projectId string, tenantId string, secretName string, secretValue string) (err error)
+	SetToolAction(actionName string)
+	GetParameters() eru_models.JSONSchema
+}
+
+func (tool *Tool) SetToolAction(actionName string) {
+	tool.ToolAction = ToolAction{}
+}
+
+func (tool *Tool) GetParameters() eru_models.JSONSchema {
+	if tool.ToolAction.GetParameters == nil {
+		return eru_models.JSONSchema{}
+	}
+	return tool.ToolAction.GetParameters()
 }
 
 func (tool *Tool) GetBytes(ctx context.Context) ([]byte, error) {
@@ -146,11 +160,7 @@ func (tool *Tool) SetPrivateAttributes(ctx context.Context, realTool Tooling) (e
 }
 
 func (tool *Tool) GetActionsList() []string {
-	actions := []string{}
-	for actionName := range tool.Actions {
-		actions = append(actions, actionName)
-	}
-	return actions
+	return []string{}
 }
 
 func (tool *Tool) GetInputFields() []ToolInputFields {

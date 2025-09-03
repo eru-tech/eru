@@ -2,8 +2,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"runtime/debug"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -69,6 +72,40 @@ func otelMiddleWare(next http.Handler) http.Handler {
 		//}
 		w.Header().Set("trace_id", span.SpanContext().TraceID().String())
 		w.Header().Set(server_handlers.RequestIdKey, requestID)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func panicRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				// Log the panic with full context
+				panicMsg := fmt.Sprintf("HTTP handler panic: %v\nStack trace:\n%s", rec, string(debug.Stack()))
+				err := errors.New(panicMsg)
+				if logs.Logger != nil {
+					err = logs.Err(r.Context(), err, "")
+				} else {
+					fmt.Printf("ERROR: %s\n", err.Error())
+				}
+
+				// Return 500 error to client
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+
+				errorResponse := map[string]interface{}{
+					"error":   "Internal server error",
+					"message": err.Error(),
+				}
+
+				if requestId := r.Context().Value("requestId"); requestId != nil {
+					errorResponse["request_id"] = requestId
+				}
+
+				json.NewEncoder(w).Encode(errorResponse)
+			}
+		}()
+
 		next.ServeHTTP(w, r)
 	})
 }

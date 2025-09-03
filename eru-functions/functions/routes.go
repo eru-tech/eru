@@ -15,6 +15,7 @@ import (
 	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -367,12 +368,8 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 	done := make(chan bool)
 	//go result(done,results,responses, trResVars,errs)
 
-	go func(done chan bool, results chan Result) {
-		defer func() {
-			if r := recover(); r != nil {
-				logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in Route Execute: ", r))
-			}
-		}()
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("route-execute-results", func(bgCtx context.Context) {
 		for res := range results {
 			responses = append(responses, res.response)
 			trResVars = append(trResVars, res.responseVars)
@@ -381,7 +378,7 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 			}
 		}
 		done <- true
-	}(done, results)
+	}, server.ContinueOnMaxRetries)
 
 	//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
 	noOfWorkers := 1

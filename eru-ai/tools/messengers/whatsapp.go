@@ -10,6 +10,7 @@ import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -204,7 +205,7 @@ func (whatsAppTool *WhatsAppTool) GetMessageStatus(ctx context.Context, params m
 
 func (whatsAppTool *WhatsAppTool) UploadMedia(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("UploadMedia Execute - Start")
-	
+
 	mediaType, mediaTypeOk := params["type"]
 	if !mediaTypeOk {
 		err = errors.New("type parameter is required (image, video, audio, document)")
@@ -232,8 +233,8 @@ func (whatsAppTool *WhatsAppTool) UploadMedia(ctx context.Context, params map[st
 	// In a full implementation, this would handle multipart/form-data uploads
 	uploadPayload := map[string]interface{}{
 		"messaging_product": "whatsapp",
-		"type":             mediaType,
-		"file":             mediaFile,
+		"type":              mediaType,
+		"file":              mediaFile,
 	}
 
 	// Note: This is a simplified implementation. WhatsApp API actually requires multipart/form-data
@@ -242,12 +243,12 @@ func (whatsAppTool *WhatsAppTool) UploadMedia(ctx context.Context, params map[st
 	logs.WithContext(ctx).Error(err.Error())
 	logs.WithContext(ctx).Info(fmt.Sprintf("Upload payload structure: %+v", uploadPayload))
 	logs.WithContext(ctx).Info(fmt.Sprintf("Use URL: %s", url))
-	
+
 	toolResult = make(map[string]interface{})
 	toolResult["error"] = "Media upload requires multipart/form-data implementation"
 	toolResult["upload_url"] = url
 	toolResult["instructions"] = "Implement multipart form upload with file binary data for actual media upload"
-	
+
 	return toolResult, false, err
 }
 
@@ -296,7 +297,7 @@ func (whatsAppTool *WhatsAppTool) GetMessageTemplates(ctx context.Context, param
 	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.MessengerAccount.AccessToken))
 
 	queryParams := map[string]string{}
-	
+
 	// Optional parameters
 	if limit, limitOk := params["limit"]; limitOk {
 		queryParams["limit"] = fmt.Sprintf("%v", limit)
@@ -359,8 +360,8 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 		return hubChallenge, false, nil
 	}
 
-	go func() {
-		bgCtx := context.Background()
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("whatsapp-webhook-callback", func(bgCtx context.Context) {
 		if eruFuncBaseUrl, ok := ctx.Value("Erufuncbaseurl").(string); ok {
 			bgCtx = context.WithValue(bgCtx, "Erufuncbaseurl", eruFuncBaseUrl)
 		}
@@ -410,43 +411,43 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 								if processMessages {
 									// Structure message data for consistent processing
 									messageDetails := map[string]interface{}{
-										"message_id":    message.Id,
-										"from":          message.From,
-										"timestamp":     message.Timestamp,
-										"type":          message.Type,
-										"tenant_id":     tenantId,
-										"project_id":    projectId,
+										"message_id":      message.Id,
+										"from":            message.From,
+										"timestamp":       message.Timestamp,
+										"type":            message.Type,
+										"tenant_id":       tenantId,
+										"project_id":      projectId,
 										"phone_number_id": change.Value.Metadata.PhoneNumberId,
 									}
-									
+
 									// Add message content based on type
 									switch message.Type {
 									case "text":
 										messageDetails["text"] = message.Text.Body
 									case "image":
 										messageDetails["image"] = map[string]interface{}{
-											"id":       message.Image.Id,
-											"caption":  message.Image.Caption,
+											"id":        message.Image.Id,
+											"caption":   message.Image.Caption,
 											"mime_type": message.Image.MimeType,
-											"sha256":   message.Image.Sha256,
+											"sha256":    message.Image.Sha256,
 										}
 									case "audio":
 										messageDetails["audio"] = map[string]interface{}{
-											"id":       message.Audio.Id,
+											"id":        message.Audio.Id,
 											"mime_type": message.Audio.MimeType,
 										}
 									case "video":
 										messageDetails["video"] = map[string]interface{}{
-											"id":       message.Video.Id,
-											"caption":  message.Video.Caption,
-											"filename": message.Video.Filename,
+											"id":        message.Video.Id,
+											"caption":   message.Video.Caption,
+											"filename":  message.Video.Filename,
 											"mime_type": message.Video.MimeType,
 										}
 									case "document":
 										messageDetails["document"] = map[string]interface{}{
-											"id":       message.Document.Id,
-											"caption":  message.Document.Caption,
-											"filename": message.Document.Filename,
+											"id":        message.Document.Id,
+											"caption":   message.Document.Caption,
+											"filename":  message.Document.Filename,
 											"mime_type": message.Document.MimeType,
 										}
 									case "location":
@@ -459,12 +460,12 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 									}
 
 									hookBody := map[string]interface{}{
-										"type":        "incoming_message",
-										"message":     messageDetails,
-										"metadata":    change.Value.Metadata,
-										"contacts":    change.Value.Contacts,
-										"tenant_id":   tenantId,
-										"event_time":  message.Timestamp,
+										"type":       "incoming_message",
+										"message":    messageDetails,
+										"metadata":   change.Value.Metadata,
+										"contacts":   change.Value.Contacts,
+										"tenant_id":  tenantId,
+										"event_time": message.Timestamp,
 									}
 
 									hookResult, err := whatsAppTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, hookBody, params)
@@ -480,18 +481,18 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 						if len(change.Value.Statuses) > 0 {
 							for _, status := range change.Value.Statuses {
 								logs.WithContext(bgCtx).Info(fmt.Sprintf("Message status update: %s - %s for recipient %s", status.Id, status.Status, status.RecipientId))
-								
+
 								// Store detailed status information for tracking
 								statusDetails := map[string]interface{}{
-									"message_id":    status.Id,
-									"status":        status.Status, // sent, delivered, read, failed
-									"timestamp":     status.Timestamp,
-									"recipient_id":  status.RecipientId,
-									"tenant_id":     tenantId,
-									"project_id":    projectId,
+									"message_id":      status.Id,
+									"status":          status.Status, // sent, delivered, read, failed
+									"timestamp":       status.Timestamp,
+									"recipient_id":    status.RecipientId,
+									"tenant_id":       tenantId,
+									"project_id":      projectId,
 									"phone_number_id": change.Value.Metadata.PhoneNumberId,
 								}
-								
+
 								// Add conversation and pricing info if available
 								if status.Conversation.Id != "" {
 									statusDetails["conversation_id"] = status.Conversation.Id
@@ -500,7 +501,7 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 										statusDetails["conversation_expiration"] = status.Conversation.ExpirationTimestamp
 									}
 								}
-								
+
 								if status.Pricing.PricingModel != "" {
 									statusDetails["pricing_billable"] = status.Pricing.Billable
 									statusDetails["pricing_model"] = status.Pricing.PricingModel
@@ -508,11 +509,11 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 								}
 
 								hookBody := map[string]interface{}{
-									"type":        "message_status",
-									"status":      statusDetails,
-									"metadata":    change.Value.Metadata,
-									"tenant_id":   tenantId,
-									"event_time":  status.Timestamp,
+									"type":       "message_status",
+									"status":     statusDetails,
+									"metadata":   change.Value.Metadata,
+									"tenant_id":  tenantId,
+									"event_time": status.Timestamp,
 								}
 
 								hookResult, err := whatsAppTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, hookBody, params)
@@ -527,7 +528,7 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 				}
 			}
 		}
-	}()
+	}, server.ContinueOnMaxRetries)
 
 	return "OK", false, nil
 }

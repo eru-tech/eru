@@ -60,27 +60,27 @@ type VectorRecordsList struct {
 }
 
 type VectorRecordsSearch struct {
-	Id             string                 `json:"query_id,omitempty"`
-	Namespace      string                 `json:"namespace" eru:"required"`
-	Filter         map[string]interface{} `json:"filter,omitempty"`
-	Fields         []string               `json:"fields,omitempty"`
-	Inputs         map[string]string      `json:"inputs,omitempty"`
-	TopK           int                    `json:"top_k,omitempty"`
-	ReturnValues   bool                   `json:"return_values,omitempty"`
-	ReturnMetadata bool                   `json:"return_metadata,omitempty"`
-	ReturnDistance bool                   `json:"return_distance,omitempty"`
-	Vector         []float64              `json:"vector,omitempty"`
+	Id             string                 `json:"query_id,omitempty" desc:"unique id for the query"`
+	Namespace      string                 `json:"namespace" eru:"required" desc:"namespace for the query ususally it is the tenant id"`
+	Filter         map[string]interface{} `json:"filter,omitempty" desc:"key value pair to filter vectors for this query"`
+	Fields         []string               `json:"fields,omitempty" desc:"fields to return for the query"`
+	Inputs         map[string]string      `json:"inputs,omitempty" desc:"inputs for the query - key is always hardcoded word ##text## and value is the text to search for based on user's prompt "`
+	TopK           int                    `json:"top_k,omitempty" desc:"number of vectors to return for the query" default:"3"`
+	ReturnValues   bool                   `json:"return_values,omitempty" desc:"flag to indicate whether to return values for the query" default:"true"`
+	ReturnMetadata bool                   `json:"return_metadata,omitempty" desc:"flag to indicate whether to return metadata for the query" default:"true"`
+	ReturnDistance bool                   `json:"return_distance,omitempty" desc:"flag to indicate whether to return distance for the query" default:"true"`
+	Vector         []float64              `json:"vector,omitempty" desc:"vector to search for the query - blank if text is provided"`
 	SparceVector   struct {
-		Indices []int     `json:"indices"`
-		Values  []float64 `json:"values"`
-	} `json:"sparce_vector,omitempty"`
+		Indices []int     `json:"indices" desc:"indices for the sparce vector"`
+		Values  []float64 `json:"values" desc:"values for the sparce vector"`
+	} `json:"sparce_vector,omitempty" desc:"sparce vector to search for the query - blank if text is provided"`
 	ReRank struct {
 		Model      string                 `json:"model,omitempty"`
-		RankFields []string               `json:"rank_fields,omitempty"`
-		TopN       int                    `json:"top_n,omitempty"`
-		Parameters map[string]interface{} `json:"parameters,omitempty"`
-		Query      string                 `json:"query,omitempty"`
-	} `json:"rerank,omitempty"`
+		RankFields []string               `json:"rank_fields,omitempty" desc:"fields to rank the query" default:"[]"`
+		TopN       int                    `json:"top_n,omitempty" desc:"number of vectors to return for the query" default:"3"`
+		Parameters map[string]interface{} `json:"parameters,omitempty" desc:"parameters for the query"`
+		Query      string                 `json:"query,omitempty" desc:"query to rerank the query"`
+	} `json:"rerank,omitempty" desc:"rerank the query if needed - not mandatory"`
 }
 
 type VectorIndexI interface {

@@ -961,3 +961,103 @@ func getLocalIP() (string, error) {
 	// Fallback to localhost if no external IP found
 	return "localhost", nil
 }
+
+func StructToJSONSchema(t reflect.Type) eru_models.JSONSchema {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	schema := eru_models.JSONSchema{
+		Type:       "object",
+		Properties: make(map[string]eru_models.JSONSchema),
+	}
+
+	var requiredFields []string
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+
+		// Skip unexported fields
+		if field.PkgPath != "" {
+			continue
+		}
+
+		jsonTag := field.Tag.Get("json")
+		if jsonTag == "-" || jsonTag == "" {
+			continue
+		}
+		name := jsonTag
+		if commaIdx := findComma(jsonTag); commaIdx != -1 {
+			name = jsonTag[:commaIdx]
+		}
+
+		fieldSchema := goTypeToSchema(field.Type)
+
+		// Handle required
+		if field.Tag.Get("eru") == "required" {
+			requiredFields = append(requiredFields, name)
+		}
+
+		// Add description from field tag if present
+		if desc := field.Tag.Get("desc"); desc != "" {
+			fieldSchema.Description = desc
+		}
+
+		// Add format from field tag if present
+		if format := field.Tag.Get("format"); format != "" {
+			fieldSchema.Format = format
+		}
+		if defaultVal := field.Tag.Get("default"); defaultVal != "" {
+			fieldSchema.Description += fmt.Sprint(" - default value: ", defaultVal)
+			requiredFields = append(requiredFields, name)
+		}
+		schema.Properties[name] = fieldSchema
+	}
+
+	if len(requiredFields) > 0 {
+		schema.Required = requiredFields
+	}
+
+	return schema
+}
+
+func goTypeToSchema(t reflect.Type) eru_models.JSONSchema {
+	kind := t.Kind()
+
+	switch kind {
+	case reflect.String:
+		return eru_models.JSONSchema{Type: "string"}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return eru_models.JSONSchema{Type: "integer"}
+	case reflect.Float32, reflect.Float64:
+		return eru_models.JSONSchema{Type: "number"}
+	case reflect.Bool:
+		return eru_models.JSONSchema{Type: "boolean"}
+	case reflect.Slice, reflect.Array:
+		return eru_models.JSONSchema{
+			Type:  "array",
+			Items: ptr(goTypeToSchema(t.Elem())),
+		}
+	case reflect.Map, reflect.Struct:
+		// Assume map[string]interface{} or nested struct
+		if t.Kind() == reflect.Map {
+			return eru_models.JSONSchema{Type: "object"}
+		}
+		return StructToJSONSchema(t)
+	default:
+		return eru_models.JSONSchema{Type: "string"} // Fallback
+	}
+}
+
+func findComma(tag string) int {
+	for i, c := range tag {
+		if c == ',' {
+			return i
+		}
+	}
+	return -1
+}
+
+func ptr[T any](v T) *T {
+	return &v
+}

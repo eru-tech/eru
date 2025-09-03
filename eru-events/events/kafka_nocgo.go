@@ -3,7 +3,7 @@
 
 package events
 
-import (
+/* import (
 	"context"
 	"encoding/json"
 	"errors"
@@ -220,4 +220,4 @@ func (kafkaEvent *Kafka_Event) GetAttribute(attributeName string) (attributeValu
 	default:
 		return kafkaEvent.Event.GetAttribute(attributeName)
 	}
-}
+} */

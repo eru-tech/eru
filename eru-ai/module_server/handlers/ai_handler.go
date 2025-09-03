@@ -78,6 +78,7 @@ func ModelQueryHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		tenantId := vars["tenant"]
 		modelId := vars["model"]
 		toolName := vars["tool"]
+		actionName := vars["action"]
 		modelFromReq := json.NewDecoder(r.Body)
 		modelFromReq.DisallowUnknownFields()
 
@@ -106,7 +107,7 @@ func ModelQueryHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(res)
 		} else {
-			tool, tErr := sh.Store.GetTool(r.Context(), projectId, tenantId, toolName, "", sh.Store)
+			tool, tErr := sh.Store.GetTool(r.Context(), projectId, tenantId, toolName, actionName, sh.Store)
 			if tErr != nil {
 				logs.WithContext(r.Context()).Error(tErr.Error())
 				server_handlers.FormatResponse(w, 400)

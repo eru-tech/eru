@@ -3,11 +3,13 @@ package reflex_agents
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_models "github.com/eru-tech/eru/eru-models"
 )
 
 type ReflexAgent struct {
@@ -18,7 +20,7 @@ func (reflex_agent *ReflexAgent) GetSpec() agents.AgentI {
 	return reflex_agent
 }
 
-func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage) (map[string]interface{}, error) {
+func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, projectId string, tenantId string) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
 
 	msg := models.Message{
@@ -32,12 +34,64 @@ func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agent
 			msg,
 		},
 	}
-	return reflex_agent.execute(ctx, chatRequest, reflex_agent.Tools, reflex_agent.AgentName, reflex_agent.SystemPrompt, 1)
+	return reflex_agent.execute(ctx, chatRequest, reflex_agent.AgentTools, 1, projectId, tenantId)
 }
-func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models.ChatRequest, tools map[string]tools.Tooling, agentName string, systemPrompt string, currentTry int) (map[string]interface{}, error) {
+
+func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models.ChatRequest, agentTools []agents.AgentTools, currentTry int, projectId string, tenantId string) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("validate - Start")
 	agentOutput := make(map[string]interface{})
-	response, err := reflex_agent.Model.QueryModelWithTool(ctx, chatRequest, reflex_agent.Tools, reflex_agent.AgentName, reflex_agent.SystemPrompt)
+
+	toolResults, err := reflex_agent.ExecuteTools(ctx, chatRequest, agentTools, projectId, tenantId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("Tool results: %+v", toolResults))
+
+	chatRequest.Messages = append(chatRequest.Messages, models.Message{
+		Role:    "assistant",
+		Content: reflex_agent.SystemPrompt,
+		Name:    reflex_agent.AgentName,
+	})
+	chatRequest.Messages = append(chatRequest.Messages, models.Message{
+		Role:    "assistant",
+		Content: fmt.Sprintf("Tool results: %+v", toolResults),
+		Name:    reflex_agent.AgentName,
+	})
+	response := models.Message{}
+	if reflex_agent.OutputSchema.Type != "" {
+		outputTool := tools.Tool{
+			ToolType:     "STRUCTURED_OUTPUT",
+			ToolName:     "structured_output",
+			Description:  "Output the result",
+			OutputSchema: eru_models.JSONSchema{},
+			Parameters:   reflex_agent.OutputSchema,
+			ToolAction: tools.ToolAction{
+				ActionName:   "structured_output",
+				Description:  "Output the result",
+				OutputSchema: eru_models.JSONSchema{},
+				Parameters:   reflex_agent.OutputSchema,
+				GetParameters: func() eru_models.JSONSchema {
+					return reflex_agent.OutputSchema
+				},
+			},
+		}
+		agentResponse, err := reflex_agent.ExecuteTools(ctx, chatRequest, []agents.AgentTools{{Tool: &outputTool}}, projectId, tenantId)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		agentOutput["output"] = agentResponse
+
+	} else {
+		response, err = reflex_agent.Model.QueryModel(ctx, chatRequest)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		agentOutput["output"] = response.Content
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("Response: %+v", response.Content))
 	/* if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		logs.WithContext(ctx).Info(fmt.Sprintf("%+v", response.Content))
@@ -55,7 +109,6 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 		return nil, err
 	} */
 
-	agentOutput["output"] = response.Content
 	agentOutput["retry_count"] = currentTry
 	return agentOutput, err
 }

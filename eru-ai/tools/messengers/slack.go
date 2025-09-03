@@ -10,6 +10,7 @@ import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -682,8 +683,8 @@ func (slackTool *SlackTool) Callback(ctx context.Context, projectId string, tena
 
 	// Handle event callback
 	if eventType, typeOk := body["type"]; typeOk && eventType == "event_callback" {
-		go func() {
-			bgCtx := context.Background()
+		gm := server.GetGlobalGoroutineManager(ctx)
+		gm.SafeGoWithRestartBehavior("slack-event-callback", func(bgCtx context.Context) {
 			if eruFuncBaseUrl, ok := ctx.Value("Erufuncbaseurl").(string); ok {
 				bgCtx = context.WithValue(bgCtx, "Erufuncbaseurl", eruFuncBaseUrl)
 			}
@@ -803,7 +804,7 @@ func (slackTool *SlackTool) Callback(ctx context.Context, projectId string, tena
 				}
 				logs.WithContext(bgCtx).Info(fmt.Sprint("Slack event callback result: ", hookResult))
 			}
-		}()
+		}, server.ContinueOnMaxRetries)
 	}
 
 	return "OK", false, nil

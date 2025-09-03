@@ -670,12 +670,12 @@ func (ms *ModuleStore) BytesToJson(ctx context.Context, projectId string, f []by
 	}
 	return
 }
-func LoadStore(StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
-	logs.WithContext(context.Background()).Info("Loading store")
+func LoadStore(ctx context.Context, StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
+	logs.WithContext(ctx).Info("Loading store")
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
 	if storeType == "" {
 		storeType = "STANDALONE"
-		logs.WithContext(context.Background()).Info("STORE_TYPE environment variable not found - loading default standlone store")
+		logs.WithContext(ctx).Info("STORE_TYPE environment variable not found - loading default standlone store")
 	}
 	var myStore ModuleStoreI
 	var err error
@@ -697,9 +697,9 @@ func LoadStore(StoreTableName string, StoreTenantTableName string) (ModuleStoreI
 	}
 	storeBytes, err := myStore.GetStoreByteArray("")
 	if err == nil {
-		UnMarshalStore(context.Background(), storeBytes, myStore)
+		UnMarshalStore(ctx, storeBytes, myStore)
 	} else {
-		logs.WithContext(context.Background()).Error(err.Error())
+		logs.WithContext(ctx).Error(err.Error())
 	}
 	//s.Store = myStore
 	return myStore, err

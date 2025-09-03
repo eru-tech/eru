@@ -11,6 +11,7 @@ import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	"github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -323,10 +324,9 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 		validationString = vToken[0]
 	}
 
-	// Process the message in a separate goroutine with a new context
-	go func() {
-		// Create a new background context for the goroutine
-		bgCtx := context.Background()
+	// Process the message in a separate goroutine with panic recovery using global GoroutineManager
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("ms-email-callback", func(bgCtx context.Context) {
 		// Copy any important values from the original context if needed
 		if eruFuncBaseUrl, ok := ctx.Value("Erufuncbaseurl").(string); ok {
 			bgCtx = context.WithValue(bgCtx, "Erufuncbaseurl", eruFuncBaseUrl)
@@ -394,7 +394,7 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 				logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
 			}
 		}
-	}()
+	}, server.ContinueOnMaxRetries)
 
 	return validationString, false, nil
 }
