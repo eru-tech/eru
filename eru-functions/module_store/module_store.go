@@ -44,7 +44,7 @@ var EventThreads = 3
 const (
 	UPDATE_FUNC_ASYNC    = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
 	SELECT_FUNC_ASYNC    = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
-	INSERT_FUNC_SCHEDULE = "insert into erufunctions_schedules (schedule_id, project_id, tenant_id, func_group_name, func_step_name, event_msg, scheduler_name, job_id, start_date, end_date) values (???, ???, ???, ???, ???, ???, ???, ???, ???, ???)"
+	INSERT_FUNC_SCHEDULE = "insert into erufunctions_schedules (schedule_id, project_id, tenant_id, func_group_name, func_step_name, event_msg, scheduler_name, scheduler_label,job_id, start_date, end_date) values (???, ???, ???, ???, ???, ???, ???, ???, ???, ???)"
 	DELETE_FUNC_SCHEDULE = "delete from erufunctions_schedules where job_id=???"
 )
 
@@ -1175,7 +1175,7 @@ func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig schedule
 	var insertQueries []*models.Queries
 	insertScheduleLog := models.Queries{}
 	insertScheduleLog.Query = db.GetDb(realStore.GetDbType()).GetDbQuery(ctx, INSERT_FUNC_SCHEDULE)
-	insertScheduleLog.Vals = []interface{}{scheduleId, projectId, scheduleConfig.TenantId, funcName, "", string(reqBodyBytes), scheduleConfig.SchedulerName, jobId, scheduleConfig.StartDate, ed}
+	insertScheduleLog.Vals = []interface{}{scheduleId, projectId, scheduleConfig.TenantId, funcName, "", string(reqBodyBytes), scheduleConfig.SchedulerName, scheduleConfig.SchedulerLabel, jobId, scheduleConfig.StartDate, ed}
 	insertScheduleLog.Rank = 2
 	insertQueries = append(insertQueries, &insertScheduleLog)
 
