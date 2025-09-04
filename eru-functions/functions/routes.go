@@ -378,7 +378,7 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 			}
 		}
 		done <- true
-	}, server.ContinueOnMaxRetries)
+	}, server.ShutdownOnMaxRetries)
 
 	//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
 	noOfWorkers := 1
@@ -493,7 +493,7 @@ func (route *Route) RunRoute(ctx context.Context, req *http.Request, url string,
 			response, err = utils.ExecuteHttp(ctx, request)
 			if err != nil {
 				return
-			}			
+			}
 		}
 	} else {
 		header := http.Header{}

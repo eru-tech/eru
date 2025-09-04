@@ -241,7 +241,7 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 			}
 		}
 		done <- true
-	}, server.ContinueOnMaxRetries)
+	}, server.ShutdownOnMaxRetries)
 
 	//set it to one to run synchronously
 	noOfWorkers := funcThreads
@@ -507,15 +507,14 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 	var results = make(chan FuncResult, 10)
 
 	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep before allocateFuncInner for ", funcStep.FuncKey))
-	gm := server.GetGlobalGoroutineManager(ctx)
-	gm.SafeGoWithRestartBehavior("allocate-func-inner", func(bgCtx context.Context) {
-		allocateFuncInner(bgCtx, request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs, mainRouteName, FuncThread, LoopThread, strCond, funcStepName, endFuncStepName, started, fromAsync, inLoop)
-	}, server.ContinueOnMaxRetries)
+
+	go allocateFuncInner(ctx, request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs, mainRouteName, FuncThread, LoopThread, strCond, funcStepName, endFuncStepName, started, fromAsync, inLoop)
 	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep after allocateFuncInner for ", funcStep.FuncKey))
 	done := make(chan bool)
 	//go result(done,results,responses, trResVars,errs)
 	funcVarsMap = make(map[string]FuncTemplateVars)
 
+	gm := server.GetGlobalGoroutineManager(ctx)
 	gm.SafeGoWithRestartBehavior("run-func-step-results", func(bgCtx context.Context) {
 		var asyncBatch []AsyncFuncData
 		eventMsg := FuncTemplateVars{}
@@ -570,7 +569,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			err = funcStep.insertAsyncBatch(bgCtx, asyncBatch)
 		}
 		done <- true
-	}, server.ContinueOnMaxRetries)
+	}, server.ShutdownOnMaxRetries)
 
 	//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
 	noOfWorkers := 1
