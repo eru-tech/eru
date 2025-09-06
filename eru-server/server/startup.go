@@ -59,14 +59,30 @@ func LaunchWithContext(ctx context.Context, serverRouter *mux.Router, port strin
 			regClient, err = registration.NewRegistryClient(registryURL, handlers.ServerName, port, handlers.InstanceId, time.Now(), fmt.Sprintf("%v", store.GetUpdateTime()))
 			if err != nil {
 				logs.Logger.Error(fmt.Sprintf("Failed to create registry client: %v", err))
+				err = nil
 			} else {
 				err := regClient.Register(gm.Context())
 				if err != nil {
 					logs.Logger.Error(fmt.Sprintf("Failed to register service: %v", err))
+					err = nil
 				} else {
 					// Start heartbeating with non-critical restart behavior - keep service alive even if heartbeat fails
 					gm.SafeGoWithRestartBehavior("heartbeat", func(ctx context.Context) {
-						regClient.StartHeartbeat(ctx, 30*time.Second)
+						interval := 1 * time.Hour
+						if os.Getenv("HEARTBEAT_INTERVAL") != "" {
+							//expected format: 30s, 1m, 1h, 1d
+							//if not valid, use default 1h
+							interval, err = time.ParseDuration(os.Getenv("HEARTBEAT_INTERVAL"))
+							if err != nil {
+								logs.Logger.Error(fmt.Sprintf("Failed to parse heartbeat interval: %v", err))
+								err = nil
+							}
+						}
+						err = regClient.StartHeartbeat(ctx, interval)
+						if err != nil {
+							logs.Logger.Error(fmt.Sprintf("Failed to start heartbeat: %v", err))
+							err = nil
+						}
 					}, ContinueOnMaxRetries)
 				}
 			}

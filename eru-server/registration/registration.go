@@ -77,31 +77,39 @@ func (c *RegistryClient) Deregister(ctx context.Context) error {
 }
 
 // StartHeartbeat starts a ticker to send periodic heartbeats.
-func (c *RegistryClient) StartHeartbeat(ctx context.Context, interval time.Duration) {
+func (c *RegistryClient) StartHeartbeat(ctx context.Context, interval time.Duration) (err error) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	// Send initial heartbeat immediately
-	c.sendHeartbeat(ctx)
+	err = c.sendHeartbeat(ctx)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to send initial heartbeat: %v", err))
+		return err
+	}
 
 	for {
 		select {
 		case <-ticker.C:
-			c.sendHeartbeat(ctx)
+			err = c.sendHeartbeat(ctx)
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("Failed to send heartbeat: %v", err))
+				return err
+			}
 		case <-ctx.Done():
 			logs.WithContext(ctx).Info("Heartbeat stopped.")
-			return
+			return nil
 		}
 	}
 }
 
-func (c *RegistryClient) sendHeartbeat(ctx context.Context) {
+func (c *RegistryClient) sendHeartbeat(ctx context.Context) (err error) {
 	url := fmt.Sprintf("%s/registry/heartbeat/%s", c.RegistryURL, c.Instance.Id)
 
 	_, _, _, statusCode, err := eru_utils.CallHttp(ctx, http.MethodPost, url, nil, nil, nil, nil, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("failed to send heartbeat: %v", err))
-		return
+		//return err
 	}
 
 	if statusCode == http.StatusNotFound {
@@ -109,8 +117,11 @@ func (c *RegistryClient) sendHeartbeat(ctx context.Context) {
 		logs.WithContext(ctx).Warn("Heartbeat failed (service not found), attempting to re-register...")
 		if err := c.Register(ctx); err != nil {
 			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to re-register after heartbeat failure: %v", err))
+			return err
 		}
 	} else if statusCode != http.StatusOK {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Heartbeat failed with status code: %d", statusCode))
+		return fmt.Errorf("heartbeat failed with status code: %d", statusCode)
 	}
+	return nil
 }
