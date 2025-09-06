@@ -156,14 +156,12 @@ func (route *Route) Clone(ctx context.Context) (cloneRoute *Route, err error) {
 	cloneRouteI, cloneRouteIErr := cloneInterface(ctx, route)
 	if cloneRouteIErr != nil {
 		err = cloneRouteIErr
-		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 	cloneRouteOk := false
 	cloneRoute, cloneRouteOk = cloneRouteI.(*Route)
 	if !cloneRouteOk {
-		err = errors.New("route cloning failed")
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, fmt.Errorf("route cloning failed : %w", err), "")
 		return
 	}
 	cloneRoute.TokenSecretKey = route.TokenSecretKey
@@ -206,8 +204,7 @@ func (route *Route) Validate(ctx context.Context, host string, url string, metho
 
 	for _, v := range route.RequiredHeaders {
 		if headers.Get(v.Key) != v.Value {
-			err = errors.New(fmt.Sprint("Wrong Value for Header Key : ", v.Key))
-			logs.WithContext(ctx).Error(err.Error())
+			err = logs.Err(ctx, fmt.Errorf("Wrong Value for Header Key : %w", err), "")
 			return
 		}
 	}
@@ -222,8 +219,7 @@ func (route *Route) Validate(ctx context.Context, host string, url string, metho
 		}
 	}
 	if !safeHost {
-		err = errors.New("Host not allowed")
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, fmt.Errorf("Host not allowed : %w", err), "")
 		return
 	}
 
@@ -237,14 +233,12 @@ func (route *Route) Validate(ctx context.Context, host string, url string, metho
 		}
 	}
 	if !safeMethod {
-		err = errors.New("Method not allowed")
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, fmt.Errorf("method not allowed : %w", err), "")
 		return
 	}
 
 	if route.MatchType != MatchTypePrefix && route.MatchType != MatchTypeExact {
-		err = errors.New(fmt.Sprint("Incorrect MatchType - needed ", MatchTypePrefix, " or ", MatchTypeExact, "."))
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, fmt.Errorf("incorrect matchType - needed %s or %s.", MatchTypePrefix, MatchTypeExact), "")
 		return
 	}
 
@@ -254,14 +248,12 @@ func (route *Route) Validate(ctx context.Context, host string, url string, metho
 	//	return
 	//}
 	if route.MatchType == MatchTypePrefix && !strings.HasPrefix(strings.ToUpper(strings.Split(url, route.RouteName)[1]), strings.ToUpper(route.Url)) {
-		err = errors.New("URL Prefix mismatch")
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, fmt.Errorf("URL Prefix mismatch : %w", err), "")
 		return
 	}
 
 	if route.MatchType == MatchTypeExact && !strings.EqualFold(strings.Split(url, route.RouteName)[1], route.Url) {
-		err = errors.New(fmt.Sprint("URL mismatch : ", url, " - ", route.RouteName, " - ", route.Url))
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, fmt.Errorf("URL mismatch : %s - %s - %s", url, route.RouteName, route.Url), "")
 		return
 	}
 	return
@@ -273,8 +265,7 @@ func (route *Route) getTargetHost(ctx context.Context) (targetHost TargetHost, e
 	if len(route.TargetHosts) > 0 {
 		return route.TargetHosts[0], err
 	}
-	err = errors.New(fmt.Sprint("No Target Host defined for this route :", route.RouteName))
-	logs.WithContext(ctx).Error(err.Error())
+	err = logs.Err(ctx, fmt.Errorf("No Target Host defined for this route : %s", route.RouteName), "")
 	return
 }
 
@@ -304,8 +295,7 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 		}
 		strCond, strCondErr := strconv.Unquote(string(output))
 		if strCondErr != nil {
-			logs.WithContext(ctx).Error(strCondErr.Error())
-			resErr = strCondErr
+			resErr = logs.Err(ctx, fmt.Errorf("strconv.Unquote error : %w", strCondErr), "")
 			response = errorResponse(ctx, resErr.Error(), request)
 			return
 		}
@@ -347,12 +337,10 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 
 	var loopArray []interface{}
 	lerr := false
-	logs.WithContext(ctx).Info(fmt.Sprint("route.LoopVariable = ", route.LoopVariable))
 	if route.LoopVariable != "" {
 		loopArray, lerr = trReqVars.LoopVars.([]interface{})
 		if !lerr {
-			resErr = errors.New("func loop variable is not an array")
-			logs.WithContext(ctx).Error(resErr.Error())
+			resErr = logs.Err(ctx, fmt.Errorf("func loop variable is not an array : %w", lerr), "")
 			response = errorResponse(ctx, resErr.Error(), request)
 			return
 		}
@@ -373,10 +361,8 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 	} else {
 		var jobs = make(chan Job, 10)
 		var results = make(chan Result, 10)
-		//startTime := time.Now()
 		go allocate(ctx, request, url, trReqVars, loopArray, jobs, async, asyncMsg)
 		done := make(chan bool)
-		//go result(done,results,responses, trResVars,errs)
 
 		gm := server.GetGlobalGoroutineManager(ctx)
 		gm.SafeGoWithRestartBehavior("route-execute-results", func(bgCtx context.Context) {
@@ -403,10 +389,6 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 		<-done
 	}
 	response, resErr = clubResponses(ctx, responses, errs)
-	//endTime := time.Now()
-	//diff := endTime.Sub(startTime)
-	//logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
-	logs.WithContext(ctx).Info(fmt.Sprint("Route Execute - End : ", route.RouteName))
 	if trResVars != nil {
 		if len(trResVars) == 1 {
 			trResVar = trResVars[0]
@@ -512,9 +494,8 @@ func (route *Route) RunRoute(ctx context.Context, req *http.Request, url string,
 		response = &http.Response{Header: header, StatusCode: http.StatusOK}
 		rb, err := json.Marshal(make(map[string]interface{}))
 		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
+			err = logs.Err(ctx, fmt.Errorf("json.Marshal error : %w", err), "")
 		} else {
-			logs.WithContext(ctx).Info("making dummy response body")
 			response.Body = io.NopCloser(bytes.NewReader(rb))
 		}
 	}
@@ -558,27 +539,22 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 	if route.LoopVariable != "" {
 		fvars := &FuncTemplateVars{}
 		fvars.Vars = vars
-		logs.WithContext(ctx).Info(fmt.Sprint("route.LoopVariable == ", route.LoopVariable))
 		output, outputErr := processTemplate(ctx, route.RouteName, route.LoopVariable, fvars, "json", route.TokenSecretKey)
 		if outputErr != nil {
 			err = outputErr
 			return
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint("output of loopvariable after processtemplate : ", string(output)))
 		var loopJson interface{}
 		loopJsonErr := json.Unmarshal(output, &loopJson)
 		if loopJsonErr != nil {
-			err = errors.New("route loop variable is not a json")
-			logs.WithContext(ctx).Error(fmt.Sprint(err.Error(), " : loopJsonErr"))
+			err = logs.Err(ctx, fmt.Errorf("route loop variable is not a json : %w", loopJsonErr), "")
 			return
 		}
 		ok := false
 		if loopArray, ok = loopJson.([]interface{}); !ok {
-			err = errors.New("route loop variable is not an array")
-			logs.WithContext(ctx).Error(err.Error())
+			err = logs.Err(ctx, fmt.Errorf("route loop variable is not an array : %w", loopJsonErr), "")
 			return
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint("loopArray = ", loopArray))
 
 	} else {
 		//dummy row added to create a job
@@ -629,10 +605,9 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 				}
 				outputStr, err := strconv.Unquote(string(output))
 				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
+					err = logs.Err(ctx, fmt.Errorf("strconv.Unquote error : %w", err), "")
 					return err
 				}
-				logs.WithContext(ctx).Info(outputStr)
 				vars.FormData[fd.Key] = outputStr
 			} else {
 				vars.FormData[fd.Key] = fd.Value
@@ -647,17 +622,14 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 		}
 
 		*/
-		utils.PrintRequestBody(ctx, request, "printing request from route.transformRequest before multipart processing")
 		vars.FormData, vars.FormDataKeyArray, vars.FileData, err = processMultipart(ctx, reqContentType, request, route.RemoveParams.FormData, vars.FormData, vars.FileData)
 		if err != nil {
 			return
 		}
-		utils.PrintRequestBody(ctx, request, "printing request from route.transformRequest after multipart processing")
 	} else if reqContentType == encodedForm {
 		rpfErr := request.ParseForm()
 		if rpfErr != nil {
-			err = rpfErr
-			logs.WithContext(ctx).Error(fmt.Sprint("error from request.ParseForm() = ", err.Error()))
+			err = logs.Err(ctx, fmt.Errorf("error from request.ParseForm() : %w", rpfErr), "")
 			return
 		}
 		if request.PostForm != nil {
@@ -672,7 +644,6 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 		return
 	}
 	if !multiPart || route.TransformRequest != "" {
-		logs.WithContext(ctx).Info(fmt.Sprint("route.TransformRequest = ", route.TransformRequest))
 		if route.TransformRequest != "" {
 
 			/*if !reqVarsLoaded {
@@ -690,11 +661,9 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 			if err != nil {
 				return err
 			}
-			logs.Logger.Info("printing request body after processing template")
-			logs.Logger.Info(string(output))
 			err = json.Unmarshal(output, &vars.Body)
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, fmt.Errorf("json.Unmarshal error : %w", err), "")
 				return err
 			}
 			request.Body = io.NopCloser(bytes.NewBuffer(output))
@@ -704,14 +673,13 @@ func (route *Route) transformRequest(ctx context.Context, request *http.Request,
 		} else {
 			body, err3 := io.ReadAll(request.Body)
 			if err3 != nil {
-				err = err3
-				logs.WithContext(ctx).Error(fmt.Sprint("error in io.ReadAll(request.Body) : ", err.Error()))
+				err = logs.Err(ctx, fmt.Errorf("error in io.ReadAll(request.Body) : %w", err3), "")
 				return
 			}
 			if len(body) > 0 {
 				err = json.Unmarshal(body, &vars.Body)
 				if err != nil {
-					logs.WithContext(ctx).Error(fmt.Sprint("error in json.Unmarshal(body, &vars.Body) : ", err.Error()))
+					err = logs.Err(ctx, fmt.Errorf("error in json.Unmarshal(body, &vars.Body) : %w", err), "")
 					return err
 				}
 			}
@@ -734,7 +702,6 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 	trResVars = &TemplateVars{}
 	trResVars.ResponseStatus = response.StatusCode
 
-	logs.WithContext(ctx).Info(fmt.Sprint("route.Redirect for route ", route.RouteName, " is ", route.Redirect))
 	if route.Redirect {
 		finalRedirectUrl := route.RedirectUrl
 		fvars := &FuncTemplateVars{}
@@ -746,7 +713,7 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 		}
 		finalRedirectUrl, err = strconv.Unquote(string(redirectUrlBytes))
 		if err != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("error from strconv.Unquote(string(redirectUrlBytes)) = ", err.Error()))
+			err = logs.Err(ctx, fmt.Errorf("error from strconv.Unquote(string(redirectUrlBytes)) = %w", err), "")
 			finalRedirectUrl = string(redirectUrlBytes)
 		}
 
@@ -766,14 +733,16 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 				}
 				finalParamValue, err = strconv.Unquote(string(paramValue))
 				if err != nil {
-					logs.WithContext(ctx).Error(fmt.Sprint("error from strconv.Unquote(string(paramValue)) = ", err.Error()))
+					err = logs.Err(ctx, fmt.Errorf("error from strconv.Unquote(string(paramValue)) = %w", err), "")
 					finalParamValue = string(paramValue)
 				}
 			}
 			paramStr = fmt.Sprint(paramStr, v.Key, "=", finalParamValue)
 		}
 		route.FinalRedirectUrl = fmt.Sprint(route.RedirectScheme, "://", finalRedirectUrl, paramStr)
-		logs.WithContext(ctx).Info(fmt.Sprint("route.FinalRedirectUrl =", route.FinalRedirectUrl))
+		if route.FinalRedirectUrl != "" {
+			logs.WithContext(ctx).Info(fmt.Sprint("route.FinalRedirectUrl =", route.FinalRedirectUrl))
+		}
 		return
 	}
 
@@ -781,7 +750,6 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 		response.Header.Set(h.Key, h.Value)
 	}
 
-	logs.WithContext(ctx).Info(fmt.Sprint("TransformResponse = ", route.TransformResponse))
 	trResVars.Headers = make(map[string]interface{})
 	for k, v := range response.Header {
 		trResVars.Headers[k] = v
@@ -803,38 +771,34 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 		body, readErr := io.ReadAll(response.Body)
 
 		if readErr != nil {
-			err = readErr
-			logs.WithContext(ctx).Error(fmt.Sprint("io.ReadAll(response.Body) error : ", err.Error()))
+			err = logs.Err(ctx, fmt.Errorf("io.ReadAll(response.Body) error : %w", readErr), "")
 			return
 		}
 		tmplBodyFromRes := json.NewDecoder(bytes.NewReader(body))
 		tmplBodyFromRes.DisallowUnknownFields()
 
 		if err = tmplBodyFromRes.Decode(&res); err != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("tmplBodyFromRes.Decode error from functions : ", err.Error()))
+			err = logs.Err(ctx, fmt.Errorf("tmplBodyFromRes.Decode error from functions : %w", err), "")
 			err = nil
 			tempBody := make(map[string]string)
 			tempBody["data"] = strings.TrimSpace(string(body))
 			res = tempBody
-			logs.WithContext(ctx).Info(fmt.Sprint(res))
 		}
 		rb, err := json.Marshal(res)
 		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
+			err = logs.Err(ctx, fmt.Errorf("json.Marshal error : %w", err), "")
 			return &TemplateVars{}, err
 		}
 		err = json.Unmarshal(rb, &trResVars.Body)
 		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
+			err = logs.Err(ctx, fmt.Errorf("json.Unmarshal error : %w", err), "")
 			return &TemplateVars{}, err
 		}
 		trResVars.OrgBody = trResVars.Body
 		if route.TransformResponse != "" {
-			logs.WithContext(ctx).Info(fmt.Sprint("inside route.TransformResponse"))
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = trResVars
 			output, err := processTemplate(ctx, route.RouteName, route.TransformResponse, fvars, "json", route.TokenSecretKey)
-			logs.WithContext(ctx).Info(fmt.Sprint(string(output)))
 			if err != nil {
 				return &TemplateVars{}, err
 			}
@@ -844,7 +808,7 @@ func (route *Route) transformResponse(ctx context.Context, response *http.Respon
 
 			err = json.Unmarshal(output, &trResVars.Body)
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, fmt.Errorf("json.Unmarshal error : %w", err), "")
 				return &TemplateVars{}, err
 			}
 		} else {

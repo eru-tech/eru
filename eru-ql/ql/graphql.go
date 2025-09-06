@@ -415,7 +415,6 @@ func ParseAstValue(ctx context.Context, value ast.Value, vars map[string]interfa
 		}
 		vBytes, err := processTemplate(ctx, "variable", v, vars, "string", "", "")
 		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 		if string(vBytes) != "" {
@@ -567,7 +566,6 @@ func processMapVariable(ctx context.Context, m map[string]interface{}, vars map[
 				} else {
 					vBytes, err := processTemplate(ctx, "variable", v.(string), vars, "string", "", "")
 					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
 						return nil, err
 					}
 					if string(vBytes) == "" {

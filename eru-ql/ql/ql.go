@@ -191,7 +191,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		if !isArray {
 			dd, er := d.(map[string]interface{}) // checking if docs is a single document without array
 			if !er {
-				return nil, errors.New("error while parsing value of 'docs'")
+				return nil, logs.Err(ctx, errors.New("error while parsing value of 'docs'"), "")
 			}
 			docs = append(docs, dd)
 		}
@@ -199,12 +199,11 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		for i, doc := range docs {
 			dd, er := doc.(map[string]interface{}) // checking if docs is a single document without array
 			if !er {
-				return nil, errors.New("error while parsing value of 'docs'")
+				return nil, logs.Err(ctx, errors.New("error while parsing value of 'docs'"), "")
 			}
 			outputBytes, ptErr := executeTemplate(ctx, templateName, templateStr, dd, outputType)
 			if err != nil {
-				err = ptErr
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, ptErr, "")
 				return
 			}
 			dd[key] = string(outputBytes)

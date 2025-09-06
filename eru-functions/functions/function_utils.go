@@ -51,7 +51,7 @@ func loadRequestVars(ctx context.Context, vars *TemplateVars, request *http.Requ
 	if tokenStr != "" {
 		err = json.Unmarshal([]byte(tokenStr), &vars.Token)
 		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
+			err = logs.Err(ctx, err, "")
 			return
 		}
 	}
@@ -66,12 +66,12 @@ func loadRequestVars(ctx context.Context, vars *TemplateVars, request *http.Requ
 		tmplBodyFromReq := json.NewDecoder(request.Body)
 		tmplBodyFromReq.DisallowUnknownFields()
 		if err = tmplBodyFromReq.Decode(&vars.Body); err != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("error decode request body : ", err.Error()))
+			err = logs.Err(ctx, fmt.Errorf("error decode request body : %w", err), "")
 			return err
 		}
 		body, err := json.Marshal(vars.Body)
 		if err != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("json.Marshal(vars.Body) error : ", err.Error()))
+			err = logs.Err(ctx, fmt.Errorf("json.Marshal(vars.Body) error : %w", err), "")
 			return err
 		}
 		request.Body = io.NopCloser(bytes.NewReader(body))
@@ -93,7 +93,6 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 
 	reqContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
 	if reqContentType == multiPartForm {
-		logs.WithContext(ctx).Info("inside multiPartForm")
 		var reqBody bytes.Buffer
 		var reqOldBody bytes.Buffer
 		multipartWriter := multipart.NewWriter(&reqBody)
@@ -104,43 +103,42 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 			for {
 				part, errPart := multiPart.NextRawPart()
 				if errPart == io.EOF {
-					logs.WithContext(ctx).Error("inside EOF error")
+					err = logs.Err(ctx, fmt.Errorf("inside EOF error"), "")
 					break
 				}
 				if part.FileName() != "" {
-					logs.WithContext(ctx).Info(part.FileName())
 					var tempFile *os.File
+					//TODO - hard coded temp file name to be removed and remove deprecated ioutil
 					tempFile, err = ioutil.TempFile(os.TempDir(), "spa")
 					defer tempFile.Close()
 					if err != nil {
-						logs.WithContext(ctx).Error(fmt.Sprint("Temp file creation failed : ", err.Error()))
+						err = logs.Err(ctx, fmt.Errorf("Temp file creation failed : %w", err), "")
+						return
 					}
 					fileWriter, err2 := createFormFileCopy(multipartWriter, part)
 					if err2 != nil {
 						err = err2
-						logs.WithContext(ctx).Error(err.Error())
 						return
 					}
 					//_, err = fileWriter.Write()
 					_, err = io.Copy(fileWriter, part)
 					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
+						err = logs.Err(ctx, fmt.Errorf("io.Copy error : %w", err), "")
 						return
 					}
 
 				} else {
-					logs.WithContext(ctx).Info(part.FormName())
 					buf := new(bytes.Buffer)
 					buf.ReadFrom(part)
 					fieldWriter, err3 := multipartWriter.CreateFormField(part.FormName())
 					if err3 != nil {
 						err = err3
-						logs.WithContext(ctx).Error(err.Error())
+						err = logs.Err(ctx, fmt.Errorf("multipartWriter.CreateFormField error : %w", err), "")
 						return
 					}
 					_, err = fieldWriter.Write(buf.Bytes())
 					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
+						err = logs.Err(ctx, fmt.Errorf("fileWriter.Write error : %w", err), "")
 						return
 					}
 				}
@@ -161,8 +159,7 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 		formData := url.Values{}
 		rpfErr := request.ParseForm()
 		if rpfErr != nil {
-			err = rpfErr
-			logs.WithContext(ctx).Info(fmt.Sprint("error from request.ParseForm() = ", err.Error()))
+			err = logs.Err(ctx, fmt.Errorf("error from request.ParseForm() : %w", rpfErr), "")
 			return
 		}
 		if request.Form != nil {
@@ -178,8 +175,7 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 	} else {
 		body, err3 := io.ReadAll(req.Body)
 		if err3 != nil {
-			err = err3
-			logs.WithContext(ctx).Error(err.Error())
+			err = logs.Err(ctx, fmt.Errorf("io.ReadAll error : %w", err3), "")
 			return
 		}
 		request.Body = io.NopCloser(bytes.NewReader(body))
@@ -194,7 +190,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 	goTmpl := gotemplate.GoTemplate{templateName, templateString}
 	outputObj, err := goTmpl.Execute(ctx, vars, outputType)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(err.Error()) // send original error as consumer has to handle <no value> string
 		return nil, err
 	} else {
 		buffer := &bytes.Buffer{}
@@ -203,18 +199,18 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		err = encoder.Encode(outputObj)
 		//output, err = json.Marshal(outputObj)
 		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
+			err = logs.Err(ctx, fmt.Errorf("encoder.Encode error : %w", err), "")
 			return nil, err
 		}
 		output = []byte(strings.TrimSuffix(buffer.String(), "\n"))
-		logs.WithContext(ctx).Info(fmt.Sprint("len(string(output)) = ", len(string(output))))
 		if len(string(output)) < 1000 {
 			logs.WithContext(ctx).Info(fmt.Sprint("output ===== ", string(output)))
+		} else {
+			logs.WithContext(ctx).Info(fmt.Sprint("output ===== ", string(output)[:1000]))
 		}
 
 		if string(output) == "null" || string(output) == `"null"` {
-			logs.WithContext(ctx).Info("inside string(output) == \"null\"")
-			logs.WithContext(ctx).Info(templateString)
+			err = logs.Err(ctx, fmt.Errorf("inside string(output) == \"null\" - %s", templateString), "")
 			output = []byte("")
 		}
 		return
@@ -226,14 +222,13 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 	reqContentType := strings.Split(request.Header.Get("Content-type"), ";")[0]
 	varsFormData = make(map[string]interface{})
 	if reqContentType == encodedForm || reqContentType == multiPartForm {
-		logs.WithContext(ctx).Info("inside makeMultipart encodedForm || multiPartForm")
 		var reqBody bytes.Buffer
 		multipartWriter := multipart.NewWriter(&reqBody)
 		for _, fd := range formData {
 			fieldWriter, errfw := multipartWriter.CreateFormField(fd.Key)
 			if errfw != nil {
 				err = errfw
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, err, "")
 				return nil, nil, err
 			}
 			if fd.IsTemplate {
@@ -257,7 +252,7 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 				_, err = fieldWriter.Write([]byte(fd.Value))
 			}
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, err, "")
 				return nil, nil, err
 			}
 			varsFormData[fd.Key] = fd.Value
@@ -308,7 +303,7 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 
 			decodeBytes, err = b64.StdEncoding.DecodeString(filecontentStr)
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, err, "")
 				return
 			}
 
@@ -317,18 +312,17 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 			tempFile, err = ioutil.TempFile(os.TempDir(), fn.String())
 			defer tempFile.Close()
 			if err != nil {
-				logs.WithContext(ctx).Error(fmt.Sprint("Temp file creation failed : ", err.Error()))
+				err = logs.Err(ctx, fmt.Errorf("Temp file creation failed : %w", err), "")
 				return
 			}
 			//TODO - hard coded pdf content type to be removed
 			fileWriter, err := createFormFile(multipartWriter, "application/pdf", filevarnameStr, filenameStr)
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
 				return nil, nil, err
 			}
 			_, err = io.Copy(fileWriter, bytes.NewBuffer(decodeBytes))
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, err, "")
 				return nil, nil, err
 			}
 		}
@@ -343,20 +337,17 @@ func makeMultipart(ctx context.Context, request *http.Request, formData []Header
 
 func processMultipart(ctx context.Context, reqContentType string, request *http.Request, formDataRemove []string, formData map[string]interface{}, fileData []FilePart) (varsFormData map[string]interface{}, varsFormDataKeyArray []string, varsFileData []FilePart, err error) {
 	logs.WithContext(ctx).Debug("processMultipart - Start")
-	logs.WithContext(ctx).Info(fmt.Sprint("reqContentType = ", reqContentType))
 	varsFormData = make(map[string]interface{})
 	if reqContentType == encodedForm || reqContentType == multiPartForm {
-		logs.WithContext(ctx).Info("inside encodedForm || multiPartForm of processMultipart")
 		var reqBody bytes.Buffer
 		multipartWriter := multipart.NewWriter(&reqBody)
 		multiPart, mErr := request.MultipartReader()
 		requestHasMultipart := true
 		if mErr != nil {
 			//err = mErr
-			logs.WithContext(ctx).Error(fmt.Sprint("error from request.MultipartReader() : ", mErr.Error()))
+			err = logs.Err(ctx, fmt.Errorf("error from request.MultipartReader() : %w", mErr), "")
 			requestHasMultipart = false
 		}
-		logs.WithContext(ctx).Info(fmt.Sprint("requestHasMultipart = ", requestHasMultipart))
 		i := 0
 		if requestHasMultipart {
 			for {
@@ -364,7 +355,7 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 				removeFlag := false
 				part, errPart := multiPart.NextRawPart()
 				if errPart == io.EOF {
-					logs.WithContext(ctx).Error("breaking becuase of eof")
+					err = logs.Err(ctx, fmt.Errorf("breaking becuase of eof"), "")
 					break
 				}
 				if formDataRemove != nil {
@@ -376,29 +367,24 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 					}
 				}
 				if !removeFlag && part != nil {
-					logs.WithContext(ctx).Debug("inside !removeFlag")
 					if part.FileName() != "" {
-						logs.WithContext(ctx).Info(fmt.Sprint("inside part.FileName() != \"\"", part.FileName()))
 						fileWriter, err := createFormFileCopy(multipartWriter, part)
 						if err != nil {
-							logs.WithContext(ctx).Error(err.Error())
 							return nil, nil, nil, err
 						}
 						buf := new(bytes.Buffer)
 						_, err = buf.ReadFrom(part)
 						if err != nil {
-							logs.WithContext(ctx).Error(err.Error())
+							err = logs.Err(ctx, err, "")
 							return nil, nil, nil, err
 						}
 						_, ferr := fileWriter.Write(buf.Bytes())
 						if ferr != nil {
-							err = ferr
-							logs.WithContext(ctx).Error(err.Error())
+							err = logs.Err(ctx, ferr, "")
 							return nil, nil, nil, err
 						}
 						//fk := fmt.Sprint("file_", i)
 						formName := strings.Replace(strings.Replace(part.FormName(), "[", "", -1), "]", "", -1)
-						logs.WithContext(ctx).Info(formName)
 						filePart := FilePart{}
 						filePart.FileName = part.FileName()
 						filePart.FileVarName = formName
@@ -408,22 +394,21 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 						//varsFormData[fk] = b64.StdEncoding.EncodeToString(buf.Bytes())
 						_, err = io.Copy(fileWriter, part)
 						if err != nil {
-							logs.WithContext(ctx).Error(err.Error())
+							err = logs.Err(ctx, err, "")
 							return nil, nil, nil, err
 						}
 
 					} else {
-						logs.WithContext(ctx).Info(fmt.Sprint("inside else of part.FileName() != \"\"", part.FormName()))
 						buf := new(bytes.Buffer)
 						buf.ReadFrom(part)
 						fieldWriter, err := multipartWriter.CreateFormField(part.FormName())
 						if err != nil {
-							logs.WithContext(ctx).Error(err.Error())
+							err = logs.Err(ctx, err, "")
 							return nil, nil, nil, err
 						}
 						_, err = fieldWriter.Write(buf.Bytes())
 						if err != nil {
-							logs.WithContext(ctx).Error(err.Error())
+							err = logs.Err(ctx, err, "")
 							return nil, nil, nil, err
 						}
 						formName := strings.Replace(strings.Replace(part.FormName(), "[", "", -1), "]", "", -1)
@@ -448,12 +433,12 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 			if !toIgnore {
 				fieldWriter, err := multipartWriter.CreateFormField(fk)
 				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
+					err = logs.Err(ctx, err, "")
 					return nil, nil, nil, err
 				}
 				_, err = fieldWriter.Write([]byte(fd.(string)))
 				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
+					err = logs.Err(ctx, err, "")
 					return nil, nil, nil, err
 				}
 				varsFormData[fk] = fd
@@ -477,7 +462,7 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 			decodeBytes := []byte("")
 			decodeBytes, err = b64.StdEncoding.DecodeString(filecontentStr)
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, err, "")
 				return
 			}
 
@@ -487,19 +472,18 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 			tempFile, err = ioutil.TempFile(os.TempDir(), fn.String())
 			defer tempFile.Close()
 			if err != nil {
-				logs.WithContext(ctx).Error(fmt.Sprint("Temp file creation failed : ", err.Error()))
+				err = logs.Err(ctx, fmt.Errorf("Temp file creation failed : %w", err), "")
 				return
 			}
 			//TODO - hard coded pdf content type to be removed
 
 			fileWriter, err := createFormFile(multipartWriter, "application/pdf", filevarnameStr, filenameStr)
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
 				return nil, nil, nil, err
 			}
 			_, err = io.Copy(fileWriter, bytes.NewBuffer(decodeBytes))
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, err, "")
 				return nil, nil, nil, err
 			}
 		}
@@ -528,8 +512,7 @@ func processParams(ctx context.Context, request *http.Request, queryParamsRemove
 			}
 			valueStr, uerr := strconv.Unquote(string(valueBytes))
 			if uerr != nil {
-				err = uerr
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, uerr, "")
 				return
 			}
 			params.Set(p.Key, valueStr)
@@ -572,7 +555,6 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 				}
 			*/
 
-			logs.WithContext(ctx).Info(fmt.Sprint("processTemplate called for header value ", h.Key))
 			fvars := &FuncTemplateVars{}
 			fvars.Vars = vars
 			fvars.ResVars = resVars
@@ -587,6 +569,8 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 				koutputStr = string(koutput)
 				if str, err := strconv.Unquote(koutputStr); err == nil {
 					koutputStr = str
+				} else {
+					_ = logs.Err(ctx, err, "")
 				}
 			}
 
@@ -599,17 +583,13 @@ func processHeaderTemplates(ctx context.Context, request *http.Request, headersT
 				outputStr = str
 			}
 			request.Header.Set(koutputStr, outputStr)
-			logs.WithContext(ctx).Info(fmt.Sprint("string(output) = ", outputStr))
 		}
 	}
 	return
 }
 
 func clubResponses(ctx context.Context, responses []*http.Response, errs []error) (response *http.Response, err error) {
-	logs.WithContext(ctx).Info("clubResponses - Start")
-	if len(errs) > 0 {
-		logs.WithContext(ctx).Error(fmt.Sprint(errs))
-	}
+	logs.WithContext(ctx).Debug("clubResponses - Start")
 
 	if len(responses) > 0 {
 		if responses[0] != nil {
@@ -635,7 +615,6 @@ func clubResponses(ctx context.Context, responses []*http.Response, errs []error
 		} else {
 			errMsg = append(errMsg, "-")
 		}
-
 	}
 	/*
 		//trResVar - copying all attributes of first element as it will be same except response body
@@ -658,9 +637,7 @@ func clubResponses(ctx context.Context, responses []*http.Response, errs []error
 			}
 		}
 	*/
-	logs.WithContext(ctx).Info(fmt.Sprint("errorFound = ", errorFound))
 	if errorFound {
-		logs.WithContext(ctx).Error(strings.Join(errMsg, " , "))
 		return nil, errors.New(strings.Join(errMsg, " , "))
 	}
 
@@ -693,14 +670,14 @@ func clubResponses(ctx context.Context, responses []*http.Response, errs []error
 				if reqContentTypeCheck == applicationjson {
 					err = json.NewDecoder(rp.Body).Decode(&rJson)
 					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
+						err = logs.Err(ctx, err, "")
 						return nil, err
 					}
 					rJson = stripSingleElement(rJson)
 				} else {
 					rJson, err = io.ReadAll(rp.Body)
 					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
+						err = logs.Err(ctx, err, "")
 						return nil, err
 					}
 				}
@@ -715,7 +692,8 @@ func clubResponses(ctx context.Context, responses []*http.Response, errs []error
 
 	rJsonArrayBytes, eee := json.Marshal(stripSingleElement(rJsonArray))
 	if eee != nil {
-		return nil, eee
+		err = logs.Err(ctx, eee, "")
+		return nil, err
 	}
 	if len(rJsonArray) == 0 {
 		respHeader.Set("Content-Type", applicationjson)
@@ -777,13 +755,13 @@ func cloneInterface(ctx context.Context, i interface{}) (iClone interface{}, err
 	logs.WithContext(ctx).Debug("cloneInterface - Start")
 	iBytes, err := json.Marshal(i)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, err, "")
 		return
 	}
 	iCloneI := reflect.New(reflect.TypeOf(i))
 	err = json.Unmarshal(iBytes, iCloneI.Interface())
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, err, "")
 		return
 	}
 	return iCloneI.Elem().Interface(), nil

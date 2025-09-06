@@ -3,13 +3,14 @@ package functions
 import (
 	"context"
 	"fmt"
-	"github.com/eru-tech/eru/eru-events/events"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"github.com/jmoiron/sqlx"
 	"net/http"
 	"runtime/debug"
 	"sync"
 	"time"
+
+	"github.com/eru-tech/eru/eru-events/events"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/jmoiron/sqlx"
 )
 
 type Job struct {
@@ -138,13 +139,29 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 
 			r, rErr = CloneRequest(ctx, req)
 			if rErr != nil {
-				logs.WithContext(ctx).Error(rErr.Error())
+				return
 			}
-			resVarsI, _ := cloneInterface(ctx, resVars)
-			resVarsClone, _ = resVarsI.(map[string]*TemplateVars)
+			resVarsI, err1 := cloneInterface(ctx, resVars)
+			if err1 != nil {
+				return
+			}
+			var typeOk bool
+			resVarsClone, typeOk = resVarsI.(map[string]*TemplateVars)
+			if !typeOk {
+				_ = logs.Err(ctx, fmt.Errorf("cloneInterface(ctx, resVars) failed to convert to map[string]*TemplateVars"), "")
+				return
+			}
 
-			reqVarsI, _ := cloneInterface(ctx, reqVars)
-			reqVarsClone, _ = reqVarsI.(map[string]*TemplateVars)
+			reqVarsI, err1 := cloneInterface(ctx, reqVars)
+			if err1 != nil {
+				return
+			}
+			var typeOk2 bool
+			reqVarsClone, typeOk2 = reqVarsI.(map[string]*TemplateVars)
+			if !typeOk2 {
+				_ = logs.Err(ctx, fmt.Errorf("cloneInterface(ctx, resVars) failed to convert to map[string]*TemplateVars"), "")
+				return
+			}
 		}
 		funcJob := FuncJob{loopCounter, r, fs, reqVarsClone, resVarsClone, "", mainRouteName, funcThread, loopThread, "true", funcStepName, endFuncStepName, childStart, fromAsync, inLoop}
 		funcJobs <- funcJob
@@ -192,8 +209,16 @@ func workerFunc(ctx context.Context, wg *sync.WaitGroup, funcJobs chan FuncJob, 
 		cloneFuncVarsMap := funcVars
 
 		if funcJob.started {
-			cloneFuncVarsI, _ := cloneInterface(ctx, funcVars)
-			cloneFuncVarsMap, _ = cloneFuncVarsI.(map[string]FuncTemplateVars)
+			cloneFuncVarsI, err1 := cloneInterface(ctx, funcVars)
+			if err1 != nil {
+				return
+			}
+			var typeOk bool
+			cloneFuncVarsMap, typeOk = cloneFuncVarsI.(map[string]FuncTemplateVars)
+			if !typeOk {
+				_ = logs.Err(ctx, fmt.Errorf("cloneInterface(ctx, funcVars) failed to convert to map[string]FuncTemplateVars"), "")
+				return
+			}
 		}
 
 		output := FuncResult{funcJob, resp, FuncTemplateVars{}, cloneFuncVarsMap, e, asyncFuncDataBatch}
@@ -221,11 +246,26 @@ func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, req
 		if funcStep.FuncKey == funcStepName || started || funcStepName == "" {
 			logs.WithContext(ctx).Info(fmt.Sprint("inside allocateFuncInner lopp for ", funcStep.FuncKey))
 			var funcStepErr error
-			reqVarsI, _ := cloneInterface(ctx, reqVars)
-			reqVarsClone, _ = reqVarsI.(map[string]*TemplateVars)
+			reqVarsI, err1 := cloneInterface(ctx, reqVars)
+			if err1 != nil {
+				return
+			}
+			var typeOk bool
+			reqVarsClone, typeOk = reqVarsI.(map[string]*TemplateVars)
+			if !typeOk {
+				_ = logs.Err(ctx, fmt.Errorf("cloneInterface(ctx, reqVars) failed to convert to map[string]*TemplateVars"), "")
+				return
+			}
 
-			resVarsI, _ := cloneInterface(ctx, resVars)
-			resVarsClone, _ = resVarsI.(map[string]*TemplateVars)
+			resVarsI, err1 := cloneInterface(ctx, resVars)
+			if err1 != nil {
+				return
+			}
+			var typeOk2 bool
+			resVarsClone, typeOk2 = resVarsI.(map[string]*TemplateVars)
+			if !typeOk2 {
+				return
+			}
 
 			if len(loopArray) > 1 {
 				funcStep, funcStepErr = fs.Clone(ctx)

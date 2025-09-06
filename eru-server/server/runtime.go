@@ -50,7 +50,7 @@ func NewGoroutineManager(ctx context.Context) *GoroutineManager {
 func GetGlobalGoroutineManager(ctx context.Context) *GoroutineManager {
 	gmMutex.Lock()
 	defer gmMutex.Unlock()
-	
+
 	if globalGM == nil {
 		globalGM = NewGoroutineManager(ctx)
 	}
@@ -69,28 +69,28 @@ func (gm *GoroutineManager) SafeGoWithRestart(name string, fn func(ctx context.C
 
 func (gm *GoroutineManager) SafeGoWithRestartBehavior(name string, fn func(ctx context.Context), behavior RestartBehavior) {
 	gm.wg.Add(1)
-	
+
 	go func() {
 		defer gm.wg.Done()
-		
+
 		attempts := 0
 		for {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						attempts++
-						errMsg := fmt.Sprintf("Worker %s panicked (attempt %d/%d): %v\nStack trace:\n%s", 
+
+						errMsg := fmt.Sprintf("Worker %s panicked (attempt %d/%d): %v\nStack trace:\n%s",
 							name, attempts, MaxRestartAttempts, r, string(debug.Stack()))
-						
+
 						if logs.Logger != nil {
 							logs.Logger.Error(errMsg)
 						} else {
 							log.Println("ERROR:", errMsg)
 						}
-						
+
 						if attempts >= MaxRestartAttempts {
 							stopMsg := fmt.Sprintf("Worker %s exceeded maximum restart attempts (%d)", name, MaxRestartAttempts)
-							
+
 							if behavior == ShutdownOnMaxRetries {
 								criticalMsg := fmt.Sprintf("%s - CRITICAL SERVICE FAILED, shutting down entire service", stopMsg)
 								if logs.Logger != nil {
@@ -98,7 +98,7 @@ func (gm *GoroutineManager) SafeGoWithRestartBehavior(name string, fn func(ctx c
 								} else {
 									log.Println("ERROR:", criticalMsg)
 								}
-								
+
 								// Shutdown the entire service
 								gm.cancel()
 								return
@@ -112,12 +112,12 @@ func (gm *GoroutineManager) SafeGoWithRestartBehavior(name string, fn func(ctx c
 								return
 							}
 						}
-						
+
 						delay := time.Duration(attempts) * BaseRetryDelay
 						if delay > MaxRetryDelay {
 							delay = MaxRetryDelay
 						}
-						
+
 						restartMsg := fmt.Sprintf("Restarting worker %s in %v", name, delay)
 						if logs.Logger != nil {
 							logs.Logger.Info(restartMsg)
@@ -127,11 +127,11 @@ func (gm *GoroutineManager) SafeGoWithRestartBehavior(name string, fn func(ctx c
 						time.Sleep(delay)
 					}
 				}()
-				
+
 				fn(gm.ctx)
-				attempts = 0
+				attempts++
 			}()
-			
+
 			select {
 			case <-gm.ctx.Done():
 				exitMsg := fmt.Sprintf("Worker %s exiting (context cancelled)", name)
@@ -142,10 +142,33 @@ func (gm *GoroutineManager) SafeGoWithRestartBehavior(name string, fn func(ctx c
 				}
 				return
 			default:
-				if attempts >= MaxRestartAttempts {
-					return
+				if attempts > MaxRestartAttempts {
+					if attempts >= MaxRestartAttempts {
+						stopMsg := fmt.Sprintf("Worker %s exceeded maximum restart attempts (%d)", name, MaxRestartAttempts)
+
+						if behavior == ShutdownOnMaxRetries {
+							criticalMsg := fmt.Sprintf("%s - CRITICAL SERVICE FAILED, shutting down entire service", stopMsg)
+							if logs.Logger != nil {
+								logs.Logger.Error(criticalMsg)
+							} else {
+								log.Println("ERROR:", criticalMsg)
+							}
+
+							// Shutdown the entire service
+							gm.cancel()
+							return
+						} else {
+							nonCriticalMsg := fmt.Sprintf("%s - stopping restart attempts, service continues", stopMsg)
+							if logs.Logger != nil {
+								logs.Logger.Warn(nonCriticalMsg)
+							} else {
+								log.Println("WARN:", nonCriticalMsg)
+							}
+							return
+						}
+					}
 				}
-				restartMsg := fmt.Sprintf("Restarting worker %s", name)
+				restartMsg := fmt.Sprintf("Restarting worker %s (attempt %d/%d)", name, attempts, MaxRestartAttempts)
 				if logs.Logger != nil {
 					logs.Logger.Info(restartMsg)
 				} else {
@@ -158,7 +181,7 @@ func (gm *GoroutineManager) SafeGoWithRestartBehavior(name string, fn func(ctx c
 
 func (gm *GoroutineManager) SafeGo(name string, fn func(ctx context.Context)) {
 	gm.wg.Add(1)
-	
+
 	go func() {
 		defer gm.wg.Done()
 		defer func() {
@@ -171,7 +194,7 @@ func (gm *GoroutineManager) SafeGo(name string, fn func(ctx context.Context)) {
 				}
 			}
 		}()
-		
+
 		fn(gm.ctx)
 		completedMsg := fmt.Sprintf("Worker %s completed normally", name)
 		if logs.Logger != nil {
@@ -189,15 +212,15 @@ func (gm *GoroutineManager) Shutdown(timeout time.Duration) error {
 	} else {
 		log.Println("INFO:", shutdownMsg)
 	}
-	
+
 	gm.cancel()
-	
+
 	done := make(chan struct{})
 	go func() {
 		gm.wg.Wait()
 		close(done)
 	}()
-	
+
 	select {
 	case <-done:
 		successMsg := "All goroutines shut down gracefully"

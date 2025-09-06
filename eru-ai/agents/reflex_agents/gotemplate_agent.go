@@ -231,7 +231,6 @@ func (goTemplateAgent *GoTemplateAgent) validate(ctx context.Context, templateCo
 
 	output, err := processTemplate(ctx, "template", templateCode, &contextVars, outputFormat, "")
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
 	return output, nil
@@ -251,7 +250,7 @@ func (goTemplateAgent *GoTemplateAgent) MakeFromJson(ctx context.Context, rj *js
 	logs.WithContext(ctx).Debug("MakeFromJson - Start")
 	err := json.Unmarshal(*rj, &goTemplateAgent)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, fmt.Errorf("json.Unmarshal error : %w", err), "")
 		return err
 	}
 	return nil
@@ -262,7 +261,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 	goTmpl := gotemplate.GoTemplate{Name: templateName, Template: templateString}
 	output, err = goTmpl.ExecuteWithErrors(ctx, vars, outputType)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, fmt.Errorf("goTmpl.ExecuteWithErrors error : %w", err), "")
 		return nil, err
 	}
 	return

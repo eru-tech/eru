@@ -752,18 +752,20 @@ func ReplaceVariables(ctx context.Context, str string, vars map[string]interface
 	return
 }
 
-func UnqotePlanText(ctx context.Context, response *http.Response) (responseNew *http.Response, err error) {
-	logs.WithContext(ctx).Debug("UnqotePlanText - Start")
+func UnqotePlainText(ctx context.Context, response *http.Response) (responseNew *http.Response, err error) {
+	logs.WithContext(ctx).Debug("UnqotePlainText - Start")
 	if response != nil {
 		if response.Header.Get("Content-Type") == "text/plain" {
-			body, err := io.ReadAll(response.Body)
-			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+			body, berr := io.ReadAll(response.Body)
+			if berr != nil {
+				err = logs.Err(ctx, fmt.Errorf("io.ReadAll error : %w", berr), "")
+				return nil, err
 			}
 			bodyStr := string(body)
 			bodyStr, err = strconv.Unquote(bodyStr)
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, fmt.Errorf("strconv.Unquote error : %w", err), "")
+				return nil, err
 			}
 			response.ContentLength = int64(len(bodyStr))
 			response.Header.Set("Content-Length", fmt.Sprint(len(bodyStr)))
