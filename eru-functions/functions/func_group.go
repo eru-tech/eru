@@ -213,44 +213,84 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 	//for _, cv := range funcSteps {
 	//	response, err = cv.RunFuncStep(request, reqVars, resVars, mainRouteName)
 	//}
-	var funcJobs = make(chan FuncJob, 10)
-	var funcResults = make(chan FuncResult, 10)
-	//startTime := time.Now()
-	go allocateFunc(ctx, request, funcSteps, reqVars, resVars, funcJobs, mainRouteName, funcThreads, loopThreads, funcStepName, endFuncStepName, started, fromAsync, inLoop)
-	done := make(chan bool)
-
-	gm := server.GetGlobalGoroutineManager(ctx)
-	gm.SafeGoWithRestartBehavior("run-func-steps-results", func(bgCtx context.Context) {
-		for res := range funcResults {
-			if res.response != nil {
-				if res.response.ContentLength > 0 {
-					logs.WithContext(bgCtx).Info(fmt.Sprint("adding response to array"))
-					responses = append(responses, res.response)
+	if len(funcSteps) == 1 {
+		for fk, fs := range funcSteps {
+			childStart := false
+			fs.FuncKey = fk
+			reqVarsClone := reqVars
+			resVarsClone := resVars
+			r := request
+			var rErr error
+			if started || fk == funcStepName || funcStepName == "" {
+				childStart = true
+				r, rErr = CloneRequest(ctx, request)
+				if rErr != nil {
+					logs.WithContext(ctx).Error(rErr.Error())
 				}
-			}
-			if res.asyncFuncDataBatch != nil {
-				asyncFuncDataBatch = append(asyncFuncDataBatch, res.asyncFuncDataBatch...)
-			}
+				resVarsI, _ := cloneInterface(ctx, resVars)
+				resVarsClone, _ = resVarsI.(map[string]*TemplateVars)
 
-			for k, v := range res.responseVarsMap {
+				reqVarsI, _ := cloneInterface(ctx, reqVars)
+				reqVarsClone, _ = reqVarsI.(map[string]*TemplateVars)
+			}
+			if mainRouteName == "" {
+				mainRouteName = fs.FuncKey
+			}
+			resp, funcVars, asyncInnerFuncData, e := fs.RunFuncStep(ctx, r, reqVarsClone, resVarsClone, mainRouteName, funcThreads, loopThreads, funcStepName, endFuncStepName, childStart, fromAsync, inLoop)
+			if resp != nil && resp.ContentLength > 0 {
+				responses = append(responses, resp)
+			}
+			if asyncInnerFuncData != nil {
+				asyncFuncDataBatch = append(asyncFuncDataBatch, asyncInnerFuncData...)
+			}
+			for k, v := range funcVars {
 				funcVarsMap[k] = v
 			}
-
-			if res.responseErr != nil {
-				errs = append(errs, res.responseErr)
+			if e != nil {
+				errs = append(errs, e)
 			}
+			break
 		}
-		done <- true
-	}, server.ShutdownOnMaxRetries)
+	} else {
+		var funcJobs = make(chan FuncJob, 10)
+		var funcResults = make(chan FuncResult, 10)
+		//startTime := time.Now()
+		go allocateFunc(ctx, request, funcSteps, reqVars, resVars, funcJobs, mainRouteName, funcThreads, loopThreads, funcStepName, endFuncStepName, started, fromAsync, inLoop)
+		done := make(chan bool)
 
-	//set it to one to run synchronously
-	noOfWorkers := funcThreads
-	if len(funcSteps) < noOfWorkers {
-		noOfWorkers = len(funcSteps)
+		gm := server.GetGlobalGoroutineManager(ctx)
+		gm.SafeGoWithRestartBehavior("run-func-steps-results", func(bgCtx context.Context) {
+			for res := range funcResults {
+				if res.response != nil {
+					if res.response.ContentLength > 0 {
+						logs.WithContext(bgCtx).Info(fmt.Sprint("adding response to array"))
+						responses = append(responses, res.response)
+					}
+				}
+				if res.asyncFuncDataBatch != nil {
+					asyncFuncDataBatch = append(asyncFuncDataBatch, res.asyncFuncDataBatch...)
+				}
+
+				for k, v := range res.responseVarsMap {
+					funcVarsMap[k] = v
+				}
+
+				if res.responseErr != nil {
+					errs = append(errs, res.responseErr)
+				}
+			}
+			done <- true
+		}, server.ShutdownOnMaxRetries)
+
+		//set it to one to run synchronously
+		noOfWorkers := funcThreads
+		if len(funcSteps) < noOfWorkers {
+			noOfWorkers = len(funcSteps)
+		}
+
+		createWorkerPoolFunc(ctx, noOfWorkers, funcJobs, funcResults)
+		<-done
 	}
-
-	createWorkerPoolFunc(ctx, noOfWorkers, funcJobs, funcResults)
-	<-done
 	//endTime := time.Now()
 	//diff := endTime.Sub(startTime)
 	//logs.WithContext(ctx).Info(fmt.Sprint("total time taken ", diff.Seconds(), "seconds"))
@@ -503,85 +543,136 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 		loopArray = append(loopArray, make(map[string]interface{}))
 	}
 
-	var jobs = make(chan FuncJob, 10)
-	var results = make(chan FuncResult, 10)
-
-	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep before allocateFuncInner for ", funcStep.FuncKey))
-
-	go allocateFuncInner(ctx, request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs, mainRouteName, FuncThread, LoopThread, strCond, funcStepName, endFuncStepName, started, fromAsync, inLoop)
-	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep after allocateFuncInner for ", funcStep.FuncKey))
-	done := make(chan bool)
-	//go result(done,results,responses, trResVars,errs)
 	funcVarsMap = make(map[string]FuncTemplateVars)
 
-	gm := server.GetGlobalGoroutineManager(ctx)
-	gm.SafeGoWithRestartBehavior("run-func-step-results", func(bgCtx context.Context) {
-		var asyncBatch []AsyncFuncData
-		eventMsg := FuncTemplateVars{}
-		eventRequest := ""
-		for res := range results {
-			if res.response != nil {
-				responses = append(responses, res.response)
-			}
-			funcVarsMap[funcStep.FuncKey] = res.responseVars
-			if res.responseErr != nil {
-				errs = append(errs, res.responseErr)
-			}
-			if res.asyncFuncDataBatch != nil {
-				if eventRequest == "" {
-					eventMsg = res.asyncFuncDataBatch[0].EventMsg
-					eventRequest = res.asyncFuncDataBatch[0].EventRequest
-				}
-				asyncBatch = append(asyncBatch, res.asyncFuncDataBatch...)
-			}
+	if len(loopArray) == 1 || funcStep.LoopInParallel == false {
 
-			if len(res.asyncFuncDataBatch) > 1 {
-				var asyncBatchInner []AsyncFuncData
-				for _, asyncFuncData := range asyncBatch {
-					asyncBatchInner = append(asyncBatchInner, asyncFuncData)
-					// TODO - change it to event parameter
-					if len(asyncBatchInner) == 1000 {
-						logs.WithContext(bgCtx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatchInner)))
-						err = funcStep.insertAsyncBatch(bgCtx, asyncBatchInner)
-						asyncBatchInner = nil
+		loopCounter := 0
+		logs.WithContext(ctx).Info(fmt.Sprint("len(loopArray) for ", funcStep.FuncKey, " is ", len(loopArray)))
+		for loopCounter < len(loopArray) {
+
+			funcStepClone := funcStep
+			reqVarsClone := reqVars
+			resVarsClone := resVars
+			if funcStep.FuncKey == funcStepName || started || funcStepName == "" {
+				var funcStepErr error
+				reqVarsI, _ := cloneInterface(ctx, reqVars)
+				reqVarsClone, _ = reqVarsI.(map[string]*TemplateVars)
+
+				resVarsI, _ := cloneInterface(ctx, resVars)
+				resVarsClone, _ = resVarsI.(map[string]*TemplateVars)
+
+				if len(loopArray) > 1 {
+					funcStep, funcStepErr = funcStep.Clone(ctx)
+					if funcStepErr != nil {
+						logs.WithContext(ctx).Error(funcStepErr.Error())
+						return
 					}
 				}
-				if len(asyncBatchInner) > 0 {
-					logs.WithContext(bgCtx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatchInner)))
-					err = funcStep.insertAsyncBatch(bgCtx, asyncBatchInner)
+
+				if reqVarsClone[funcStep.GetRouteName()] == nil {
+					reqVarsClone[funcStep.GetRouteName()] = &TemplateVars{}
 				}
-				asyncBatch = nil
-			} else {
-				// TODO - change it to event parameter
-				if len(asyncBatch) == 1000 {
-					logs.WithContext(bgCtx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatch)))
-					asyncBatch[0].EventMsg = eventMsg
-					asyncBatch[0].EventRequest = eventRequest
-					err = funcStep.insertAsyncBatch(bgCtx, asyncBatch)
+				reqVarsClone[funcStep.GetRouteName()].LoopVar = loopArray[loopCounter]
+
+				if reqVarsClone[funcStep.FuncKey] == nil {
+					reqVarsClone[funcStep.FuncKey] = &TemplateVars{}
+				}
+				reqVarsClone[funcStep.FuncKey].LoopVar = loopArray[loopCounter]
+			}
+			if mainRouteName == "" {
+				mainRouteName = funcStep.FuncKey
+			}
+			resp, funcVars, asyncFuncDataBatch, e := funcStepClone.RunFuncStepInner(ctx, request, reqVarsClone, resVarsClone, mainRouteName, asyncMessage, FuncThread, LoopThread, strCond, funcStepName, endFuncStepName, started, fromAsync, inLoop, loopCounter)
+			if resp != nil {
+				responses = append(responses, resp)
+			}
+			funcVarsMap[funcStep.FuncKey] = funcVars
+			if e != nil {
+				errs = append(errs, e)
+			}
+			if asyncFuncDataBatch != nil {
+				asyncFuncDataBatch = append(asyncFuncDataBatch, asyncFuncDataBatch...)
+			}
+			loopCounter++
+		}
+	} else {
+		var jobs = make(chan FuncJob, 10)
+		var results = make(chan FuncResult, 10)
+
+		//logs.FileLogger.Info(fmt.Sprint("RunFuncStep before allocateFuncInner for ", funcStep.FuncKey))
+		go allocateFuncInner(ctx, request, funcStep, reqVars, resVars, loopArray, asyncMessage, jobs, mainRouteName, FuncThread, LoopThread, strCond, funcStepName, endFuncStepName, started, fromAsync, inLoop)
+		done := make(chan bool)
+		//go result(done,results,responses, trResVars,errs)
+		gm := server.GetGlobalGoroutineManager(ctx)
+		gm.SafeGoWithRestartBehavior("run-func-step-results", func(bgCtx context.Context) {
+			var asyncBatch []AsyncFuncData
+			eventMsg := FuncTemplateVars{}
+			eventRequest := ""
+			for res := range results {
+				if res.response != nil {
+					responses = append(responses, res.response)
+				}
+				funcVarsMap[funcStep.FuncKey] = res.responseVars
+				if res.responseErr != nil {
+					errs = append(errs, res.responseErr)
+				}
+				if res.asyncFuncDataBatch != nil {
+					if eventRequest == "" {
+						eventMsg = res.asyncFuncDataBatch[0].EventMsg
+						eventRequest = res.asyncFuncDataBatch[0].EventRequest
+					}
+					asyncBatch = append(asyncBatch, res.asyncFuncDataBatch...)
+				}
+
+				if len(res.asyncFuncDataBatch) > 1 {
+					var asyncBatchInner []AsyncFuncData
+					for _, asyncFuncData := range asyncBatch {
+						asyncBatchInner = append(asyncBatchInner, asyncFuncData)
+						// TODO - change it to event parameter
+						if len(asyncBatchInner) == 1000 {
+							logs.WithContext(bgCtx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatchInner)))
+							err = funcStep.insertAsyncBatch(bgCtx, asyncBatchInner)
+							asyncBatchInner = nil
+						}
+					}
+					if len(asyncBatchInner) > 0 {
+						logs.WithContext(bgCtx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatchInner)))
+						err = funcStep.insertAsyncBatch(bgCtx, asyncBatchInner)
+					}
 					asyncBatch = nil
+				} else {
+					// TODO - change it to event parameter
+					if len(asyncBatch) == 1000 {
+						logs.WithContext(bgCtx).Info(fmt.Sprint("calling async insert for batch size ", len(asyncBatch)))
+						asyncBatch[0].EventMsg = eventMsg
+						asyncBatch[0].EventRequest = eventRequest
+						err = funcStep.insertAsyncBatch(bgCtx, asyncBatch)
+						asyncBatch = nil
+					}
 				}
 			}
-		}
-		if len(asyncBatch) > 0 {
-			logs.WithContext(bgCtx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatch)))
-			asyncBatch[0].EventMsg = eventMsg
-			asyncBatch[0].EventRequest = eventRequest
-			err = funcStep.insertAsyncBatch(bgCtx, asyncBatch)
-		}
-		done <- true
-	}, server.ShutdownOnMaxRetries)
+			if len(asyncBatch) > 0 {
+				logs.WithContext(bgCtx).Info(fmt.Sprint("calling residual async insert for batch size ", len(asyncBatch)))
+				asyncBatch[0].EventMsg = eventMsg
+				asyncBatch[0].EventRequest = eventRequest
+				err = funcStep.insertAsyncBatch(bgCtx, asyncBatch)
+			}
+			done <- true
+		}, server.ShutdownOnMaxRetries)
 
-	//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
-	noOfWorkers := 1
-	if funcStep.LoopInParallel && funcStep.LoopVariable != "" {
-		noOfWorkers = LoopThread
-		if len(loopArray) < noOfWorkers {
-			noOfWorkers = len(loopArray)
+		//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
+		noOfWorkers := 1
+		if funcStep.LoopInParallel && funcStep.LoopVariable != "" {
+			noOfWorkers = LoopThread
+			if len(loopArray) < noOfWorkers {
+				noOfWorkers = len(loopArray)
+			}
 		}
+		//logs.FileLogger.Info(fmt.Sprint("RunFuncStep before createWorkerPoolFuncInner for ", funcStep.FuncKey))
+		createWorkerPoolFuncInner(ctx, noOfWorkers, jobs, results)
+		<-done
 	}
-	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep before createWorkerPoolFuncInner for ", funcStep.FuncKey))
-	createWorkerPoolFuncInner(ctx, noOfWorkers, jobs, results)
-	<-done
 	//logs.FileLogger.Info(fmt.Sprint("RunFuncStep after createWorkerPoolFuncInner for ", funcStep.FuncKey))
 	response, err = clubResponses(ctx, responses, errs)
 	//	logs.FileLogger.Info(fmt.Sprint("RunFuncStep after clubResponses for ", funcStep.FuncKey))

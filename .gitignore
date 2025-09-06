@@ -40,3 +40,4 @@ eru-sql-llm-analysis.md
 *.md
 eru-ai/app
 eru-gateway/app
+eru-functions/app

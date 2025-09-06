@@ -513,3 +513,75 @@ func ProjectDataSourceSchemaDropTableHandler(sh *module_store.StoreHolder) http.
 		return
 	}
 }
+func ConfigSyncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveVarHandler - Start")
+		vars := mux.Vars(r)
+		project_event_name := vars["event_name"]
+		varJson := json.NewDecoder(r.Body)
+		varJson.DisallowUnknownFields()
+
+		project_id := ""
+		event_name := ""
+
+		splitEventText := strings.Split(project_event_name, "__")
+		if len(splitEventText) == 2 {
+			project_id = splitEventText[0]
+			event_name = splitEventText[1]
+		}
+		tmplBodyFromReq := json.NewDecoder(r.Body)
+		tmplBodyFromReq.DisallowUnknownFields()
+		var tmplBody interface{}
+		if err := tmplBodyFromReq.Decode(&tmplBody); err != nil {
+			logs.Logger.Error(err.Error())
+		}
+		configEvent, err := sh.Store.FetchEvent(r.Context(), project_id, event_name)
+		if err != nil {
+			logs.Logger.Error(fmt.Sprintf("Failed to fetch config event: %v", err))
+		} else {
+			logs.Logger.Info(fmt.Sprintf("tmplBody: %v", tmplBody))
+			endpoint := fmt.Sprintf("%s/%s?instance_id=%s", server_handlers.BaseUrl, server_handlers.ConfigSyncEvent, server_handlers.InstanceId)
+			notification, confirmation, err := configEvent.ProcessNotification(r.Context(), tmplBody, endpoint)
+			if err != nil {
+				logs.Logger.Error(fmt.Sprintf("failed to process notification: %v", err))
+			}
+			logs.Logger.Info(fmt.Sprintf("confirmation: %v, configEvent: %v", confirmation, configEvent))
+			if confirmation {
+				err = sh.Store.SaveStore(r.Context(), project_id, "", sh.Store)
+				if err != nil {
+					logs.Logger.Error(fmt.Sprintf("failed to save store after confirmation: %v", err))
+				}
+			}
+			nInstanceId := ""
+			nServiceName := ""
+			if notification != nil {
+				for k, v := range notification {
+					if k == "instance_id" {
+						nInstanceId = v.StringValue
+					}
+					if k == "service_name" {
+						nServiceName = v.StringValue
+					}
+				}
+			}
+			// process notification only if it is from same service name but different instance id
+			if nInstanceId != server_handlers.InstanceId && nServiceName == server_handlers.ServerName {
+				sh.Lock()
+				defer sh.Unlock()
+
+				// Load new store from DB
+				newStore, err := module_store.LoadStore(r.Context(), StoreTableName, StoreTenantTableName)
+				if err != nil {
+					logs.WithContext(r.Context()).Error(fmt.Sprintf("Failed to load store: %v", err))
+					server_handlers.FormatResponse(w, 400)
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					return
+				}
+				// Update the global StoreHolder with the new store
+				sh.Store = newStore
+			}
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode("ok")
+	}
+}

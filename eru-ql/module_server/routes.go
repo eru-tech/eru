@@ -17,6 +17,7 @@ func SetServiceName() {
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	//store functions specific to files
+	serverRouter.Methods(http.MethodPost).Path("/{event_name}").HandlerFunc(module_handlers.ConfigSyncHandler(sh))
 	serverRouter.Methods(http.MethodPost).Path("/graphql/{project}/execute").HandlerFunc(module_handlers.GraphqlExecuteHandler(sh))
 	serverRouter.Path("/graphql/{project}/ws/execute").HandlerFunc(module_handlers.GraphqlWsExecuteHandler(sh))
 	serverRouter.Methods(http.MethodPost).Path("/sql/{project}/execute").HandlerFunc(module_handlers.SqlExecuteHandler(sh))

@@ -361,36 +361,47 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 		loopArray = append(loopArray, make(map[string]interface{}))
 	}
 
-	var jobs = make(chan Job, 10)
-	var results = make(chan Result, 10)
-	//startTime := time.Now()
-	go allocate(ctx, request, url, trReqVars, loopArray, jobs, async, asyncMsg)
-	done := make(chan bool)
-	//go result(done,results,responses, trResVars,errs)
+	if len(loopArray) == 1 {
+		laVars := *trReqVars
+		laVars.LoopVar = loopArray[0]
+		resp, r, e := route.RunRoute(ctx, request, url, &laVars, async, asyncMsg)
+		responses = append(responses, resp)
+		trResVars = append(trResVars, r)
+		if e != nil {
+			errs = append(errs, e)
+		}
+	} else {
+		var jobs = make(chan Job, 10)
+		var results = make(chan Result, 10)
+		//startTime := time.Now()
+		go allocate(ctx, request, url, trReqVars, loopArray, jobs, async, asyncMsg)
+		done := make(chan bool)
+		//go result(done,results,responses, trResVars,errs)
 
-	gm := server.GetGlobalGoroutineManager(ctx)
-	gm.SafeGoWithRestartBehavior("route-execute-results", func(bgCtx context.Context) {
-		for res := range results {
-			responses = append(responses, res.response)
-			trResVars = append(trResVars, res.responseVars)
-			if res.responseErr != nil {
-				errs = append(errs, res.responseErr)
+		gm := server.GetGlobalGoroutineManager(ctx)
+		gm.SafeGoWithRestartBehavior("route-execute-results", func(bgCtx context.Context) {
+			for res := range results {
+				responses = append(responses, res.response)
+				trResVars = append(trResVars, res.responseVars)
+				if res.responseErr != nil {
+					errs = append(errs, res.responseErr)
+				}
+			}
+			done <- true
+		}, server.ShutdownOnMaxRetries)
+
+		//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
+		noOfWorkers := 1
+		if route.LoopInParallel && route.LoopVariable != "" {
+			noOfWorkers = loopThread
+			if len(loopArray) < noOfWorkers {
+				noOfWorkers = len(loopArray)
 			}
 		}
-		done <- true
-	}, server.ShutdownOnMaxRetries)
 
-	//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
-	noOfWorkers := 1
-	if route.LoopInParallel && route.LoopVariable != "" {
-		noOfWorkers = loopThread
-		if len(loopArray) < noOfWorkers {
-			noOfWorkers = len(loopArray)
-		}
+		createWorkerPool(ctx, route, noOfWorkers, jobs, results)
+		<-done
 	}
-
-	createWorkerPool(ctx, route, noOfWorkers, jobs, results)
-	<-done
 	response, resErr = clubResponses(ctx, responses, errs)
 	//endTime := time.Now()
 	//diff := endTime.Sub(startTime)

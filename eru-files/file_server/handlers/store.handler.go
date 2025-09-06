@@ -87,20 +87,6 @@ func ConfigSyncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				sh.Store = newStore
 			}
 		}
-
-		res := make(map[string]interface{})
-		res["Host"] = r.Host
-		res["Header"] = r.Header
-		res["URL"] = r.URL
-
-		res["Body"] = tmplBody
-		res["Method"] = r.Method
-		res["MultipartForm"] = r.MultipartForm
-		res["RequestURI"] = r.RequestURI
-		res["RemoteAddr"] = r.RemoteAddr
-		res["Response"] = r.Response
-		res["Cookies"] = r.Cookies()
-
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode("ok")
 	}
