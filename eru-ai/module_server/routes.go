@@ -1,10 +1,12 @@
 package module_server
 
 import (
+	"fmt"
 	"net/http"
 
 	module_handlers "github.com/eru-tech/eru/eru-ai/module_server/handlers"
 	"github.com/eru-tech/eru/eru-ai/module_store"
+	"github.com/eru-tech/eru/eru-server/server"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 )
@@ -15,7 +17,35 @@ func SetServiceName() {
 
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
+	// MCP server endpoints using eru-server infrastructure
+	mcpServer := NewEruAIMCPServer(sh)
+
+	// Production WebSocket MCP endpoint
+	serverRouter.Methods(http.MethodGet).Path("/mcp/websocket").HandlerFunc(
+		server.CreateMCPWebSocketHandler(mcpServer),
+	)
+
+	// MCP health endpoint
+	serverRouter.Methods(http.MethodGet).Path("/mcp/health").HandlerFunc(
+		server.CreateMCPHealthHandler(mcpServer),
+	)
+
+	// MCP stats endpoint
+	serverRouter.Methods(http.MethodGet).Path("/mcp/stats").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		tools, err := mcpServer.ListTools(ctx)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(fmt.Sprintf(`{"tools_count":%d,"status":"ready","server_info":{"name":"eru-ai-mcp-server","version":"1.0.0"}}`, len(tools.Tools))))
+	})
+
 	//store functions specific to files
+	serverRouter.Methods(http.MethodGet).Path("/mcp/tools").HandlerFunc(module_handlers.McpToolListHandler(sh))
 	serverRouter.Methods(http.MethodGet).Path("/tools").HandlerFunc(module_handlers.ToolListHandler(sh))
 	serverRouter.Methods(http.MethodPost).Path("/{event_name}").HandlerFunc(module_handlers.ConfigSyncHandler(sh))
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()

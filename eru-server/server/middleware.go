@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime/debug"
+	"strings"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -108,4 +109,27 @@ func panicRecoveryMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func webSocketMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if this is a WebSocket upgrade request
+		if isWebSocketUpgrade(r) {
+			// Apply special handling for WebSocket connections
+			ctx := r.Context()
+			logs.WithContext(ctx).Info(fmt.Sprintf("WebSocket upgrade request from: %s", r.RemoteAddr))
+
+			// Add WebSocket-specific context values
+			ctx = context.WithValue(ctx, "connection_type", "websocket")
+			ctx = context.WithValue(ctx, "upgrade_protocol", r.Header.Get("Sec-WebSocket-Protocol"))
+			r = r.WithContext(ctx)
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isWebSocketUpgrade(r *http.Request) bool {
+	return strings.ToLower(r.Header.Get("Connection")) == "upgrade" &&
+		strings.ToLower(r.Header.Get("Upgrade")) == "websocket"
 }

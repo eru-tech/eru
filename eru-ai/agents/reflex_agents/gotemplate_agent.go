@@ -181,14 +181,14 @@ func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessag
 		},
 	}
 	_ = chatRequest
-	/* agentOutput, err = goTemplateAgent.execute(ctx, chatRequest, contextStringI, goTemplateAgent.AgentTools, goTemplateAgent.AgentName, goTemplateAgent.SystemPrompt, 1)
+	agentOutput, err = goTemplateAgent.execute(ctx, chatRequest, contextStringI, goTemplateAgent.AgentTools, goTemplateAgent.AgentName, goTemplateAgent.SystemPrompt, 1, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
-	} */
+	}
 	return agentOutput, nil
 }
-func (goTemplateAgent *GoTemplateAgent) execute(ctx context.Context, chatRequest models.ChatRequest, contextStringI interface{}, tools map[string]tools.Tooling, agentName string, systemPrompt string, currentTry int, projectId string, tenantId string) (map[string]interface{}, error) {
+func (goTemplateAgent *GoTemplateAgent) execute(ctx context.Context, chatRequest models.ChatRequest, contextStringI interface{}, agentTools []agents.AgentTools, agentName string, systemPrompt string, currentTry int, projectId string, tenantId string) (map[string]interface{}, error) {
 	agentOutput := make(map[string]interface{})
 
 	toolResults, err := goTemplateAgent.ExecuteTools(ctx, chatRequest, goTemplateAgent.AgentTools, projectId, tenantId)
@@ -197,18 +197,12 @@ func (goTemplateAgent *GoTemplateAgent) execute(ctx context.Context, chatRequest
 		return nil, err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprintf("Tool results: %+v", toolResults))
-	/* response, err := goTemplateAgent.Model.QueryModelWithTool(ctx, chatRequest, goTemplateAgent.Tools, goTemplateAgent.AgentName, goTemplateAgent.SystemPrompt)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
-	} */
 
-	//agentResponse := response.Content["raw"].(map[string]interface{})
-	/* if gotemplate, gotemplateOk := agentResponse["gotemplate"].(map[string]interface{}); gotemplateOk {
+	if gotemplate, gotemplateOk := toolResults["gotemplate"].(map[string]interface{}); gotemplateOk {
 		if code, codeOk := gotemplate["code"]; codeOk {
 			agentOutput["code"] = code
 		}
-	} */
+	}
 	templateCode := agentOutput["code"].(string)
 	var output interface{}
 	output, err = goTemplateAgent.validate(ctx, templateCode, contextStringI, "json", currentTry)
@@ -218,7 +212,7 @@ func (goTemplateAgent *GoTemplateAgent) execute(ctx context.Context, chatRequest
 		if currentTry < goTemplateAgent.RetryCount {
 			errMsgString := fmt.Sprintf("Error in the gotemplate code. Please try again. \n Error: %s \n Erroneous Tenplate Code generated in previous try: %s", err.Error(), templateCode)
 			chatRequest.Messages[1].Content = fmt.Sprint(chatRequest.Messages[1].Content, "\n", errMsgString)
-			return goTemplateAgent.execute(ctx, chatRequest, contextStringI, tools, goTemplateAgent.AgentName, goTemplateAgent.SystemPrompt, currentTry+1, projectId, tenantId)
+			return goTemplateAgent.execute(ctx, chatRequest, contextStringI, agentTools, goTemplateAgent.AgentName, goTemplateAgent.SystemPrompt, currentTry+1, projectId, tenantId)
 		}
 		return nil, err
 	}

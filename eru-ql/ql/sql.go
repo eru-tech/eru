@@ -131,7 +131,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 		sqd.Query = sqd.secureSQL(ctx, sqd.Query, projectId, datasource, s, sr)
 		logs.WithContext(ctx).Info(sqd.Query)
 		if sqd.OutputType == eru_writes.OutputTypeCsv || sqd.OutputType == eru_writes.OutputTypeExcel {
-			result, err = sr.ExecuteQueryForCsv(ctx, sqd.Query, datasource, "Results")
+			result, err = sr.ExecuteQueryForCsv(ctx, sqd.Query, datasource, "Results", sr)
 			if err != nil {
 				err = logs.Err(ctx, err, "")
 			}

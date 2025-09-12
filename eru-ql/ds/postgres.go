@@ -334,10 +334,10 @@ func (pr *PostgresSqlMaker) AddLimitSkipClause(ctx context.Context, query string
 
 func (pr *PostgresSqlMaker) getDataTypeMapping(ctx context.Context, dataType string) string {
 	logs.WithContext(ctx).Debug("getDataTypeMapping - Start")
-	if postgresDataTypeMapping[dataType] == "" {
+	if postgresDataTypeMapping[strings.ToLower(dataType)] == "" {
 		return "NotSupported"
 	} else {
-		return postgresDataTypeMapping[dataType]
+		return postgresDataTypeMapping[strings.ToLower(dataType)]
 	}
 }
 
@@ -401,19 +401,28 @@ ORDER BY c.ordinal_position`
 var postgresDataTypeMapping = map[string]string{
 	"smallint":                    "SmallInteger",
 	"integer":                     "Integer",
+	"int4":                        "Integer",
+	"int8":                        "Integer",
+	"int16":                       "Integer",
+	"int32":                       "Integer",
+	"int64":                       "Integer",
+	"int":                         "Integer",
 	"bigint":                      "BigInteger",
 	"numeric":                     "Decimal",
 	"real":                        "Float",
 	"double precision":            "Float",
+	"varchar":                     "Varchar",
 	"character varying":           "Varchar",
 	"character":                   "Char",
 	"text":                        "String",
+	"timestamp":                   "DateTime",
 	"timestamp without time zone": "DateTime",
 	"timestamp with time zone":    "DateTimeWithZone",
 	"date":                        "Date",
 	"time without time zone":      "Time",
 	"time with time zone":         "TimeWithZone",
 	"boolean":                     "Boolean",
+	"bool":                        "Boolean",
 	"json":                        "JSON",
 	"jsonb":                       "JSON"}
 

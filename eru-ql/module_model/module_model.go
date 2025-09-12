@@ -8,6 +8,7 @@ import (
 	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_writes "github.com/eru-tech/eru/eru-read-write/eru_writes"
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/eru-tech/eru/eru-store/store"
@@ -105,14 +106,17 @@ type ProjectSettings struct {
 	}
 */
 type MyQuery struct {
-	QueryName    string                     `json:"query_name"`
-	Query        string                     `json:"query"`
-	Vars         map[string]interface{}     `json:"vars"`
-	QueryType    string                     `json:"query_type"`
-	DBAlias      string                     `json:"db_alias"`
-	ReadWrite    string                     `json:"read_write"`
-	Cols         string                     `json:"cols"`
-	SecurityRule security_rule.SecurityRule `json:"security_rule"`
+	QueryName    string                                 `json:"query_name"`
+	Query        string                                 `json:"query"`
+	Vars         map[string]interface{}                 `json:"vars"`
+	QueryType    string                                 `json:"query_type"`
+	DBAlias      string                                 `json:"db_alias"`
+	ReadWrite    string                                 `json:"read_write"`
+	Cols         string                                 `json:"cols"`
+	SecurityRule security_rule.SecurityRule             `json:"security_rule"`
+	ExcelStyles  map[string]eru_writes.CellFormatter    `json:"excel_styles"`
+	Columns      map[string]eru_writes.ColumnarSettings `json:"columns"`
+	PivotConfig  map[string]eru_writes.PivotTableConfig `json:"pivot_config"`
 }
 
 type DataSource struct {

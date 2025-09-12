@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
-	"strings"
 )
 
 type MssqlSqlMaker struct {
@@ -54,6 +55,10 @@ func (mr *MssqlSqlMaker) getDataTypeMapping(ctx context.Context, dataType string
 	} else {
 		return mssqlDataTypeMapping[dataType]
 	}
+}
+func (mr *MssqlSqlMaker) getErutoDBDataTypeMapping(ctx context.Context, dataType string) string {
+	logs.WithContext(ctx).Debug("getErutoDBDataTypeMapping - Start")
+	return dataType
 }
 
 var mssqlTableMetaDataSQL = ""

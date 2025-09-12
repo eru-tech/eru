@@ -14,6 +14,7 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
+	eru_writes "github.com/eru-tech/eru/eru-read-write/eru_writes"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/eru-tech/eru/eru-store/store"
 )
@@ -515,7 +516,60 @@ func (ms *ModuleStore) SaveMyQuery(ctx context.Context, projectId string, queryN
 		} else if queryFirstWord == Q_DELETE {
 			readWrite = Q_DELETE
 		}
-		myquery := module_model.MyQuery{queryName, query, vars, queryType, dbAlias, readWrite, cols, securityRule}
+		excelStyles := make(map[string]eru_writes.CellFormatter)
+		if excelStylesData, excelStylesOk := vars["excel_styles"]; excelStylesOk {
+			// Marshal and unmarshal to convert interface{} to proper type
+			excelStylesBytes, err := json.Marshal(excelStylesData)
+			if err == nil {
+				err = json.Unmarshal(excelStylesBytes, &excelStyles)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
+			} else {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			delete(vars, "excel_styles")
+		}
+		columns := make(map[string]eru_writes.ColumnarSettings)
+		if columnsData, columnsOk := vars["columns"]; columnsOk {
+			columnsBytes, err := json.Marshal(columnsData)
+			if err == nil {
+				err = json.Unmarshal(columnsBytes, &columns)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
+			} else {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			delete(vars, "columns")
+		}
+		pivotConfig := make(map[string]eru_writes.PivotTableConfig)
+		if pivotConfigData, pivotConfigOk := vars["pivot_config"]; pivotConfigOk {
+			pivotConfigBytes, err := json.Marshal(pivotConfigData)
+			if err == nil {
+				err = json.Unmarshal(pivotConfigBytes, &pivotConfig)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+				}
+			} else {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			delete(vars, "pivot_config")
+		}
+
+		myquery := module_model.MyQuery{
+			QueryName:    queryName,
+			Query:        query,
+			Vars:         vars,
+			QueryType:    queryType,
+			DBAlias:      dbAlias,
+			ReadWrite:    readWrite,
+			Cols:         cols,
+			SecurityRule: securityRule,
+			ExcelStyles:  excelStyles,
+			Columns:      columns,
+			PivotConfig:  pivotConfig,
+		}
 		if ms.Projects[projectId].MyQueries == nil {
 			ms.Projects[projectId].MyQueries = make(map[string]*module_model.MyQuery)
 		}

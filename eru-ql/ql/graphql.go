@@ -217,10 +217,11 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					qrm.SQLQuery = sqlObj.DBQuery
 
 					if gqd.OutputType == eru_writes.OutputTypeCsv || gqd.OutputType == eru_writes.OutputTypeExcel {
-						result, err = graphQLs[i].ExecuteQueryForCsv(ctx, qrm.SQLQuery, datasource, mainAliasNames[i])
+						result, err = graphQLs[i].ExecuteQueryForCsv(ctx, qrm.SQLQuery, datasource, mainAliasNames[i], graphQLs[i])
 						if err != nil {
 							err = logs.Err(ctx, err, "")
 						}
+						queryObj.DataTypes = graphQLs[i].GetResultDataTypes(ctx)
 					} else {
 						result, err = graphQLs[i].ExecuteQuery(ctx, datasource, qrm)
 					}

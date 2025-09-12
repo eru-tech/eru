@@ -15,6 +15,17 @@ import (
 	"github.com/gorilla/mux"
 )
 
+func McpToolListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("McpToolListHandler - Start")
+		toolName := "MS_EMAIL" //get it from env variable
+		tool := tools_factory.GetTool(toolName)
+		mcpTools := tool.GetMcpTools()
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"tools": mcpTools})
+	}
+}
 func ToolListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 

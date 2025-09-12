@@ -7,7 +7,7 @@ require (
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000
 	github.com/google/go-cmp v0.6.0
 	github.com/jmoiron/sqlx v1.3.4
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.55.0
 )
 
 require (

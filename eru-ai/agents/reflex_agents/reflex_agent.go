@@ -8,8 +8,8 @@ import (
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
+	utility "github.com/eru-tech/eru/eru-ai/tools/utility"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	eru_models "github.com/eru-tech/eru/eru-models"
 )
 
 type ReflexAgent struct {
@@ -60,23 +60,14 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 	})
 	response := models.Message{}
 	if reflex_agent.OutputSchema.Type != "" {
-		outputTool := tools.Tool{
-			ToolType:     "STRUCTURED_OUTPUT",
-			ToolName:     "structured_output",
-			Description:  "Output the result",
-			OutputSchema: eru_models.JSONSchema{},
-			Parameters:   reflex_agent.OutputSchema,
-			ToolAction: tools.ToolAction{
-				ActionName:   "structured_output",
-				Description:  "Output the result",
-				OutputSchema: eru_models.JSONSchema{},
-				Parameters:   reflex_agent.OutputSchema,
-				GetParameters: func() eru_models.JSONSchema {
-					return reflex_agent.OutputSchema
-				},
-			},
-		}
-		agentResponse, err := reflex_agent.ExecuteTools(ctx, chatRequest, []agents.AgentTools{{Tool: &outputTool}}, projectId, tenantId)
+		outputTool := utility.StructuredOutputTool{}
+		outputTool.SetAttribute(ctx, "output_schema", reflex_agent.OutputSchema)
+		outputTool.SetAttribute(ctx, "parameters", reflex_agent.OutputSchema)
+		outputTool.SetAttribute(ctx, "description", "Output the result")
+		outputTool.SetAttribute(ctx, "tool_name", "structured_output")
+		outputTool.SetAttribute(ctx, "tool_type", "STRUCTURED_OUTPUT")
+		outputTool.SetToolAction("structured_output")
+		agentResponse, err := reflex_agent.ExecuteTools(ctx, chatRequest, []agents.AgentTools{{Tool: &outputTool, ToolOutputType: "json"}}, projectId, tenantId)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err

@@ -105,7 +105,7 @@ func (tool *Tool) SetToolAction(actionName string) {
 
 func (tool *Tool) GetParameters() eru_models.JSONSchema {
 	if tool.ToolAction.GetParameters == nil {
-		return eru_models.JSONSchema{}
+		return tool.Parameters
 	}
 	return tool.ToolAction.GetParameters()
 }

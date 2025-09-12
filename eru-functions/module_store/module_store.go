@@ -855,7 +855,7 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 		done := make(chan bool)
 
 		gm := server.GetGlobalGoroutineManager(ctx)
-		gm.SafeGoWithRestartBehavior("start-polling-events", func(bgCtx context.Context) {
+		gm.SafeGoWithRestartBehavior(fmt.Sprintf("start-polling-events-%s", eventName), func(bgCtx context.Context) {
 			cnt := 0
 			for res := range eventResults {
 				startTime := time.Now()

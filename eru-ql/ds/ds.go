@@ -33,7 +33,11 @@ type tablesInQuery struct {
 	name   string
 	nested bool
 }
-
+type ResultDataTypes struct {
+	ColName             string
+	ColType             string
+	ColDatabaseTypeName string
+}
 type SqlMaker struct {
 	TestFlag      bool
 	QueryType     string
@@ -61,6 +65,7 @@ type SqlMaker struct {
 	//resultIndexHolder []int
 	resultIndexHolderNew [][]map[int]int
 	result               map[string]interface{}
+	ResultDataTypes      []ResultDataTypes
 	//tempRA               []map[int]int
 	//tempA                map[int]int
 	//t                    int
@@ -103,13 +108,14 @@ type SqlMakerI interface {
 	ExecuteQuery(ctx context.Context, datasource *module_model.DataSource, qrm module_model.QueryResultMaker) (res map[string]interface{}, err error)
 	ExecuteMutationQuery(ctx context.Context, datasource *module_model.DataSource, myself SqlMakerI, mrm module_model.MutationResultMaker) (res []map[string]interface{}, err error)
 	ExecutePreparedQuery(ctx context.Context, query string, datasource *module_model.DataSource) (res map[string]interface{}, err error)
-	ExecuteQueryForCsv(ctx context.Context, query string, datasource *module_model.DataSource, aliasName string) (res map[string]interface{}, err error)
+	ExecuteQueryForCsv(ctx context.Context, query string, datasource *module_model.DataSource, aliasName string, myself SqlMakerI) (res map[string]interface{}, err error)
 	RollbackQuery(ctx context.Context) (err error)
 	GetTableList(ctx context.Context, query string, datasource *module_model.DataSource, myself SqlMakerI) (err error)
 	GetTableMetaDataSQL(ctx context.Context) string
 	MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]module_model.TableColsMetaData) (string, error)
 	MakeDropTableSQL(ctx context.Context, tableName string) (string, error)
 	getDataTypeMapping(ctx context.Context, dataType string) string
+	getErutoDBDataTypeMapping(ctx context.Context, dataType string) string
 	GetSqlResult(ctx context.Context) map[string]interface{}
 	GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string
 	GetBlockedWords() []string
@@ -120,6 +126,7 @@ type SqlMakerI interface {
 	MakeJsonColumn(jsonField string, jsonKey string) string
 	ExtractTableNames(ctx context.Context, query string) module_model.TablesInQuery
 	DefaultSchemaName() string
+	GetResultDataTypes(ctx context.Context) []ResultDataTypes
 }
 
 func (sqr *SqlMaker) GetBlockedWords() []string {
@@ -183,6 +190,9 @@ func (sqr *SqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, rowCount i
 
 func (sqr *SqlMaker) GetBaseSqlMaker(ctx context.Context) *SqlMaker {
 	return sqr
+}
+func (sqr *SqlMaker) GetResultDataTypes(ctx context.Context) []ResultDataTypes {
+	return sqr.ResultDataTypes
 }
 func (sqr *SqlMaker) GetTableMetaDataSQL(ctx context.Context) string {
 	return ""
@@ -497,7 +507,7 @@ func (sqr *SqlMaker) ProcessGraphQL(sel ast.Selection, vars map[string]interface
 }
 */
 
-func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datasource *module_model.DataSource, aliasName string) (res map[string]interface{}, err error) {
+func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datasource *module_model.DataSource, aliasName string, myself SqlMakerI) (res map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ExecuteQueryForCsv - Start")
 	rows, e := datasource.Con.Queryx(query)
 	if e != nil {
@@ -515,9 +525,11 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 	sqr.result = make(map[string]interface{})
 	var innerResult [][]interface{}
 	firstRow := true
+	var innerResultDataTypes []ResultDataTypes
 	for rows.Next() {
 		var innerResultRow []interface{}
 		var innerResultLabel []interface{}
+
 		ee = rows.MapScan(mapping)
 		if ee != nil {
 			ee = logs.Err(ctx, ee, "")
@@ -531,6 +543,12 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 					colHeader = colHeaderArray[1]
 				}
 				innerResultLabel = append(innerResultLabel, colHeader)
+				ct := ""
+				if mapping[colType.Name()] != nil {
+					ct = reflect.TypeOf(mapping[colType.Name()]).String()
+				}
+
+				innerResultDataTypes = append(innerResultDataTypes, ResultDataTypes{ColName: colHeader, ColType: ct, ColDatabaseTypeName: myself.getDataTypeMapping(ctx, colType.DatabaseTypeName())})
 			}
 			if mapping[colType.Name()] != nil {
 				if reflect.TypeOf(mapping[colType.Name()]).String() == "[]uint8" && colType.DatabaseTypeName() == "NUMERIC" {
@@ -583,6 +601,7 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 		innerResult = append(innerResult, []interface{}{})
 	}
 	sqr.result[aliasName] = innerResult
+	sqr.ResultDataTypes = innerResultDataTypes
 	return sqr.result, nil
 }
 

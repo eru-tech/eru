@@ -127,7 +127,11 @@ func (agent *Agent) ExecuteTools(ctx context.Context, chatRequest models.ChatReq
 				return nil, err
 			}
 			if toolOutputType == "json" {
-				toolResults[toolKey] = toolResult
+				if len(agentTools) == 1 {
+					toolResults = toolResult
+				} else {
+					toolResults[toolKey] = toolResult
+				}
 			} else {
 				toolResultBytes, err := json.Marshal(toolResult)
 				if err != nil {

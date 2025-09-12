@@ -93,6 +93,11 @@ func (mr *MysqlSqlMaker) getDataTypeMapping(ctx context.Context, dataType string
 	}
 }
 
+func (mr *MysqlSqlMaker) getErutoDBDataTypeMapping(ctx context.Context, dataType string) string {
+	logs.WithContext(ctx).Debug("getErutoDBDataTypeMapping - Start")
+	return dataType
+}
+
 var mysqlTableMetaDataSQL = `SELECT 
     c.TABLE_SCHEMA AS tblschema,
     c.TABLE_NAME AS tblname,

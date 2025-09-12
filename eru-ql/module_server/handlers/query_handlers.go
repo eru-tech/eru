@@ -313,6 +313,47 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			logs.WithContext(r.Context()).Error(err.Error())
 			return
 		}
+		var qobjs []ql.QueryObject
+		excelStyles := make(map[string]eru_writes.CellFormatter)
+		if excelStylesData, excelStylesOk := postBody["excel_styles"]; excelStylesOk {
+			// Marshal and unmarshal to convert interface{} to proper type
+			excelStylesBytes, err := json.Marshal(excelStylesData)
+			if err == nil {
+				err = json.Unmarshal(excelStylesBytes, &excelStyles)
+				if err != nil {
+					logs.WithContext(r.Context()).Error(err.Error())
+				}
+			} else {
+				logs.WithContext(r.Context()).Error(err.Error())
+			}
+			delete(postBody, "excel_styles")
+		}
+		columns := make(map[string]eru_writes.ColumnarSettings)
+		if columnsData, columnsOk := postBody["columns"]; columnsOk {
+			columnsBytes, err := json.Marshal(columnsData)
+			if err == nil {
+				err = json.Unmarshal(columnsBytes, &columns)
+				if err != nil {
+					logs.WithContext(r.Context()).Error(err.Error())
+				}
+			} else {
+				logs.WithContext(r.Context()).Error(err.Error())
+			}
+			delete(postBody, "columns")
+		}
+		pivotConfig := make(map[string]eru_writes.PivotTableConfig)
+		if pivotConfigData, pivotConfigOk := postBody["pivot_config"]; pivotConfigOk {
+			pivotConfigBytes, err := json.Marshal(pivotConfigData)
+			if err == nil {
+				err = json.Unmarshal(pivotConfigBytes, &pivotConfig)
+				if err != nil {
+					logs.WithContext(r.Context()).Error(err.Error())
+				}
+			} else {
+				logs.WithContext(r.Context()).Error(err.Error())
+			}
+			delete(postBody, "pivot_config")
+		}
 		// overwriting variables with same names
 		if myQuery.QueryName != "" {
 			qlInterface := ql.GetQL(myQuery.QueryType)
@@ -330,7 +371,7 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			}
 
 			qlInterface.SetQLData(r.Context(), myQuery, postBody, true, tokenObj, isPublic, outputType)
-			res, _, err = qlInterface.Execute(r.Context(), projectID, datasources, sh.Store, outputType)
+			res, qobjs, err = qlInterface.Execute(r.Context(), projectID, datasources, sh.Store, outputType)
 			/*
 				if err != nil {
 					server_handlers.FormatResponse(w, 400)
@@ -344,6 +385,7 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": errors.New(fmt.Sprint("query ", queryName, " not found")).Error()})
 			return
 		}
+		_ = qobjs
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			if res == nil {
@@ -351,15 +393,49 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 				return
 			}
 		} else if outputType == eru_writes.OutputTypeExcel {
-			ewd := eru_writes.ExcelWriteData{}
-			ewd.ColumnarDataHeaderFirstRow = true
-			//cf := eru_writes.CellFormatter{}
-			//cf.DataTypes = []string{"int", "string", "boolean", "float", "date"}
-			//ewd.CellFormat = cf
+			columns = eru_writes.MergeColumnarSettings(columns, myQuery.Columns)
+			excelStyles = eru_writes.MergeCellFormattersMap(excelStyles, myQuery.ExcelStyles)
+			pivotConfig = eru_writes.MergePivotConfigs(pivotConfig, myQuery.PivotConfig)
 
+			ewd := eru_writes.ExcelWriteData{
+				WriteData: eru_writes.WriteData{
+					ColumnarSettings: columns,
+					FileName:         fmt.Sprintf("%s.xlsx", queryName),
+				},
+				CellFormat:  excelStyles,
+				PivotConfig: pivotConfig,
+			}
 			var b []byte // creates IO Writer
-			for _, v := range res {
+			if ewd.ColumnarSettings == nil {
+				ewd.ColumnarSettings = make(map[string]eru_writes.ColumnarSettings)
+			}
+			for vi, v := range res {
 				for k, excelData := range v {
+
+					headers := make(map[int]eru_writes.ColumnHeaders)
+					if _, exists := ewd.ColumnarSettings[k]; exists {
+						headers = ewd.ColumnarSettings[k].Headers
+					}
+					for idt, dt := range qobjs[vi].DataTypes {
+						mw := 0.0
+						st := false
+						if _, exists := headers[idt]; exists {
+							mw = headers[idt].MaxWidth
+							st = headers[idt].SubTotal
+						}
+						headers[idt] = eru_writes.ColumnHeaders{
+							HeaderName: dt.ColName,
+							DataType:   dt.ColDatabaseTypeName,
+							MaxWidth:   mw,
+							SubTotal:   st,
+						}
+					}
+
+					ewd.ColumnarSettings[k] = eru_writes.ColumnarSettings{
+						HeaderFirstRow: true,
+						Headers:        headers,
+					}
+
 					if records, ok := excelData.([][]interface{}); ok {
 						if len(records[0]) > 0 {
 							if ewd.ColumnarDataMap == nil {
@@ -368,7 +444,7 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 							ewd.ColumnarDataMap[k] = records
 						}
 					} else {
-						err = errors.New(fmt.Sprint("incorrect excel data format"))
+						err = errors.New("incorrect excel data format")
 						server_handlers.FormatResponse(w, 400)
 						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 					}
