@@ -155,7 +155,7 @@ func getDefaultDataStyle() CellStyle {
 
 func getDefaultHorizontalAlignment(dataType string) string {
 	switch dataType {
-	case DataTypeString:
+	case DataTypeString, DataTypeVarchar, DataTypeChar:
 		return "left"
 	case DataTypeInteger, DataTypeBigInteger, DataTypeSmallInteger:
 		return "right"
@@ -254,26 +254,6 @@ func calculatePivotRange(sheetName string, pivotConfig PivotTableConfig) string 
 
 	endCol := columnToLetter(estimatedCols)
 	return fmt.Sprintf("%s!A1:%s%d", sheetName, endCol, estimatedRows)
-}
-
-// parseCellReference parses a cell reference like "A1" into row and column numbers
-func parseCellReference(cellRef string) (int, int) {
-	colStr := ""
-	rowStr := ""
-
-	for i, char := range cellRef {
-		if char >= 'A' && char <= 'Z' {
-			colStr += string(char)
-		} else if char >= '0' && char <= '9' {
-			rowStr = cellRef[i:]
-			break
-		}
-	}
-
-	row, _ := strconv.Atoi(rowStr)
-	col := letterToColumn(colStr)
-
-	return row, col
 }
 
 // autoFitPivotTableColumns auto-fits columns in the pivot table range
@@ -546,6 +526,69 @@ func createStyle(f *excelize.File, style CellStyle) (int, error) {
 	return f.NewStyle(excelStyle)
 }
 
+// Helper function to merge two CellStyle structs
+func mergeCellStyles(base, override CellStyle) CellStyle {
+	result := base
+
+	// Merge Font
+	if override.Font != nil {
+		if result.Font == nil {
+			result.Font = &FontStyle{}
+		}
+		if override.Font.Bold {
+			result.Font.Bold = override.Font.Bold
+		}
+		if override.Font.Italic {
+			result.Font.Italic = override.Font.Italic
+		}
+		if override.Font.Family != "" {
+			result.Font.Family = override.Font.Family
+		}
+		if override.Font.Size > 0 {
+			result.Font.Size = override.Font.Size
+		}
+		if override.Font.Color != "" {
+			result.Font.Color = override.Font.Color
+		}
+	}
+
+	// Merge Fill
+	if override.Fill != nil {
+		if result.Fill == nil {
+			result.Fill = &FillStyle{}
+		}
+		if override.Fill.Type != "" {
+			result.Fill.Type = override.Fill.Type
+		}
+		if len(override.Fill.Color) > 0 {
+			result.Fill.Color = override.Fill.Color
+		}
+		if override.Fill.Pattern > 0 {
+			result.Fill.Pattern = override.Fill.Pattern
+		}
+	}
+
+	// Merge Border
+	if override.Border != nil {
+		result.Border = override.Border
+	}
+
+	// Merge Alignment
+	if override.Alignment != nil {
+		if result.Alignment == nil {
+			result.Alignment = &AlignmentStyle{}
+		}
+		if override.Alignment.Horizontal != "" {
+			result.Alignment.Horizontal = override.Alignment.Horizontal
+		}
+		if override.Alignment.Vertical != "" {
+			result.Alignment.Vertical = override.Alignment.Vertical
+		}
+	}
+
+	return result
+}
+
 func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byte, err error) {
 	logs.WithContext(ctx).Debug("WriteColumnar - Start")
 
@@ -562,16 +605,25 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 	} */
 
 	f := excelize.NewFile()
+	//var createdFiles []string // Track files created on server
 	defer func() {
 		if err := f.Close(); err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 		}
+		// Clean up created files
+		/* for _, filePath := range createdFiles {
+			if err := os.Remove(filePath); err != nil {
+				logs.WithContext(ctx).Warn(fmt.Sprintf("Failed to delete temporary file %s: %v", filePath, err))
+			} else {
+				logs.WithContext(ctx).Debug(fmt.Sprintf("Deleted temporary file: %s", filePath))
+			}
+		} */
 	}()
 	sheet1Found := false
 	for k, v := range ewd.ColumnarDataMap {
 		sheetSettings := ColumnarSettings{
 			HeaderFirstRow: true,
-			Headers:        make(map[int]ColumnHeaders),
+			Headers:        make(map[string]ColumnHeaders),
 		}
 		if ewd.ColumnarSettings != nil {
 			if settings, exists := ewd.ColumnarSettings[k]; exists {
@@ -621,12 +673,25 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 		} */
 
 		// Process data rows
+		var headerRow []interface{}
 		for rNo, row := range v {
-			for cNo, col := range row {
+			if sheetSettings.HeaderFirstRow && rNo == 0 {
+				headerRow = row
+			}
+			for cNo, colV := range row {
+				col := colV
+				if sheetSettings.HeaderFirstRow && rNo == 0 {
+					colHeaderKey := fmt.Sprint(colV)
+					col = sheetSettings.Headers[colHeaderKey].HeaderLabel
+				}
 				cellRef := fmt.Sprint(columnToLetter(cNo+1), rNo+1)
 
 				// Determine data type - use provided type or auto-detect
-				dt := sheetSettings.Headers[cNo].DataType
+				colKey := fmt.Sprint(cNo)
+				if headerRow != nil {
+					colKey = headerRow[cNo].(string)
+				}
+				dt := sheetSettings.Headers[colKey].DataType
 				if dt == DataTypeString {
 					// Auto-detect type if not specified
 					dt = reflect.TypeOf(col).String()
@@ -635,7 +700,7 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 				// Set cell value with proper data type
 				var setErr error
 				switch dt {
-				case DataTypeString:
+				case DataTypeString, DataTypeVarchar, DataTypeChar:
 					setErr = f.SetCellStr(k, cellRef, safeString(col))
 				case DataTypeInteger, DataTypeBigInteger, DataTypeSmallInteger:
 					if intVal, ok := safeInt(col); ok {
@@ -674,7 +739,7 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 			//	}
 		}
 
-		startDataCellRef := fmt.Sprint(columnToLetter(1), 1)
+		/* startDataCellRef := fmt.Sprint(columnToLetter(1), 1)
 		endDataCellRef := fmt.Sprint(columnToLetter(len(v[0])), len(v))
 		if sheetSettings.HeaderFirstRow {
 			startHeaderCellRef := fmt.Sprint(columnToLetter(1), 1)
@@ -686,6 +751,39 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 		}
 		if styleID, styleErr := createStyle(f, ewd.CellFormat[k].DataStyle); styleErr == nil {
 			f.SetCellStyle(k, startDataCellRef, endDataCellRef, styleID)
+		} */
+		// Apply additional alignment styles to merge with existing styles
+		startRow := 1
+		if sheetSettings.HeaderFirstRow {
+			startRow = 2
+			// Apply center alignment to header row
+			headerAlignmentStyle := CellStyle{
+				Alignment: &AlignmentStyle{
+					Horizontal: "center",
+				},
+			}
+			// Merge with existing header style
+			mergedHeaderStyle := mergeCellStyles(ewd.CellFormat[k].HeaderStyle, headerAlignmentStyle)
+			if styleID, styleErr := createStyle(f, mergedHeaderStyle); styleErr == nil {
+				f.SetCellStyle(k, fmt.Sprint(columnToLetter(1), 1), fmt.Sprint(columnToLetter(len(v[0])), 1), styleID)
+			}
+		}
+
+		// Apply data type specific alignment to data columns
+		for _, h := range sheetSettings.Headers {
+			i := getColumnNumber(headerRow, h.HeaderName)
+			if i >= 0 {
+				dataAlignmentStyle := CellStyle{
+					Alignment: &AlignmentStyle{
+						Horizontal: getDefaultHorizontalAlignment(h.DataType),
+					},
+				}
+				// Merge with existing data style
+				mergedDataStyle := mergeCellStyles(ewd.CellFormat[k].DataStyle, dataAlignmentStyle)
+				if styleID, styleErr := createStyle(f, mergedDataStyle); styleErr == nil {
+					f.SetCellStyle(k, fmt.Sprint(columnToLetter(i+1), startRow), fmt.Sprint(columnToLetter(i+1), len(v)), styleID)
+				}
+			}
 		}
 
 		//Add pivot here if confg is provided
@@ -722,27 +820,56 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 
 				// Set row fields with subtotal information
 				for i, row := range pivotConfig.Rows {
+					fn := row
+					fl := row
+					fnSplit := strings.Split(fn, "**")
+					if len(fnSplit) > 1 {
+						fn = fnSplit[0]
+						fl = fnSplit[1]
+					}
+					colKey := fmt.Sprint(i)
+					if sheetSettings.HeaderFirstRow {
+						colKey = fn
+					}
 					pivotOptions.Rows[i] = excelize.PivotTableField{
-						Data:            row,
-						Name:            row,
-						DefaultSubtotal: ewd.getFieldSubTotal(k, i),
+						Data:            fn,
+						Name:            fl,
+						DefaultSubtotal: ewd.getFieldSubTotal(k, colKey),
 					}
 				}
 
 				// Set column fields with subtotal information
 				for i, col := range pivotConfig.Columns {
+					fn := col
+					fl := col
+					fnSplit := strings.Split(fn, "**")
+					if len(fnSplit) > 1 {
+						fn = fnSplit[0]
+						fl = fnSplit[1]
+					}
+					colKey := fmt.Sprint(i)
+					if sheetSettings.HeaderFirstRow {
+						colKey = fn
+					}
 					pivotOptions.Columns[i] = excelize.PivotTableField{
-						Data:            col,
-						Name:            col,
-						DefaultSubtotal: ewd.getFieldSubTotal(k, i),
+						Data:            fn,
+						Name:            fl,
+						DefaultSubtotal: ewd.getFieldSubTotal(k, colKey),
 					}
 				}
 
 				// Set data fields (measures)
 				for i, measure := range pivotConfig.Aggregations {
+					fn := measure.FieldName
+					fl := measure.FieldName
+					fnSplit := strings.Split(fn, "**")
+					if len(fnSplit) > 1 {
+						fn = fnSplit[0]
+						fl = fnSplit[1]
+					}
 					pivotOptions.Data[i] = excelize.PivotTableField{
-						Data:     measure.FieldName,
-						Name:     measure.FieldName,
+						Data:     fn,
+						Name:     fl,
 						Subtotal: measure.AggregationFunction,
 					}
 				}
@@ -765,7 +892,11 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 		// Set column widths with auto-fit and max width constraints
 		if len(v) > 0 {
 			for cNo := 0; cNo < len(v[0]); cNo++ {
-				maxWidthConstraint := sheetSettings.Headers[cNo].MaxWidth
+				colKey := fmt.Sprint(cNo)
+				if headerRow != nil {
+					colKey = headerRow[cNo].(string)
+				}
+				maxWidthConstraint := sheetSettings.Headers[colKey].MaxWidth
 				if maxWidthConstraint == 0 {
 					maxWidthConstraint = DefaultMaxColumnWidth
 				}
@@ -783,15 +914,19 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 			}
 		}
 
-		// Save spreadsheet by the given path.
-		if ewd.FileName != "" {
-			logs.WithContext(ctx).Info(fmt.Sprint("saving file at ", ewd.FileName))
-			if saveErr := f.SaveAs(fmt.Sprint(ewd.FileName)); saveErr != nil {
-				err = saveErr
-				logs.WithContext(ctx).Error(err.Error())
-			}
-		}
 	}
+	// Save spreadsheet by the given path.
+	/* if ewd.FileName != "" {
+		fileName := fmt.Sprint(ewd.FileName, "_", time.Now().UnixNano(), ".xlsx")
+		logs.WithContext(ctx).Info(fmt.Sprint("saving file at ", fileName))
+		if saveErr := f.SaveAs(fileName); saveErr != nil {
+			err = saveErr
+			logs.WithContext(ctx).Error(err.Error())
+		} else {
+			// Track the created file for cleanup
+			createdFiles = append(createdFiles, fileName)
+		}
+	} */
 	if !sheet1Found {
 		f.DeleteSheet("Sheet1")
 	}
@@ -824,7 +959,7 @@ func letterToColumn(letter string) (column int) {
 }
 
 // getFieldSubTotal returns the SubTotal setting for a field from CellFormatter
-func (ewd *ExcelWriteData) getFieldSubTotal(sheetName string, cNo int) bool {
+func (ewd *ExcelWriteData) getFieldSubTotal(sheetName string, colKey string) bool {
 	if ewd.ColumnarSettings == nil {
 		return false
 	}
@@ -834,7 +969,7 @@ func (ewd *ExcelWriteData) getFieldSubTotal(sheetName string, cNo int) bool {
 		return false
 	}
 
-	if subTotalHeader, exists := sheetSettings.Headers[cNo]; exists {
+	if subTotalHeader, exists := sheetSettings.Headers[colKey]; exists {
 		if subTotalHeader.SubTotal {
 			return true
 		}
@@ -919,8 +1054,54 @@ func MergeColumnarSettings(primary, secondary map[string]ColumnarSettings) map[s
 
 	// Then, override with values from primary (priority)
 	for k, v := range primary {
+		if _, exists := result[k]; !exists {
+			result[k] = v
+		} else {
+			columnarSettings := ColumnarSettings{}
+			if v.HeaderFirstRow {
+				columnarSettings.HeaderFirstRow = true
+			}
+			columnHeaders := ColumnHeaders{}
+			for hk, hv := range v.Headers {
+				if hv.HeaderName != "" {
+					columnHeaders.HeaderName = hv.HeaderName
+				} else {
+					columnHeaders.HeaderName = result[k].Headers[hk].HeaderName
+				}
+				if hv.HeaderLabel != "" {
+					columnHeaders.HeaderLabel = hv.HeaderLabel
+				} else {
+					columnHeaders.HeaderLabel = result[k].Headers[hk].HeaderLabel
+				}
+				if hv.DataType != "" {
+					columnHeaders.DataType = hv.DataType
+				} else {
+					columnHeaders.DataType = result[k].Headers[hk].DataType
+				}
+				if hv.MaxWidth != 0 {
+					columnHeaders.MaxWidth = hv.MaxWidth
+				} else {
+					columnHeaders.MaxWidth = result[k].Headers[hk].MaxWidth
+				}
+				if hv.SubTotal {
+					columnHeaders.SubTotal = hv.SubTotal
+				} else {
+					columnHeaders.SubTotal = result[k].Headers[hk].SubTotal
+				}
+			}
+			result[k] = columnarSettings
+		}
 		result[k] = v
 	}
 
 	return result
+}
+
+func getColumnNumber(headerRow []interface{}, value interface{}) int {
+	for i, v := range headerRow {
+		if v == value {
+			return i
+		}
+	}
+	return -1
 }

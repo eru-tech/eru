@@ -22,14 +22,15 @@ type WriteData struct {
 
 type ColumnarSettings struct {
 	HeaderFirstRow bool
-	Headers        map[int]ColumnHeaders
+	Headers        map[string]ColumnHeaders
 }
 
 type ColumnHeaders struct {
-	HeaderName string  `json:"header_name"`
-	DataType   string  `json:"data_type"`
-	MaxWidth   float64 `json:"max_width"`
-	SubTotal   bool    `json:"sub_total"`
+	HeaderName  string  `json:"header_name"`
+	HeaderLabel string  `json:"header_label"`
+	DataType    string  `json:"data_type"`
+	MaxWidth    float64 `json:"max_width"`
+	SubTotal    bool    `json:"sub_total"`
 }
 
 type WriteI interface {

@@ -412,22 +412,40 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			for vi, v := range res {
 				for k, excelData := range v {
 
-					headers := make(map[int]eru_writes.ColumnHeaders)
+					headers := make(map[string]eru_writes.ColumnHeaders)
 					if _, exists := ewd.ColumnarSettings[k]; exists {
 						headers = ewd.ColumnarSettings[k].Headers
 					}
-					for idt, dt := range qobjs[vi].DataTypes {
+					for _, dt := range qobjs[vi].DataTypes {
 						mw := eru_writes.DefaultMaxColumnWidth
 						st := true
-						if _, exists := headers[idt]; exists {
-							mw = headers[idt].MaxWidth
-							st = headers[idt].SubTotal
+						hl := dt.ColName
+						if _, exists := headers[dt.ColName]; exists {
+							mw = headers[dt.ColName].MaxWidth
+							st = headers[dt.ColName].SubTotal
+							hl = headers[dt.ColName].HeaderLabel
+							if hl == "" {
+								hl = dt.ColName
+							}
 						}
-						headers[idt] = eru_writes.ColumnHeaders{
-							HeaderName: dt.ColName,
-							DataType:   dt.ColDatabaseTypeName,
-							MaxWidth:   mw,
-							SubTotal:   st,
+						headers[dt.ColName] = eru_writes.ColumnHeaders{
+							HeaderName:  dt.ColName,
+							HeaderLabel: hl,
+							DataType:    dt.ColDatabaseTypeName,
+							MaxWidth:    mw,
+							SubTotal:    st,
+						}
+					}
+					for hk, _ := range headers {
+						hkFound := false
+						for _, dt := range qobjs[vi].DataTypes {
+							if dt.ColName == hk {
+								hkFound = true
+								break
+							}
+						}
+						if !hkFound {
+							delete(headers, hk)
 						}
 					}
 
