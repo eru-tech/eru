@@ -99,7 +99,7 @@ type PivotTableConfig struct {
 
 type PivotTableAggregations struct {
 	AggregationFunction string `json:"aggregation_function"`
-	Field_Name          string `json:"field_name"`
+	FieldName           string `json:"field_name"`
 }
 
 /* // Helper functions for safe access and defaults
@@ -741,8 +741,8 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 				// Set data fields (measures)
 				for i, measure := range pivotConfig.Aggregations {
 					pivotOptions.Data[i] = excelize.PivotTableField{
-						Data:     measure.Field_Name,
-						Name:     measure.Field_Name,
+						Data:     measure.FieldName,
+						Name:     measure.FieldName,
 						Subtotal: measure.AggregationFunction,
 					}
 				}

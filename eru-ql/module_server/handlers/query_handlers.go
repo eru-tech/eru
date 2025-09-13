@@ -417,8 +417,8 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 						headers = ewd.ColumnarSettings[k].Headers
 					}
 					for idt, dt := range qobjs[vi].DataTypes {
-						mw := 0.0
-						st := false
+						mw := eru_writes.DefaultMaxColumnWidth
+						st := true
 						if _, exists := headers[idt]; exists {
 							mw = headers[idt].MaxWidth
 							st = headers[idt].SubTotal

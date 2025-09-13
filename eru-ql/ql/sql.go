@@ -135,6 +135,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			if err != nil {
 				err = logs.Err(ctx, err, "")
 			}
+			queryObj.DataTypes = sr.GetResultDataTypes(ctx)
 			res = append(res, result)
 		} else {
 			result, err = sr.ExecutePreparedQuery(ctx, sqd.Query, datasource)
