@@ -441,8 +441,8 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 		if err != nil {
 			return
 		}
-		reqVars[funcStep.GetRouteName()] = vars
-		reqVars[funcStep.FuncKey] = vars
+		safeSetVar(reqVars, funcStep.GetRouteName(), vars)
+		safeSetVar(reqVars, funcStep.FuncKey, vars)
 		var strCondErr error
 
 		if funcStep.Condition != "" {
@@ -936,10 +936,10 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 				}
 				for _, v := range subFuncVarsMap {
 					for kk, vv := range v.ResVars {
-						resVars[fmt.Sprint(funcStep.FuncKey, ".", kk)] = vv
+						safeSetVar(resVars, fmt.Sprint(funcStep.FuncKey, ".", kk), vv)
 					}
 					for kk, vv := range v.ReqVars {
-						reqVars[fmt.Sprint(funcStep.FuncKey, ".", kk)] = vv
+						safeSetVar(reqVars, fmt.Sprint(funcStep.FuncKey, ".", kk), vv)
 					}
 				}
 			} else {
@@ -949,8 +949,8 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 
 			}
 
-			resVars[funcStep.GetRouteName()] = routevars
-			resVars[funcStep.FuncKey] = routevars
+			safeSetVar(resVars, funcStep.GetRouteName(), routevars)
+			safeSetVar(resVars, funcStep.FuncKey, routevars)
 			if funcStep.Route.OnError == "STOP" && response.StatusCode >= 400 {
 				logs.WithContext(ctx).Info("inside funcStep.Route.OnError == \"STOP\" && response.StatusCode >= 400")
 				return
@@ -981,8 +981,8 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 					err = trespErr
 					return
 				}
-				resVars[funcStep.GetRouteName()] = trVars
-				resVars[funcStep.FuncKey] = trVars
+				safeSetVar(resVars, funcStep.GetRouteName(), trVars)
+				safeSetVar(resVars, funcStep.FuncKey, trVars)
 			}
 			if funcStep.Route.Redirect {
 				logs.WithContext(ctx).Info(fmt.Sprint("Redirect URl = ", funcStep.Route.FinalRedirectUrl))
@@ -1014,10 +1014,10 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 		response, childFuncVarsMap, asyncChilFuncData, err = RunFuncSteps(ctx, funcStep.FuncSteps, request, reqVars, resVars, mainRouteName, funcThread, loopThread, funcStepName, endFuncStepName, started, fromAsync, inLoop)
 		for _, v := range childFuncVarsMap {
 			for kk, vv := range v.ResVars {
-				resVars[kk] = vv
+				safeSetVar(resVars, kk, vv)
 			}
 			for kk, vv := range v.ReqVars {
-				reqVars[kk] = vv
+				safeSetVar(reqVars, kk, vv)
 			}
 		}
 		if asyncChilFuncData != nil {

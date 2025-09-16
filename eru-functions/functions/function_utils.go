@@ -806,13 +806,13 @@ func errorResponse(ctx context.Context, errMsg string, request *http.Request) (r
 	return
 }
 
-var cloneMutex sync.Mutex
+var varsMutex sync.RWMutex
 
 func cloneInterface(ctx context.Context, i interface{}) (iClone interface{}, err error) {
 	logs.WithContext(ctx).Debug("cloneInterface - Start")
 
-	cloneMutex.Lock()
-	defer cloneMutex.Unlock()
+	varsMutex.RLock()
+	defer varsMutex.RUnlock()
 
 	iBytes, err := json.Marshal(i)
 	if err != nil {
@@ -829,8 +829,8 @@ func cloneInterface(ctx context.Context, i interface{}) (iClone interface{}, err
 }
 
 func safeCloneVarsMap(ctx context.Context, vars map[string]*TemplateVars) (map[string]*TemplateVars, error) {
-	cloneMutex.Lock()
-	defer cloneMutex.Unlock()
+	varsMutex.RLock()
+	defer varsMutex.RUnlock()
 
 	clonedMap := make(map[string]*TemplateVars)
 	for k, v := range vars {
@@ -850,6 +850,27 @@ func safeCloneVarsMap(ctx context.Context, vars map[string]*TemplateVars) (map[s
 		}
 	}
 	return clonedMap, nil
+}
+
+func safeSetVar(vars map[string]*TemplateVars, key string, value *TemplateVars) {
+	varsMutex.Lock()
+	defer varsMutex.Unlock()
+	vars[key] = value
+}
+
+func safeGetVar(vars map[string]*TemplateVars, key string) (*TemplateVars, bool) {
+	varsMutex.RLock()
+	defer varsMutex.RUnlock()
+	val, ok := vars[key]
+	return val, ok
+}
+
+func safeBatchSetVars(vars map[string]*TemplateVars, updates map[string]*TemplateVars) {
+	varsMutex.Lock()
+	defer varsMutex.Unlock()
+	for k, v := range updates {
+		vars[k] = v
+	}
 }
 
 func removeFieldsFromTemplateVars(ctx context.Context, fields []string, vars map[string]*TemplateVars) (err error) {
