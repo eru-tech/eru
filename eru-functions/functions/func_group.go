@@ -652,11 +652,8 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 			resVarsClone := resVars
 			if funcStep.FuncKey == funcStepName || started || funcStepName == "" {
 				var funcStepErr error
-				reqVarsI, _ := cloneInterface(ctx, reqVars)
-				reqVarsClone, _ = reqVarsI.(map[string]*TemplateVars)
-
-				resVarsI, _ := cloneInterface(ctx, resVars)
-				resVarsClone, _ = resVarsI.(map[string]*TemplateVars)
+				reqVarsClone, _ = safeCloneVarsMap(ctx, reqVars)
+				resVarsClone, _ = safeCloneVarsMap(ctx, resVars)
 
 				if len(loopArray) > 1 {
 					funcStep, funcStepErr = funcStep.Clone(ctx)

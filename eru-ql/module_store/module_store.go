@@ -10,10 +10,11 @@ import (
 	"strings"
 	"sync"
 
-	erumd5 "github.com/eru-tech/eru/eru-crypto/md5"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	common_types "github.com/eru-tech/eru/eru-ql/common_types"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
+	sqlengine "github.com/eru-tech/eru/eru-ql/sql_engine"
 	eru_writes "github.com/eru-tech/eru/eru-read-write/eru_writes"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/eru-tech/eru/eru-store/store"
@@ -47,12 +48,12 @@ type ModuleStoreI interface {
 	GetDataSources(ctx context.Context, projectId string) (datasources map[string]*module_model.DataSource, err error)
 	UpdateSchemaTables(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error)
 	AddSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
-	SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]module_model.TableColsMetaData, realStore ModuleStoreI) (err error)
+	SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]common_types.TableColsMetaData, realStore ModuleStoreI) (err error)
 	GetTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.SecurityRules, err error)
 	SaveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, securityRules module_model.SecurityRules, realStore ModuleStoreI) (err error)
 	RemoveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error)
 	SaveTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error)
-	SaveColumnMasking(ctx context.Context, projectId string, dbAlias string, tableName string, colName string, columnMasking module_model.ColumnMasking, realStore ModuleStoreI) (err error)
+	SaveColumnMasking(ctx context.Context, projectId string, dbAlias string, tableName string, colName string, columnMasking common_types.ColumnMasking, realStore ModuleStoreI) (err error)
 	GetTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error)
 	DropSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error)
 	RemoveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
@@ -197,8 +198,22 @@ func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore M
 					logs.WithContext(ctx).Error(err.Error())
 				}
 				//setting DB connection object in actual store
-				datasource.Con = datasourceClone.Con
-				datasource.ConStatus = datasourceClone.ConStatus
+				if datasource.DbName == "iceberg" {
+					if datasourceClone.IcebergConfig.S3TablesConfig.Session != nil {
+						datasource.IcebergConfig.S3TablesConfig.Session = datasourceClone.IcebergConfig.S3TablesConfig.Session
+						datasource.ConStatus = true
+						datasource.IcebergConfig.S3TablesConfig.BucketArn = datasourceClone.IcebergConfig.S3TablesConfig.BucketArn
+					} else {
+						datasource.ConStatus = false
+					}
+					if datasourceClone.SqlEngineType != "" {
+						datasource.SqlEngineType = datasourceClone.SqlEngineType
+						datasource.SqlEngine = sqlengine.GetSQLEngine(datasourceClone.SqlEngineType)
+					}
+				} else {
+					datasource.Con = datasourceClone.Con
+					datasource.ConStatus = datasourceClone.ConStatus
+				}
 
 			} else {
 				err = errors.New(fmt.Sprint(datasource.DbName, " not found"))
@@ -249,6 +264,11 @@ func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, dat
 	logs.WithContext(ctx).Debug("SaveDataSource - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
+
+	if datasource.DbType == "iceberg" && datasource.IcebergConfig.CatalogType != "s3tables" {
+		return errors.New("currently only s3tables is supported for iceberg")
+	}
+
 	err := ms.checkProjectExists(ctx, projectId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -282,8 +302,22 @@ func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, dat
 			logs.WithContext(ctx).Error(err.Error())
 		}
 		//setting DB connection object in actual store
-		datasource.Con = datasourceClone.Con
-		datasource.ConStatus = datasourceClone.ConStatus
+		if datasource.DbName == "iceberg" {
+			if datasourceClone.IcebergConfig.S3TablesConfig.Session != nil {
+				datasource.IcebergConfig.S3TablesConfig.Session = datasourceClone.IcebergConfig.S3TablesConfig.Session
+				datasource.ConStatus = true
+				datasource.IcebergConfig.S3TablesConfig.BucketArn = datasourceClone.IcebergConfig.S3TablesConfig.BucketArn
+			} else {
+				datasource.ConStatus = false
+			}
+			if datasourceClone.SqlEngineType != "" {
+				datasource.SqlEngineType = datasourceClone.SqlEngineType
+				datasource.SqlEngine = datasourceClone.SqlEngine
+			}
+		} else {
+			datasource.Con = datasourceClone.Con
+			datasource.ConStatus = datasourceClone.ConStatus
+		}
 	}
 	logs.WithContext(ctx).Info("SaveStore called from SaveDataSource")
 	return realStore.SaveStore(ctx, projectId, "", realStore)
@@ -364,7 +398,7 @@ func (ms *ModuleStore) AddSchemaTable(ctx context.Context, projectId string, dbA
 	datasource := ms.Projects[projectId].DataSources[dbAlias]
 	if val, ok := datasource.OtherTables[tableName]; ok {
 		if datasource.SchemaTables == nil {
-			datasource.SchemaTables = make(map[string]map[string]module_model.TableColsMetaData)
+			datasource.SchemaTables = make(map[string]map[string]common_types.TableColsMetaData)
 		}
 		datasource.SchemaTables[tableName] = val
 		delete(datasource.OtherTables, tableName)
@@ -431,7 +465,7 @@ func (ms *ModuleStore) RemoveSchemaTable(ctx context.Context, projectId string, 
 	datasource := ms.Projects[projectId].DataSources[dbAlias]
 	if val, ok := datasource.SchemaTables[tableName]; ok {
 		if datasource.OtherTables == nil {
-			datasource.OtherTables = make(map[string]map[string]module_model.TableColsMetaData)
+			datasource.OtherTables = make(map[string]map[string]common_types.TableColsMetaData)
 		}
 		datasource.OtherTables[tableName] = val
 		delete(datasource.SchemaTables, tableName)
@@ -681,35 +715,214 @@ func (ms *ModuleStore) GetMyQueriesNames(ctx context.Context, projectId string) 
 	}
 }
 
-func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]module_model.TableColsMetaData, realStore ModuleStoreI) (err error) {
+// CompareTableStructures compares old and new table structures and returns the differences
+func (ms *ModuleStore) CompareTableStructures(ctx context.Context, oldTableObj, newTableObj map[string]common_types.TableColsMetaData) common_types.TableStructureDiff {
+	diff := common_types.TableStructureDiff{
+		NewColumns:      make(map[string]common_types.TableColsMetaData),
+		DroppedColumns:  []string{},
+		ModifiedColumns: make(map[string]common_types.ColumnChange),
+	}
+
+	// Find new columns and modified columns
+	for colName, newCol := range newTableObj {
+		if oldCol, exists := oldTableObj[colName]; exists {
+			// Column exists in both, check for modifications
+			changedFields := ms.getChangedFields(oldCol, newCol)
+			if len(changedFields) > 0 {
+				diff.ModifiedColumns[colName] = common_types.ColumnChange{
+					ChangeType:    common_types.ChangeTypeModifyColumn,
+					ColumnName:    colName,
+					OldColumn:     &oldCol,
+					NewColumn:     &newCol,
+					ChangedFields: changedFields,
+				}
+			}
+		} else {
+			// New column
+			diff.NewColumns[colName] = newCol
+		}
+	}
+
+	// Find dropped columns
+	for colName := range oldTableObj {
+		if _, exists := newTableObj[colName]; !exists {
+			diff.DroppedColumns = append(diff.DroppedColumns, colName)
+		}
+	}
+
+	return diff
+}
+
+// getChangedFields compares two TableColsMetaData structs and returns the names of changed fields
+func (ms *ModuleStore) getChangedFields(oldCol, newCol common_types.TableColsMetaData) []string {
+	changedFields := []string{}
+
+	// Compare all relevant fields
+	if oldCol.DataType != newCol.DataType {
+		changedFields = append(changedFields, "DataType")
+	}
+	if oldCol.PrimaryKey != newCol.PrimaryKey {
+		changedFields = append(changedFields, "PrimaryKey")
+	}
+	if oldCol.IsUnique != newCol.IsUnique {
+		changedFields = append(changedFields, "IsUnique")
+	}
+	if oldCol.PkConstraintName != newCol.PkConstraintName {
+		changedFields = append(changedFields, "PkConstraintName")
+	}
+	if oldCol.UqConstraintName != newCol.UqConstraintName {
+		changedFields = append(changedFields, "UqConstraintName")
+	}
+	if oldCol.IsNullable != newCol.IsNullable {
+		changedFields = append(changedFields, "IsNullable")
+	}
+	if oldCol.DefaultValue != newCol.DefaultValue {
+		changedFields = append(changedFields, "DefaultValue")
+	}
+	if oldCol.AutoIncrement != newCol.AutoIncrement {
+		changedFields = append(changedFields, "AutoIncrement")
+	}
+	if oldCol.CharMaxLength != newCol.CharMaxLength {
+		changedFields = append(changedFields, "CharMaxLength")
+	}
+	if oldCol.NumericPrecision != newCol.NumericPrecision {
+		changedFields = append(changedFields, "NumericPrecision")
+	}
+	if oldCol.NumericScale != newCol.NumericScale {
+		changedFields = append(changedFields, "NumericScale")
+	}
+	if oldCol.DatetimePrecision != newCol.DatetimePrecision {
+		changedFields = append(changedFields, "DatetimePrecision")
+	}
+	if oldCol.FkConstraintName != newCol.FkConstraintName {
+		changedFields = append(changedFields, "FkConstraintName")
+	}
+	if oldCol.FkDeleteRule != newCol.FkDeleteRule {
+		changedFields = append(changedFields, "FkDeleteRule")
+	}
+	if oldCol.FkTblSchema != newCol.FkTblSchema {
+		changedFields = append(changedFields, "FkTblSchema")
+	}
+	if oldCol.FkTblName != newCol.FkTblName {
+		changedFields = append(changedFields, "FkTblName")
+	}
+	if oldCol.FkColName != newCol.FkColName {
+		changedFields = append(changedFields, "FkColName")
+	}
+	if oldCol.ColumnMasking.MaskingType != newCol.ColumnMasking.MaskingType {
+		changedFields = append(changedFields, "ColumnMasking")
+	}
+
+	return changedFields
+}
+
+// getFieldValue returns the value of a specific field from a TableColsMetaData struct
+func (ms *ModuleStore) getFieldValue(col *common_types.TableColsMetaData, fieldName string) interface{} {
+	if col == nil {
+		return nil
+	}
+
+	switch fieldName {
+	case "DataType":
+		return col.DataType
+	case "OwnDataType":
+		return col.OwnDataType
+	case "PrimaryKey":
+		return col.PrimaryKey
+	case "IsUnique":
+		return col.IsUnique
+	case "PkConstraintName":
+		return col.PkConstraintName
+	case "UqConstraintName":
+		return col.UqConstraintName
+	case "IsNullable":
+		return col.IsNullable
+	case "ColPosition":
+		return col.ColPosition
+	case "DefaultValue":
+		return col.DefaultValue
+	case "AutoIncrement":
+		return col.AutoIncrement
+	case "CharMaxLength":
+		return col.CharMaxLength
+	case "NumericPrecision":
+		return col.NumericPrecision
+	case "NumericScale":
+		return col.NumericScale
+	case "DatetimePrecision":
+		return col.DatetimePrecision
+	case "FkConstraintName":
+		return col.FkConstraintName
+	case "FkDeleteRule":
+		return col.FkDeleteRule
+	case "FkTblSchema":
+		return col.FkTblSchema
+	case "FkTblName":
+		return col.FkTblName
+	case "FkColName":
+		return col.FkColName
+	case "ColumnMasking":
+		return col.ColumnMasking.MaskingType
+	default:
+		return "unknown field"
+	}
+}
+
+func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]common_types.TableColsMetaData, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveSchemaTable - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
 	tableExists := false
+	oldTableObj := make(map[string]common_types.TableColsMetaData)
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
-			if _, ok := db.SchemaTables[tableName]; ok {
+			if to, ok := db.SchemaTables[tableName]; ok {
 				tableExists = true
+				oldTableObj = to
 				logs.WithContext(ctx).Info("table exists in Schema table - to alter")
-			} else if _, ok := db.OtherTables[tableName]; ok {
+			} else if to, ok := db.OtherTables[tableName]; ok {
 				tableExists = true
+				oldTableObj = to
 				logs.WithContext(ctx).Info("table exists in Other table - to alter")
 			}
 			if tableExists {
-				//alter table
-				for k, v := range tableObj {
-					vStr, vStrErr := erumd5.Md5(ctx, fmt.Sprint(v.TblSchema, v.TblName, v.ColName, v.DataType, v.PrimaryKey, v.IsUnique, v.PkConstraintName, v.UqConstraintName, v.IsNullable, v.DefaultValue, v.AutoIncrement, v.CharMaxLength, v.NumericPrecision, v.NumericScale, v.DatetimePrecision, v.FkConstraintName, v.FkDeleteRule, v.FkTblSchema, v.FkTblName, v.FkColName), "hex")
-					if vStrErr != nil {
-						err = vStrErr
-						logs.WithContext(ctx).Error(err.Error())
-						return
-					}
-					logs.WithContext(ctx).Info(fmt.Sprint(k, " = ", vStr))
-					logs.WithContext(ctx).Info(fmt.Sprint(k, " = ", fmt.Sprint(v.TblSchema, v.TblName, v.ColName, v.DataType, v.PrimaryKey, v.IsUnique, v.PkConstraintName, v.UqConstraintName, v.IsNullable, v.DefaultValue, v.AutoIncrement, v.CharMaxLength, v.NumericPrecision, v.NumericScale, v.DatetimePrecision, v.FkConstraintName, v.FkDeleteRule, v.FkTblSchema, v.FkTblName, v.FkColName)))
+				// Compare table structures to identify changes
+				diff := ms.CompareTableStructures(ctx, oldTableObj, tableObj)
+
+				// Log the changes for debugging
+				logs.WithContext(ctx).Info(fmt.Sprintf("Table structure changes detected for %s:", tableName))
+				logs.WithContext(ctx).Info(fmt.Sprintf("  New columns: %d", len(diff.NewColumns)))
+				logs.WithContext(ctx).Info(fmt.Sprintf("  Dropped columns: %d", len(diff.DroppedColumns)))
+				logs.WithContext(ctx).Info(fmt.Sprintf("  Modified columns: %d", len(diff.ModifiedColumns)))
+
+				// Log detailed changes
+				for colName, newCol := range diff.NewColumns {
+					logs.WithContext(ctx).Info(fmt.Sprintf("  NEW COLUMN: %s (%s)", colName, newCol.DataType))
 				}
-				err = errors.New("Alter table not implemented as yet")
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
+
+				for _, colName := range diff.DroppedColumns {
+					logs.WithContext(ctx).Info(fmt.Sprintf("  DROPPED COLUMN: %s", colName))
+				}
+
+				for colName, change := range diff.ModifiedColumns {
+					logs.WithContext(ctx).Info(fmt.Sprintf("  MODIFIED COLUMN: %s - Changed fields: %v", colName, change.ChangedFields))
+					for _, field := range change.ChangedFields {
+						logs.WithContext(ctx).Info(fmt.Sprintf("    %s: %v -> %v", field,
+							ms.getFieldValue(change.OldColumn, field),
+							ms.getFieldValue(change.NewColumn, field)))
+					}
+				}
+
+				// TODO: Generate and execute ALTER TABLE DDL based on the changes
+				// This is where you would create the appropriate SQL DDL statements
+				// based on the diff.NewColumns, diff.DroppedColumns, and diff.ModifiedColumns
+
+				if len(diff.NewColumns) > 0 || len(diff.DroppedColumns) > 0 || len(diff.ModifiedColumns) > 0 {
+					logs.WithContext(ctx).Info("Table structure changes detected - ALTER TABLE DDL generation not yet implemented")
+					// TODO: Implement DDL generation and execution
+					// err = ms.generateAndExecuteAlterTableDDL(ctx, tableName, diff, db)
+				} else {
+					logs.WithContext(ctx).Info("No table structure changes detected")
 				}
 			} else {
 				//create table
@@ -820,7 +1033,7 @@ func (ms *ModuleStore) RemoveTableSecurity(ctx context.Context, projectId string
 	return realStore.SaveStore(ctx, projectId, "", realStore)
 }
 
-func (ms *ModuleStore) SaveColumnMasking(ctx context.Context, projectId string, dbAlias string, tableName string, colName string, columnMasking module_model.ColumnMasking, realStore ModuleStoreI) (err error) {
+func (ms *ModuleStore) SaveColumnMasking(ctx context.Context, projectId string, dbAlias string, tableName string, colName string, columnMasking common_types.ColumnMasking, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveColumnMasking - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()

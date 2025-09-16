@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3tables"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	common_types "github.com/eru-tech/eru/eru-ql/common_types"
+	sqlengine "github.com/eru-tech/eru/eru-ql/sql_engine"
 	eru_writes "github.com/eru-tech/eru/eru-read-write/eru_writes"
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
@@ -120,18 +123,21 @@ type MyQuery struct {
 }
 
 type DataSource struct {
-	DbAlias                    string                                  `json:"db_alias" eru:"required"`
-	DbType                     string                                  `json:"db_type" eru:"required"`
-	DbName                     string                                  `json:"db_name" eru:"required"`
-	DbConfig                   DbConfig                                `json:"db_config" eru:"required"`
-	SchemaTables               map[string]map[string]TableColsMetaData `json:"schema_tables"`         //tableName is the key
-	OtherTables                map[string]map[string]TableColsMetaData `json:"other_tables" json:"-"` //tableName is the key
-	SchemaTablesSecurity       map[string]SecurityRules                `json:"schema_tables_security"`
-	SchemaTablesTransformation map[string]TransformRules               `json:"schema_tables_transformation"`
-	TableJoins                 map[string]*TableJoins                  `json:"table_joins"`
-	Con                        *sqlx.DB                                `json:"-"`
-	ConStatus                  bool                                    `json:"con_status"`
-	DbSecurityRules            SecurityRules                           `json:"db_security_rules"`
+	DbAlias                    string                                               `json:"db_alias" eru:"required"`
+	DbType                     string                                               `json:"db_type" eru:"required"`
+	DbName                     string                                               `json:"db_name" eru:"required"`
+	DbConfig                   DbConfig                                             `json:"db_config" eru:"optional"`
+	IcebergConfig              IcebergConfig                                        `json:"iceberg_config" eru:"optional"`
+	SqlEngineType              string                                               `json:"sql_engine_type"`
+	SqlEngine                  sqlengine.SQLEngineI                                 `json:"-"`
+	SchemaTables               map[string]map[string]common_types.TableColsMetaData `json:"schema_tables"` //tableName is the key
+	OtherTables                map[string]map[string]common_types.TableColsMetaData `json:"other_tables"`  //tableName is the key
+	SchemaTablesSecurity       map[string]SecurityRules                             `json:"schema_tables_security"`
+	SchemaTablesTransformation map[string]TransformRules                            `json:"schema_tables_transformation"`
+	TableJoins                 map[string]*TableJoins                               `json:"table_joins"`
+	Con                        *sqlx.DB                                             `json:"-"`
+	ConStatus                  bool                                                 `json:"con_status"`
+	DbSecurityRules            SecurityRules                                        `json:"db_security_rules"`
 }
 
 type TableJoins struct {
@@ -142,36 +148,6 @@ type TableJoins struct {
 	IsActive         bool                   `json:"is_active"`
 	IsCustom         bool                   `json:"is_custom"`
 	ComplexCondition map[string]interface{} `json:"complex_condition"`
-}
-
-type TableColsMetaData struct {
-	TblSchema         string        `json:"tbl_schema" eru:"required"`
-	TblName           string        `json:"tbl_name" eru:"required"`
-	ColName           string        `json:"col_name" eru:"required"`
-	DataType          string        `json:"data_type"`
-	OwnDataType       string        `json:"own_data_type" eru:"required"`
-	PrimaryKey        bool          `json:"primary_key" eru:"required"`
-	IsUnique          bool          `json:"is_unique" eru:"required"`
-	PkConstraintName  string        `json:"pk_constraint_name"`
-	UqConstraintName  string        `json:"uq_constraint_name"`
-	IsNullable        bool          `json:"is_nullable" eru:"required"`
-	ColPosition       int           `json:"col_position"`
-	DefaultValue      string        `json:"default_value"`
-	AutoIncrement     bool          `json:"auto_increment"`
-	CharMaxLength     int           `json:"char_max_length"`
-	NumericPrecision  string        `json:"numeric_precision"`
-	NumericScale      int           `json:"numeric_scale"`
-	DatetimePrecision int           `json:"datetime_precision"`
-	FkConstraintName  string        `json:"fk_constraint_name"`
-	FkDeleteRule      string        `json:"fk_delete_rule"`
-	FkTblSchema       string        `json:"fk_tbl_schema"`
-	FkTblName         string        `json:"fk_tbl_name"`
-	FkColName         string        `json:"fk_col_name"`
-	ColumnMasking     ColumnMasking `json:"column_masking"`
-}
-
-type ColumnMasking struct {
-	MaskingType string `json:"masking_type"`
 }
 
 /*
@@ -233,6 +209,24 @@ type DbConfig struct {
 	DefaultSchema string        `json:"default_schema" eru:"required"`
 	DriverConfig  DriverConfig  `json:"driver_config" eru:"required"`
 	OtherDbConfig OtherDbConfig `json:"other_db_config"`
+}
+
+type IcebergConfig struct {
+	S3TablesConfig S3TablesConfig `json:"s3_tables_config" eru:"optional"`
+	Uri            string         `json:"-"`
+	Warehouse      string         `json:"-"`
+	Database       string         `json:"database" eru:"required"`
+	TenantId       string         `json:"tenant_id" eru:"required"`
+	CatalogType    string         `json:"catalog_type" eru:"required"`
+}
+type S3TablesConfig struct {
+	BucketName     string           `json:"bucket_name" eru:"required"`
+	Region         string           `json:"region" eru:"required"`
+	Authentication string           `json:"authentication" eru:"required"`
+	Key            string           `json:"key" eru:"required"`
+	Secret         string           `json:"secret" eru:"required"`
+	BucketArn      string           `json:"bucket_arn"`
+	Session        *s3tables.Client `json:"-"`
 }
 
 type DriverConfig struct {
@@ -491,7 +485,7 @@ func (tj *TableJoins) GetOnClause(ctx context.Context) (res map[string]interface
 	return res
 }
 
-func (ds *DataSource) CreateTable(ctx context.Context, tableName string, tableObj map[string]TableColsMetaData) (err error) {
+func (ds *DataSource) CreateTable(ctx context.Context, tableName string, tableObj map[string]common_types.TableColsMetaData) (err error) {
 	logs.WithContext(ctx).Debug("CreateTable - Start")
 	return
 }
@@ -549,7 +543,7 @@ func (prj *ExtendedProject) CompareProject(ctx context.Context, compareProject E
 		for _, cd := range compareProject.DataSources {
 			if md.DbAlias == cd.DbAlias {
 				dsFound = true
-				if !cmp.Equal(md, cd, cmpopts.IgnoreFields(DataSource{}, "Con", "SchemaTables", "SchemaTablesTransformation", "TableJoins"), cmpopts.IgnoreFields(TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
+				if !cmp.Equal(md, cd, cmpopts.IgnoreFields(DataSource{}, "Con", "SchemaTables", "SchemaTablesTransformation", "TableJoins"), cmpopts.IgnoreFields(common_types.TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
 					if storeCompare.MismatchDataSources == nil {
 						storeCompare.MismatchDataSources = make(map[string]interface{})
 					}
@@ -562,7 +556,7 @@ func (prj *ExtendedProject) CompareProject(ctx context.Context, compareProject E
 					for cstKey, cst := range cd.SchemaTables {
 						if mstKey == cstKey {
 							stFound = true
-							if !cmp.Equal(mst, cst, cmpopts.IgnoreFields(TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffSt)) {
+							if !cmp.Equal(mst, cst, cmpopts.IgnoreFields(common_types.TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffSt)) {
 								if storeCompare.MismatchTables == nil {
 									storeCompare.MismatchTables = make(map[string]interface{})
 								}

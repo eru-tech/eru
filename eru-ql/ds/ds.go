@@ -8,6 +8,7 @@ import (
 	"regexp"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	common_types "github.com/eru-tech/eru/eru-ql/common_types"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/graphql-go/graphql/language/ast"
@@ -112,7 +113,7 @@ type SqlMakerI interface {
 	RollbackQuery(ctx context.Context) (err error)
 	GetTableList(ctx context.Context, query string, datasource *module_model.DataSource, myself SqlMakerI) (err error)
 	GetTableMetaDataSQL(ctx context.Context) string
-	MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]module_model.TableColsMetaData) (string, error)
+	MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]common_types.TableColsMetaData) (string, error)
 	MakeDropTableSQL(ctx context.Context, tableName string) (string, error)
 	getDataTypeMapping(ctx context.Context, dataType string) string
 	getErutoDBDataTypeMapping(ctx context.Context, dataType string) string
@@ -131,6 +132,9 @@ type SqlMakerI interface {
 
 func (sqr *SqlMaker) GetBlockedWords() []string {
 	return blockedWords
+}
+func (sqr *SqlMaker) CreateDatabase(ctx context.Context, databaseName string) error {
+	return errors.New("CreateDatabase not implemented")
 }
 func (sqr *SqlMaker) GetBlockedRegex() []string {
 	return blockedRegex
@@ -198,7 +202,7 @@ func (sqr *SqlMaker) GetTableMetaDataSQL(ctx context.Context) string {
 	return ""
 }
 
-func (sqr *SqlMaker) MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]module_model.TableColsMetaData) (string, error) {
+func (sqr *SqlMaker) MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]common_types.TableColsMetaData) (string, error) {
 	return "", nil
 }
 func (sqr *SqlMaker) MakeDropTableSQL(ctx context.Context, tableName string) (string, error) {
@@ -1498,7 +1502,7 @@ func (sqr *SqlMaker) AddLimitSkipClause(ctx context.Context, query string, limit
 
 func (sqr *SqlMaker) GetTableList(ctx context.Context, query string, datasource *module_model.DataSource, myself SqlMakerI) (err error) {
 	logs.WithContext(ctx).Debug("GetTableList - Start")
-	tableList := make(map[string]map[string]module_model.TableColsMetaData)
+	tableList := make(map[string]map[string]common_types.TableColsMetaData)
 	rows, e := datasource.Con.Queryx(query)
 
 	if e != nil {
@@ -1507,7 +1511,7 @@ func (sqr *SqlMaker) GetTableList(ctx context.Context, query string, datasource 
 	}
 	defer rows.Close()
 	for rows.Next() {
-		innerResultRow := module_model.TableColsMetaData{}
+		innerResultRow := common_types.TableColsMetaData{}
 		e = rows.StructScan(&innerResultRow)
 		if e != nil {
 			logs.WithContext(ctx).Error(e.Error())
@@ -1516,7 +1520,7 @@ func (sqr *SqlMaker) GetTableList(ctx context.Context, query string, datasource 
 		innerResultRow.OwnDataType = myself.getDataTypeMapping(ctx, innerResultRow.DataType)
 		tableKey := fmt.Sprint(innerResultRow.TblSchema, ".", innerResultRow.TblName)
 		if tableList[tableKey] == nil {
-			tableList[tableKey] = make(map[string]module_model.TableColsMetaData)
+			tableList[tableKey] = make(map[string]common_types.TableColsMetaData)
 		}
 		tableList[tableKey][innerResultRow.ColName] = innerResultRow
 	}

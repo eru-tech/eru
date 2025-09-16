@@ -17,11 +17,66 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
 	"github.com/google/uuid"
 )
+
+type SafeVarsMap struct {
+	mu   sync.RWMutex
+	vars map[string]*TemplateVars
+}
+
+func NewSafeVarsMap() *SafeVarsMap {
+	return &SafeVarsMap{
+		vars: make(map[string]*TemplateVars),
+	}
+}
+
+func (s *SafeVarsMap) Set(key string, value *TemplateVars) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.vars[key] = value
+}
+
+func (s *SafeVarsMap) Get(key string) (*TemplateVars, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	val, ok := s.vars[key]
+	return val, ok
+}
+
+func (s *SafeVarsMap) Clone(ctx context.Context) (map[string]*TemplateVars, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	clonedMap := make(map[string]*TemplateVars)
+	for k, v := range s.vars {
+		if v != nil {
+			clonedV, err := cloneInterface(ctx, v)
+			if err != nil {
+				return nil, err
+			}
+			clonedMap[k] = clonedV.(*TemplateVars)
+		} else {
+			clonedMap[k] = nil
+		}
+	}
+	return clonedMap, nil
+}
+
+func (s *SafeVarsMap) ToMap() map[string]*TemplateVars {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make(map[string]*TemplateVars)
+	for k, v := range s.vars {
+		result[k] = v
+	}
+	return result
+}
 
 //func fetchClaimsFromToken(ctx context.Context, strToken string, jwkUrl string) (claims interface{}, err error) {
 //	return erujwt.DecryptTokenJWK(ctx, strToken, jwkUrl)
@@ -751,8 +806,14 @@ func errorResponse(ctx context.Context, errMsg string, request *http.Request) (r
 	return
 }
 
+var cloneMutex sync.Mutex
+
 func cloneInterface(ctx context.Context, i interface{}) (iClone interface{}, err error) {
 	logs.WithContext(ctx).Debug("cloneInterface - Start")
+
+	cloneMutex.Lock()
+	defer cloneMutex.Unlock()
+
 	iBytes, err := json.Marshal(i)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
@@ -765,6 +826,30 @@ func cloneInterface(ctx context.Context, i interface{}) (iClone interface{}, err
 		return
 	}
 	return iCloneI.Elem().Interface(), nil
+}
+
+func safeCloneVarsMap(ctx context.Context, vars map[string]*TemplateVars) (map[string]*TemplateVars, error) {
+	cloneMutex.Lock()
+	defer cloneMutex.Unlock()
+
+	clonedMap := make(map[string]*TemplateVars)
+	for k, v := range vars {
+		if v != nil {
+			iBytes, err := json.Marshal(v)
+			if err != nil {
+				return nil, logs.Err(ctx, err, "")
+			}
+			var clonedV *TemplateVars
+			err = json.Unmarshal(iBytes, &clonedV)
+			if err != nil {
+				return nil, logs.Err(ctx, err, "")
+			}
+			clonedMap[k] = clonedV
+		} else {
+			clonedMap[k] = nil
+		}
+	}
+	return clonedMap, nil
 }
 
 func removeFieldsFromTemplateVars(ctx context.Context, fields []string, vars map[string]*TemplateVars) (err error) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	common_types "github.com/eru-tech/eru/eru-ql/common_types"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
@@ -278,7 +279,7 @@ func ProjectDataSourceSchemaSaveTableHandler(sh *module_store.StoreHolder) http.
 		tableFromReq := json.NewDecoder(r.Body)
 		tableFromReq.DisallowUnknownFields()
 
-		var tableObj map[string]module_model.TableColsMetaData
+		var tableObj map[string]common_types.TableColsMetaData
 
 		if err := tableFromReq.Decode(&tableObj); err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -365,7 +366,7 @@ func ProjectDataSourceSchemaMasColumnHandler(sh *module_store.StoreHolder) http.
 		columnMaskingFromReq := json.NewDecoder(r.Body)
 		columnMaskingFromReq.DisallowUnknownFields()
 
-		var columnMasking module_model.ColumnMasking
+		var columnMasking common_types.ColumnMasking
 
 		if err := columnMaskingFromReq.Decode(&columnMasking); err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())

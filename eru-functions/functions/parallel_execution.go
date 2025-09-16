@@ -141,25 +141,14 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 			if rErr != nil {
 				return
 			}
-			resVarsI, err1 := cloneInterface(ctx, resVars)
+			var err1 error
+			resVarsClone, err1 = safeCloneVarsMap(ctx, resVars)
 			if err1 != nil {
-				return
-			}
-			var typeOk bool
-			resVarsClone, typeOk = resVarsI.(map[string]*TemplateVars)
-			if !typeOk {
-				_ = logs.Err(ctx, fmt.Errorf("cloneInterface(ctx, resVars) failed to convert to map[string]*TemplateVars"), "")
 				return
 			}
 
-			reqVarsI, err1 := cloneInterface(ctx, reqVars)
+			reqVarsClone, err1 = safeCloneVarsMap(ctx, reqVars)
 			if err1 != nil {
-				return
-			}
-			var typeOk2 bool
-			reqVarsClone, typeOk2 = reqVarsI.(map[string]*TemplateVars)
-			if !typeOk2 {
-				_ = logs.Err(ctx, fmt.Errorf("cloneInterface(ctx, resVars) failed to convert to map[string]*TemplateVars"), "")
 				return
 			}
 		}
@@ -246,24 +235,14 @@ func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, req
 		if funcStep.FuncKey == funcStepName || started || funcStepName == "" {
 			logs.WithContext(ctx).Info(fmt.Sprint("inside allocateFuncInner lopp for ", funcStep.FuncKey))
 			var funcStepErr error
-			reqVarsI, err1 := cloneInterface(ctx, reqVars)
+			var err1 error
+			reqVarsClone, err1 = safeCloneVarsMap(ctx, reqVars)
 			if err1 != nil {
-				return
-			}
-			var typeOk bool
-			reqVarsClone, typeOk = reqVarsI.(map[string]*TemplateVars)
-			if !typeOk {
-				_ = logs.Err(ctx, fmt.Errorf("cloneInterface(ctx, reqVars) failed to convert to map[string]*TemplateVars"), "")
 				return
 			}
 
-			resVarsI, err1 := cloneInterface(ctx, resVars)
+			resVarsClone, err1 = safeCloneVarsMap(ctx, resVars)
 			if err1 != nil {
-				return
-			}
-			var typeOk2 bool
-			resVarsClone, typeOk2 = resVarsI.(map[string]*TemplateVars)
-			if !typeOk2 {
 				return
 			}
 
