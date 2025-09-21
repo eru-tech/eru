@@ -50,6 +50,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/datasource/remove/{dbalias}").HandlerFunc(module_handlers.ProjectDataSourceRemoveHandler(sh))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/datasource/list").HandlerFunc(module_handlers.ProjectDataSourceListHandler(sh))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/datasource/config/{dbalias}").HandlerFunc(module_handlers.ProjectDataSourceConfigHandler(sh))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/datasource/schema/{dbalias}/{tablename}").HandlerFunc(module_handlers.ProjectDataSourceSchemaHandler(sh))
 	storeRouter.Methods(http.MethodGet).Path("/{project}/datasource/schema/{dbalias}").HandlerFunc(module_handlers.ProjectDataSourceSchemaHandler(sh))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/datasource/schema/{dbalias}/addtable/{tablename}").HandlerFunc(module_handlers.ProjectDataSourceSchemaAddTableHandler(sh))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/datasource/schema/{dbalias}/removetable/{tablename}").HandlerFunc(module_handlers.ProjectDataSourceSchemaRemoveTableHandler(sh))

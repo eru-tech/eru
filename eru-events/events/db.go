@@ -75,7 +75,7 @@ func (dbEvent *DB_Event) Poll(ctx context.Context) (eventMsgs []EventMsg, err er
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
-
+	logs.WithContext(ctx).Info(fmt.Sprint("dbEventOutput = ", dbEventOutput))
 	for _, messageRow := range dbEventOutput {
 		for _, message := range messageRow {
 			var async_id interface{}

@@ -8,6 +8,7 @@ import (
 
 	models "github.com/eru-tech/eru/eru-ai/models"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
+	"github.com/eru-tech/eru/eru-cache/cache"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
 )
@@ -37,7 +38,9 @@ type Agent struct {
 	Model        models.ModelI         `json:"-"`
 	OutputSchema eru_models.JSONSchema `json:"output_schema"`
 	//Tools        map[string]tools.Tooling `json:"-"`
-	RetryCount int `json:"retry_count"`
+	RetryCount     int               `json:"retry_count"`
+	ChatMemoryType string            `json:"chat_memory_type"`
+	ChatMemory     cache.CacheStoreI `json:"-"`
 }
 
 type AgentI interface {
@@ -48,6 +51,7 @@ type AgentI interface {
 	//SetTools(tools map[string]tools.Tooling)
 	ExecuteTools(ctx context.Context, chatRequest models.ChatRequest, agentTools []AgentTools, projectId string, tenantId string) (toolResults map[string]interface{}, err error)
 	SetModel(model models.ModelI)
+	SetChatMemory(ctx context.Context, projectId string) error
 }
 
 func (agent *Agent) GetSpec() AgentI {
@@ -153,4 +157,16 @@ func (agent *Agent) ExecuteTools(ctx context.Context, chatRequest models.ChatReq
 		}
 	}
 	return toolResults, nil
+}
+func (agent *Agent) SetChatMemory(ctx context.Context, projectId string) error {
+	logs.WithContext(ctx).Debug("SetChatMemory - Start")
+	if agent.ChatMemoryType != "" {
+		cs := cache.GetCacheStore(agent.ChatMemoryType, projectId)
+		if cs == nil {
+			err := logs.Err(ctx, fmt.Errorf("failed to get chat memory"), "failed to get chat memory")
+			return err
+		}
+		agent.ChatMemory = cs
+	}
+	return nil
 }

@@ -532,6 +532,13 @@ func (ms *ModuleStore) GetAgentClone(ctx context.Context, projectId string, tena
 		return
 	} else {
 		agentObjClone, err = ms.GetAgentCloneObject(ctx, projectId, tenantId, agentObj, s)
+		if err != nil {
+			return
+		}
+		err = agentObjClone.SetChatMemory(ctx, projectId)
+		if err != nil {
+			return
+		}
 		return
 	}
 }

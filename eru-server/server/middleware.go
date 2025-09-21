@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"runtime/debug"
+	"strconv"
 	"strings"
+	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -132,4 +135,110 @@ func webSocketMiddleware(next http.Handler) http.Handler {
 func isWebSocketUpgrade(r *http.Request) bool {
 	return strings.ToLower(r.Header.Get("Connection")) == "upgrade" &&
 		strings.ToLower(r.Header.Get("Upgrade")) == "websocket"
+}
+
+func contextCancellationMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Create a context with timeout for the request
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+
+		r = r.WithContext(ctx)
+
+		// Check if context is already cancelled before processing
+		select {
+		case <-ctx.Done():
+			logs.WithContext(ctx).Warn("Request cancelled before processing")
+			http.Error(w, "Request cancelled", http.StatusRequestTimeout)
+			return
+		default:
+		}
+
+		// Use a channel to signal completion
+		done := make(chan struct{})
+
+		go func() {
+			defer close(done)
+			next.ServeHTTP(w, r)
+		}()
+
+		// Wait for either completion or context cancellation
+		select {
+		case <-done:
+			// Request completed normally
+			return
+		case <-ctx.Done():
+			// Context was cancelled (could be due to goroutine manager shutdown)
+			logs.WithContext(ctx).Warn("Request cancelled during processing")
+
+			// Check if response has already been written
+			if w.Header().Get("Content-Type") == "" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+
+				errorResponse := map[string]interface{}{
+					"error":   "Service unavailable",
+					"message": "Request cancelled due to service shutdown",
+				}
+
+				if requestId := r.Header.Get(server_handlers.RequestIdKey); requestId != "" {
+					errorResponse["request_id"] = requestId
+				}
+
+				json.NewEncoder(w).Encode(errorResponse)
+			}
+			return
+		}
+	})
+}
+
+var requestSemaphore chan struct{}
+
+func init() {
+	// Initialize request semaphore with configurable max concurrent requests
+	maxConcurrentRequests := 100 // Default
+	if env := os.Getenv("MAX_CONCURRENT_REQUESTS"); env != "" {
+		if val, err := strconv.Atoi(env); err == nil && val > 0 {
+			maxConcurrentRequests = val
+		}
+	}
+	requestSemaphore = make(chan struct{}, maxConcurrentRequests)
+}
+
+func concurrencyLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Configure timeout for waiting in queue
+		queueTimeout := 30 * time.Second
+		if env := os.Getenv("REQUEST_QUEUE_TIMEOUT"); env != "" {
+			if duration, err := time.ParseDuration(env); err == nil {
+				queueTimeout = duration
+			}
+		}
+
+		select {
+		case requestSemaphore <- struct{}{}: // Acquire semaphore slot
+			defer func() { <-requestSemaphore }() // Release slot when done
+
+			logs.WithContext(r.Context()).Debug("Request acquired concurrency slot")
+			next.ServeHTTP(w, r)
+
+		case <-time.After(queueTimeout): // Timeout waiting for slot
+			logs.WithContext(r.Context()).Warn("Request rejected due to concurrency limit timeout")
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+
+			errorResponse := map[string]interface{}{
+				"error":   "Service too busy",
+				"message": "Server is handling too many concurrent requests, please try again later",
+				"retry_after": "5s",
+			}
+
+			if requestId := r.Header.Get(server_handlers.RequestIdKey); requestId != "" {
+				errorResponse["request_id"] = requestId
+			}
+
+			json.NewEncoder(w).Encode(errorResponse)
+		}
+	})
 }

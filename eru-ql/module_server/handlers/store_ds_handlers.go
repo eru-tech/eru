@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -76,12 +77,27 @@ func ProjectDataSourceSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		dbAlias := vars["dbalias"]
-		dsFromReq := json.NewDecoder(r.Body)
-		dsFromReq.DisallowUnknownFields()
+		// Read the request body bytes
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to read request body"})
+			return
+		}
 
+		// Validate JSON structure by decoding into map first
+		dsFromReqMap := make(map[string]interface{})
+		if err := json.Unmarshal(bodyBytes, &dsFromReqMap); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": "Invalid JSON format"})
+			return
+		}
 		var datasource module_model.DataSource
 
-		if err := dsFromReq.Decode(&datasource); err != nil {
+		// Unmarshal the body bytes directly into DataSource (this will call your custom UnmarshalJSON method)
+		if err := json.Unmarshal(bodyBytes, &datasource); err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
@@ -93,7 +109,7 @@ func ProjectDataSourceSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc
 				return
 			}
 		}
-		err := sh.Store.SaveDataSource(r.Context(), projectId, &datasource, sh.Store)
+		err = sh.Store.SaveDataSource(r.Context(), projectId, &datasource, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -152,8 +168,9 @@ func ProjectDataSourceSchemaHandler(sh *module_store.StoreHolder) http.HandlerFu
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		dbAlias := vars["dbalias"]
+		tableName := vars["tablename"]
 
-		datasource, err := sh.Store.UpdateSchemaTables(r.Context(), projectId, dbAlias, sh.Store)
+		datasource, err := sh.Store.UpdateSchemaTables(r.Context(), projectId, dbAlias, tableName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

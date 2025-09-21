@@ -374,7 +374,7 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 				}
 			}
 			done <- true
-		}, server.ShutdownOnMaxRetries)
+		}, server.ContinueOnMaxRetries)
 
 		//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
 		noOfWorkers := 1

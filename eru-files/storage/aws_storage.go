@@ -233,8 +233,6 @@ func (awsStorage *AwsStorage) CreateStorage(ctx context.Context, cloneStorage St
 			return
 		}
 
-		logs.WithContext(ctx).Info(fmt.Sprint("be = ", be))
-
 		if !be {
 			bn, _ := cloneStorage.GetAttribute("bucket_name")
 			rg, _ := cloneStorage.GetAttribute("region")

@@ -2,6 +2,7 @@ package sqlengine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,6 +13,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/athena"
 	"github.com/aws/aws-sdk-go-v2/service/athena/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	common_types "github.com/eru-tech/eru/eru-ql/common_types"
 )
@@ -24,15 +28,24 @@ const (
 type AthenaSQLEngine struct {
 	SQLEngine
 	session        *athena.Client
+	s3session      *s3.Client
 	Region         string `json:"region" eru:"required"`
 	Authentication string `json:"authentication" eru:"required"`
-	Key            string `json:"key" eru:"required"`
-	Secret         string `json:"secret" eru:"required"`
-	workgroup      string
-	outputS3       string
-	database       string
+	Key            string `json:"key"`
+	Secret         string `json:"secret"`
+	Workgroup      string `json:"workgroup"`
+	OutputS3Bucket string `json:"output_s3_bucket" eru:"required"`
 }
 
+func (athenaSQLEngine *AthenaSQLEngine) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+	logs.WithContext(ctx).Debug("MakeFromJson - Start")
+	err := json.Unmarshal(*rj, &athenaSQLEngine)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	return nil
+}
 func (athenaSQLEngine *AthenaSQLEngine) Init(ctx context.Context) (err error) {
 	logs.WithContext(ctx).Debug("Init - Start")
 	awsConf, awsConfErr := config.LoadDefaultConfig(ctx,
@@ -55,11 +68,90 @@ func (athenaSQLEngine *AthenaSQLEngine) Init(ctx context.Context) (err error) {
 		// do nothing - no new attributes to set in config
 	}
 	athenaSQLEngine.session = athena.NewFromConfig(awsConf)
-
+	athenaSQLEngine.s3session = s3.NewFromConfig(awsConf)
 	return err
 
 }
-func (athenaSQLEngine *AthenaSQLEngine) ExecuteQuery(ctx context.Context, query string) (output []map[string]interface{}, err error) {
+
+func (athenaSQLEngine *AthenaSQLEngine) SetUp(ctx context.Context) (err error) {
+	logs.WithContext(ctx).Debug("SetUp - Start")
+	if athenaSQLEngine.session == nil || athenaSQLEngine.s3session == nil {
+		err = athenaSQLEngine.Init(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	if athenaSQLEngine.Workgroup == "" {
+		err = logs.Err(ctx, errors.New("workgroup is required"), "workgroup is required")
+		return err
+	}
+	if athenaSQLEngine.OutputS3Bucket == "" {
+		err = logs.Err(ctx, errors.New("output_s3_bucket name is required"), "output_s3_bucket name is required")
+		return err
+	}
+	bucketExits := true
+	_, err = athenaSQLEngine.s3session.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(athenaSQLEngine.OutputS3Bucket),
+	})
+
+	if err != nil {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.ErrorCode() {
+			case "NotFound", "NoSuchBucket":
+				bucketExits = false
+				err = nil
+			default:
+				err = logs.Err(ctx, err, "failed to check output s3 bucket")
+				return err
+			}
+		}
+	}
+
+	if !bucketExits {
+		_, err = athenaSQLEngine.s3session.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket: aws.String(athenaSQLEngine.OutputS3Bucket),
+			CreateBucketConfiguration: &s3types.CreateBucketConfiguration{
+				LocationConstraint: s3types.BucketLocationConstraint(athenaSQLEngine.Region),
+			},
+		})
+		if err != nil {
+			err = logs.Err(ctx, err, "failed to create output s3 bucket")
+			return err
+		}
+	}
+
+	workgroupExists := true
+	_, err = athenaSQLEngine.session.GetWorkGroup(ctx, &athena.GetWorkGroupInput{
+		WorkGroup: aws.String(athenaSQLEngine.Workgroup),
+	})
+	if err != nil {
+		if err.Error() != "" && strings.Contains(err.Error(), "not found") {
+			workgroupExists = false // workgroup does not exist
+		} else {
+			err = logs.Err(ctx, err, "failed to get workgroup")
+			return err
+		}
+	}
+	if !workgroupExists {
+		_, err = athenaSQLEngine.session.CreateWorkGroup(ctx, &athena.CreateWorkGroupInput{
+			Name: aws.String(athenaSQLEngine.Workgroup),
+			Configuration: &types.WorkGroupConfiguration{
+				ResultConfiguration: &types.ResultConfiguration{
+					OutputLocation: aws.String(fmt.Sprintf("s3://%s/", athenaSQLEngine.OutputS3Bucket)),
+				},
+				EnforceWorkGroupConfiguration: aws.Bool(false),
+			},
+		})
+		if err != nil {
+			err = logs.Err(ctx, err, "failed to create workgroup")
+			return err
+		}
+	}
+
+	return nil
+}
+func (athenaSQLEngine *AthenaSQLEngine) ExecuteQuery(ctx context.Context, query string, database string) (output []map[string]interface{}, err error) {
 	if athenaSQLEngine.session == nil {
 		err = athenaSQLEngine.Init(ctx)
 		if err != nil {
@@ -69,10 +161,10 @@ func (athenaSQLEngine *AthenaSQLEngine) ExecuteQuery(ctx context.Context, query 
 	start, err := athenaSQLEngine.session.StartQueryExecution(ctx, &athena.StartQueryExecutionInput{
 		QueryString: aws.String(query),
 		QueryExecutionContext: &types.QueryExecutionContext{
-			Database: aws.String(athenaSQLEngine.database),
+			Database: aws.String(database),
 		},
-		ResultConfiguration: &types.ResultConfiguration{OutputLocation: aws.String(athenaSQLEngine.outputS3)},
-		WorkGroup:           aws.String(athenaSQLEngine.workgroup),
+		ResultConfiguration: &types.ResultConfiguration{OutputLocation: aws.String(fmt.Sprintf("s3://%s/", athenaSQLEngine.OutputS3Bucket))},
+		WorkGroup:           aws.String(athenaSQLEngine.Workgroup),
 	})
 	if err != nil {
 		err = logs.Err(ctx, err, "failed to start query execution")
@@ -93,7 +185,8 @@ func (athenaSQLEngine *AthenaSQLEngine) ExecuteQuery(ctx context.Context, query 
 			break
 		}
 		if state == "FAILED" || state == "CANCELLED" {
-			return nil, fmt.Errorf("athena query failed: %s", state)
+			err = logs.Err(ctx, fmt.Errorf("athena query failed: %s : %s %d", state, *desc.QueryExecution.Status.AthenaError.ErrorMessage, *desc.QueryExecution.Status.AthenaError.ErrorType), "athena query failed")
+			return nil, err
 		}
 		time.Sleep(2 * time.Second)
 	}
@@ -118,62 +211,31 @@ func (athenaSQLEngine *AthenaSQLEngine) ExecuteQuery(ctx context.Context, query 
 func (athenaSQLEngine *AthenaSQLEngine) MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]common_types.TableColsMetaData) (string, error) {
 	logs.WithContext(ctx).Debug("MakeCreateTableSQL - Start")
 	var cols []string
-	var fks []string
-	pkCon := make(map[string][]string)
-	uqCon := make(map[string][]string)
-	pkConName := fmt.Sprint("pk_", strings.Replace(tableName, ".", "___", 1))
 	for _, v := range tableObj {
-		dt := "serial"
+		dt := athenaSQLEngine.getErutoDBDataTypeMapping(ctx, v.OwnDataType)
+
 		//pk := ""
 		//uk := ""
-		nl := ""
+
+		//Athena does not support NOT NULL constraint
+		/* nl := ""
 		if !v.IsNullable {
-			nl = " not null "
-		}
-		if v.IsUnique && !v.PrimaryKey {
-			uqCon[v.UqConstraintName] = append(uqCon[v.UqConstraintName], v.ColName)
-		}
-		if !v.PrimaryKey {
-			dt = athenaSQLEngine.getErutoDBDataTypeMapping(ctx, v.OwnDataType)
-			if dt == "NotSupported" {
-				return "", errors.New(fmt.Sprint("Unsupported Datatype : ", v.OwnDataType))
-			}
-		} else {
-			pkCon[pkConName] = append(pkCon[pkConName], v.ColName)
-			//pk = " primary key "
-			nl = ""
-		}
+			nl = " NOT NULL "
+		} */
 
 		switch dt {
-		case "numeric":
+		case "Decimal":
 			dt = fmt.Sprint(dt, " (", v.NumericPrecision, ")")
-		case "character", "character varying":
-			dt = fmt.Sprint(dt, " (", v.CharMaxLength, ")")
-		case "timestamp without time zone", "timestamp with time zone", "time with time zone":
-			dt = fmt.Sprint(dt, " [", v.DatetimePrecision, "]")
+			/* case "Varchar":
+			dt = fmt.Sprint(dt, " (", v.CharMaxLength, ")") */
 		}
 
-		if v.FkTblName != "" {
-			fks = append(fks, fmt.Sprint("constraint fk_", v.TblName, v.ColName, " foreign key (", v.ColName, ") references ", v.FkTblSchema, ".", v.FkTblName, "(", v.FkColName, ")"))
-		}
-		cols = append(cols, fmt.Sprint(v.ColName, " ", dt, nl))
-	}
-	var pk []string
-	for k, v := range pkCon {
-		pk = append(pk, fmt.Sprint("constraint ", k, " primary key (", strings.Join(v, " , "), ")"))
-	}
-	if len(pk) > 0 {
-		cols = append(cols, strings.Join(pk, " , "))
-	}
-	var uq []string
-	for k, v := range uqCon {
-		uq = append(uq, fmt.Sprint("constraint ", k, " unique (", strings.Join(v, " , "), ")"))
-	}
-	if len(uq) > 0 {
-		cols = append(cols, strings.Join(uq, " , "))
-	}
-	if len(fks) > 0 {
-		cols = append(cols, strings.Join(fks, " , "))
+		//Athena does not support DEFAULT values
+		/* df := v.DefaultValue
+		if df != "" {
+			df = fmt.Sprint(" default ", df)
+		} */
+		cols = append(cols, fmt.Sprint(v.ColName, " ", strings.ToUpper(dt)))
 	}
 
 	query := fmt.Sprint("create table ", tableName, " (", strings.Join(cols, " , "), " )")
@@ -225,7 +287,7 @@ var athenaErutoDBDataTypeMapping = map[string]string{
 	"Date":         "DATE",
 	"Time":         "TIME",
 	"TimeWithZone": "TIMESTAMP",
-	"Varchar":      "VARCHAR",
+	"Varchar":      "STRING",
 	"Array":        "ARRAY",
 	"Map":          "MAP",
 	"Struct":       "STRUCT",

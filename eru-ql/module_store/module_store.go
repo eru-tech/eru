@@ -14,7 +14,6 @@ import (
 	common_types "github.com/eru-tech/eru/eru-ql/common_types"
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
-	sqlengine "github.com/eru-tech/eru/eru-ql/sql_engine"
 	eru_writes "github.com/eru-tech/eru/eru-read-write/eru_writes"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/eru-tech/eru/eru-store/store"
@@ -46,7 +45,7 @@ type ModuleStoreI interface {
 	RemoveDataSource(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) error
 	GetDataSource(ctx context.Context, projectId string, dbAlias string) (datasource *module_model.DataSource, err error)
 	GetDataSources(ctx context.Context, projectId string) (datasources map[string]*module_model.DataSource, err error)
-	UpdateSchemaTables(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error)
+	UpdateSchemaTables(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error)
 	AddSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
 	SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]common_types.TableColsMetaData, realStore ModuleStoreI) (err error)
 	GetTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.SecurityRules, err error)
@@ -201,14 +200,15 @@ func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore M
 				if datasource.DbName == "iceberg" {
 					if datasourceClone.IcebergConfig.S3TablesConfig.Session != nil {
 						datasource.IcebergConfig.S3TablesConfig.Session = datasourceClone.IcebergConfig.S3TablesConfig.Session
-						datasource.ConStatus = true
+						datasource.IcebergConfig.S3TablesConfig.S3Session = datasourceClone.IcebergConfig.S3TablesConfig.S3Session
 						datasource.IcebergConfig.S3TablesConfig.BucketArn = datasourceClone.IcebergConfig.S3TablesConfig.BucketArn
+						if datasourceClone.SqlEngine != nil {
+							datasource.ConStatus = true
+						} else {
+							datasource.ConStatus = false
+						}
 					} else {
 						datasource.ConStatus = false
-					}
-					if datasourceClone.SqlEngineType != "" {
-						datasource.SqlEngineType = datasourceClone.SqlEngineType
-						datasource.SqlEngine = sqlengine.GetSQLEngine(datasourceClone.SqlEngineType)
 					}
 				} else {
 					datasource.Con = datasourceClone.Con
@@ -299,19 +299,19 @@ func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, dat
 	if sqlMaker != nil {
 		err = sqlMaker.CreateConn(ctx, datasourceClone)
 		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
+			return err
 		}
 		//setting DB connection object in actual store
 		if datasource.DbName == "iceberg" {
 			if datasourceClone.IcebergConfig.S3TablesConfig.Session != nil {
 				datasource.IcebergConfig.S3TablesConfig.Session = datasourceClone.IcebergConfig.S3TablesConfig.Session
+				datasource.IcebergConfig.S3TablesConfig.S3Session = datasourceClone.IcebergConfig.S3TablesConfig.S3Session
 				datasource.ConStatus = true
 				datasource.IcebergConfig.S3TablesConfig.BucketArn = datasourceClone.IcebergConfig.S3TablesConfig.BucketArn
 			} else {
 				datasource.ConStatus = false
 			}
-			if datasourceClone.SqlEngineType != "" {
-				datasource.SqlEngineType = datasourceClone.SqlEngineType
+			if datasourceClone.SqlEngine != nil {
 				datasource.SqlEngine = datasourceClone.SqlEngine
 			}
 		} else {
@@ -355,7 +355,7 @@ func (ms *ModuleStore) GetDataSources(ctx context.Context, projectId string) (da
 	return ms.Projects[projectId].DataSources, nil
 }
 
-func (ms *ModuleStore) UpdateSchemaTables(ctx context.Context, projectId string, dbAlias string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error) {
+func (ms *ModuleStore) UpdateSchemaTables(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error) {
 	logs.WithContext(ctx).Debug("UpdateSchemaTables - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
@@ -368,7 +368,7 @@ func (ms *ModuleStore) UpdateSchemaTables(ctx context.Context, projectId string,
 
 	datasource = ms.Projects[projectId].DataSources[dbAlias]
 	sr := ds.GetSqlMaker(datasource.DbName)
-	err = sr.GetTableList(ctx, sr.GetTableMetaDataSQL(ctx), datasource, sr)
+	err = sr.GetTableList(ctx, datasource, tableName, sr)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
@@ -716,8 +716,8 @@ func (ms *ModuleStore) GetMyQueriesNames(ctx context.Context, projectId string) 
 }
 
 // CompareTableStructures compares old and new table structures and returns the differences
-func (ms *ModuleStore) CompareTableStructures(ctx context.Context, oldTableObj, newTableObj map[string]common_types.TableColsMetaData) common_types.TableStructureDiff {
-	diff := common_types.TableStructureDiff{
+func (ms *ModuleStore) CompareTableStructures(ctx context.Context, oldTableObj, newTableObj map[string]common_types.TableColsMetaData) common_types.TableStructure {
+	diff := common_types.TableStructure{
 		NewColumns:      make(map[string]common_types.TableColsMetaData),
 		DroppedColumns:  []string{},
 		ModifiedColumns: make(map[string]common_types.ColumnChange),
@@ -926,18 +926,16 @@ func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, db
 				}
 			} else {
 				//create table
+				tableStructure := common_types.TableStructure{
+					NewColumns: tableObj,
+				}
 				sr := ds.GetSqlMaker(db.DbName)
-				query, err := sr.MakeCreateTableSQL(ctx, tableName, tableObj)
+				err := sr.SaveTable(ctx, tableName, tableStructure, false, db)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
-				res, err := sr.ExecutePreparedQuery(ctx, query, db)
-				_ = res
-				if err != nil {
-					return err
-				}
-				//TODO to change store
+				db.SchemaTables[tableName] = tableObj
 			}
 		} else {
 			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
@@ -1194,18 +1192,12 @@ func (ms *ModuleStore) DropSchemaTable(ctx context.Context, projectId string, db
 			if tableExists {
 				//drop table
 				sr := ds.GetSqlMaker(db.DbName)
-				query, err := sr.MakeDropTableSQL(ctx, tableName)
+				err := sr.DropTable(ctx, tableName, db)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
-				res, err := sr.ExecutePreparedQuery(ctx, query, db)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-					return err
-				}
-				_ = res
-				//TODO to change store
+				delete(db.SchemaTables, tableName)
 			} else {
 				err = errors.New(fmt.Sprint("Table ", tableName, " does not exists"))
 				logs.WithContext(ctx).Error(err.Error())

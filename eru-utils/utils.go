@@ -146,7 +146,6 @@ func ReplaceUnderscoresWithDots(str string) string {
 func PrintResponseBody(ctx context.Context, response *http.Response, msg string) {
 	logs.WithContext(ctx).Debug("PrintResponseBody - Start")
 	logs.WithContext(ctx).Info(msg)
-	logs.WithContext(ctx).Info(fmt.Sprintf("response: %+v", response))
 	if response != nil {
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
@@ -173,7 +172,6 @@ func PrintResponseBody(ctx context.Context, response *http.Response, msg string)
 func PrintRequestBody(ctx context.Context, request *http.Request, msg string) {
 	logs.WithContext(ctx).Debug("PrintRequestBody - Start")
 	logs.WithContext(ctx).Info(msg)
-	logs.WithContext(ctx).Info(fmt.Sprintf("request.Header: %+v", request.Header))
 	logs.WithContext(ctx).Info(fmt.Sprintf("request.URL: %+v", request.URL))
 
 	if request != nil {

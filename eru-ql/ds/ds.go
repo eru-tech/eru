@@ -111,8 +111,10 @@ type SqlMakerI interface {
 	ExecutePreparedQuery(ctx context.Context, query string, datasource *module_model.DataSource) (res map[string]interface{}, err error)
 	ExecuteQueryForCsv(ctx context.Context, query string, datasource *module_model.DataSource, aliasName string, myself SqlMakerI) (res map[string]interface{}, err error)
 	RollbackQuery(ctx context.Context) (err error)
-	GetTableList(ctx context.Context, query string, datasource *module_model.DataSource, myself SqlMakerI) (err error)
-	GetTableMetaDataSQL(ctx context.Context) string
+	GetTableList(ctx context.Context, datasource *module_model.DataSource, tableName string, myself SqlMakerI) (err error)
+	GetTableMetaDataSQL(ctx context.Context, tableName string) string
+	SaveTable(ctx context.Context, tableName string, tableStructure common_types.TableStructure, isEdit bool, dataSource *module_model.DataSource) (err error)
+	DropTable(ctx context.Context, tableName string, dataSource *module_model.DataSource) (err error)
 	MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]common_types.TableColsMetaData) (string, error)
 	MakeDropTableSQL(ctx context.Context, tableName string) (string, error)
 	getDataTypeMapping(ctx context.Context, dataType string) string
@@ -198,8 +200,15 @@ func (sqr *SqlMaker) GetBaseSqlMaker(ctx context.Context) *SqlMaker {
 func (sqr *SqlMaker) GetResultDataTypes(ctx context.Context) []ResultDataTypes {
 	return sqr.ResultDataTypes
 }
-func (sqr *SqlMaker) GetTableMetaDataSQL(ctx context.Context) string {
+func (sqr *SqlMaker) GetTableMetaDataSQL(ctx context.Context, tableName string) string {
 	return ""
+}
+
+func (sqr *SqlMaker) SaveTable(ctx context.Context, tableName string, tableStructure common_types.TableStructure, isEdit bool, dataSource *module_model.DataSource) (err error) {
+	return nil
+}
+func (sqr *SqlMaker) DropTable(ctx context.Context, tableName string, dataSource *module_model.DataSource) (err error) {
+	return nil
 }
 
 func (sqr *SqlMaker) MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]common_types.TableColsMetaData) (string, error) {
@@ -1500,9 +1509,10 @@ func (sqr *SqlMaker) AddLimitSkipClause(ctx context.Context, query string, limit
 	return newQuery
 }
 
-func (sqr *SqlMaker) GetTableList(ctx context.Context, query string, datasource *module_model.DataSource, myself SqlMakerI) (err error) {
+func (sqr *SqlMaker) GetTableList(ctx context.Context, datasource *module_model.DataSource, tableName string, myself SqlMakerI) (err error) {
 	logs.WithContext(ctx).Debug("GetTableList - Start")
 	tableList := make(map[string]map[string]common_types.TableColsMetaData)
+	query := sqr.GetTableMetaDataSQL(ctx, tableName)
 	rows, e := datasource.Con.Queryx(query)
 
 	if e != nil {

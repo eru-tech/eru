@@ -89,11 +89,11 @@ func main() {
 	}
 	logs.WithContext(ctx).Info(fmt.Sprintf("Using %s registry", registryType))
 
-	registryCache := cache.GetCacheStore(registryType)
+	registryCache := cache.GetCacheStore(registryType, "")
 	logs.WithContext(ctx).Info(fmt.Sprintf("registryCache: %v", registryCache))
 	if registryCache == nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("failed to connect to registry cache: %v - fallback to in-memory", registryType))
-		registryCache = cache.GetCacheStore("INMEMORY")
+		registryCache = cache.GetCacheStore("INMEMORY", "")
 	}
 	serviceRegistry := registry.NewRegistry(registryCache, 90*time.Second)
 	rh := &handlers.RegistryHandler{Registry: serviceRegistry}

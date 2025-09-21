@@ -14,8 +14,8 @@ type MssqlSqlMaker struct {
 	SqlMaker
 }
 
-func (pr *MssqlSqlMaker) GetTableMetaDataSQL(ctx context.Context) string {
-	return mssqlTableMetaDataSQL
+func (pr *MssqlSqlMaker) GetTableMetaDataSQL(ctx context.Context, tableName string) string {
+	return strings.Replace(mssqlTableMetaDataSQL, "$$tableCondition$$", fmt.Sprint("and c.table_name = '", tableName, "'"), 1)
 }
 func (mr *MssqlSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
 	return errors.New("CreateConn not implemented")

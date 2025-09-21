@@ -49,7 +49,7 @@ type ColumnChange struct {
 }
 
 // TableStructureDiff represents the differences between old and new table structures
-type TableStructureDiff struct {
+type TableStructure struct {
 	NewColumns      map[string]TableColsMetaData `json:"new_columns"`
 	DroppedColumns  []string                     `json:"dropped_columns"`
 	ModifiedColumns map[string]ColumnChange      `json:"modified_columns"`

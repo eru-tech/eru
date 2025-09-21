@@ -316,6 +316,7 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 
 		gm := server.GetGlobalGoroutineManager(ctx)
 		gm.SafeGoWithRestartBehavior("run-func-steps-results", func(bgCtx context.Context) {
+
 			var asyncBatch []AsyncFuncData
 			eventMsg := FuncTemplateVars{}
 			eventRequest := ""
@@ -380,7 +381,7 @@ func RunFuncSteps(ctx context.Context, funcSteps map[string]*FuncStep, request *
 				err = fs.insertAsyncBatch(bgCtx, asyncBatch)
 			}
 			done <- true
-		}, server.ShutdownOnMaxRetries)
+		}, server.ContinueOnMaxRetries)
 
 		//set it to one to run synchronously
 		noOfWorkers := funcThreads
@@ -794,7 +795,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 				err = funcStep.insertAsyncBatch(bgCtx, asyncBatch)
 			} */
 			done <- true
-		}, server.ShutdownOnMaxRetries)
+		}, server.ContinueOnMaxRetries)
 
 		//set it to one to run synchronously - change it if LoopInParallel is true to run in parallel
 		noOfWorkers := 1

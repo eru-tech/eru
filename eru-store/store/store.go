@@ -938,7 +938,7 @@ func (store *Store) GetSmValue(ctx context.Context, projectId string, secretName
 			//}
 			//smObjClone.(sm.SmStoreI).SetCacheStore(smCacheObjClone.(cache.CacheStoreI))
 			//logs.WithContext(ctx).Info(fmt.Sprint(smObjClone.(sm.SmStoreI).GetCacheStore()))
-			secret_value, err = smObj.(sm.SmStoreI).GetSmValue(ctx, secretName, secretKey, force_delete)
+			secret_value, err = smObj.GetSmValue(ctx, projectId, secretName, secretKey, force_delete)
 			if err != nil {
 				return
 			}
@@ -1246,7 +1246,7 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 							err = smI.MakeFromJson(ctx, smJson)
 							if err == nil {
 								logs.WithContext(ctx).Info(fmt.Sprint("________________________ inii cache called while lodaing for ", prj))
-								err = smI.InitCache(ctx)
+								err = smI.InitCache(ctx, prj)
 								err = msi.SaveSm(ctx, prj, smI, msi, false)
 								if err != nil {
 									return err

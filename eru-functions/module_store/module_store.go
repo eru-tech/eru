@@ -437,7 +437,6 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	}
 
 	if funcStep.FunctionName != "" {
-		logs.WithContext(ctx).Info(fmt.Sprint("funcStep.FunctionName called for ", funcStep.FunctionName))
 		funcGroup, fgErr := ms.GetAndValidateFunc(ctx, funcStep.FunctionName, projectId, host, url, method, headers, reqBody, s, fromAsync, "")
 		if fgErr != nil {
 			err = fgErr
@@ -489,7 +488,6 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			r.Condition = ""
 			r.TargetHosts = append(r.TargetHosts, tg)
 		} else if funcStep.Api.Host != "" {
-			logs.WithContext(ctx).Info(fmt.Sprint("making dummy route for api ", funcStep.GetRouteName(), " ", funcStep.FuncKey))
 			r.RouteName = strings.Replace(strings.Replace(funcStep.Api.Host, ".", "", -1), ":", "", -1)
 			r.RouteName = funcStep.GetRouteName()
 			r.Url = "/"
@@ -776,6 +774,7 @@ func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyn
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
+	logs.WithContext(ctx).Info(fmt.Sprint("selectOutput = ", selectOutput))
 	var fVars functions.FuncTemplateVars
 	if selectOutput[0] != nil {
 		if selectOutput[0][0] != nil {
@@ -871,7 +870,7 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 				logs.WithContext(bgCtx).Info(fmt.Sprint("result processing ending for ", eventName, " job worker ", cnt, " of ", jcnt, " is ", diff.Seconds(), "seconds"))
 			}
 			done <- true
-		}, server.ContinueOnMaxRetries)
+		}, server.ShutdownOnMaxRetries)
 
 		//set it to one to run synchronously
 		noOfWorkers := 1 //EventThreads

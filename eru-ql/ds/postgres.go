@@ -126,9 +126,9 @@ func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, row
 	return strings.Join(rowArray, " , ")
 }
 
-func (pr *PostgresSqlMaker) GetTableMetaDataSQL(ctx context.Context) string {
+func (pr *PostgresSqlMaker) GetTableMetaDataSQL(ctx context.Context, tableName string) string {
 	logs.WithContext(ctx).Debug("GetTableMetaDataSQL - Start")
-	return postgresTableMetaDataSQL
+	return strings.Replace(postgresTableMetaDataSQL, "$$tableCondition$$", fmt.Sprint("and c.table_name = '", tableName, "'"), 1)
 }
 
 func (pr *PostgresSqlMaker) MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]common_types.TableColsMetaData) (string, error) {
@@ -304,7 +304,7 @@ LEFT JOIN (SELECT tc.table_schema, tc.constraint_name, tc.table_name, kcu.column
             	ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.table_schema
 			WHERE tc.constraint_type = 'FOREIGN KEY' ) fk
 ON fk.table_name = c.table_name AND fk.column_name = c.column_name AND fk.table_schema = c.table_schema
-WHERE  c.table_schema not in ('information_schema','pg_catalog')
+WHERE  c.table_schema not in ('information_schema','pg_catalog') $$tableCondition$$
 ORDER BY c.ordinal_position`
 
 //erudevsh

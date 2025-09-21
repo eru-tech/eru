@@ -3,6 +3,7 @@ package ds
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
@@ -14,8 +15,8 @@ type MysqlSqlMaker struct {
 	SqlMaker
 }
 
-func (mr *MysqlSqlMaker) GetTableMetaDataSQL(ctx context.Context) string {
-	return mysqlTableMetaDataSQL
+func (mr *MysqlSqlMaker) GetTableMetaDataSQL(ctx context.Context, tableName string) string {
+	return strings.Replace(mysqlTableMetaDataSQL, "$$tableCondition$$", fmt.Sprint("and c.table_name = '", tableName, "'"), 1)
 }
 
 func (mr *MysqlSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
@@ -177,7 +178,7 @@ LEFT JOIN (
     AND fk.TABLE_NAME = c.TABLE_NAME 
     AND fk.COLUMN_NAME = c.COLUMN_NAME
 WHERE 
-    c.TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+    c.TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys') $$tableCondition$$
 ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION;
 `
 

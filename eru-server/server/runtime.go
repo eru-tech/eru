@@ -73,30 +73,30 @@ func (gm *GoroutineManager) SafeGoWithRestartBehavior(name string, fn func(ctx c
 	go func() {
 		defer gm.wg.Done()
 
-		attempts := 0
+		attempts := 1
 		for {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
 
-						errMsg := fmt.Sprintf("Worker %s panicked (attempt %d/%d): %v\nStack trace:\n%s",
+						err := fmt.Errorf("worker %s panicked (attempt %d/%d): %v\nstack trace:\n%s",
 							name, attempts, MaxRestartAttempts, r, string(debug.Stack()))
 
 						if logs.Logger != nil {
-							logs.Logger.Error(errMsg)
+							_ = logs.Err(gm.ctx, err, "")
 						} else {
-							log.Println("ERROR:", errMsg)
+							log.Println("ERROR:", err.Error())
 						}
 
-						if attempts >= MaxRestartAttempts {
+						/* if attempts > MaxRestartAttempts {
 							stopMsg := fmt.Sprintf("Worker %s exceeded maximum restart attempts (%d)", name, MaxRestartAttempts)
 
 							if behavior == ShutdownOnMaxRetries {
-								criticalMsg := fmt.Sprintf("%s - CRITICAL SERVICE FAILED, shutting down entire service", stopMsg)
+								criticalErr := fmt.Errorf("%s - CRITICAL SERVICE FAILED, shutting down entire service", stopMsg)
 								if logs.Logger != nil {
-									logs.Logger.Error(criticalMsg)
+									_ = logs.Err(gm.ctx, criticalErr, "")
 								} else {
-									log.Println("ERROR:", criticalMsg)
+									log.Println("ERROR:", criticalErr.Error())
 								}
 
 								// Shutdown the entire service
@@ -105,31 +105,33 @@ func (gm *GoroutineManager) SafeGoWithRestartBehavior(name string, fn func(ctx c
 							} else {
 								nonCriticalMsg := fmt.Sprintf("%s - stopping restart attempts, service continues", stopMsg)
 								if logs.Logger != nil {
-									logs.Logger.Warn(nonCriticalMsg)
+									logs.WithContext(gm.Context()).Warn(nonCriticalMsg)
 								} else {
 									log.Println("WARN:", nonCriticalMsg)
 								}
 								return
 							}
-						}
+						} */
 
-						delay := time.Duration(attempts) * BaseRetryDelay
+						delay := BaseRetryDelay
+						//time.Duration(attempts)
 						if delay > MaxRetryDelay {
 							delay = MaxRetryDelay
 						}
-
-						restartMsg := fmt.Sprintf("Restarting worker %s in %v", name, delay)
-						if logs.Logger != nil {
-							logs.Logger.Info(restartMsg)
-						} else {
-							log.Println("INFO:", restartMsg)
+						attempts++
+						if attempts <= MaxRestartAttempts {
+							restartMsg := fmt.Sprintf("will attempt to restart worker %s in %v (attempt %d/%d)", name, delay, attempts, MaxRestartAttempts)
+							if logs.Logger != nil {
+								logs.WithContext(gm.ctx).Info(restartMsg)
+							} else {
+								log.Println("INFO:", restartMsg)
+							}
+							time.Sleep(delay)
 						}
-						time.Sleep(delay)
 					}
 				}()
-
 				fn(gm.ctx)
-				attempts++
+				//attempts++
 			}()
 
 			select {
@@ -168,11 +170,13 @@ func (gm *GoroutineManager) SafeGoWithRestartBehavior(name string, fn func(ctx c
 						}
 					}
 				}
-				restartMsg := fmt.Sprintf("Restarting worker %s (attempt %d/%d)", name, attempts, MaxRestartAttempts)
-				if logs.Logger != nil {
-					logs.Logger.Info(restartMsg)
-				} else {
-					log.Println("INFO:", restartMsg)
+				if attempts > 1 {
+					restartMsg := fmt.Sprintf("Restarting worker %s (attempt %d/%d)", name, attempts, MaxRestartAttempts)
+					if logs.Logger != nil {
+						logs.Logger.Info(restartMsg)
+					} else {
+						log.Println("INFO:", restartMsg)
+					}
 				}
 			}
 		}

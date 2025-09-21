@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3tables"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	common_types "github.com/eru-tech/eru/eru-ql/common_types"
@@ -128,8 +129,7 @@ type DataSource struct {
 	DbName                     string                                               `json:"db_name" eru:"required"`
 	DbConfig                   DbConfig                                             `json:"db_config" eru:"optional"`
 	IcebergConfig              IcebergConfig                                        `json:"iceberg_config" eru:"optional"`
-	SqlEngineType              string                                               `json:"sql_engine_type"`
-	SqlEngine                  sqlengine.SQLEngineI                                 `json:"-"`
+	SqlEngine                  sqlengine.SQLEngineI                                 `json:"sql_engine"`
 	SchemaTables               map[string]map[string]common_types.TableColsMetaData `json:"schema_tables"` //tableName is the key
 	OtherTables                map[string]map[string]common_types.TableColsMetaData `json:"other_tables"`  //tableName is the key
 	SchemaTablesSecurity       map[string]SecurityRules                             `json:"schema_tables_security"`
@@ -226,7 +226,9 @@ type S3TablesConfig struct {
 	Key            string           `json:"key" eru:"required"`
 	Secret         string           `json:"secret" eru:"required"`
 	BucketArn      string           `json:"bucket_arn"`
+	UseForDDL      bool             `json:"use_for_ddl"`
 	Session        *s3tables.Client `json:"-"`
+	S3Session      *s3.Client       `json:"-"`
 }
 
 type DriverConfig struct {
@@ -716,4 +718,85 @@ func (a MapSorterTable) Swap(i, j int) {
 }
 func (a MapSorterTable) Less(i, j int) bool {
 	return a[i].Alias == ""
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface
+// This method will be called automatically when json.Unmarshal is used on DataSource
+func (ds *DataSource) UnmarshalJSON(b []byte) error {
+	logs.Logger.Info("DataSource UnmarshalJSON - Start")
+	ctx := context.Background()
+	type TempDataSource struct {
+		DbAlias                    string                                               `json:"db_alias"`
+		DbType                     string                                               `json:"db_type"`
+		DbName                     string                                               `json:"db_name"`
+		DbConfig                   DbConfig                                             `json:"db_config"`
+		IcebergConfig              IcebergConfig                                        `json:"iceberg_config"`
+		SqlEngineType              string                                               `json:"sql_engine_type"`
+		SchemaTables               map[string]map[string]common_types.TableColsMetaData `json:"schema_tables"`
+		OtherTables                map[string]map[string]common_types.TableColsMetaData `json:"other_tables"`
+		SchemaTablesSecurity       map[string]SecurityRules                             `json:"schema_tables_security"`
+		SchemaTablesTransformation map[string]TransformRules                            `json:"schema_tables_transformation"`
+		TableJoins                 map[string]*TableJoins                               `json:"table_joins"`
+		ConStatus                  bool                                                 `json:"con_status"`
+		DbSecurityRules            SecurityRules                                        `json:"db_security_rules"`
+	}
+	var tempDs TempDataSource
+	if err := json.Unmarshal(b, &tempDs); err != nil {
+		err = logs.Err(ctx, err, "failed to unmarshal data source")
+		return err
+	}
+	ds.DbAlias = tempDs.DbAlias
+	ds.DbType = tempDs.DbType
+	ds.DbName = tempDs.DbName
+	ds.DbConfig = tempDs.DbConfig
+	ds.IcebergConfig = tempDs.IcebergConfig
+	ds.SchemaTables = tempDs.SchemaTables
+	ds.OtherTables = tempDs.OtherTables
+	ds.SchemaTablesSecurity = tempDs.SchemaTablesSecurity
+	ds.SchemaTablesTransformation = tempDs.SchemaTablesTransformation
+	ds.TableJoins = tempDs.TableJoins
+	ds.ConStatus = tempDs.ConStatus
+	ds.DbSecurityRules = tempDs.DbSecurityRules
+
+	var dsMap map[string]*json.RawMessage
+	err := json.Unmarshal(b, &dsMap)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+
+	var sqlEngineObj map[string]*json.RawMessage
+	var sqlEngineJson *json.RawMessage
+	if _, ok := dsMap["sql_engine"]; ok {
+		if dsMap["sql_engine"] != nil {
+			err = json.Unmarshal(*dsMap["sql_engine"], &sqlEngineObj)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			err = json.Unmarshal(*dsMap["sql_engine"], &sqlEngineJson)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			var sqlEngineType string
+			if _, seOk := sqlEngineObj["sql_engine_type"]; seOk {
+				err = json.Unmarshal(*sqlEngineObj["sql_engine_type"], &sqlEngineType)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return err
+				}
+				sqlEngineI := sqlengine.GetSQLEngine(sqlEngineType)
+				err = sqlEngineI.MakeFromJson(ctx, sqlEngineJson)
+				if err == nil {
+					ds.SqlEngine = sqlEngineI
+				} else {
+					return err
+				}
+			} else {
+				logs.WithContext(ctx).Info("ignoring secret manager as sm_store_type attribute not found")
+			}
+		}
+	}
+	return nil
 }
