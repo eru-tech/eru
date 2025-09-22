@@ -519,7 +519,6 @@ func (oAuth *OAuth) GetTokens(ctx context.Context, code string) (res interface{}
 		logs.WithContext(ctx).Error(err.Error())
 		return Identity{}, err
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(output[0]))
 	if len(output) > 0 {
 		if tokens, tokensOk := output[0]["tokens"].(*map[string]interface{}); !tokensOk {
 			logs.WithContext(ctx).Error("tokens not found in GetTokens")
