@@ -929,8 +929,9 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 			if funcStep.FunctionName != "" {
 				asyncInnerFuncData := []AsyncFuncData{}
 				_ = asyncInnerFuncData
-
-				response, subFuncVarsMap, asyncInnerFuncData, err = RunFuncSteps(ctx, funcStep.FuncGroup.FuncSteps, request, reqVars, resVars, "", funcThread, loopThread, funcStep.FuncKey, "", started, fromAsync, inLoop)
+				reqVarsClone, _ := safeCloneVarsMap(ctx, reqVars)
+				resVarsClone, _ := safeCloneVarsMap(ctx, resVars)
+				response, subFuncVarsMap, asyncInnerFuncData, err = RunFuncSteps(ctx, funcStep.FuncGroup.FuncSteps, request, reqVarsClone, resVarsClone, "", funcThread, loopThread, funcStep.FuncKey, "", started, fromAsync, inLoop)
 
 				if asyncInnerFuncData != nil {
 					asyncFuncDataBatch = append(asyncFuncDataBatch, asyncInnerFuncData...)
@@ -998,21 +999,23 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 		childFuncVarsMap := map[string]FuncTemplateVars{}
 
 		//remove unwanted fields from reqvars and resvars
-		if funcStep.RemoveRequestFields != nil {
-			logs.WithContext(ctx).Info(fmt.Sprint("funcStep.RemoveRequestFields = for ", funcStep.FuncKey, " = ", funcStep.RemoveRequestFields))
-		}
-		if funcStep.RemoveResponseFields != nil {
-			logs.WithContext(ctx).Info(fmt.Sprint("funcStep.RemoveResponseFields = for ", funcStep.FuncKey, " = ", funcStep.RemoveResponseFields))
-		}
-
 		err = removeFieldsFromTemplateVars(ctx, funcStep.RemoveRequestFields, reqVars)
+		if err != nil {
+			logs.Err(ctx, err, "")
+			err = nil
+		}
 		err = removeFieldsFromTemplateVars(ctx, funcStep.RemoveResponseFields, resVars)
-
+		if err != nil {
+			logs.Err(ctx, err, "")
+			err = nil
+		}
 		if funcStep.LoopVariable != "" {
 			inLoop = true
 		}
 		asyncChilFuncData := []AsyncFuncData{}
-		response, childFuncVarsMap, asyncChilFuncData, err = RunFuncSteps(ctx, funcStep.FuncSteps, request, reqVars, resVars, mainRouteName, funcThread, loopThread, funcStepName, endFuncStepName, started, fromAsync, inLoop)
+		reqVarsClone, _ := safeCloneVarsMap(ctx, reqVars)
+		resVarsClone, _ := safeCloneVarsMap(ctx, resVars)
+		response, childFuncVarsMap, asyncChilFuncData, err = RunFuncSteps(ctx, funcStep.FuncSteps, request, reqVarsClone, resVarsClone, mainRouteName, funcThread, loopThread, funcStepName, endFuncStepName, started, fromAsync, inLoop)
 		for _, v := range childFuncVarsMap {
 			for kk, vv := range v.ResVars {
 				safeSetVar(resVars, kk, vv)

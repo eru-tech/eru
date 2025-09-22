@@ -140,7 +140,7 @@ func isWebSocketUpgrade(r *http.Request) bool {
 func contextCancellationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Create a context with timeout for the request
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), 300*time.Second)
 		defer cancel()
 
 		r = r.WithContext(ctx)
@@ -229,8 +229,8 @@ func concurrencyLimitMiddleware(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusServiceUnavailable)
 
 			errorResponse := map[string]interface{}{
-				"error":   "Service too busy",
-				"message": "Server is handling too many concurrent requests, please try again later",
+				"error":       "Service too busy",
+				"message":     "Server is handling too many concurrent requests, please try again later",
 				"retry_after": "5s",
 			}
 

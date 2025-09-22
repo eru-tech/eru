@@ -808,7 +808,7 @@ func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asy
 	updateQueryFuncAsync.Vals = append(updateQueryFuncAsync.Vals, asyncStatus, eventResponse, asyncId)
 	updateQueryFuncAsync.Rank = 1
 	updateQueries = append(updateQueries, &updateQueryFuncAsync)
-	logs.WithContext(ctx).Info(fmt.Sprint("updateQueryFuncAsync = ", updateQueryFuncAsync))
+
 	_, err = eru_utils.ExecuteDbSave(ctx, s.GetConn(), updateQueries)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
