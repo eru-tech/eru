@@ -140,11 +140,11 @@ func isWebSocketUpgrade(r *http.Request) bool {
 func contextCancellationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Create a context with timeout for the request
-		ctx, cancel := context.WithTimeout(r.Context(), 300*time.Second)
-		defer cancel()
+		//ctx, cancel := context.WithTimeout(r.Context(), 300*time.Second)
+		//defer cancel()
 
-		r = r.WithContext(ctx)
-
+		//r = r.WithContext(ctx)
+		ctx := r.Context()
 		// Check if context is already cancelled before processing
 		select {
 		case <-ctx.Done():
@@ -158,7 +158,37 @@ func contextCancellationMiddleware(next http.Handler) http.Handler {
 		done := make(chan struct{})
 
 		go func() {
-			defer close(done)
+			defer func() {
+				if rec := recover(); rec != nil {
+					// Log the panic but don't crash the service
+					panicMsg := fmt.Sprintf("HTTP handler panic in contextCancellationMiddleware: %v\nStack trace:\n%s", rec, string(debug.Stack()))
+					logs.WithContext(ctx).Error(panicMsg)
+
+					// Try to send error response if possible (response may already be written)
+					select {
+					case <-done:
+						// Channel already closed, can't write response
+					default:
+						// Try to write error response
+						if w.Header().Get("Content-Type") == "" {
+							w.Header().Set("Content-Type", "application/json")
+							w.WriteHeader(http.StatusInternalServerError)
+
+							errorResponse := map[string]interface{}{
+								"error":   "Internal server error",
+								"message": "Request handler panicked",
+							}
+
+							if requestId := r.Header.Get(server_handlers.RequestIdKey); requestId != "" {
+								errorResponse["request_id"] = requestId
+							}
+
+							json.NewEncoder(w).Encode(errorResponse)
+						}
+					}
+				}
+				close(done)
+			}()
 			next.ServeHTTP(w, r)
 		}()
 

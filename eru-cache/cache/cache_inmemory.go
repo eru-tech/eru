@@ -77,3 +77,12 @@ func (imc *InMemoryCache) Delete(ctx context.Context, key string) error {
 	}
 	return nil
 }
+func (imc *InMemoryCache) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+	logs.WithContext(ctx).Debug("MakeFromJson - Start")
+	err := json.Unmarshal(*rj, &imc)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	return nil
+}

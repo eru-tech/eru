@@ -3,45 +3,60 @@ package cache
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 // EtcdCache is an etcd-backed cache implementation.
 type EtcdCache struct {
 	CacheStore
-	Client *clientv3.Client
+	EtcdEndpoints string `json:"etcd_endpoints" eru:"required"`
+	Client        *clientv3.Client
 }
 
 // NewEtcdCache creates and configures a new etcd cache client.
-func NewEtcdCache() (*EtcdCache, error) {
+func NewEtcdCache() (ec *EtcdCache, err error) {
+	ec = &EtcdCache{
+		CacheStore: CacheStore{CacheStoreType: "ETCD"},
+	}
 	etcdEndpoints := os.Getenv("ETCD_ENDPOINTS")
 	if etcdEndpoints == "" {
-		return nil, errors.New("ETCD_ENDPOINTS environment variable not set (comma-separated list)")
+		err = logs.Err(context.Background(), fmt.Errorf("ETCD_ENDPOINTS environment variable not set (comma-separated list)"), "")
+
+		return
 	}
+	ec.EtcdEndpoints = etcdEndpoints
+	err = ec.Init(context.Background())
+	if err != nil {
+		return
+	}
+	return
+}
+
+func (ec *EtcdCache) Init(ctx context.Context) (err error) {
 	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:   strings.Split(etcdEndpoints, ","),
+		Endpoints:   strings.Split(ec.EtcdEndpoints, ","),
 		DialTimeout: 5 * time.Second,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to etcd: %w", err)
+		err = logs.Err(ctx, err, "failed to connect to etcd")
+		return
 	}
 	// Simple check to see if the connection is alive
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_, err = cli.Status(ctx, cli.Endpoints()[0])
 	if err != nil {
-		return nil, fmt.Errorf("failed to get etcd status: %w", err)
+		err = logs.Err(ctx, err, "failed to get etcd status")
+		return
 	}
-	return &EtcdCache{
-		CacheStore: CacheStore{CacheStoreType: "ETCD"},
-		Client:     cli,
-	}, nil
+	ec.Client = cli
+	return
 }
 
 func (ec *EtcdCache) Get(ctx context.Context, key string) (string, error) {

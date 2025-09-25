@@ -1512,7 +1512,7 @@ func (sqr *SqlMaker) AddLimitSkipClause(ctx context.Context, query string, limit
 func (sqr *SqlMaker) GetTableList(ctx context.Context, datasource *module_model.DataSource, tableName string, myself SqlMakerI) (err error) {
 	logs.WithContext(ctx).Debug("GetTableList - Start")
 	tableList := make(map[string]map[string]common_types.TableColsMetaData)
-	query := sqr.GetTableMetaDataSQL(ctx, tableName)
+	query := myself.GetTableMetaDataSQL(ctx, tableName)
 	rows, e := datasource.Con.Queryx(query)
 
 	if e != nil {

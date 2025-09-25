@@ -161,6 +161,17 @@ func (prj *Project) AddAgent(ctx context.Context, tenantId string, agentObj agen
 	if agentName == "" {
 		return errors.New("agent_name cannot be blank")
 	}
+	oldAgentObj, ok := prj.Tenants[tenantId].Agents[agentName]
+	if ok {
+		err := agentObj.GetChatMemory().SyncPersistence(ctx, oldAgentObj.GetChatMemory())
+		if err != nil {
+			return err
+		}
+	}
+	err := agentObj.ValidateChatMemory(ctx, prj.ProjectId)
+	if err != nil {
+		return err
+	}
 	prj.Tenants[tenantId].Agents[agentName] = agentObj
 	return nil
 }

@@ -159,7 +159,27 @@ func ProjectDataSourceListHandler(sh *module_store.StoreHolder) http.HandlerFunc
 		return
 	}
 }
+func ProjectDataSourceTableCheckHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+		logs.WithContext(r.Context()).Debug("ProjectDataSourceTableCheckHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		dbAlias := vars["dbalias"]
+		tableName := vars["tablename"]
 
+		columns, schema, err := sh.Store.CheckTableExists(r.Context(), projectId, dbAlias, tableName, sh.Store)
+		if err != nil && schema == "" {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"columns": columns, "schema": schema})
+		}
+		return
+	}
+}
 func ProjectDataSourceSchemaHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sh.Lock()
@@ -291,6 +311,7 @@ func ProjectDataSourceSchemaSaveTableHandler(sh *module_store.StoreHolder) http.
 		projectId := vars["project"]
 		dbAlias := vars["dbalias"]
 		tableName := vars["tablename"]
+		addInSchemaStr := vars["addInSchema"]
 		tableName = strings.Replace(tableName, "___", ".", 1)
 
 		tableFromReq := json.NewDecoder(r.Body)
@@ -312,7 +333,12 @@ func ProjectDataSourceSchemaSaveTableHandler(sh *module_store.StoreHolder) http.
 				}
 			}
 		}
-		err := sh.Store.SaveSchemaTable(r.Context(), projectId, dbAlias, tableName, tableObj, sh.Store)
+
+		addInSchema := false
+		if addInSchemaStr == "true" {
+			addInSchema = true
+		}
+		err := sh.Store.SaveSchemaTable(r.Context(), projectId, dbAlias, tableName, tableObj, sh.Store, addInSchema)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)

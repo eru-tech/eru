@@ -535,10 +535,17 @@ func (ms *ModuleStore) GetAgentClone(ctx context.Context, projectId string, tena
 		if err != nil {
 			return
 		}
-		err = agentObjClone.SetChatMemory(ctx, projectId)
-		if err != nil {
-			return
+		if ok {
+			err := agentObjClone.GetChatMemory().SyncPersistence(ctx, agentObj.GetChatMemory())
+			if err != nil {
+				return nil, err
+			}
 		}
+		err = agentObjClone.ValidateChatMemory(ctx, projectId)
+		if err != nil {
+			return nil, err
+		}
+
 		return
 	}
 }

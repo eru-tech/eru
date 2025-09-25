@@ -4,39 +4,57 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"time"
 
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/redis/go-redis/v9"
 )
 
 // RedisCache is a Redis-backed cache implementation.
 type RedisCache struct {
 	CacheStore
-	Client *redis.Client
+	RedisAddr     string `json:"redis_addr" eru:"required"`
+	RedisPassword string `json:"redis_password" eru:"required"`
+	RedisDB       int    `json:"redis_db" eru:"required"`
+	Client        *redis.Client
 }
 
 // NewRedisCache creates and configures a new Redis cache client.
-func NewRedisCache() (*RedisCache, error) {
+func NewRedisCache() (rc *RedisCache, err error) {
+	rc = &RedisCache{
+		CacheStore: CacheStore{CacheStoreType: "REDIS"},
+	}
 	redisAddr := os.Getenv("REDIS_ADDR")
 	if redisAddr == "" {
-		return nil, errors.New("REDIS_ADDR environment variable not set")
+		err = errors.New("REDIS_ADDR environment variable not set")
+		return
 	}
 	redisPassword := os.Getenv("REDIS_PASSWORD") // Can be empty
+	rc.RedisAddr = redisAddr
+	rc.RedisPassword = redisPassword
+	rc.RedisDB = 0
+
+	err = rc.Init(context.Background())
+	if err != nil {
+		return
+	}
+	return
+}
+
+func (rc *RedisCache) Init(ctx context.Context) error {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: redisPassword,
-		DB:       0, // use default DB
+		Addr:     rc.RedisAddr,
+		Password: rc.RedisPassword,
+		DB:       rc.RedisDB,
 	})
 	// Check connection
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		return nil, fmt.Errorf("failed to connect to redis: %w", err)
+		err = logs.Err(ctx, err, "failed to connect to redis")
+		return err
 	}
-	return &RedisCache{
-		CacheStore: CacheStore{CacheStoreType: "REDIS"},
-		Client:     rdb,
-	}, nil
+	rc.Client = rdb
+	return nil
 }
 
 func (rc *RedisCache) Get(ctx context.Context, key string) (string, error) {
@@ -62,4 +80,13 @@ func (rc *RedisCache) GetKeys(ctx context.Context, pattern string) ([]string, er
 
 func (rc *RedisCache) Delete(ctx context.Context, key string) error {
 	return rc.Client.Del(ctx, key).Err()
+}
+func (rc *RedisCache) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+	logs.WithContext(ctx).Debug("MakeFromJson - Start")
+	err := json.Unmarshal(*rj, &rc)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	return nil
 }

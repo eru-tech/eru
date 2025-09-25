@@ -165,8 +165,10 @@ func (pr *PostgresSqlMaker) MakeCreateTableSQL(ctx context.Context, tableName st
 			dt = fmt.Sprint(dt, " (", v.NumericPrecision, ")")
 		case "character", "character varying":
 			dt = fmt.Sprint(dt, " (", v.CharMaxLength, ")")
-		case "timestamp without time zone", "timestamp with time zone", "time with time zone":
-			dt = fmt.Sprint(dt, " [", v.DatetimePrecision, "]")
+		case "timestamp without time zone", "timestamp with time zone":
+			dt = strings.Replace(dt, "timestamp", fmt.Sprint("timestamp (", v.DatetimePrecision, ")"), 1)
+		case "time with time zone":
+			dt = strings.Replace(dt, "time", fmt.Sprint("time (", v.DatetimePrecision, ")"), 1)
 		}
 
 		if v.FkTblName != "" {
@@ -254,11 +256,24 @@ func (pr *PostgresSqlMaker) getDataTypeMapping(ctx context.Context, dataType str
 
 func (pr *PostgresSqlMaker) getErutoDBDataTypeMapping(ctx context.Context, dataType string) string {
 	logs.WithContext(ctx).Debug("getErutoDBDataTypeMapping - Start")
-	if postgresErutoDBDataTypeMapping[dataType] == "" {
+	if postgresErutoDBDataTypeMapping[strings.ToLower(dataType)] == "" {
 		return "NotSupported"
 	} else {
-		return postgresErutoDBDataTypeMapping[dataType]
+		return postgresErutoDBDataTypeMapping[strings.ToLower(dataType)]
 	}
+}
+
+func (pr *PostgresSqlMaker) SaveTable(ctx context.Context, tableName string, tableStructure common_types.TableStructure, isEdit bool, dataSource *module_model.DataSource) (err error) {
+	logs.WithContext(ctx).Debug("SaveTable - Start")
+	query, err := pr.MakeCreateTableSQL(ctx, tableName, tableStructure.NewColumns)
+	if err != nil {
+		return err
+	}
+	_, err = pr.ExecutePreparedQuery(ctx, query, dataSource)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 const postgresTableMetaDataSQL = `select CAST(c.table_schema as VARCHAR) TblSchema,
@@ -338,19 +353,19 @@ var postgresDataTypeMapping = map[string]string{
 	"jsonb":                       "JSON"}
 
 var postgresErutoDBDataTypeMapping = map[string]string{
-	"SmallInteger":     "smallint",
-	"Integer":          "integer",
-	"BigInteger":       "bigint",
-	"Decimal":          "numeric",
-	"Float":            "double precision",
-	"Varchar":          "character",
-	"Char":             "character varying",
-	"String":           "text",
-	"DateTime":         "timestamp without time zone",
-	"DateTimeWithZone": "timestamp with time zone",
-	"Date":             "date",
-	"Time":             "time with time zone",
-	"TimeWithZone":     "time with time zone",
-	"Boolean":          "boolean",
-	"JSON":             "jsonb",
+	"smallinteger":     "smallint",
+	"integer":          "integer",
+	"biginteger":       "bigint",
+	"decimal":          "numeric",
+	"float":            "double precision",
+	"varchar":          "character varying",
+	"char":             "character",
+	"string":           "text",
+	"datetime":         "timestamp without time zone",
+	"datetimewithzone": "timestamp with time zone",
+	"date":             "date",
+	"time":             "time with time zone",
+	"timewithzone":     "time with time zone",
+	"boolean":          "boolean",
+	"json":             "jsonb",
 }

@@ -23,6 +23,17 @@ func (reflex_agent *ReflexAgent) GetSpec() agents.AgentI {
 func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, projectId string, tenantId string) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
 
+	conversation, err := reflex_agent.LoadConversationHistory(ctx, agentMessage.ConversationId, projectId, tenantId)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to load conversation history: %v", err))
+		return nil, err
+	}
+	err = reflex_agent.AddMessageToConversation(ctx, conversation, "user", agentMessage, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to add user message to conversation: %v", err))
+		return nil, err
+	}
+
 	msg := models.Message{
 		Role:    "user",
 		Content: agentMessage.Content,
@@ -34,7 +45,23 @@ func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agent
 			msg,
 		},
 	}
-	return reflex_agent.execute(ctx, chatRequest, reflex_agent.AgentTools, 1, projectId, tenantId)
+	response, err := reflex_agent.execute(ctx, chatRequest, reflex_agent.AgentTools, 1, projectId, tenantId)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to execute agent: %v", err))
+		return nil, err
+	}
+	err = reflex_agent.AddMessageToConversation(ctx, conversation, "assistant", agents.AgentMessage{}, response)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to add assistant response to conversation: %v", err))
+		return nil, err
+	}
+	err = reflex_agent.SaveConversation(ctx, conversation, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
+		return nil, err
+	}
+
+	return response, nil
 }
 
 func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models.ChatRequest, agentTools []agents.AgentTools, currentTry int, projectId string, tenantId string) (map[string]interface{}, error) {

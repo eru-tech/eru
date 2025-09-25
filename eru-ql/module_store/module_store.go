@@ -46,8 +46,9 @@ type ModuleStoreI interface {
 	GetDataSource(ctx context.Context, projectId string, dbAlias string) (datasource *module_model.DataSource, err error)
 	GetDataSources(ctx context.Context, projectId string) (datasources map[string]*module_model.DataSource, err error)
 	UpdateSchemaTables(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error)
+	CheckTableExists(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (columns map[string]common_types.TableColsMetaData, schema string, err error)
 	AddSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
-	SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]common_types.TableColsMetaData, realStore ModuleStoreI) (err error)
+	SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]common_types.TableColsMetaData, realStore ModuleStoreI, addInSchema bool) (err error)
 	GetTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.SecurityRules, err error)
 	SaveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, securityRules module_model.SecurityRules, realStore ModuleStoreI) (err error)
 	RemoveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error)
@@ -354,7 +355,36 @@ func (ms *ModuleStore) GetDataSources(ctx context.Context, projectId string) (da
 	}
 	return ms.Projects[projectId].DataSources, nil
 }
+func (ms *ModuleStore) CheckTableExists(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (columns map[string]common_types.TableColsMetaData, schema string, err error) {
+	logs.WithContext(ctx).Debug("CheckTableExists - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
+	err = ms.checkProjectDataSourceExists(ctx, projectId, dbAlias)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, "", err
+	}
 
+	datasource := ms.Projects[projectId].DataSources[dbAlias]
+	sr := ds.GetSqlMaker(datasource.DbName)
+	err = sr.GetTableList(ctx, datasource, tableName, sr)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, datasource.DbConfig.DefaultDB, err
+	}
+	schema = datasource.DbConfig.DefaultSchema
+	if schema != "" {
+		tableName = fmt.Sprintf("%s.%s", schema, tableName)
+	}
+
+	for k, ot := range datasource.OtherTables {
+		if k == tableName {
+			return ot, schema, nil
+		}
+	}
+	err = logs.Err(ctx, fmt.Errorf(tableName, " not found"), "Table not found")
+	return nil, schema, err
+}
 func (ms *ModuleStore) UpdateSchemaTables(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error) {
 	logs.WithContext(ctx).Debug("UpdateSchemaTables - Start")
 	realStore.GetMutex().Lock()
@@ -868,7 +898,7 @@ func (ms *ModuleStore) getFieldValue(col *common_types.TableColsMetaData, fieldN
 	}
 }
 
-func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]common_types.TableColsMetaData, realStore ModuleStoreI) (err error) {
+func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]common_types.TableColsMetaData, realStore ModuleStoreI, addInSchema bool) (err error) {
 	logs.WithContext(ctx).Debug("SaveSchemaTable - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
@@ -935,7 +965,9 @@ func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, db
 					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
-				db.SchemaTables[tableName] = tableObj
+				if addInSchema {
+					db.SchemaTables[tableName] = tableObj
+				}
 			}
 		} else {
 			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))

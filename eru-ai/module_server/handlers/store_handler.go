@@ -17,6 +17,7 @@ import (
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	vectorstore "github.com/eru-tech/eru/eru-vectorstore/vectorstore"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
 
@@ -669,7 +670,6 @@ func ToolRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 
 func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
 		logs.WithContext(r.Context()).Debug("AgentExecuteHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -680,7 +680,6 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			logs.WithContext(r.Context()).Info(fmt.Sprintf("Agent: %v", agent))
 			agentParamsFromReq := json.NewDecoder(r.Body)
 			agentParamsFromReq.DisallowUnknownFields()
 
@@ -691,7 +690,12 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
-			logs.WithContext(r.Context()).Info(fmt.Sprintf("AgentMessage: %v", agentMessage))
+			if agentMessage.ConversationId == "" {
+				agentMessage.ConversationId = uuid.New().String()
+			}
+			if agentMessage.MessageId == "" {
+				agentMessage.MessageId = uuid.New().String()
+			}
 			agentResult, err := agent.Execute(r.Context(), agentMessage, projectId, tenantId)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
