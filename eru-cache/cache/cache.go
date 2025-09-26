@@ -35,28 +35,28 @@ type CacheTableColumn struct {
 }
 
 var ExpectedCacheTableSchema = map[string]CacheTableColumn{
-	"cache_sk":         {TblName: "eru_cache", ColName: "cache_sk", OwnDataType: "integer", IsNullable: false, PrimaryKey: true, AutoIncrement: true},
-	"project_id":       {TblName: "eru_cache", ColName: "project_id", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 100},
-	"tenant_id":        {TblName: "eru_cache", ColName: "tenant_id", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 100},
-	"cache_key":        {TblName: "eru_cache", ColName: "cache_key", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 500},
-	"cache_value":      {TblName: "eru_cache", ColName: "cache_value", OwnDataType: "string", IsNullable: false, PrimaryKey: false},
-	"created_at":       {TblName: "eru_cache", ColName: "created_at", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
-	"updated_at":       {TblName: "eru_cache", ColName: "updated_at", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
-	"expires_at":       {TblName: "eru_cache", ColName: "expires_at", OwnDataType: "datetime", IsNullable: true, PrimaryKey: false},
-	"access_count":     {TblName: "eru_cache", ColName: "access_count", OwnDataType: "biginteger", IsNullable: false, PrimaryKey: false, DefaultValue: "0"},
-	"last_accessed":    {TblName: "eru_cache", ColName: "last_accessed", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
-	"message_id":       {TblName: "eru_cache", ColName: "message_id", OwnDataType: "varchar", IsNullable: true, PrimaryKey: false, CharMaxLength: 255},
-	"conversation_id":  {TblName: "eru_cache", ColName: "conversation_id", OwnDataType: "varchar", IsNullable: true, PrimaryKey: false, CharMaxLength: 255},
-	"message_role":     {TblName: "eru_cache", ColName: "message_role", OwnDataType: "varchar", IsNullable: true, PrimaryKey: false, CharMaxLength: 20},
+	"cache_sk":          {TblName: "eru_cache", ColName: "cache_sk", OwnDataType: "integer", IsNullable: false, PrimaryKey: true, AutoIncrement: true},
+	"project_id":        {TblName: "eru_cache", ColName: "project_id", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 100},
+	"tenant_id":         {TblName: "eru_cache", ColName: "tenant_id", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 100},
+	"cache_key":         {TblName: "eru_cache", ColName: "cache_key", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 500},
+	"cache_value":       {TblName: "eru_cache", ColName: "cache_value", OwnDataType: "string", IsNullable: false, PrimaryKey: false},
+	"created_at":        {TblName: "eru_cache", ColName: "created_at", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
+	"updated_at":        {TblName: "eru_cache", ColName: "updated_at", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
+	"expires_at":        {TblName: "eru_cache", ColName: "expires_at", OwnDataType: "datetime", IsNullable: true, PrimaryKey: false},
+	"access_count":      {TblName: "eru_cache", ColName: "access_count", OwnDataType: "biginteger", IsNullable: false, PrimaryKey: false, DefaultValue: "0"},
+	"last_accessed":     {TblName: "eru_cache", ColName: "last_accessed", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
+	"message_id":        {TblName: "eru_cache", ColName: "message_id", OwnDataType: "varchar", IsNullable: true, PrimaryKey: false, CharMaxLength: 255},
+	"conversation_id":   {TblName: "eru_cache", ColName: "conversation_id", OwnDataType: "varchar", IsNullable: true, PrimaryKey: false, CharMaxLength: 255},
+	"message_role":      {TblName: "eru_cache", ColName: "message_role", OwnDataType: "varchar", IsNullable: true, PrimaryKey: false, CharMaxLength: 20},
 	"message_timestamp": {TblName: "eru_cache", ColName: "message_timestamp", OwnDataType: "datetime", IsNullable: true, PrimaryKey: false},
 }
 
 type MessageEntry struct {
-	MessageId   string    `json:"message_id"`
-	Role        string    `json:"message_role"`
-	Value       string    `json:"cache_value"`
-	Timestamp   time.Time `json:"message_timestamp"`
-	CacheKey    string    `json:"cache_key"`
+	MessageId string    `json:"message_id"`
+	Role      string    `json:"message_role"`
+	Value     string    `json:"cache_value"`
+	Timestamp time.Time `json:"message_timestamp"`
+	CacheKey  string    `json:"cache_key"`
 }
 
 // CacheStoreI defines the interface for a generic cache.
@@ -583,7 +583,7 @@ func (cs *CacheStore) LoadMessagesFromDatabase(ctx context.Context, projectId, c
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
 
-	url := fmt.Sprintf("%s/graphql", strings.TrimSuffix(eruqlURL, "/"))
+	url := fmt.Sprintf("%s/graphql/%s/execute", strings.TrimSuffix(eruqlURL, "/"), projectId)
 
 	res, _, _, statusCode, err := utils.CallHttp(ctx, "POST", url, headers, nil, nil, nil, requestBody)
 	if err != nil {

@@ -33,7 +33,11 @@ func (imc *InMemoryCache) Get(ctx context.Context, key string) (string, error) {
 	if imc.CacheValues != nil {
 		if cv, cvOk := imc.CacheValues[key]; cvOk {
 			logs.WithContext(ctx).Info(fmt.Sprintf("cache key %s found", key))
-			// Marshal to string to match the interface
+			// If value is already a string, return it directly
+			if str, ok := cv.Value.(string); ok {
+				return str, nil
+			}
+			// Otherwise marshal to string to match the interface
 			res, err := json.Marshal(cv.Value)
 			if err != nil {
 				return "", err

@@ -143,8 +143,12 @@ func AsyncFuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			if err != nil || asyncFuncData.AsyncId == "" {
 				failedCount = failedCount + 1
 				asyncStatus = "FAILED"
-				eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": err.Error()})
-				logs.WithContext(ctx).Error(err.Error())
+				errMsg := "failed to fetch async event"
+				if err != nil {
+					errMsg = err.Error()
+				}
+				eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": errMsg})
+				logs.WithContext(ctx).Error(errMsg)
 			} else {
 				bodyMap := make(map[string]interface{})
 
