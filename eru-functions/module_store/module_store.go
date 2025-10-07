@@ -846,61 +846,45 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("StartPolling - Start : ", eventName, " jcnt = ", jcnt))
 
-	eventJobs := make(chan functions.EventJob, 10)
-	eventResults := make(chan functions.EventResult, 10)
-	done := make(chan bool, 1)
-
 	gm := server.GetGlobalGoroutineManager(ctx)
-
-	gm.SafeGo(fmt.Sprintf("polling-allocator-%s-%d", eventName, jcnt), func(allocCtx context.Context) {
-		for {
-			select {
-			case <-allocCtx.Done():
-				logs.WithContext(allocCtx).Info(fmt.Sprint("Allocator stopping for event: ", eventName, " jcnt = ", jcnt))
-				close(eventJobs)
-				return
-			default:
-				functions.AllocateEvent(allocCtx, event, eventJobs, EventThreads)
-			}
-		}
-	})
-
-	gm.SafeGo(fmt.Sprintf("polling-results-%s-%d", eventName, jcnt), func(bgCtx context.Context) {
-		cnt := 0
-		for {
-			select {
-			case <-bgCtx.Done():
-				logs.WithContext(bgCtx).Info(fmt.Sprint("Result processor stopping for event: ", eventName, " jcnt = ", jcnt))
-				return
-			case res, ok := <-eventResults:
-				if !ok {
-					done <- true
-					return
-				}
-				startTime := time.Now()
-				cnt = cnt + 1
-				err = ms.ProcessEvents(bgCtx, projectId, res.EventMsgs, event, s, cnt, jcnt)
-				if err != nil {
-					logs.WithContext(bgCtx).Error(err.Error())
-					err = nil
-				}
-				endTime := time.Now()
-				diff := endTime.Sub(startTime)
-				logs.WithContext(bgCtx).Info(fmt.Sprint("result processing ending for ", eventName, " job worker ", cnt, " of ", jcnt, " is ", diff.Seconds(), "seconds"))
-			}
-		}
-	})
 
 	for {
 		select {
 		case <-ctx.Done():
 			logs.WithContext(ctx).Info(fmt.Sprint("Polling stopped for event: ", eventName, " jcnt = ", jcnt))
-			close(eventResults)
 			return nil
 		default:
 			logs.WithContext(ctx).Info(fmt.Sprint("polling message for event : ", eventName, " jcnt = ", jcnt))
+
+			eventJobs := make(chan functions.EventJob, 10)
+			eventResults := make(chan functions.EventResult, 10)
+			done := make(chan bool, 1)
+
+			gm.SafeGo(fmt.Sprintf("polling-allocator-%s-%d", eventName, jcnt), func(allocCtx context.Context) {
+				functions.AllocateEvent(allocCtx, event, eventJobs, EventThreads)
+			})
+
+			gm.SafeGo(fmt.Sprintf("polling-results-%s-%d", eventName, jcnt), func(bgCtx context.Context) {
+				cnt := 0
+				for res := range eventResults {
+					startTime := time.Now()
+					cnt = cnt + 1
+					err = ms.ProcessEvents(bgCtx, projectId, res.EventMsgs, event, s, cnt, jcnt)
+					if err != nil {
+						logs.WithContext(bgCtx).Error(err.Error())
+						err = nil
+					}
+					endTime := time.Now()
+					diff := endTime.Sub(startTime)
+					logs.WithContext(bgCtx).Info(fmt.Sprint("result processing ending for ", eventName, " job worker ", cnt, " of ", jcnt, " is ", diff.Seconds(), "seconds"))
+				}
+				done <- true
+			})
+
 			noOfWorkers := 1
 			functions.CreateWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults, s.GetConn(), jcnt)
+			<-done
+
 			event.InitiatPollingInterval(ctx)
 		}
 	}
