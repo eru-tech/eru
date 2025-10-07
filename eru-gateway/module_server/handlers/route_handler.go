@@ -30,12 +30,11 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 		logs.WithContext(r.Context()).Info(url)
 		tg, authorizer, addHeaders, instanceId, err := sh.Store.GetTargetGroupAuthorizer(r.Context(), r)
 		if err != nil {
-			/* server_handlers.FormatResponse(w, 400)
+			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "suspicious activity"})
-			return */
+			return
 		}
 		logs.WithContext(r.Context()).Info(fmt.Sprint("authorizer.AuthorizerName = ", authorizer.AuthorizerName))
-		authorizer.AuthorizerName = "eru"
 		if authorizer.AuthorizerName != "" {
 			accessToken := r.Header.Get(authorizer.TokenHeaderKey)
 			idToken := r.Header.Get(authorizer.IdTokenKey)
