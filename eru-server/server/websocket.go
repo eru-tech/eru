@@ -67,11 +67,23 @@ func (ws *WebSocketConnection) keepAlive() {
 	for {
 		select {
 		case <-ticker.C:
-			ws.writeMux.Lock()
-			err := ws.conn.WriteMessage(websocket.PingMessage, nil)
-			ws.writeMux.Unlock()
-			if err != nil {
+			writeDone := make(chan error, 1)
+			go func() {
+				ws.writeMux.Lock()
+				defer ws.writeMux.Unlock()
+				writeDone <- ws.conn.WriteMessage(websocket.PingMessage, nil)
+			}()
+
+			select {
+			case err := <-writeDone:
+				if err != nil {
+					ws.Close()
+					return
+				}
+			case <-time.After(ws.config.WriteTimeout):
 				ws.Close()
+				return
+			case <-ws.closed:
 				return
 			}
 		case <-ws.closed:
