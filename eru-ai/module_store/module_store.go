@@ -545,7 +545,6 @@ func (ms *ModuleStore) GetAgentClone(ctx context.Context, projectId string, tena
 		if err != nil {
 			return nil, err
 		}
-
 		return
 	}
 }
@@ -632,6 +631,26 @@ func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId 
 	}
 	agent.SetModel(model)
 
+	agent.InitializeConversationManager(ctx)
+	summaryModelNameI, err := agent.GetAttribute(ctx, "summary_model")
+	if err != nil {
+		err = nil //ignore error and continue with main model
+		return agent, nil
+	}
+	summaryModelName, ok := summaryModelNameI.(string)
+	if !ok {
+		logs.WithContext(ctx).Error("summary model attribute is not a string")
+		err = nil //ignore error and continue with main model
+		return agent, nil
+	}
+	if summaryModelName != "" {
+		summaryModel, err := ms.GetModel(ctx, projectId, tenantId, summaryModelName, s)
+		if err != nil {
+			err = nil //ignore error and continue with main model
+			return agent, nil
+		}
+		agent.SetSummaryModel(summaryModel)
+	}
 	return agent, nil
 }
 

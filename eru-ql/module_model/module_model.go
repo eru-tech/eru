@@ -216,7 +216,7 @@ type IcebergConfig struct {
 	Uri            string         `json:"-"`
 	Warehouse      string         `json:"-"`
 	Database       string         `json:"database" eru:"required"`
-	TenantId       string         `json:"tenant_id" eru:"required"`
+	TenantId       string         `json:"-"`
 	CatalogType    string         `json:"catalog_type" eru:"required"`
 }
 type S3TablesConfig struct {

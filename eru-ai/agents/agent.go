@@ -12,30 +12,24 @@ import (
 	"github.com/eru-tech/eru/eru-cache/cache"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
+	"github.com/eru-tech/eru/eru-server/server"
 )
 
 type AgentMessage struct {
-	Content        string                 `json:"content,omitempty"`
-	Params         map[string]interface{} `json:"params,omitempty"`
-	Files          []models.FileMessage   `json:"files,omitempty"`
-	ConversationId string                 `json:"conversation_id,omitempty"`
-	MessageId      string                 `json:"message_id,omitempty"`
-}
-
-type ConversationMessage struct {
-	MessageId   string                 `json:"message_id"`
-	Timestamp   time.Time              `json:"timestamp"`
-	Role        string                 `json:"role"`
-	Content     string                 `json:"content"`
-	Params      map[string]interface{} `json:"params,omitempty"`
-	Files       []models.FileMessage   `json:"files,omitempty"`
-	ToolResults map[string]interface{} `json:"tool_results,omitempty"`
+	Content          string                 `json:"content,omitempty"`
+	Params           map[string]interface{} `json:"params,omitempty"`
+	Files            []models.FileMessage   `json:"files,omitempty"`
+	MessageId        string                 `json:"message_id,omitempty"`
+	Role             string                 `json:"role,omitempty"`
+	Feedback         bool                   `json:"feedback,omitempty"`
+	MessageTimestamp time.Time              `json:"message_timestamp,omitempty"`
 }
 
 type Conversation struct {
-	ConversationId string                `json:"conversation_id"`
-	Messages       []ConversationMessage `json:"messages"`
-	NewMessages    []ConversationMessage `json:"-"`
+	ConversationId string               `json:"conversation_id"`
+	Messages       []AgentMessage       `json:"messages"`
+	NewMessages    []AgentMessage       `json:"-"`
+	ChatRequest    []models.ChatRequest `json:"-"`
 }
 
 type AgentTools struct {
@@ -48,105 +42,46 @@ type AgentTools struct {
 	Tool           tools.Tooling `json:"-"`
 }
 type Agent struct {
-	AgentType    string                `json:"agent_type" eru:"required"`
-	AgentName    string                `json:"agent_name" eru:"required"`
-	Description  string                `json:"description"`
-	SystemPrompt string                `json:"system_prompt"`
-	AgentTools   []AgentTools          `json:"agent_tools"`
-	ModelName    string                `json:"model"`
-	Model        models.ModelI         `json:"-"`
-	OutputSchema eru_models.JSONSchema `json:"output_schema"`
-	//Tools        map[string]tools.Tooling `json:"-"`
-	RetryCount int               `json:"retry_count"`
-	ChatMemory cache.CacheStoreI `json:"chat_memory"`
+	AgentType           string                `json:"agent_type" eru:"required"`
+	AgentName           string                `json:"agent_name" eru:"required"`
+	Description         string                `json:"description"`
+	SystemPrompt        string                `json:"system_prompt"`
+	AgentTools          []AgentTools          `json:"agent_tools"`
+	ModelName           string                `json:"model"`
+	Model               models.ModelI         `json:"-"`
+	OutputSchema        eru_models.JSONSchema `json:"output_schema"`
+	RetryCount          int                   `json:"retry_count"`
+	ChatMemory          cache.CacheStoreI     `json:"chat_memory"`
+	ConversationConfig  *ConversationConfig   `json:"conversation_config"`
+	ConversationManager *ConversationManager  `json:"-"`
 }
 
 type AgentI interface {
 	GetSpec() AgentI
-	Execute(ctx context.Context, agentMessage AgentMessage, projectId string, tenantId string) (map[string]interface{}, error)
+	Execute(ctx context.Context, agentMessage AgentMessage, conversationId string, projectId string, tenantId string) (map[string]interface{}, error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
 	//SetTools(tools map[string]tools.Tooling)
 	ExecuteTools(ctx context.Context, chatRequest models.ChatRequest, agentTools []AgentTools, projectId string, tenantId string) (toolResults map[string]interface{}, err error)
 	SetModel(model models.ModelI)
+	SetSummaryModel(model models.ModelI)
 	SetChatMemory(ctx context.Context, cacheStoreI cache.CacheStoreI) error
 	GetChatMemory() cache.CacheStoreI
 	ValidateChatMemory(ctx context.Context, projectId string) error
 	LoadConversationHistory(ctx context.Context, conversationId, projectId, tenantId string) (*Conversation, error)
-	SaveConversation(ctx context.Context, conversation *Conversation, projectId string) error
-	AddMessageToConversation(ctx context.Context, conversation *Conversation, role string, agentMessage AgentMessage, response map[string]interface{}) error
+	SaveConversation(ctx context.Context, conversation *Conversation, projectId string, tenantId string) error
+	GetConversationConfig() *ConversationConfig
+	InitializeConversationManager(ctx context.Context)
 }
 
 func (agent *Agent) GetSpec() AgentI {
 	return agent
 }
 
-func (agent *Agent) Execute(ctx context.Context, agentMessage AgentMessage, projectId string, tenantId string) (map[string]interface{}, error) {
+func (agent *Agent) Execute(ctx context.Context, agentMessage AgentMessage, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {
 	err := logs.Err(ctx, fmt.Errorf("execute agent is not implemented"), "execute agent is not implemented")
 	return nil, err
 }
-
-/* func (agent *Agent) processWithModel(ctx context.Context, conversation *Conversation, agentMessage AgentMessage, projectId string, tenantId string) (map[string]interface{}, error) {
-	logs.WithContext(ctx).Debug("processWithModel - Start")
-
-	if agent.Model == nil {
-		return nil, fmt.Errorf("model not configured for agent %s", agent.AgentName)
-	}
-
-	chatRequest := agent.buildChatRequest(conversation, agentMessage)
-
-	if len(agent.AgentTools) > 0 {
-		toolResults, err := agent.ExecuteTools(ctx, chatRequest, agent.AgentTools, projectId, tenantId)
-		if err != nil {
-			logs.WithContext(ctx).Error(fmt.Sprintf("Tool execution failed: %v", err))
-			return nil, err
-		}
-		return toolResults, nil
-	}
-
-	response, err := agent.Model.QueryModel(ctx, chatRequest, agent.AgentName)
-	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("Model query failed: %v", err))
-		return nil, err
-	}
-
-	result := map[string]interface{}{
-		"content": response.Content,
-		"model":   response.ModelName,
-	}
-
-	if response.TokenUsage != nil {
-		result["token_usage"] = response.TokenUsage
-	}
-
-	return result, nil
-} */
-
-/* func (agent *Agent) buildChatRequest(conversation *Conversation, currentMessage AgentMessage) models.ChatRequest {
-	chatRequest := models.ChatRequest{
-		SystemPrompt: agent.SystemPrompt,
-		Messages:     []models.Message{},
-		Model:        agent.ModelName,
-		OutputSchema: agent.OutputSchema,
-	}
-
-	for _, msg := range conversation.Messages {
-		chatMessage := models.Message{
-			Role:    msg.Role,
-			Content: msg.Content,
-		}
-		chatRequest.Messages = append(chatRequest.Messages, chatMessage)
-	}
-
-	if currentMessage.Content != "" {
-		chatRequest.Messages = append(chatRequest.Messages, models.Message{
-			Role:    "user",
-			Content: currentMessage.Content,
-		})
-	}
-
-	return chatRequest
-} */
 
 func (agent *Agent) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
 	logs.WithContext(ctx).Debug("MakeFromJson - Start")
@@ -182,6 +117,8 @@ func (agent *Agent) GetAttribute(ctx context.Context, attributeName string) (att
 		return agent.ChatMemory.GetAttribute(ctx, "persist_enabled")
 	case "persist_error":
 		return agent.ChatMemory.GetAttribute(ctx, "persist_error")
+	case "summary_model":
+		return agent.ConversationManager.Config.SummaryModel, nil
 	default:
 		err := errors.New("attribute not found")
 		logs.WithContext(ctx).Error(err.Error())
@@ -195,6 +132,9 @@ func (agent *Agent) GetAttribute(ctx context.Context, attributeName string) (att
 
 func (agent *Agent) SetModel(model models.ModelI) {
 	agent.Model = model
+}
+func (agent *Agent) SetSummaryModel(model models.ModelI) {
+	agent.ConversationManager.SummaryModel = model
 }
 func (agent *Agent) ExecuteTools(ctx context.Context, chatRequest models.ChatRequest, agentTools []AgentTools, projectId string, tenantId string) (toolResults map[string]interface{}, err error) {
 	toolResults = make(map[string]interface{})
@@ -342,8 +282,8 @@ func (agent *Agent) LoadConversationHistory(ctx context.Context, conversationId,
 
 	conversation := &Conversation{
 		ConversationId: conversationId,
-		Messages:       []ConversationMessage{},
-		NewMessages:    []ConversationMessage{},
+		Messages:       []AgentMessage{},
+		NewMessages:    []AgentMessage{},
 	}
 
 	if agent.ChatMemory == nil || conversationId == "" {
@@ -351,7 +291,7 @@ func (agent *Agent) LoadConversationHistory(ctx context.Context, conversationId,
 		return conversation, nil
 	}
 
-	messages, err := agent.loadMessages(ctx, conversationId)
+	messages, err := agent.loadMessages(ctx, conversationId, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Info(fmt.Sprintf("Failed to load messages: %v, returning empty conversation", err))
 		return conversation, nil
@@ -363,10 +303,10 @@ func (agent *Agent) LoadConversationHistory(ctx context.Context, conversationId,
 	return conversation, nil
 }
 
-func (agent *Agent) loadMessages(ctx context.Context, conversationId string) ([]ConversationMessage, error) {
+func (agent *Agent) loadMessages(ctx context.Context, conversationId string, projectId string, tenantId string) ([]AgentMessage, error) {
 	logs.WithContext(ctx).Debug("loadMessages - Start")
 
-	var messages []ConversationMessage
+	var messages []AgentMessage
 
 	conversationJSON, err := agent.ChatMemory.Get(ctx, conversationId)
 	if err != nil {
@@ -375,15 +315,15 @@ func (agent *Agent) loadMessages(ctx context.Context, conversationId string) ([]
 		persistEnabled, _ := agent.ChatMemory.GetAttribute(ctx, "persist_enabled")
 		if persistEnabled != nil && persistEnabled.(bool) {
 			logs.WithContext(ctx).Info("Loading messages from database")
-			dbMessages, err := agent.ChatMemory.LoadMessagesFromDatabase(ctx, "", conversationId)
+			dbMessages, err := agent.ChatMemory.LoadFromDatabase(ctx, projectId, tenantId, conversationId)
 			if err != nil {
 				logs.WithContext(ctx).Info(fmt.Sprintf("Failed to load messages from database: %v", err))
 				return messages, nil
 			}
 
 			for _, dbMsg := range dbMessages {
-				var msg ConversationMessage
-				err := json.Unmarshal([]byte(dbMsg.Value), &msg)
+				var msg AgentMessage
+				err := json.Unmarshal([]byte(dbMsg.CacheValue), &msg)
 				if err != nil {
 					logs.WithContext(ctx).Error(fmt.Sprintf("Failed to unmarshal message: %v", err))
 					continue
@@ -408,7 +348,7 @@ func (agent *Agent) loadMessages(ctx context.Context, conversationId string) ([]
 	return messages, nil
 }
 
-func (agent *Agent) SaveConversation(ctx context.Context, conversation *Conversation, projectId string) error {
+func (agent *Agent) SaveConversation(ctx context.Context, conversation *Conversation, projectId string, tenantId string) error {
 	logs.WithContext(ctx).Debug("SaveConversation - Start")
 
 	if agent.ChatMemory == nil || len(conversation.NewMessages) == 0 {
@@ -430,62 +370,87 @@ func (agent *Agent) SaveConversation(ctx context.Context, conversation *Conversa
 
 	persistEnabled, _ := agent.ChatMemory.GetAttribute(ctx, "persist_enabled")
 	if persistEnabled != nil && persistEnabled.(bool) {
-		ttl := 30 * 24 * time.Hour
+		cacheDataArray := []cache.CacheData{}
 		for _, msg := range conversation.NewMessages {
-			go agent.saveMessageToDatabase(ctx, conversation.ConversationId, msg, string(conversationJSON), ttl)
+			messageJSON, err := json.Marshal(msg)
+			if err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("Failed to marshal message: %v", err))
+				return err
+			}
+			cacheData := cache.CacheData{
+				//MessageId:        msg.MessageId,
+				//MessageRole:      msg.Role,
+				//MessageTimestamp: time.Now(),
+				CacheKey:   conversation.ConversationId,
+				CacheValue: string(messageJSON),
+				ProjectId:  projectId,
+				TenantId:   tenantId,
+				//ConversationId:   conversation.ConversationId,
+				CreatedAt:    time.Now(),
+				UpdatedAt:    time.Now(),
+				ExpiresAt:    time.Now().Add(30 * 24 * time.Hour),
+				AccessCount:  0,
+				LastAccessed: time.Now(),
+			}
+			cacheDataArray = append(cacheDataArray, cacheData)
+		}
+		if len(cacheDataArray) > 0 {
+			gm := server.GetGlobalGoroutineManager(ctx)
+			gm.SafeGo("ChatMemorySync", func(ctx context.Context) {
+				agent.ChatMemory.SyncToDatabase(ctx, projectId, cacheDataArray)
+			})
 		}
 	}
 
 	newMessageCount := len(conversation.NewMessages)
-	conversation.NewMessages = []ConversationMessage{}
+	conversation.NewMessages = []AgentMessage{}
 	logs.WithContext(ctx).Info(fmt.Sprintf("Saved %d new messages for conversation %s", newMessageCount, conversation.ConversationId))
 
 	return nil
 }
 
-func (agent *Agent) saveMessageToDatabase(ctx context.Context, conversationId string, msg ConversationMessage, msgJSON string, ttl time.Duration) {
-	logs.WithContext(ctx).Debug("saveMessageToDatabase - Start")
-
-	err := agent.ChatMemory.SyncMessageToDatabase(ctx, "", conversationId, msg.MessageId, msg.Role, msgJSON, msg.Timestamp, ttl)
-	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to sync message to database: %v", err))
-	} else {
-		logs.WithContext(ctx).Info(fmt.Sprintf("Successfully synced message to database: %s", msg.MessageId))
+func (agent *Agent) GetConversationConfig() *ConversationConfig {
+	defaultConfig := DefaultConversationConfig(agent.ModelName)
+	if agent.ConversationConfig == nil {
+		return defaultConfig
 	}
+
+	// Merge with defaults, using agent config values where they exist and are valid
+	config := &ConversationConfig{
+		MaxRecentMessages:   defaultConfig.MaxRecentMessages,
+		MaxTokens:           defaultConfig.MaxTokens,
+		SummaryThreshold:    defaultConfig.SummaryThreshold,
+		EnableSummarization: defaultConfig.EnableSummarization,
+		SummaryModel:        defaultConfig.SummaryModel,
+		MaxConversationAge:  defaultConfig.MaxConversationAge,
+	}
+
+	if agent.ConversationConfig.MaxRecentMessages > 0 {
+		config.MaxRecentMessages = agent.ConversationConfig.MaxRecentMessages
+	}
+	if agent.ConversationConfig.MaxTokens > 0 {
+		config.MaxTokens = agent.ConversationConfig.MaxTokens
+	}
+	if agent.ConversationConfig.SummaryThreshold > 0 {
+		config.SummaryThreshold = agent.ConversationConfig.SummaryThreshold
+	}
+	config.EnableSummarization = agent.ConversationConfig.EnableSummarization
+	if agent.ConversationConfig.SummaryModel != "" {
+		config.SummaryModel = agent.ConversationConfig.SummaryModel
+	}
+	if agent.ConversationConfig.MaxConversationAge > 0 {
+		config.MaxConversationAge = agent.ConversationConfig.MaxConversationAge
+	}
+	return config
 }
+func (agent *Agent) InitializeConversationManager(ctx context.Context) {
+	logs.WithContext(ctx).Debug("InitializeConversationManager - Start")
+	config := agent.GetConversationConfig()
+	model := agent.Model
 
-func (agent *Agent) AddMessageToConversation(ctx context.Context, conversation *Conversation, role string, agentMessage AgentMessage, response map[string]interface{}) error {
-	logs.WithContext(ctx).Debug("AddMessageToConversation - Start")
-
-	if conversation == nil {
-		return fmt.Errorf("conversation cannot be nil")
+	cm := ConversationManager{
+		Config:       config,
+		SummaryModel: model,
 	}
-
-	message := ConversationMessage{
-		MessageId: agentMessage.MessageId,
-		Timestamp: time.Now(),
-		Role:      role,
-		Content:   agentMessage.Content,
-		Params:    agentMessage.Params,
-		Files:     agentMessage.Files,
-	}
-
-	if role == "assistant" && response != nil {
-		message.ToolResults = response
-		if content, ok := response["content"].(string); ok {
-			message.Content = content
-		}
-	}
-
-	if message.MessageId == "" {
-		message.MessageId = fmt.Sprintf("%s_%d", role, time.Now().UnixNano())
-	}
-
-	conversation.Messages = append(conversation.Messages, message)
-	conversation.NewMessages = append(conversation.NewMessages, message)
-
-	logs.WithContext(ctx).Info(fmt.Sprintf("Added %s message to conversation. Total messages: %d",
-		role, len(conversation.Messages)))
-
-	return nil
+	agent.ConversationManager = &cm
 }

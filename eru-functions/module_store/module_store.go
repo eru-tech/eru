@@ -774,7 +774,7 @@ func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyn
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("selectOutput = ", selectOutput))
+	logs.WithContext(ctx).Info(fmt.Sprint("length of selectOutput = ", len(selectOutput)))
 	var fVars functions.FuncTemplateVars
 	if selectOutput[0] != nil {
 		if selectOutput[0][0] != nil {

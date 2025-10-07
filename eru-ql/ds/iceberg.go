@@ -62,12 +62,13 @@ func (ib *IcebergSqlMaker) SaveTable(ctx context.Context, tableName string, tabl
 			err = logs.Err(ctx, errors.New("sql engine is nil"), "sql engine is not initialized")
 			return err
 		}
-		tn := fmt.Sprintf("s3tablescatalog.%s_%s.%s", dataSource.IcebergConfig.TenantId, dataSource.IcebergConfig.Database, tableName)
+		ns := fmt.Sprintf("%s_%s", dataSource.IcebergConfig.TenantId, dataSource.IcebergConfig.Database)
+		tn := fmt.Sprintf("%s.%s", ns, tableName)
 		query, err := dataSource.SqlEngine.MakeCreateTableSQL(ctx, tn, tableStructure.NewColumns)
 		if err != nil {
 			return err
 		}
-		query = fmt.Sprintf("%s TBLPROPERTIES ('table_type' = 'ICEBERG')", query)
+		query = fmt.Sprintf("%s TBLPROPERTIES ('table_type' = 'iceberg')", query)
 		_, err = ib.ExecutePreparedQuery(ctx, query, dataSource)
 		if err != nil {
 			return err
@@ -84,7 +85,7 @@ func (ib *IcebergSqlMaker) DropTable(ctx context.Context, tableName string, data
 		err = logs.Err(ctx, errors.New("sql engine is nil"), "sql engine is not initialized")
 		return err
 	}
-	tn := fmt.Sprintf("s3tablescatalog.%s_%s.%s", dataSource.IcebergConfig.TenantId, dataSource.IcebergConfig.Database, tableName)
+	tn := fmt.Sprintf("%s_%s.%s", dataSource.IcebergConfig.TenantId, dataSource.IcebergConfig.Database, tableName)
 	query, err := dataSource.SqlEngine.MakeDropTableSQL(ctx, tn)
 	if err != nil {
 		return err
@@ -109,11 +110,15 @@ func (ib *IcebergSqlMaker) ExecutePreparedQuery(ctx context.Context, query strin
 	logs.WithContext(ctx).Debug("ExecutePreparedQuery - Start")
 	logs.WithContext(ctx).Info(query)
 	dn := fmt.Sprintf("%s_%s", datasource.IcebergConfig.TenantId, datasource.IcebergConfig.Database)
-	output, err := datasource.SqlEngine.ExecuteQuery(ctx, query, dn)
+	catalog := fmt.Sprintf("s3tablescatalog/%s", datasource.IcebergConfig.S3TablesConfig.BucketName)
+	output, err := datasource.SqlEngine.ExecuteQuery(ctx, query, dn, catalog)
 	if err != nil {
 		return nil, err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint(output))
+	if len(output) == 0 {
+		return nil, nil
+	}
 	return output[0], nil
 }
 

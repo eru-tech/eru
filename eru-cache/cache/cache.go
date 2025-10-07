@@ -35,28 +35,28 @@ type CacheTableColumn struct {
 }
 
 var ExpectedCacheTableSchema = map[string]CacheTableColumn{
-	"cache_sk":          {TblName: "eru_cache", ColName: "cache_sk", OwnDataType: "integer", IsNullable: false, PrimaryKey: true, AutoIncrement: true},
-	"project_id":        {TblName: "eru_cache", ColName: "project_id", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 100},
-	"tenant_id":         {TblName: "eru_cache", ColName: "tenant_id", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 100},
-	"cache_key":         {TblName: "eru_cache", ColName: "cache_key", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 500},
-	"cache_value":       {TblName: "eru_cache", ColName: "cache_value", OwnDataType: "string", IsNullable: false, PrimaryKey: false},
-	"created_at":        {TblName: "eru_cache", ColName: "created_at", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
-	"updated_at":        {TblName: "eru_cache", ColName: "updated_at", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
-	"expires_at":        {TblName: "eru_cache", ColName: "expires_at", OwnDataType: "datetime", IsNullable: true, PrimaryKey: false},
-	"access_count":      {TblName: "eru_cache", ColName: "access_count", OwnDataType: "biginteger", IsNullable: false, PrimaryKey: false, DefaultValue: "0"},
-	"last_accessed":     {TblName: "eru_cache", ColName: "last_accessed", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
-	"message_id":        {TblName: "eru_cache", ColName: "message_id", OwnDataType: "varchar", IsNullable: true, PrimaryKey: false, CharMaxLength: 255},
-	"conversation_id":   {TblName: "eru_cache", ColName: "conversation_id", OwnDataType: "varchar", IsNullable: true, PrimaryKey: false, CharMaxLength: 255},
-	"message_role":      {TblName: "eru_cache", ColName: "message_role", OwnDataType: "varchar", IsNullable: true, PrimaryKey: false, CharMaxLength: 20},
-	"message_timestamp": {TblName: "eru_cache", ColName: "message_timestamp", OwnDataType: "datetime", IsNullable: true, PrimaryKey: false},
+	"cache_sk":      {TblName: "eru_cache", ColName: "cache_sk", OwnDataType: "integer", IsNullable: false, PrimaryKey: true, AutoIncrement: true},
+	"project_id":    {TblName: "eru_cache", ColName: "project_id", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 100},
+	"tenant_id":     {TblName: "eru_cache", ColName: "tenant_id", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 100},
+	"cache_key":     {TblName: "eru_cache", ColName: "cache_key", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 500},
+	"cache_value":   {TblName: "eru_cache", ColName: "cache_value", OwnDataType: "string", IsNullable: false, PrimaryKey: false},
+	"created_at":    {TblName: "eru_cache", ColName: "created_at", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
+	"updated_at":    {TblName: "eru_cache", ColName: "updated_at", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
+	"expires_at":    {TblName: "eru_cache", ColName: "expires_at", OwnDataType: "datetime", IsNullable: true, PrimaryKey: false},
+	"access_count":  {TblName: "eru_cache", ColName: "access_count", OwnDataType: "biginteger", IsNullable: false, PrimaryKey: false, DefaultValue: "0"},
+	"last_accessed": {TblName: "eru_cache", ColName: "last_accessed", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
 }
 
-type MessageEntry struct {
-	MessageId string    `json:"message_id"`
-	Role      string    `json:"message_role"`
-	Value     string    `json:"cache_value"`
-	Timestamp time.Time `json:"message_timestamp"`
-	CacheKey  string    `json:"cache_key"`
+type CacheData struct {
+	CacheKey     string    `json:"cache_key"`
+	CacheValue   string    `json:"cache_value"`
+	ProjectId    string    `json:"project_id"`
+	TenantId     string    `json:"tenant_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	AccessCount  int       `json:"access_count"`
+	LastAccessed time.Time `json:"last_accessed"`
 }
 
 // CacheStoreI defines the interface for a generic cache.
@@ -71,9 +71,8 @@ type CacheStoreI interface {
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
 	SyncPersistence(ctx context.Context, cacheStoreI CacheStoreI) error
-	SyncToDatabase(ctx context.Context, projectId, key, value string, ttl time.Duration) error
-	SyncMessageToDatabase(ctx context.Context, projectId, conversationId, messageId, role string, value string, timestamp time.Time, ttl time.Duration) error
-	LoadMessagesFromDatabase(ctx context.Context, projectId, conversationId string) ([]MessageEntry, error)
+	SyncToDatabase(ctx context.Context, projectId string, cacheData []CacheData) error
+	LoadFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string) ([]CacheData, error)
 }
 
 // CacheStore is a base struct to be embedded by specific implementations.
@@ -274,7 +273,7 @@ func (cs *CacheStore) validateTableColumns(ctx context.Context, actualColumns ma
 func (cs *CacheStore) createCacheTable(ctx context.Context, eruqlURL string, projectId string, schema string) error {
 	logs.WithContext(ctx).Debug("createCacheTable - Start")
 
-	url := fmt.Sprintf("%s/store/%s/datasource/schema/%s/savetable/%s/false",
+	url := fmt.Sprintf("%s/store/%s/datasource/schema/%s/savetable/%s/true",
 		strings.TrimSuffix(eruqlURL, "/"),
 		projectId,
 		cs.CacheDbAlias,
@@ -378,11 +377,11 @@ func (cs *CacheStore) SyncPersistence(ctx context.Context, cacheStoreI CacheStor
 	return nil
 }
 
-func (cs *CacheStore) SyncToDatabase(ctx context.Context, projectId, key, value string, ttl time.Duration) error {
+func (cs *CacheStore) SyncToDatabase(ctx context.Context, projectId string, cacheData []CacheData) error {
 	logs.WithContext(ctx).Debug("SyncToDatabase - Start")
 
 	if !cs.PersistEnabled {
-		logs.WithContext(ctx).Info("Persistence not enabled, skipping database sync")
+		logs.WithContext(ctx).Info("Persistence not enabled, skipping cache data sync")
 		return nil
 	}
 
@@ -395,37 +394,16 @@ func (cs *CacheStore) SyncToDatabase(ctx context.Context, projectId, key, value 
 		return fmt.Errorf("ERUQL_BASEURL environment variable not set")
 	}
 
-	now := time.Now()
-	var expiresAt *time.Time
-	if ttl > 0 {
-		expireTime := now.Add(ttl)
-		expiresAt = &expireTime
-	}
-
 	mutation := `
-	mutation InsertCacheEntry($dbAlias: String!, $data: [CacheEntryInput!]!) {
-		insert_cache_entries(db_alias: $dbAlias, data: $data) {
-			affected_rows
-		}
-	}`
-
-	cacheData := map[string]interface{}{
-		"project_id":    projectId,
-		"cache_key":     key,
-		"cache_value":   value,
-		"created_at":    now,
-		"updated_at":    now,
-		"access_count":  0,
-		"last_accessed": now,
-	}
-
-	if expiresAt != nil {
-		cacheData["expires_at"] = *expiresAt
-	}
+	mutation {
+  results : insert_public___eru_cache(docs: $docs) $$dbalias$$  {
+   err : error
+  }
+}`
+	mutation = strings.Replace(mutation, "$$dbalias$$", fmt.Sprintf("@%s", cs.CacheDbAlias), -1)
 
 	variables := map[string]interface{}{
-		"dbAlias": cs.CacheDbAlias,
-		"data":    []interface{}{cacheData},
+		"docs": cacheData,
 	}
 
 	requestBody := map[string]interface{}{
@@ -436,105 +414,26 @@ func (cs *CacheStore) SyncToDatabase(ctx context.Context, projectId, key, value 
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
 
-	url := fmt.Sprintf("%s/graphql", strings.TrimSuffix(eruqlURL, "/"))
-
+	url := fmt.Sprintf("%s/graphql/%s/execute", strings.TrimSuffix(eruqlURL, "/"), projectId)
+	b, _ := json.Marshal(requestBody)
+	logs.WithContext(ctx).Info(fmt.Sprintf("requestBody: %s", string(b)))
 	_, _, _, statusCode, err := utils.CallHttp(ctx, "POST", url, headers, nil, nil, nil, requestBody)
 	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to sync cache entry to database: %v", err))
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to sync cache data to database: %v", err))
 		return err
 	}
 
 	if statusCode != http.StatusOK {
-		logs.WithContext(ctx).Error(fmt.Sprintf("Database sync returned status: %d", statusCode))
-		return fmt.Errorf("database sync failed with status: %d", statusCode)
+		logs.WithContext(ctx).Error(fmt.Sprintf("Cache data sync returned status: %d", statusCode))
+		return fmt.Errorf("cache data sync failed with status: %d", statusCode)
 	}
 
-	logs.WithContext(ctx).Info(fmt.Sprintf("Successfully synced cache entry to database: %s", key))
+	logs.WithContext(ctx).Info(fmt.Sprintf("Successfully synced cache data to database: %d", len(cacheData)))
 	return nil
 }
 
-func (cs *CacheStore) SyncMessageToDatabase(ctx context.Context, projectId, conversationId, messageId, role string, value string, timestamp time.Time, ttl time.Duration) error {
-	logs.WithContext(ctx).Debug("SyncMessageToDatabase - Start")
-
-	if !cs.PersistEnabled {
-		logs.WithContext(ctx).Info("Persistence not enabled, skipping message database sync")
-		return nil
-	}
-
-	if cs.CacheDbAlias == "" {
-		return fmt.Errorf("cache database alias not configured")
-	}
-
-	eruqlURL := os.Getenv("ERUQL_BASEURL")
-	if eruqlURL == "" {
-		return fmt.Errorf("ERUQL_BASEURL environment variable not set")
-	}
-
-	cacheKey := fmt.Sprintf("%s:conv:%s:msg:%s", projectId, conversationId, messageId)
-	now := time.Now()
-	var expiresAt *time.Time
-	if ttl > 0 {
-		expireTime := now.Add(ttl)
-		expiresAt = &expireTime
-	}
-
-	mutation := `
-	mutation InsertMessageEntry($dbAlias: String!, $data: [CacheEntryInput!]!) {
-		insert_cache_entries(db_alias: $dbAlias, data: $data) {
-			affected_rows
-		}
-	}`
-
-	cacheData := map[string]interface{}{
-		"project_id":        projectId,
-		"cache_key":         cacheKey,
-		"cache_value":       value,
-		"message_id":        messageId,
-		"conversation_id":   conversationId,
-		"message_role":      role,
-		"message_timestamp": timestamp,
-		"created_at":        now,
-		"updated_at":        now,
-		"access_count":      0,
-		"last_accessed":     now,
-	}
-
-	if expiresAt != nil {
-		cacheData["expires_at"] = *expiresAt
-	}
-
-	variables := map[string]interface{}{
-		"dbAlias": cs.CacheDbAlias,
-		"data":    []interface{}{cacheData},
-	}
-
-	requestBody := map[string]interface{}{
-		"query":     mutation,
-		"variables": variables,
-	}
-
-	headers := http.Header{}
-	headers.Set("Content-Type", "application/json")
-
-	url := fmt.Sprintf("%s/graphql", strings.TrimSuffix(eruqlURL, "/"))
-
-	_, _, _, statusCode, err := utils.CallHttp(ctx, "POST", url, headers, nil, nil, nil, requestBody)
-	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to sync message to database: %v", err))
-		return err
-	}
-
-	if statusCode != http.StatusOK {
-		logs.WithContext(ctx).Error(fmt.Sprintf("Message database sync returned status: %d", statusCode))
-		return fmt.Errorf("message database sync failed with status: %d", statusCode)
-	}
-
-	logs.WithContext(ctx).Info(fmt.Sprintf("Successfully synced message to database: %s", messageId))
-	return nil
-}
-
-func (cs *CacheStore) LoadMessagesFromDatabase(ctx context.Context, projectId, conversationId string) ([]MessageEntry, error) {
-	logs.WithContext(ctx).Debug("LoadMessagesFromDatabase - Start")
+func (cs *CacheStore) LoadFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string) (cacheData []CacheData, err error) {
+	logs.WithContext(ctx).Debug("LoadFromDatabase - Start")
 
 	if !cs.PersistEnabled {
 		logs.WithContext(ctx).Info("Persistence not enabled, skipping database load")
@@ -551,28 +450,27 @@ func (cs *CacheStore) LoadMessagesFromDatabase(ctx context.Context, projectId, c
 	}
 
 	query := `
-	query GetConversationMessages($dbAlias: String!, $projectId: String!, $conversationId: String!) {
-		cache_entries(
-			db_alias: $dbAlias,
-			where: {
-				project_id: $projectId,
-				conversation_id: $conversationId,
-				message_id: {_neq: null}
-			},
-			order_by: {message_timestamp: asc}
-		) {
-			cache_key
-			cache_value
-			message_id
-			message_role
-			message_timestamp
-		}
-	}`
+	query {
+  cache: public___eru_cache (where : $where) $$dbalias$$  {
+    project_id
+    tenant_id
+    cache_key
+    cache_value
+    created_at
+    updated_at
+    expires_at
+    access_count
+    last_accessed
+  }
+}`
+	query = strings.Replace(query, "$$dbalias$$", fmt.Sprintf("@%s", cs.CacheDbAlias), -1)
 
 	variables := map[string]interface{}{
-		"dbAlias":        cs.CacheDbAlias,
-		"projectId":      projectId,
-		"conversationId": conversationId,
+		"where": map[string]interface{}{
+			"cache_key":  cacheKey,
+			"project_id": projectId,
+			"tenant_id":  tenantId,
+		},
 	}
 
 	requestBody := map[string]interface{}{
@@ -587,7 +485,7 @@ func (cs *CacheStore) LoadMessagesFromDatabase(ctx context.Context, projectId, c
 
 	res, _, _, statusCode, err := utils.CallHttp(ctx, "POST", url, headers, nil, nil, nil, requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query messages from database: %v", err)
+		return nil, fmt.Errorf("failed to query cache data from database: %v", err)
 	}
 
 	if statusCode != http.StatusOK {
@@ -595,55 +493,39 @@ func (cs *CacheStore) LoadMessagesFromDatabase(ctx context.Context, projectId, c
 	}
 
 	if res == nil {
-		logs.WithContext(ctx).Info("No messages found in database")
-		return []MessageEntry{}, nil
+		logs.WithContext(ctx).Info("No cache data found in database")
+		return []CacheData{}, nil
 	}
-
-	responseData, ok := res.(map[string]interface{})
-	if !ok {
+	if resArray, ok := res.([]interface{}); !ok {
 		return nil, fmt.Errorf("unexpected response format from database")
-	}
-
-	data, ok := responseData["data"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no data in database response")
-	}
-
-	cacheEntries, ok := data["cache_entries"].([]interface{})
-	if !ok {
-		logs.WithContext(ctx).Info("No cache entries found")
-		return []MessageEntry{}, nil
-	}
-
-	var messages []MessageEntry
-	for _, entryInterface := range cacheEntries {
-		entry, ok := entryInterface.(map[string]interface{})
+	} else if len(resArray) > 0 {
+		responseData, ok := resArray[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil, fmt.Errorf("unexpected response format from database")
 		}
-
-		messageEntry := MessageEntry{}
-		if messageId, ok := entry["message_id"].(string); ok {
-			messageEntry.MessageId = messageId
-		}
-		if role, ok := entry["message_role"].(string); ok {
-			messageEntry.Role = role
-		}
-		if value, ok := entry["cache_value"].(string); ok {
-			messageEntry.Value = value
-		}
-		if timestampStr, ok := entry["message_timestamp"].(string); ok {
-			if timestamp, err := time.Parse(time.RFC3339, timestampStr); err == nil {
-				messageEntry.Timestamp = timestamp
+		cacheData, ok := responseData["cache"].([]CacheData)
+		if !ok {
+			// Try to convert each entry individually
+			if cacheEntries, ok := responseData["cache"].([]interface{}); ok {
+				cacheData = make([]CacheData, len(cacheEntries))
+				for i, entry := range cacheEntries {
+					if entryMap, ok := entry.(map[string]interface{}); ok {
+						entryBytes, err := json.Marshal(entryMap)
+						if err != nil {
+							return nil, fmt.Errorf("failed to marshal cache entry: %v", err)
+						}
+						if err := json.Unmarshal(entryBytes, &cacheData[i]); err != nil {
+							return nil, fmt.Errorf("failed to unmarshal cache entry: %v", err)
+						}
+					}
+				}
+				return cacheData, nil
 			}
+			return []CacheData{}, nil
 		}
-		if cacheKey, ok := entry["cache_key"].(string); ok {
-			messageEntry.CacheKey = cacheKey
-		}
+		return cacheData, nil
 
-		messages = append(messages, messageEntry)
+	} else {
+		return []CacheData{}, nil
 	}
-
-	logs.WithContext(ctx).Info(fmt.Sprintf("Successfully loaded %d messages from database", len(messages)))
-	return messages, nil
 }

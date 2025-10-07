@@ -89,6 +89,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/execute/tool/{toolname}").HandlerFunc(module_handlers.ToolExecuteHandler(sh))
 	aiRouter.Methods(http.MethodGet).PathPrefix("/{tenant}/cburl/tool/{toolname}").HandlerFunc(module_handlers.ToolCbUrlHandler(sh))
 	aiRouter.PathPrefix("/{tenant}/callback/tool/{toolname}").HandlerFunc(module_handlers.ToolCallbackHandler(sh))
+	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/execute/agent/{agentname}/{conversationid}").HandlerFunc(module_handlers.AgentExecuteHandler(sh))
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/execute/agent/{agentname}").HandlerFunc(module_handlers.AgentExecuteHandler(sh))
 
 }

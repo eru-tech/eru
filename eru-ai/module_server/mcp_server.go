@@ -169,7 +169,7 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context) (server.MCPListToolsResu
 	}, nil
 }
 
-func (s *EruAIMCPServer) CallTool(ctx context.Context, params server.MCPCallToolParams) (server.MCPCallToolResult, error) {
+func (s *EruAIMCPServer) CallTool(ctx context.Context, conversationId string, params server.MCPCallToolParams) (server.MCPCallToolResult, error) {
 	parts := s.parseToolName(params.Name)
 	if len(parts) < 3 {
 		return server.MCPCallToolResult{}, fmt.Errorf("invalid tool name format")
@@ -179,13 +179,13 @@ func (s *EruAIMCPServer) CallTool(ctx context.Context, params server.MCPCallTool
 	tenant := parts[1]
 
 	if len(parts) == 4 && parts[2] == "agent" {
-		return s.executeAgent(ctx, project, tenant, parts[3], params.Arguments)
+		return s.executeAgent(ctx, conversationId, project, tenant, parts[3], params.Arguments)
 	} else {
-		return s.executeToolAction(ctx, project, tenant, parts[2], params.Arguments)
+		return s.executeToolAction(ctx, conversationId, project, tenant, parts[2], params.Arguments)
 	}
 }
 
-func (s *EruAIMCPServer) executeAgent(ctx context.Context, project, tenant, agentName string, arguments map[string]interface{}) (server.MCPCallToolResult, error) {
+func (s *EruAIMCPServer) executeAgent(ctx context.Context, conversationId, project, tenant, agentName string, arguments map[string]interface{}) (server.MCPCallToolResult, error) {
 	agent, err := s.store.Store.GetAgent(ctx, project, tenant, agentName, s.store.Store)
 	if err != nil {
 		return server.MCPCallToolResult{}, err
@@ -230,7 +230,7 @@ func (s *EruAIMCPServer) executeAgent(ctx context.Context, project, tenant, agen
 		Files:   files,
 	}
 
-	result, err := agent.Execute(ctx, agentMessage, project, tenant)
+	result, err := agent.Execute(ctx, agentMessage, conversationId, project, tenant)
 	if err != nil {
 		return server.MCPCallToolResult{
 			Content: []server.MCPContent{
@@ -254,7 +254,7 @@ func (s *EruAIMCPServer) executeAgent(ctx context.Context, project, tenant, agen
 	}, nil
 }
 
-func (s *EruAIMCPServer) executeToolAction(ctx context.Context, project, tenant, toolName string, arguments map[string]interface{}) (server.MCPCallToolResult, error) {
+func (s *EruAIMCPServer) executeToolAction(ctx context.Context, conversationId, project, tenant, toolName string, arguments map[string]interface{}) (server.MCPCallToolResult, error) {
 	tool, err := s.store.Store.GetTool(ctx, project, tenant, toolName, "", s.store.Store)
 	if err != nil {
 		return server.MCPCallToolResult{}, err

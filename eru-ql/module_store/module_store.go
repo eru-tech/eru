@@ -48,7 +48,7 @@ type ModuleStoreI interface {
 	UpdateSchemaTables(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error)
 	CheckTableExists(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (columns map[string]common_types.TableColsMetaData, schema string, err error)
 	AddSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
-	SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]common_types.TableColsMetaData, realStore ModuleStoreI, addInSchema bool) (err error)
+	SaveSchemaTable(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string, tableObj map[string]common_types.TableColsMetaData, realStore ModuleStoreI, addInSchema bool) (err error)
 	GetTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.SecurityRules, err error)
 	SaveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, securityRules module_model.SecurityRules, realStore ModuleStoreI) (err error)
 	RemoveTableSecurity(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error)
@@ -379,6 +379,7 @@ func (ms *ModuleStore) CheckTableExists(ctx context.Context, projectId string, d
 
 	for k, ot := range datasource.OtherTables {
 		if k == tableName {
+			datasource.OtherTables = make(map[string]map[string]common_types.TableColsMetaData)
 			return ot, schema, nil
 		}
 	}
@@ -898,7 +899,7 @@ func (ms *ModuleStore) getFieldValue(col *common_types.TableColsMetaData, fieldN
 	}
 }
 
-func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, tableObj map[string]common_types.TableColsMetaData, realStore ModuleStoreI, addInSchema bool) (err error) {
+func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string, tableObj map[string]common_types.TableColsMetaData, realStore ModuleStoreI, addInSchema bool) (err error) {
 	logs.WithContext(ctx).Debug("SaveSchemaTable - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
@@ -960,14 +961,23 @@ func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, db
 					NewColumns: tableObj,
 				}
 				sr := ds.GetSqlMaker(db.DbName)
-				err := sr.SaveTable(ctx, tableName, tableStructure, false, db)
+				tn := tableName
+				if db.DbConfig.DefaultSchema != "" {
+					tn = fmt.Sprint(db.DbConfig.DefaultSchema, ".", tableName)
+				}
+				err := sr.SaveTable(ctx, tn, tableStructure, false, db)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
 				if addInSchema {
-					db.SchemaTables[tableName] = tableObj
+					db.SchemaTables[tn] = tableObj
 				}
+			}
+			err = realStore.SaveStore(ctx, projectId, "", realStore)
+			if err != nil {
+				err = logs.Err(ctx, err, "error saving store")
+				return err
 			}
 		} else {
 			err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
@@ -1210,26 +1220,33 @@ func (ms *ModuleStore) DropSchemaTable(ctx context.Context, projectId string, db
 	defer realStore.GetMutex().Unlock()
 	tableExists := false
 	//TODO - to check if drop is allowed
+
 	if prj, ok := ms.Projects[projectId]; ok {
 		if db, ok := prj.DataSources[dbAlias]; ok {
-			if _, ok := db.SchemaTables[tableName]; ok {
+			tn := fmt.Sprint(db.DbConfig.DefaultSchema, ".", tableName)
+			if _, ok := db.SchemaTables[tn]; ok {
 				tableExists = true
-				delete(db.SchemaTables, tableName)
+				delete(db.SchemaTables, tn)
 				logs.WithContext(ctx).Info("table exists in Schema table - to alter")
-			} else if _, ok := db.OtherTables[tableName]; ok {
+			} else if _, ok := db.OtherTables[tn]; ok {
 				tableExists = true
-				delete(db.OtherTables, tableName)
+				delete(db.OtherTables, tn)
 				logs.WithContext(ctx).Info("table exists in Other table - to alter")
 			}
 			if tableExists {
 				//drop table
 				sr := ds.GetSqlMaker(db.DbName)
-				err := sr.DropTable(ctx, tableName, db)
+				err := sr.DropTable(ctx, tn, db)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
-				delete(db.SchemaTables, tableName)
+				delete(db.SchemaTables, tn)
+				err = realStore.SaveStore(ctx, projectId, "", realStore)
+				if err != nil {
+					err = logs.Err(ctx, err, "error saving store")
+					return err
+				}
 			} else {
 				err = errors.New(fmt.Sprint("Table ", tableName, " does not exists"))
 				logs.WithContext(ctx).Error(err.Error())

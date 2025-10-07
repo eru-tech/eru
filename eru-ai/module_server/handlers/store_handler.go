@@ -675,6 +675,7 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
 		agentName := vars["agentname"]
+		conversationId := vars["conversationid"]
 		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, agentName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -690,13 +691,13 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
 			}
-			if agentMessage.ConversationId == "" {
-				agentMessage.ConversationId = uuid.New().String()
+			if conversationId == "" {
+				conversationId = uuid.New().String()
 			}
 			if agentMessage.MessageId == "" {
 				agentMessage.MessageId = uuid.New().String()
 			}
-			agentResult, err := agent.Execute(r.Context(), agentMessage, projectId, tenantId)
+			agentResult, err := agent.Execute(r.Context(), agentMessage, conversationId, projectId, tenantId)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

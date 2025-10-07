@@ -151,7 +151,7 @@ func (athenaSQLEngine *AthenaSQLEngine) SetUp(ctx context.Context) (err error) {
 
 	return nil
 }
-func (athenaSQLEngine *AthenaSQLEngine) ExecuteQuery(ctx context.Context, query string, database string) (output []map[string]interface{}, err error) {
+func (athenaSQLEngine *AthenaSQLEngine) ExecuteQuery(ctx context.Context, query string, database string, catalog string) (output []map[string]interface{}, err error) {
 	if athenaSQLEngine.session == nil {
 		err = athenaSQLEngine.Init(ctx)
 		if err != nil {
@@ -161,6 +161,7 @@ func (athenaSQLEngine *AthenaSQLEngine) ExecuteQuery(ctx context.Context, query 
 	start, err := athenaSQLEngine.session.StartQueryExecution(ctx, &athena.StartQueryExecutionInput{
 		QueryString: aws.String(query),
 		QueryExecutionContext: &types.QueryExecutionContext{
+			Catalog:  aws.String(catalog),
 			Database: aws.String(database),
 		},
 		ResultConfiguration: &types.ResultConfiguration{OutputLocation: aws.String(fmt.Sprintf("s3://%s/", athenaSQLEngine.OutputS3Bucket))},

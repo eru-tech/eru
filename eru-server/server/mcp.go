@@ -103,7 +103,7 @@ type MCPContent struct {
 type MCPServer interface {
 	Initialize(ctx context.Context, params MCPInitializeParams) (MCPInitializeResult, error)
 	ListTools(ctx context.Context) (MCPListToolsResult, error)
-	CallTool(ctx context.Context, params MCPCallToolParams) (MCPCallToolResult, error)
+	CallTool(ctx context.Context, conversationId string, params MCPCallToolParams) (MCPCallToolResult, error)
 	GetCapabilities() MCPCapabilities
 	GetServerInfo() MCPServerInfo
 }
@@ -222,8 +222,8 @@ func (h *MCPMessageHandler) handleCallTool(ctx context.Context, request MCPMessa
 	}
 
 	logs.WithContext(ctx).Info(fmt.Sprintf("Calling tool: %s", params.Name))
-
-	result, err := h.server.CallTool(ctx, params)
+	conversationId := "" //TODO: get conversationId from mcp client request
+	result, err := h.server.CallTool(ctx, conversationId, params)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Tool execution error: %v", err))
 		return h.createErrorResponse(request.ID, -32603, fmt.Sprintf("Tool execution failed: %v", err), nil)

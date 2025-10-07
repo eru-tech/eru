@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
@@ -20,42 +21,65 @@ func (reflex_agent *ReflexAgent) GetSpec() agents.AgentI {
 	return reflex_agent
 }
 
-func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, projectId string, tenantId string) (map[string]interface{}, error) {
+func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
 
-	conversation, err := reflex_agent.LoadConversationHistory(ctx, agentMessage.ConversationId, projectId, tenantId)
+	conversation, err := reflex_agent.LoadConversationHistory(ctx, conversationId, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to load conversation history: %v", err))
 		return nil, err
 	}
-	err = reflex_agent.AddMessageToConversation(ctx, conversation, "user", agentMessage, nil)
-	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to add user message to conversation: %v", err))
-		return nil, err
-	}
+	agentMessage.Role = "user"
+	agentMessage.MessageTimestamp = time.Now()
+	conversation.Messages = append(conversation.Messages, agentMessage)
+	conversation.NewMessages = append(conversation.NewMessages, agentMessage)
 
 	msg := models.Message{
-		Role:    "user",
+		Role:    agentMessage.Role,
 		Content: agentMessage.Content,
 		Name:    reflex_agent.AgentName,
 		Files:   agentMessage.Files,
 	}
-	chatRequest := models.ChatRequest{
-		Messages: []models.Message{
-			msg,
-		},
+
+	// Build chat request with conversation history management
+	var chatRequest models.ChatRequest
+	if reflex_agent.ConversationManager != nil {
+		managedRequest, err := reflex_agent.ConversationManager.BuildChatRequest(ctx, conversation, msg, reflex_agent.AgentName)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to build managed chat request: %v", err))
+			// Fallback to simple request if conversation management fails
+			chatRequest = models.ChatRequest{
+				Messages: []models.Message{msg},
+			}
+		} else {
+			chatRequest = *managedRequest
+		}
+	} else {
+		// Fallback to simple request if no conversation manager is configured
+		chatRequest = models.ChatRequest{
+			Messages: []models.Message{msg},
+		}
 	}
-	response, err := reflex_agent.execute(ctx, chatRequest, reflex_agent.AgentTools, 1, projectId, tenantId)
+	response, err := reflex_agent.execute(ctx, chatRequest, reflex_agent.AgentTools, 1, conversationId, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to execute agent: %v", err))
 		return nil, err
 	}
-	err = reflex_agent.AddMessageToConversation(ctx, conversation, "assistant", agents.AgentMessage{}, response)
+
+	responseBytes, err := json.Marshal(response)
 	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to add assistant response to conversation: %v", err))
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to marshal response: %v", err))
 		return nil, err
 	}
-	err = reflex_agent.SaveConversation(ctx, conversation, projectId)
+	agentResponseMessage := agents.AgentMessage{
+		Role:             "assistant",
+		Content:          string(responseBytes),
+		MessageId:        agentMessage.MessageId, //same as the user message
+		MessageTimestamp: time.Now(),
+	}
+	conversation.Messages = append(conversation.Messages, agentResponseMessage)
+	conversation.NewMessages = append(conversation.NewMessages, agentResponseMessage)
+	err = reflex_agent.SaveConversation(ctx, conversation, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
 		return nil, err
@@ -64,7 +88,7 @@ func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agent
 	return response, nil
 }
 
-func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models.ChatRequest, agentTools []agents.AgentTools, currentTry int, projectId string, tenantId string) (map[string]interface{}, error) {
+func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models.ChatRequest, agentTools []agents.AgentTools, currentTry int, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("validate - Start")
 	agentOutput := make(map[string]interface{})
 

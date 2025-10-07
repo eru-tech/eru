@@ -24,7 +24,7 @@ func (reflex_agent *GoTemplateAgent) GetSpec() agents.AgentI {
 	return reflex_agent
 }
 
-func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, projectId string, tenantId string) (map[string]interface{}, error) {
+func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
 	agentOutput := make(map[string]interface{})
 	contextStringI, contextStringIOk := agentMessage.Params["context"]

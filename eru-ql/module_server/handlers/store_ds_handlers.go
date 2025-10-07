@@ -312,6 +312,7 @@ func ProjectDataSourceSchemaSaveTableHandler(sh *module_store.StoreHolder) http.
 		dbAlias := vars["dbalias"]
 		tableName := vars["tablename"]
 		addInSchemaStr := vars["addInSchema"]
+		tenantId := vars["tenantId"]
 		tableName = strings.Replace(tableName, "___", ".", 1)
 
 		tableFromReq := json.NewDecoder(r.Body)
@@ -338,7 +339,7 @@ func ProjectDataSourceSchemaSaveTableHandler(sh *module_store.StoreHolder) http.
 		if addInSchemaStr == "true" {
 			addInSchema = true
 		}
-		err := sh.Store.SaveSchemaTable(r.Context(), projectId, dbAlias, tableName, tableObj, sh.Store, addInSchema)
+		err := sh.Store.SaveSchemaTable(r.Context(), projectId, tenantId, dbAlias, tableName, tableObj, sh.Store, addInSchema)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
