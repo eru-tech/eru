@@ -163,9 +163,12 @@ func (prj *Project) AddAgent(ctx context.Context, tenantId string, agentObj agen
 	}
 	oldAgentObj, ok := prj.Tenants[tenantId].Agents[agentName]
 	if ok {
-		err := agentObj.GetChatMemory().SyncPersistence(ctx, oldAgentObj.GetChatMemory())
-		if err != nil {
-			return err
+		cacheI := oldAgentObj.GetChatMemory()
+		if cacheI != nil {
+			err := cacheI.SyncPersistence(ctx, oldAgentObj.GetChatMemory())
+			if err != nil {
+				return err
+			}
 		}
 	}
 	err := agentObj.ValidateChatMemory(ctx, prj.ProjectId)
