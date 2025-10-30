@@ -3,6 +3,8 @@ package eru_utils
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -340,6 +342,35 @@ func HTTPClientTransporter(rt http.RoundTripper) http.RoundTripper {
 	return otelhttp.NewTransport(rt)
 }
 
+func CreateHttpClientWithTLS(ctx context.Context, clientCertB64 string, clientKeyB64 string, timeout time.Duration) (*http.Client, error) {
+	tlsCfg := &tls.Config{}
+	if clientCertB64 != "" && clientKeyB64 != "" {
+		clientKeyBytes, err := base64.StdEncoding.DecodeString(clientKeyB64)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("error decoding client key: %v", err))
+			return nil, fmt.Errorf("error decoding client key: %w", err)
+		}
+		clientCertBytes, err := base64.StdEncoding.DecodeString(clientCertB64)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("error decoding client certificate: %v", err))
+			return nil, fmt.Errorf("error decoding client certificate: %w", err)
+		}
+		cert, err := tls.X509KeyPair(clientCertBytes, clientKeyBytes)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("error loading client certificate: %v", err))
+			return nil, fmt.Errorf("error loading client certificate: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+
+	transport := &http.Transport{TLSClientConfig: tlsCfg}
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+	client := &http.Client{Transport: HTTPClientTransporter(transport), Timeout: timeout}
+	return client, nil
+}
+
 func callHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("callHttp - Start")
 	req := &http.Request{}
@@ -437,6 +468,182 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 	defer resp.Body.Close()
 	//todo - check if below change from reqContentType to header.get breaks anything
 	//todo - merge conflict - main had below first if commented
+	contentType := strings.Split(headers.Get("Content-Type"), ";")[0]
+	respcontentType := strings.Split(resp.Header.Get("Content-Type"), ";")[0]
+	if resp.ContentLength > 0 || contentType == encodedForm || contentType == applicationJson {
+		if respcontentType == applicationJson {
+			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, nil, nil, resp.StatusCode, err
+			}
+		} else {
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			resBody := make(map[string]interface{})
+			resBody["body"] = string(body)
+			res = resBody
+		}
+	} else {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		resBody := make(map[string]interface{})
+		resBody["body"] = string(body)
+		res = resBody
+	}
+	if resp.StatusCode >= 400 {
+		statusCode = resp.StatusCode
+		resBytes, bytesErr := json.Marshal(res)
+		if bytesErr != nil {
+			logs.WithContext(ctx).Error(bytesErr.Error())
+			return nil, nil, nil, statusCode, bytesErr
+		}
+		err = errors.New(string(resBytes))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, resp.Header, resp.Cookies(), statusCode, err
+	}
+	return
+}
+
+func callHttpWithTLS(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}, clientCertB64 string, clientKeyB64 string, timeout time.Duration) (resp *http.Response, err error) {
+	logs.WithContext(ctx).Debug("callHttpWithTLS - Start")
+	req := &http.Request{}
+	if headers.Get("Content-Type") == "application/x-ndjson" {
+		if postBodyBytes, postBodyBytesOk := postBody.([]byte); postBodyBytesOk {
+			req, err = http.NewRequest(method, url, bytes.NewBuffer(postBodyBytes))
+		} else {
+			return nil, errors.New("postBody is not a []byte")
+		}
+	} else if postBody != nil {
+		reqBody, reqBodyerr := json.Marshal(postBody)
+		if reqBodyerr != nil {
+			logs.WithContext(ctx).Error(reqBodyerr.Error())
+			return nil, reqBodyerr
+		}
+		req, err = http.NewRequest(method, url, bytes.NewBuffer(reqBody))
+	} else {
+		req, err = http.NewRequest(method, url, nil)
+	}
+
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	req = req.WithContext(ctx)
+
+	for _, v := range reqCookies {
+		req.AddCookie(v)
+	}
+	for k, v := range headers {
+		for _, vv := range v {
+			req.Header.Add(k, vv)
+		}
+	}
+
+	reqParams := req.URL.Query()
+	for k, v := range params {
+		reqParams.Add(k, v)
+	}
+	req.URL.RawQuery = reqParams.Encode()
+	reqContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
+	if reqContentType == multiPartForm {
+		var reqBodyNew bytes.Buffer
+		multipartWriter := multipart.NewWriter(&reqBodyNew)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		for fk, fd := range formData {
+			fieldWriter, err := multipartWriter.CreateFormField(fk)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, err
+			}
+			_, err = fieldWriter.Write([]byte(fd))
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, err
+			}
+		}
+		multipartWriter.Close()
+		req.Body = io.NopCloser(&reqBodyNew)
+		if reqContentType == multiPartForm {
+			req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+		}
+		req.Header.Set("Content-Length", strconv.Itoa(reqBodyNew.Len()))
+		req.ContentLength = int64(reqBodyNew.Len())
+	}
+	if reqContentType == encodedForm {
+		data := httpurl.Values{}
+		var reqBodyNew bytes.Buffer
+		for fk, fd := range formData {
+			data.Add(fk, fd)
+		}
+		encodedData := data.Encode()
+		reqBodyNew.WriteString(encodedData)
+		req.Body = io.NopCloser(&reqBodyNew)
+		req.Header.Set("Content-Length", strconv.Itoa(len(data.Encode())))
+		req.ContentLength = int64(len(data.Encode()))
+	}
+
+	PrintRequestBody(ctx, req, "printing request just before utils.callHttpWithTLS")
+
+	client, err := CreateHttpClientWithTLS(ctx, clientCertB64, clientKeyB64, timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err = client.Do(req)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+
+	PrintResponseBody(ctx, resp, "printing response immediately after utils.callHttpWithTLS")
+
+	allowedOriginsI := ctx.Value("allowed_origins")
+	originI := ctx.Value("origin")
+
+	allowedOrigins := ""
+	if allowedOriginsI != nil {
+		allowedOrigins = allowedOriginsI.(string)
+	}
+
+	origin := ""
+	if originI != nil {
+		origin = originI.(string)
+	}
+	if req.Header.Get("Origin") == "" && origin != "" && allowedOrigins != "" {
+		logs.WithContext(ctx).Info(fmt.Sprint("setting cors headers as origin is blank"))
+		envOrigin := strings.Split(allowedOrigins, ",")
+		for _, o := range envOrigin {
+			oo := strings.Replace(o, "*.", "", -1)
+			if strings.Contains(origin, oo) {
+				resp.Header.Set("Access-Control-Allow-Origin", origin)
+				resp.Header.Set("Access-Control-Allow-Credentials", "true")
+				resp.Header.Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+				resp.Header.Set("Access-Control-Expose-Headers", "Authorization, Content-Type")
+				break
+			}
+		}
+	}
+	return
+}
+
+func CallHttpWithTLS(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}, clientCertB64 string, clientKeyB64 string, timeout time.Duration) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
+	logs.WithContext(ctx).Debug("CallHttpWithTLS - Start")
+	resp, err := callHttpWithTLS(ctx, method, url, headers, formData, reqCookies, params, postBody, clientCertB64, clientKeyB64, timeout)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, nil, 0, err
+	}
+	statusCode = resp.StatusCode
+	respHeaders = resp.Header
+	respCookies = resp.Cookies()
+	defer resp.Body.Close()
 	contentType := strings.Split(headers.Get("Content-Type"), ";")[0]
 	respcontentType := strings.Split(resp.Header.Get("Content-Type"), ";")[0]
 	if resp.ContentLength > 0 || contentType == encodedForm || contentType == applicationJson {

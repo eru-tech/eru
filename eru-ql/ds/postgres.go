@@ -128,7 +128,11 @@ func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, row
 
 func (pr *PostgresSqlMaker) GetTableMetaDataSQL(ctx context.Context, tableName string) string {
 	logs.WithContext(ctx).Debug("GetTableMetaDataSQL - Start")
-	return strings.Replace(postgresTableMetaDataSQL, "$$tableCondition$$", fmt.Sprint("and c.table_name = '", tableName, "'"), 1)
+	stringToReplace := ""
+	if tableName != "" {
+		stringToReplace = fmt.Sprint("and c.table_name = '", tableName, "'")
+	}
+	return strings.Replace(postgresTableMetaDataSQL, "$$tableCondition$$", stringToReplace, 1)
 }
 
 func (pr *PostgresSqlMaker) MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]common_types.TableColsMetaData) (string, error) {
@@ -196,11 +200,6 @@ func (pr *PostgresSqlMaker) MakeCreateTableSQL(ctx context.Context, tableName st
 
 	query := fmt.Sprint("create table ", tableName, " (", strings.Join(cols, " , "), " )")
 	return query, nil
-}
-
-func (pr *PostgresSqlMaker) MakeDropTableSQL(ctx context.Context, tableName string) (string, error) {
-	logs.WithContext(ctx).Debug("MakeDropTableSQL - Start")
-	return fmt.Sprint("drop table ", tableName), nil
 }
 
 func (pr *PostgresSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {

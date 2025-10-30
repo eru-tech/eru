@@ -21,23 +21,60 @@ type EruqlToolParams struct {
 	Vars      map[string]interface{} `json:"vars" desc:"variables to execute the query with" default:"{}"`
 }
 
+type EruqlDirectSQLParams struct {
+	Query     string                 `json:"query" eru:"required" desc:"SQL query to be executed directly"`
+	ProjectId string                 `json:"project_id" eru:"required" desc:"project id for the query execution"`
+	DBAlias   string                 `json:"db_alias" eru:"required" desc:"database alias to execute the query against"`
+	Vars      map[string]interface{} `json:"vars" desc:"variables to execute the query with" default:"{}"`
+	Cols      string                 `json:"cols" desc:"column specifications for the query"`
+}
+
+type EruqlDirectGraphQLParams struct {
+	Query     string                 `json:"query" eru:"required" desc:"GraphQL query to be executed directly"`
+	ProjectId string                 `json:"project_id" eru:"required" desc:"project id for the query execution"`
+	Operation string                 `json:"operation" desc:"GraphQL operation name"`
+	Vars      map[string]interface{} `json:"vars" desc:"variables to execute the query with" default:"{}"`
+}
+
 type EruqlTool struct {
 	tools.Tool
 }
 
 const (
-	ExecuteQuery = "execute_query"
+	ExecuteQuery   = "execute_query"
+	ExecuteSQL     = "execute_sql"
+	ExecuteGraphQL = "execute_graphql"
 )
 
 var eruqlToolActions = []tools.ToolAction{
 	{
 		ActionName:   ExecuteQuery,
-		Description:  "Generate SQL query",
-		SystemPrompt: "Generate SQL query",
+		Description:  "Execute stored query",
+		SystemPrompt: "Execute stored query",
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
 			return utils.StructToJSONSchema(reflect.TypeOf(EruqlToolParams{}))
+		},
+	},
+	{
+		ActionName:   ExecuteSQL,
+		Description:  "Execute SQL query directly",
+		SystemPrompt: "Execute SQL query directly",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(EruqlDirectSQLParams{}))
+		},
+	},
+	{
+		ActionName:   ExecuteGraphQL,
+		Description:  "Execute GraphQL query directly",
+		SystemPrompt: "Execute GraphQL query directly",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(EruqlDirectGraphQLParams{}))
 		},
 	},
 }
@@ -69,6 +106,10 @@ func (eruqlTool *EruqlTool) Execute(ctx context.Context, projectId string, tenan
 	switch actionName {
 	case ExecuteQuery:
 		return eruqlTool.ExecuteQuery(ctx, params)
+	case ExecuteSQL:
+		return eruqlTool.ExecuteSQL(ctx, params)
+	case ExecuteGraphQL:
+		return eruqlTool.ExecuteGraphQL(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -121,6 +162,111 @@ func (eruqlTool *EruqlTool) ExecuteQuery(ctx context.Context, params map[string]
 		return nil, false, err
 	}
 	url := fmt.Sprint(eruqlBaseUrl, "/store/", eruqlToolParams.ProjectId, "/myquery/execute/", eruqlToolParams.QueryName)
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+	toolResult = make(map[string]interface{})
+	toolResult["result"] = res
+	return toolResult, true, nil
+}
+
+func (eruqlTool *EruqlTool) ExecuteSQL(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("eruqlTool ExecuteDirectSQL - Start")
+	eruqlDirectSQLParams := EruqlDirectSQLParams{}
+	if eruqlParams, eruqlParamsOk := params["params"]; eruqlParamsOk {
+		eruqlParamsBytes, err := json.Marshal(eruqlParams)
+		if err != nil {
+			return nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
+		}
+
+		err = json.Unmarshal(eruqlParamsBytes, &eruqlDirectSQLParams)
+		if err != nil {
+			err = logs.Err(ctx, err, "")
+			return nil, false, err
+		}
+	}
+	headers := http.Header{}
+	claims := ctx.Value("claims")
+	if claims != nil {
+		headers.Add("claims", fmt.Sprint(claims))
+	}
+	headers.Add("Content-Type", "application/json")
+	headers.Add("Accept", "application/json")
+
+	body := map[string]interface{}{
+		"query":    eruqlDirectSQLParams.Query,
+		"db_alias": eruqlDirectSQLParams.DBAlias,
+		"cols":     eruqlDirectSQLParams.Cols,
+	}
+	if eruqlDirectSQLParams.Vars != nil {
+		body["variables"] = eruqlDirectSQLParams.Vars
+	}
+
+	eruqlBaseUrlAny := ctx.Value("eruqlbaseurl")
+	eruqlBaseUrl, ok := eruqlBaseUrlAny.(string)
+	if !ok {
+		err = errors.New("eruqlbaseurl is not a string")
+		return nil, false, err
+	}
+	if eruqlBaseUrl == "" {
+		err = errors.New("eruqlbaseurl is not set")
+		return nil, false, err
+	}
+	url := fmt.Sprint(eruqlBaseUrl, "/sql/", eruqlDirectSQLParams.ProjectId, "/execute")
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+	toolResult = make(map[string]interface{})
+	toolResult["result"] = res
+	return toolResult, true, nil
+}
+
+func (eruqlTool *EruqlTool) ExecuteGraphQL(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("eruqlTool ExecuteDirectGraphQL - Start")
+	eruqlDirectGraphQLParams := EruqlDirectGraphQLParams{}
+	if eruqlParams, eruqlParamsOk := params["params"]; eruqlParamsOk {
+		eruqlParamsBytes, err := json.Marshal(eruqlParams)
+		if err != nil {
+			return nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
+		}
+
+		err = json.Unmarshal(eruqlParamsBytes, &eruqlDirectGraphQLParams)
+		if err != nil {
+			err = logs.Err(ctx, err, "")
+			return nil, false, err
+		}
+	}
+	headers := http.Header{}
+	claims := ctx.Value("claims")
+	if claims != nil {
+		headers.Add("claims", fmt.Sprint(claims))
+	}
+	headers.Add("Content-Type", "application/json")
+	headers.Add("Accept", "application/json")
+
+	body := map[string]interface{}{
+		"query":     eruqlDirectGraphQLParams.Query,
+		"operation": eruqlDirectGraphQLParams.Operation,
+	}
+	if eruqlDirectGraphQLParams.Vars != nil {
+		body["variables"] = eruqlDirectGraphQLParams.Vars
+	}
+
+	eruqlBaseUrlAny := ctx.Value("eruqlbaseurl")
+	eruqlBaseUrl, ok := eruqlBaseUrlAny.(string)
+	if !ok {
+		err = errors.New("eruqlbaseurl is not a string")
+		return nil, false, err
+	}
+	if eruqlBaseUrl == "" {
+		err = errors.New("eruqlbaseurl is not set")
+		return nil, false, err
+	}
+	url := fmt.Sprint(eruqlBaseUrl, "/graphql/", eruqlDirectGraphQLParams.ProjectId, "/execute")
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())

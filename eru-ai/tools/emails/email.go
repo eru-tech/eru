@@ -22,6 +22,7 @@ type emailAccountWithToken struct {
 const (
 	SendEmail         = "send_email"
 	ReadEmail         = "read_email"
+	ReadConversation  = "read_conversation"
 	SubscribeEmail    = "subscribe_email"
 	ReadMessage       = "read_message"
 	Callback          = "callback"

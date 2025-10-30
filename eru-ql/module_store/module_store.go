@@ -404,7 +404,7 @@ func (ms *ModuleStore) UpdateSchemaTables(ctx context.Context, projectId string,
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
-
+	logs.WithContext(ctx).Info(fmt.Sprintf("UpdateSchemaTables - OtherTables: %v", datasource.OtherTables))
 	for k, ot := range datasource.OtherTables {
 		if _, ok := datasource.SchemaTables[k]; ok {
 			datasource.SchemaTables[k] = ot
@@ -1227,11 +1227,9 @@ func (ms *ModuleStore) DropSchemaTable(ctx context.Context, projectId string, db
 			if _, ok := db.SchemaTables[tn]; ok {
 				tableExists = true
 				delete(db.SchemaTables, tn)
-				logs.WithContext(ctx).Info("table exists in Schema table - to alter")
 			} else if _, ok := db.OtherTables[tn]; ok {
 				tableExists = true
 				delete(db.OtherTables, tn)
-				logs.WithContext(ctx).Info("table exists in Other table - to alter")
 			}
 			if tableExists {
 				//drop table

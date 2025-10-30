@@ -2,10 +2,12 @@ package tools_factory
 
 import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
+	yesbank "github.com/eru-tech/eru/eru-ai/tools/banking/yesbank"
 	ecomm "github.com/eru-tech/eru/eru-ai/tools/ecomm"
 	emails "github.com/eru-tech/eru/eru-ai/tools/emails"
 	eru "github.com/eru-tech/eru/eru-ai/tools/eru"
 	messengers "github.com/eru-tech/eru/eru-ai/tools/messengers"
+	ndml_kyc "github.com/eru-tech/eru/eru-ai/tools/ndml_kyc"
 	repositories "github.com/eru-tech/eru/eru-ai/tools/repositories"
 	utiltiy "github.com/eru-tech/eru/eru-ai/tools/utility"
 	vectorstore "github.com/eru-tech/eru/eru-ai/tools/vectors"
@@ -34,6 +36,10 @@ func GetTool(toolType string) tools.Tooling {
 		return new(vectorstore.VectorstoreAccount)
 	case "ERUQL":
 		return new(eru.EruqlTool)
+	case "NDMLKYC":
+		return new(ndml_kyc.NdmlTool)
+	case "YESBANK":
+		return new(yesbank.YesBankTool)
 	default:
 		return new(tools.Tool)
 	}

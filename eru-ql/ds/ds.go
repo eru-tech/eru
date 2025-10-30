@@ -208,6 +208,14 @@ func (sqr *SqlMaker) SaveTable(ctx context.Context, tableName string, tableStruc
 	return nil
 }
 func (sqr *SqlMaker) DropTable(ctx context.Context, tableName string, dataSource *module_model.DataSource) (err error) {
+	query, err := sqr.MakeDropTableSQL(ctx, tableName)
+	if err != nil {
+		return err
+	}
+	_, err = sqr.ExecutePreparedQuery(ctx, query, dataSource)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -215,7 +223,8 @@ func (sqr *SqlMaker) MakeCreateTableSQL(ctx context.Context, tableName string, t
 	return "", nil
 }
 func (sqr *SqlMaker) MakeDropTableSQL(ctx context.Context, tableName string) (string, error) {
-	return "", nil
+	logs.WithContext(ctx).Debug("MakeDropTableSQL - Start")
+	return fmt.Sprint("drop table ", tableName), nil
 }
 
 func (sqr *SqlMaker) GetSqlResult(ctx context.Context) map[string]interface{} {
@@ -1514,7 +1523,7 @@ func (sqr *SqlMaker) GetTableList(ctx context.Context, datasource *module_model.
 	tableList := make(map[string]map[string]common_types.TableColsMetaData)
 	query := myself.GetTableMetaDataSQL(ctx, tableName)
 	rows, e := datasource.Con.Queryx(query)
-
+	logs.WithContext(ctx).Info(fmt.Sprintf("GetTableList - query: %s", query))
 	if e != nil {
 		logs.WithContext(ctx).Error(e.Error())
 		return e

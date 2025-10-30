@@ -19,6 +19,12 @@ const (
 	INSERT_FUNC_ASYNC = "insert into eruai_cb_msemail (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
 )
 
+type contextKey string
+
+const (
+	eruFuncBaseUrlKey contextKey = "Erufuncbaseurl"
+)
+
 type MsNotificationCollection struct {
 	Value []MsNotification `json:"value"`
 }
@@ -80,6 +86,7 @@ func (msEmailTool *MsEmailTool) GetActionsList() []string {
 	actions = append(actions, RenewSubscription)
 	actions = append(actions, StopAutoRenew)
 	actions = append(actions, StopSubscription)
+	actions = append(actions, ReadConversation)
 	return actions
 }
 
@@ -99,6 +106,11 @@ func (msEmailTool *MsEmailTool) GetMcpTools() []tools.McpToolList {
 		ToolName:        SubscribeEmail,
 		ToolDescription: "Subscribe to your Microsoft 365 account",
 		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", SubscribeEmail),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        ReadConversation,
+		ToolDescription: "Read all messages in a conversation from your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", ReadConversation),
 	})
 	return mcpTools
 }
@@ -140,6 +152,8 @@ func (msEmailTool *MsEmailTool) Execute(ctx context.Context, projectId string, t
 		return msEmailTool.StopAutoRenew(ctx, projectId, tenantId, params)
 	case StopSubscription:
 		return msEmailTool.StopSubscription(ctx, projectId, tenantId, params)
+	case ReadConversation:
+		return msEmailTool.ReadConversation(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -302,7 +316,7 @@ func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, projectId st
 
 func (msEmailTool *MsEmailTool) SendEmail(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("SendEmail Execute - Start")
-	url := fmt.Sprint("/v1.0/me/sendMail")
+	url := "/v1.0/me/sendMail"
 	_ = url
 	return nil, false, nil
 }
@@ -328,8 +342,8 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 	gm := server.GetGlobalGoroutineManager(ctx)
 	gm.SafeGoWithRestartBehavior("ms-email-callback", func(bgCtx context.Context) {
 		// Copy any important values from the original context if needed
-		if eruFuncBaseUrl, ok := ctx.Value("Erufuncbaseurl").(string); ok {
-			bgCtx = context.WithValue(bgCtx, "Erufuncbaseurl", eruFuncBaseUrl)
+		if eruFuncBaseUrl, ok := ctx.Value(eruFuncBaseUrlKey).(string); ok {
+			bgCtx = context.WithValue(bgCtx, eruFuncBaseUrlKey, eruFuncBaseUrl)
 		}
 
 		bodyBytes, err := json.Marshal(body)
@@ -609,4 +623,109 @@ func (msEmailTool *MsEmailTool) StopSubscription(ctx context.Context, projectId 
 		return nil, false, err
 	}
 	return msEmailTool.SubscribeEmail(ctx, projectId, tenantId, params, fmt.Sprint("/", subscriptionId), true)
+}
+func (msEmailTool *MsEmailTool) ReadConversation(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("ReadConversation Execute - Start")
+
+	type rcParams struct {
+		ConversationId   string `json:"conversation_id" required:"true"`
+		NumberofMessages int    `json:"number_of_messages"`
+		HasAttachments   bool   `json:"has_attachments"`
+	}
+	// Convert params map to struct using json marshal/unmarshal
+	paramsBytes, err := json.Marshal(params)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+
+	var rcParamsObj rcParams
+	err = json.Unmarshal(paramsBytes, &rcParamsObj)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+	err = utils.ValidateStruct(ctx, rcParamsObj, "")
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+	attachedStr := ""
+	if rcParamsObj.HasAttachments {
+		attachedStr = "and hasAttachments eq true"
+	}
+	if rcParamsObj.NumberofMessages == 0 {
+		rcParamsObj.NumberofMessages = 5
+	}
+
+	// Create params map for ReadEmail with conversation filter
+	readEmailParams := map[string]interface{}{
+		"$top":     rcParamsObj.NumberofMessages,
+		"$skip":    0,
+		"$select":  "sender,subject,id,receivedDateTime,conversationId,hasAttachments",
+		"$filter":  fmt.Sprintf("receivedDateTime ge 2025-04-01T00:00:00Z and conversationId eq '%s' %s", rcParamsObj.ConversationId, attachedStr),
+		"$orderby": "receivedDateTime desc",
+	}
+
+	// Call ReadEmail to get messages in the conversation
+	emailResult, _, err := msEmailTool.ReadEmail(ctx, readEmailParams)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+
+	// Extract emails array from result
+	emails, ok := emailResult["emails"].(map[string]interface{})
+	if !ok {
+		err = errors.New("emails result is not a map")
+		logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+
+	value, ok := emails["value"].([]interface{})
+	if !ok {
+		err = errors.New("emails value is not an array")
+		logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+
+	// Array to accumulate message responses
+	var messageResponses []map[string]interface{}
+
+	// Loop through each email and extract ID, then call ReadMessage
+	for _, email := range value {
+		emailMap, ok := email.(map[string]interface{})
+		if !ok {
+			logs.WithContext(ctx).Warn("email is not a map, skipping")
+			continue
+		}
+
+		messageId, ok := emailMap["id"].(string)
+		if !ok {
+			logs.WithContext(ctx).Warn("message id is not a string, skipping")
+			continue
+		}
+
+		// Create params for ReadMessage
+		readMessageParams := map[string]interface{}{
+			"message_id": messageId,
+		}
+
+		// Call ReadMessage for this specific message
+		messageResult, _, err := msEmailTool.ReadMessage(ctx, readMessageParams)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Error reading message %s: %s", messageId, err.Error()))
+			continue // Continue with other messages even if one fails
+		}
+
+		// Add the message result to our accumulated responses
+		messageResponses = append(messageResponses, messageResult)
+	}
+
+	// Return the accumulated message responses
+	toolResult = make(map[string]interface{})
+	toolResult["conversation_messages"] = messageResponses
+	toolResult["total_messages"] = len(messageResponses)
+
+	return toolResult, false, nil
 }
