@@ -9,6 +9,7 @@ import (
 	messengers "github.com/eru-tech/eru/eru-ai/tools/messengers"
 	ndml_kyc "github.com/eru-tech/eru/eru-ai/tools/ndml_kyc"
 	repositories "github.com/eru-tech/eru/eru-ai/tools/repositories"
+	saas "github.com/eru-tech/eru/eru-ai/tools/saas"
 	utiltiy "github.com/eru-tech/eru/eru-ai/tools/utility"
 	vectorstore "github.com/eru-tech/eru/eru-ai/tools/vectors"
 	web_scraping "github.com/eru-tech/eru/eru-ai/tools/web_scraping"
@@ -40,6 +41,8 @@ func GetTool(toolType string) tools.Tooling {
 		return new(ndml_kyc.NdmlTool)
 	case "YESBANK":
 		return new(yesbank.YesBankTool)
+	case "ZOHODESK":
+		return new(saas.ZohoDeskTool)
 	default:
 		return new(tools.Tool)
 	}
@@ -52,6 +55,7 @@ func GetMcpToolNames() []string {
 		"MS_EMAIL",
 		"WHATSAPP",
 		"SLACK",
+		"ZOHODESK",
 	}
 	return tools
 }
