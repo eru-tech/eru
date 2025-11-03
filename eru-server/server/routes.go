@@ -13,6 +13,7 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Methods(http.MethodGet).Path("/state").HandlerFunc(handlers.StateHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/env/{env}").HandlerFunc(handlers.EnvHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/echo").HandlerFunc(handlers.EchoHandler)
+	router.Methods(http.MethodGet).Path("/peerecho/{port}").HandlerFunc(handlers.PeerEchoHandler(s.Store))
 
 	router.Name("variables_list").Methods(http.MethodGet).Path("/store/{project}/variables/list").HandlerFunc(handlers.FetchVarsHandler(s.Store))
 	router.Name("variables_savevar").Methods(http.MethodPost).Path("/store/{project}/variables/savevar").HandlerFunc(handlers.SaveVarHandler(s.Store))

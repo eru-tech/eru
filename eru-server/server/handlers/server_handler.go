@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"runtime"
@@ -80,7 +81,10 @@ func StateHandler(s store.StoreI) http.HandlerFunc {
 func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseMultipartForm((1 << 20) * 10)
 	logs.Logger.Info(fmt.Sprint("r.ParseMultipartForm error = ", err))
-	formData := r.MultipartForm
+	formData := make(map[string][]string)
+	if err == nil {
+		formData = r.MultipartForm.Value
+	}
 	res := make(map[string]interface{})
 	res["FormData"] = formData
 	res["Host"] = r.Host
@@ -105,7 +109,38 @@ func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	logs.Logger.Info(fmt.Sprint(w.Header()))
 
 }
-
+func PeerEchoHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("PeerEchoHandler - Start")
+		vars := mux.Vars(r)
+		port := vars["port"]
+		if port == "" {
+			port = "8087"
+		}
+		url := fmt.Sprintf("http://localhost:%s/echo", port)
+		resp, err := http.Get(url)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		utils.PrintResponseBody(r.Context(), resp, "PeerEchoHandler - Response")
+		defer resp.Body.Close()
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			FormatResponse(w, 500)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, resp.StatusCode)
+		var bodyContent interface{}
+		if err := json.Unmarshal(bodyBytes, &bodyContent); err != nil {
+			w.Write(bodyBytes)
+		} else {
+			_ = json.NewEncoder(w).Encode(bodyContent)
+		}
+	}
+}
 func SaveVarHandler(s store.StoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("SaveVarHandler - Start")
