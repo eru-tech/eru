@@ -10,6 +10,7 @@ import (
 	ndml_kyc "github.com/eru-tech/eru/eru-ai/tools/ndml_kyc"
 	repositories "github.com/eru-tech/eru/eru-ai/tools/repositories"
 	saas "github.com/eru-tech/eru/eru-ai/tools/saas"
+	stocks "github.com/eru-tech/eru/eru-ai/tools/stocks"
 	utiltiy "github.com/eru-tech/eru/eru-ai/tools/utility"
 	vectorstore "github.com/eru-tech/eru/eru-ai/tools/vectors"
 	web_scraping "github.com/eru-tech/eru/eru-ai/tools/web_scraping"
@@ -43,6 +44,8 @@ func GetTool(toolType string) tools.Tooling {
 		return new(yesbank.YesBankTool)
 	case "ZOHODESK":
 		return new(saas.ZohoDeskTool)
+	case "MASSIVE":
+		return new(stocks.MassiveTool)
 	default:
 		return new(tools.Tool)
 	}

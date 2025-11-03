@@ -222,6 +222,9 @@ func (zohoDeskTool *ZohoDeskTool) Login(ctx context.Context, projectId string, t
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, false, err
 	}
+	if zohoTokens.RefreshToken == "" {
+		zohoTokens.RefreshToken = params["refresh_token"].(string)
+	}
 	err = zohoDeskTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(zohoDeskTool.ToolName, "_access_token"), zohoTokens.AccessToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())

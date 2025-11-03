@@ -21,14 +21,15 @@ const (
 
 type WhatsAppTool struct {
 	tools.Tool
-	MessengerAccount MessengerAccount `json:"messenger_account"`
-	AuthName         string           `json:"auth_name"`
+	WhatsAppAccount WhatsAppAccount `json:"whatsapp_account"`
 }
 
-type whatsAppToolWithToken struct {
-	tools.Tool
-	MessengerAccount messengerAccountWithToken
-	AuthName         string
+type WhatsAppAccount struct {
+	PhoneNumberId     string `json:"phone_number_id"`
+	BusinessAccountId string `json:"business_account_id"`
+	ApiKey            string `json:"api_key"`
+	WebhookUrl        string `json:"webhook_url"`
+	ApiVersion        string `json:"api_version"`
 }
 
 func (whatsAppTool *WhatsAppTool) GetActionsList() []string {
@@ -121,14 +122,14 @@ func (whatsAppTool *WhatsAppTool) SendMessage(ctx context.Context, params map[st
 
 	logs.WithContext(ctx).Info(fmt.Sprintf("Sending message type: %s", messageType))
 
-	apiVersion := whatsAppTool.MessengerAccount.ApiVersion
+	apiVersion := whatsAppTool.WhatsAppAccount.ApiVersion
 	if apiVersion == "" {
 		apiVersion = "v18.0"
 	}
 
-	url := fmt.Sprintf("%s/%s/%s/messages", WHATSAPP_BASE_URL, apiVersion, whatsAppTool.MessengerAccount.PhoneNumberId)
+	url := fmt.Sprintf("%s/%s/%s/messages", WHATSAPP_BASE_URL, apiVersion, whatsAppTool.WhatsAppAccount.PhoneNumberId)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.MessengerAccount.AccessToken))
+	headers.Set("Authorization", whatsAppTool.WhatsAppAccount.ApiKey)
 	headers.Set("Content-Type", "application/json")
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, messagePayload)
@@ -165,7 +166,7 @@ func (whatsAppTool *WhatsAppTool) SubscribeWebhooks(ctx context.Context, project
 
 	toolResult = make(map[string]interface{})
 	toolResult["webhook_url"] = webhookUrl
-	toolResult["verification_token"] = whatsAppTool.MessengerAccount.WebhookVerifyToken
+	toolResult["verification_token"] = whatsAppTool.WhatsAppAccount.WebhookUrl
 	toolResult["status"] = "configured"
 	toolResult["instructions"] = "Configure this webhook URL in your WhatsApp Business API settings with the provided verification token"
 
@@ -182,14 +183,14 @@ func (whatsAppTool *WhatsAppTool) GetMessageStatus(ctx context.Context, params m
 		return nil, false, err
 	}
 
-	apiVersion := whatsAppTool.MessengerAccount.ApiVersion
+	apiVersion := whatsAppTool.WhatsAppAccount.ApiVersion
 	if apiVersion == "" {
 		apiVersion = "v18.0"
 	}
 
 	url := fmt.Sprintf("%s/%s/%s", WHATSAPP_BASE_URL, apiVersion, messageId)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.MessengerAccount.AccessToken))
+	headers.Set("Authorization", whatsAppTool.WhatsAppAccount.ApiKey)
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -220,14 +221,14 @@ func (whatsAppTool *WhatsAppTool) UploadMedia(ctx context.Context, params map[st
 		return nil, false, err
 	}
 
-	apiVersion := whatsAppTool.MessengerAccount.ApiVersion
+	apiVersion := whatsAppTool.WhatsAppAccount.ApiVersion
 	if apiVersion == "" {
 		apiVersion = "v18.0"
 	}
 
-	url := fmt.Sprintf("%s/%s/%s/media", WHATSAPP_BASE_URL, apiVersion, whatsAppTool.MessengerAccount.PhoneNumberId)
+	url := fmt.Sprintf("%s/%s/%s/media", WHATSAPP_BASE_URL, apiVersion, whatsAppTool.WhatsAppAccount.PhoneNumberId)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.MessengerAccount.AccessToken))
+	headers.Set("Authorization", whatsAppTool.WhatsAppAccount.ApiKey)
 
 	// For now, we'll accept a simplified payload structure
 	// In a full implementation, this would handle multipart/form-data uploads
@@ -255,14 +256,14 @@ func (whatsAppTool *WhatsAppTool) UploadMedia(ctx context.Context, params map[st
 func (whatsAppTool *WhatsAppTool) GetBusinessProfile(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetBusinessProfile Execute - Start")
 
-	apiVersion := whatsAppTool.MessengerAccount.ApiVersion
+	apiVersion := whatsAppTool.WhatsAppAccount.ApiVersion
 	if apiVersion == "" {
 		apiVersion = "v18.0"
 	}
 
-	url := fmt.Sprintf("%s/%s/%s/whatsapp_business_profile", WHATSAPP_BASE_URL, apiVersion, whatsAppTool.MessengerAccount.PhoneNumberId)
+	url := fmt.Sprintf("%s/%s/%s/whatsapp_business_profile", WHATSAPP_BASE_URL, apiVersion, whatsAppTool.WhatsAppAccount.PhoneNumberId)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.MessengerAccount.AccessToken))
+	headers.Set("Authorization", whatsAppTool.WhatsAppAccount.ApiKey)
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -279,13 +280,13 @@ func (whatsAppTool *WhatsAppTool) GetBusinessProfile(ctx context.Context, params
 func (whatsAppTool *WhatsAppTool) GetMessageTemplates(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetMessageTemplates Execute - Start")
 
-	apiVersion := whatsAppTool.MessengerAccount.ApiVersion
+	apiVersion := whatsAppTool.WhatsAppAccount.ApiVersion
 	if apiVersion == "" {
 		apiVersion = "v18.0"
 	}
 
 	// WhatsApp Business Account ID is required for templates endpoint
-	businessAccountId := whatsAppTool.MessengerAccount.BusinessAccountId
+	businessAccountId := whatsAppTool.WhatsAppAccount.BusinessAccountId
 	if businessAccountId == "" {
 		err = errors.New("business_account_id is required to retrieve message templates")
 		logs.WithContext(ctx).Error(err.Error())
@@ -294,7 +295,7 @@ func (whatsAppTool *WhatsAppTool) GetMessageTemplates(ctx context.Context, param
 
 	url := fmt.Sprintf("%s/%s/%s/message_templates", WHATSAPP_BASE_URL, apiVersion, businessAccountId)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.MessengerAccount.AccessToken))
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.WhatsAppAccount.ApiKey))
 
 	queryParams := map[string]string{}
 
@@ -355,7 +356,7 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 		hubVerifyToken = verifyToken[0]
 	}
 
-	if hubMode == "subscribe" && hubVerifyToken == whatsAppTool.MessengerAccount.WebhookVerifyToken {
+	if hubMode == "subscribe" && hubVerifyToken == whatsAppTool.WhatsAppAccount.WebhookUrl {
 		logs.WithContext(ctx).Info("Webhook verification successful")
 		return hubChallenge, false, nil
 	}
@@ -537,27 +538,8 @@ func (whatsAppTool *WhatsAppTool) GetToolCbUrl(projectId string, tenantId string
 	return fmt.Sprint(whatsAppTool.CallbackBaseUrl, "/", projectId, "/", tenantId, "/callback/tool/", whatsAppTool.ToolName)
 }
 
-func (whatsAppTool *WhatsAppTool) SetPrivateAttributes(ctx context.Context, realTool tools.Tooling) (err error) {
-	whatsAppTool.MessengerAccount.AccessToken = "$SECRET_whatsapp_access_token"
-	whatsAppTool.MessengerAccount.WebhookVerifyToken = "$SECRET_whatsapp_webhook_verify_token"
-	return nil
-}
-
 func (whatsAppTool *WhatsAppTool) GetBytes(ctx context.Context) ([]byte, error) {
-	whatsAppToolWithToken := whatsAppToolWithToken{
-		Tool: whatsAppTool.Tool,
-		MessengerAccount: messengerAccountWithToken{
-			PhoneNumberId:      whatsAppTool.MessengerAccount.PhoneNumberId,
-			BusinessAccountId:  whatsAppTool.MessengerAccount.BusinessAccountId,
-			AccessToken:        whatsAppTool.MessengerAccount.AccessToken,
-			WebhookVerifyToken: whatsAppTool.MessengerAccount.WebhookVerifyToken,
-			WebhookUrl:         whatsAppTool.MessengerAccount.WebhookUrl,
-			ApiVersion:         whatsAppTool.MessengerAccount.ApiVersion,
-		},
-		AuthName: whatsAppTool.AuthName,
-	}
-
-	toolJson, err := json.Marshal(whatsAppToolWithToken)
+	toolJson, err := json.Marshal(whatsAppTool)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return nil, err
@@ -566,24 +548,10 @@ func (whatsAppTool *WhatsAppTool) GetBytes(ctx context.Context) ([]byte, error) 
 }
 
 func (whatsAppTool *WhatsAppTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
-	whatsAppToolWithToken := whatsAppToolWithToken{}
-	err := json.Unmarshal(toolObjJson, &whatsAppToolWithToken)
+	err := json.Unmarshal(toolObjJson, &whatsAppTool)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return nil, err
-	}
-
-	whatsAppTool = &WhatsAppTool{
-		Tool: whatsAppToolWithToken.Tool,
-		MessengerAccount: MessengerAccount{
-			PhoneNumberId:      whatsAppToolWithToken.MessengerAccount.PhoneNumberId,
-			BusinessAccountId:  whatsAppToolWithToken.MessengerAccount.BusinessAccountId,
-			AccessToken:        whatsAppToolWithToken.MessengerAccount.AccessToken,
-			WebhookVerifyToken: whatsAppToolWithToken.MessengerAccount.WebhookVerifyToken,
-			WebhookUrl:         whatsAppToolWithToken.MessengerAccount.WebhookUrl,
-			ApiVersion:         whatsAppToolWithToken.MessengerAccount.ApiVersion,
-		},
-		AuthName: whatsAppToolWithToken.AuthName,
 	}
 	return whatsAppTool, nil
 }

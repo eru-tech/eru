@@ -175,7 +175,7 @@ func (ndmlTool *NdmlTool) BytesToTool(ctx context.Context, toolObjJson []byte) (
 func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("NdmlTool ExecuteInquiry - Start")
 
-	passcode, err := ndmlTool.getPasscode(ctx)
+	passcode, passkey, err := ndmlTool.getPasscode(ctx)
 	if err != nil {
 		return nil, false, err
 	}
@@ -212,16 +212,6 @@ func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]
 	// XML escape the content for arg0 (escape < > and &)
 	escapedXML := xmlEscape(xmlString)
 
-	// Generate arg2 and arg3 (encrypted/encoded values)
-	arg2, err := generateRandomBase64(16)
-	if err != nil {
-		return nil, false, fmt.Errorf("error generating arg2: %w", err)
-	}
-	arg3, err := generateRandomBase64(16)
-	if err != nil {
-		return nil, false, fmt.Errorf("error generating arg3: %w", err)
-	}
-
 	// Create SOAP envelope with tns:panInquiryDetails
 	headers := http.Header{}
 	headers.Add("Content-Type", "text/xml; charset=utf-8")
@@ -238,7 +228,7 @@ func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]
       <arg3>%s</arg3>
     </tns:panInquiryDetails>
   </soapenv:Body>
-</soapenv:Envelope>`, escapedXML, passcode, arg2, arg3)
+</soapenv:Envelope>`, escapedXML, ndmlTool.Username, passcode, passkey)
 
 	responseStr, err := ndmlTool.postSoap(ctx, ndmlTool.SoapEndpoint, headers, soapEnvelope)
 	if err != nil {
@@ -294,17 +284,15 @@ func (ndmlTool *NdmlTool) ExecuteDocumentDownload(ctx context.Context, params ma
 	}
 
 	ndmlParams := NdmlDownloadParams{}
-	if ndmlParamsObj, ok := params["params"]; ok {
-		ndmlParamsBytes, err := json.Marshal(ndmlParamsObj)
-		if err != nil {
-			return nil, false, fmt.Errorf("error marshalling ndml params: %w", err)
-		}
+	ndmlParamsBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, false, fmt.Errorf("error marshalling ndml params: %w", err)
+	}
 
-		err = json.Unmarshal(ndmlParamsBytes, &ndmlParams)
-		if err != nil {
-			err = logs.Err(ctx, err, "")
-			return nil, false, err
-		}
+	err = json.Unmarshal(ndmlParamsBytes, &ndmlParams)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, false, err
 	}
 
 	// Create XML request structure
@@ -343,7 +331,7 @@ func (ndmlTool *NdmlTool) ExecuteDocumentDownload(ctx context.Context, params ma
       <arg3>%s</arg3>
     </tns:panDownloadDetailsComplete>
   </soapenv:Body>
-</soapenv:Envelope>`, escapedXML, passcode, ndmlTool.Password, passkey)
+</soapenv:Envelope>`, escapedXML, ndmlTool.Username, passcode, passkey)
 
 	responseStr, err := ndmlTool.postSoap(ctx, ndmlTool.SoapEndpoint, headers, soapEnvelope)
 	if err != nil {
@@ -479,9 +467,9 @@ func (ndmlTool *NdmlTool) ExecuteGetPasscode(ctx context.Context, params map[str
 }
 
 // getPasscode requests a dynamic passcode from NDML service using Password and generated PassKey
-func (ndmlTool *NdmlTool) getPasscode(ctx context.Context) (string, error) {
-	passcode, _, err := ndmlTool.getPasscodeWithPasskey(ctx)
-	return passcode, err
+func (ndmlTool *NdmlTool) getPasscode(ctx context.Context) (string, string, error) {
+	passcode, passkey, err := ndmlTool.getPasscodeWithPasskey(ctx)
+	return passcode, passkey, err
 }
 
 // getPasscodeWithPasskey returns both passcode and passkey
@@ -622,7 +610,7 @@ func (ndmlTool *NdmlTool) GetAttribute(ctx context.Context, attributeName string
 	case "password":
 		return ndmlTool.Password, nil
 	default:
-		err := errors.New("attribute not found")
+		err := errors.New(fmt.Sprintf("attribute not found: %s", attributeName))
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
