@@ -11,6 +11,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"reflect"
@@ -73,13 +74,97 @@ type AppPanInqResponse struct {
 	ResponseNo       string `xml:"APP_RES_NO"`
 	Status           string `xml:"APP_STATUS"`
 	StatusDt         string `xml:"APP_STATUSDT"`
+	Error            string `xml:"ERROR"`
 	UpdateRmks       string `xml:"APP_UPDT_RMKS"`
 	UpdateStatus     string `xml:"APP_UPDT_STATUS"`
 }
-
+type AppPanDownResponse struct {
+	Error          string `xml:"ERROR"`
+	IopFlg         string `xml:"APP_IOP_FLG"`
+	PosCode        string `xml:"APP_POS_CODE"`
+	Type           string `xml:"APP_TYPE"`
+	KycMode        string `xml:"APP_KYC_MODE"`
+	No             string `xml:"APP_NO"`
+	Date           string `xml:"APP_DATE"`
+	PanNo          string `xml:"APP_PAN_NO"`
+	PanexNo        string `xml:"APP_PANEX_NO"`
+	PanCopy        string `xml:"APP_PAN_COPY"`
+	Exmt           string `xml:"APP_EXMT"`
+	ExmtCat        string `xml:"APP_EXMT_CAT"`
+	ExmtIdProof    string `xml:"APP_EXMT_ID_PROOF"`
+	IpvFlag        string `xml:"APP_IPV_FLAG"`
+	IpvDate        string `xml:"APP_IPV_DATE"`
+	Gen            string `xml:"APP_GEN"`
+	Name           string `xml:"APP_NAME"`
+	FName          string `xml:"APP_F_NAME"`
+	Regno          string `xml:"APP_REGNO"`
+	DobDt          string `xml:"APP_DOB_DT"`
+	DoiDt          string `xml:"APP_DOI_DT"`
+	CommenceDt     string `xml:"APP_COMMENCE_DT"`
+	Nationality    string `xml:"APP_NATIONALITY"`
+	OthNationality string `xml:"APP_OTH_NATIONALITY"`
+	CompStatus     string `xml:"APP_COMP_STATUS"`
+	OthCompStatus  string `xml:"APP_OTH_COMP_STATUS"`
+	ResStatus      string `xml:"APP_RES_STATUS"`
+	ResStatusProof string `xml:"APP_RES_STATUS_PROOF"`
+	UidNo          string `xml:"APP_UID_NO"`
+	CorAdd1        string `xml:"APP_COR_ADD1"`
+	CorAdd2        string `xml:"APP_COR_ADD2"`
+	CorAdd3        string `xml:"APP_COR_ADD3"`
+	CorCity        string `xml:"APP_COR_CITY"`
+	CorPincd       string `xml:"APP_COR_PINCD"`
+	CorState       string `xml:"APP_COR_STATE"`
+	CorCtry        string `xml:"APP_COR_CTRY"`
+	OffNo          string `xml:"APP_OFF_NO"`
+	ResNo          string `xml:"APP_RES_NO"`
+	MobNo          string `xml:"APP_MOB_NO"`
+	FaxNo          string `xml:"APP_FAX_NO"`
+	Email          string `xml:"APP_EMAIL"`
+	CorAddProof    string `xml:"APP_COR_ADD_PROOF"`
+	CorAddRef      string `xml:"APP_COR_ADD_REF"`
+	CorAddDt       string `xml:"APP_COR_ADD_DT"`
+	PerAdd1        string `xml:"APP_PER_ADD1"`
+	PerAdd2        string `xml:"APP_PER_ADD2"`
+	PerAdd3        string `xml:"APP_PER_ADD3"`
+	PerCity        string `xml:"APP_PER_CITY"`
+	PerPincd       string `xml:"APP_PER_PINCD"`
+	PerState       string `xml:"APP_PER_STATE"`
+	PerCtry        string `xml:"APP_PER_CTRY"`
+	PerAddProof    string `xml:"APP_PER_ADD_PROOF"`
+	PerAddRef      string `xml:"APP_PER_ADD_REF"`
+	PerAddDt       string `xml:"APP_PER_ADD_DT"`
+	Income         string `xml:"APP_INCOME"`
+	Occ            string `xml:"APP_OCC"`
+	OthOcc         string `xml:"APP_OTH_OCC"`
+	PolConn        string `xml:"APP_POL_CONN"`
+	DocProof       string `xml:"APP_DOC_PROOF"`
+	InternalRef    string `xml:"APP_INTERNAL_REF"`
+	BranchCode     string `xml:"APP_BRANCH_CODE"`
+	MarStatus      string `xml:"APP_MAR_STATUS"`
+	Netwrth        string `xml:"APP_NETWRTH"`
+	NetworthDt     string `xml:"APP_NETWORTH_DT"`
+	IncorpPlc      string `xml:"APP_INCORP_PLC"`
+	Otherinfo      string `xml:"APP_OTHERINFO"`
+	Filler1        string `xml:"APP_FILLER1"`
+	Filler2        string `xml:"APP_FILLER2"`
+	Filler3        string `xml:"APP_FILLER3"`
+	Remarks        string `xml:"APP_REMARKS"`
+	Status         string `xml:"APP_STATUS"`
+	StatusDt       string `xml:"APP_STATUSDT"`
+	ErrorDesc      string `xml:"APP_ERROR_DESC"`
+	DumpType       string `xml:"APP_DUMP_TYPE"`
+	Dnlddt         string `xml:"APP_DNLDDT"`
+	KraInfo        string `xml:"APP_KRA_INFO"`
+	Signature      string `xml:"APP_SIGNATURE"`
+}
 type InquiryResponse struct {
 	XMLName xml.Name          `xml:"APP_RES_ROOT"`
 	PanInq  AppPanInqResponse `xml:"APP_PAN_INQ"`
+}
+
+type DownloadResponse struct {
+	XMLName xml.Name           `xml:"APP_RES_ROOT"`
+	PanDown AppPanDownResponse `xml:"APP_PAN_INQ"`
 }
 
 type NdmlTool struct {
@@ -235,23 +320,30 @@ func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]
 		return nil, false, fmt.Errorf("error calling SOAP service: %w", err)
 	}
 
-	// Extract and parse XML response
-	startTag := "<APP_RES_ROOT>"
-	endTag := "</APP_RES_ROOT>"
-	startIndex := strings.Index(responseStr, startTag)
-	if startIndex == -1 {
-		return nil, false, errors.New("invalid SOAP response: APP_RES_ROOT not found")
+	// Extract content from <return> tag in SOAP response
+	returnStartTag := "<return>"
+	returnEndTag := "</return>"
+	returnStartIndex := strings.Index(responseStr, returnStartTag)
+	if returnStartIndex == -1 {
+		return nil, false, errors.New("invalid SOAP response: <return> tag not found")
 	}
-	endIndex := strings.Index(responseStr, endTag)
-	if endIndex == -1 {
-		return nil, false, errors.New("invalid SOAP response: closing APP_RES_ROOT not found")
+	returnEndIndex := strings.Index(responseStr, returnEndTag)
+	if returnEndIndex == -1 {
+		return nil, false, errors.New("invalid SOAP response: closing </return> tag not found")
 	}
 
-	xmlResponse := responseStr[startIndex : endIndex+len(endTag)]
+	// Extract the encoded XML content from <return> tag
+	encodedXML := responseStr[returnStartIndex+len(returnStartTag) : returnEndIndex]
+
+	// Decode HTML entities (e.g., &lt; to <, &gt; to >)
+	decodedXML := html.UnescapeString(encodedXML)
+
+	// Trim whitespace
+	decodedXML = strings.TrimSpace(decodedXML)
 
 	// Parse XML response
 	var inquiryResponse InquiryResponse
-	err = xml.Unmarshal([]byte(xmlResponse), &inquiryResponse)
+	err = xml.Unmarshal([]byte(decodedXML), &inquiryResponse)
 	if err != nil {
 		return nil, false, fmt.Errorf("error unmarshalling XML response: %w", err)
 	}
@@ -270,6 +362,7 @@ func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]
 		"status_date":           inquiryResponse.PanInq.StatusDt,
 		"update_remarks":        inquiryResponse.PanInq.UpdateRmks,
 		"update_status":         inquiryResponse.PanInq.UpdateStatus,
+		"error":                 inquiryResponse.PanInq.Error,
 	}
 
 	return toolResult, true, nil
@@ -338,41 +431,114 @@ func (ndmlTool *NdmlTool) ExecuteDocumentDownload(ctx context.Context, params ma
 		return nil, false, fmt.Errorf("error calling SOAP service: %w", err)
 	}
 
-	// Extract and parse XML response
-	startTag := "<APP_RES_ROOT>"
-	endTag := "</APP_RES_ROOT>"
-	startIndex := strings.Index(responseStr, startTag)
-	if startIndex == -1 {
-		return nil, false, errors.New("invalid SOAP response: APP_RES_ROOT not found")
+	// Extract content from <return> tag in SOAP response
+	returnStartTag := "<return>"
+	returnEndTag := "</return>"
+	returnStartIndex := strings.Index(responseStr, returnStartTag)
+	if returnStartIndex == -1 {
+		return nil, false, errors.New("invalid SOAP response: <return> tag not found")
 	}
-	endIndex := strings.Index(responseStr, endTag)
-	if endIndex == -1 {
-		return nil, false, errors.New("invalid SOAP response: closing APP_RES_ROOT not found")
+	returnEndIndex := strings.Index(responseStr, returnEndTag)
+	if returnEndIndex == -1 {
+		return nil, false, errors.New("invalid SOAP response: closing </return> tag not found")
 	}
 
-	xmlResponse := responseStr[startIndex : endIndex+len(endTag)]
+	// Extract the encoded XML content from <return> tag
+	encodedXML := responseStr[returnStartIndex+len(returnStartTag) : returnEndIndex]
 
-	// Parse XML response
-	var downloadResponse InquiryResponse
-	err = xml.Unmarshal([]byte(xmlResponse), &downloadResponse)
+	// Decode HTML entities (e.g., &lt; to <, &gt; to >)
+	decodedXML := html.UnescapeString(encodedXML)
+
+	// Trim whitespace
+	decodedXML = strings.TrimSpace(decodedXML)
+
+	// Parse XML response - try DownloadResponse first, fallback to InquiryResponse for errors
+	var downloadResponse DownloadResponse
+	err = xml.Unmarshal([]byte(decodedXML), &downloadResponse)
 	if err != nil {
 		return nil, false, fmt.Errorf("error unmarshalling XML response: %w", err)
 	}
 
-	// Convert to JSON response
+	// Successful download response - use DownloadResponse with all fields
 	toolResult = make(map[string]interface{})
 	toolResult["download_result"] = map[string]interface{}{
-		"hold_deactive_remarks": downloadResponse.PanInq.HoldDeactiveRmks,
-		"ipv_flag":              downloadResponse.PanInq.IpvFlag,
-		"kyc_mode":              downloadResponse.PanInq.KycMode,
-		"name":                  downloadResponse.PanInq.Name,
-		"pan_no":                downloadResponse.PanInq.PanNo,
-		"request_no":            downloadResponse.PanInq.RequestNo,
-		"response_no":           downloadResponse.PanInq.ResponseNo,
-		"status":                downloadResponse.PanInq.Status,
-		"status_date":           downloadResponse.PanInq.StatusDt,
-		"update_remarks":        downloadResponse.PanInq.UpdateRmks,
-		"update_status":         downloadResponse.PanInq.UpdateStatus,
+		"iop_flg":          downloadResponse.PanDown.IopFlg,
+		"pos_code":         downloadResponse.PanDown.PosCode,
+		"type":             downloadResponse.PanDown.Type,
+		"kyc_mode":         downloadResponse.PanDown.KycMode,
+		"no":               downloadResponse.PanDown.No,
+		"date":             downloadResponse.PanDown.Date,
+		"pan_no":           downloadResponse.PanDown.PanNo,
+		"panex_no":         downloadResponse.PanDown.PanexNo,
+		"pan_copy":         downloadResponse.PanDown.PanCopy,
+		"exmt":             downloadResponse.PanDown.Exmt,
+		"exmt_cat":         downloadResponse.PanDown.ExmtCat,
+		"exmt_id_proof":    downloadResponse.PanDown.ExmtIdProof,
+		"ipv_flag":         downloadResponse.PanDown.IpvFlag,
+		"ipv_date":         downloadResponse.PanDown.IpvDate,
+		"gen":              downloadResponse.PanDown.Gen,
+		"name":             downloadResponse.PanDown.Name,
+		"f_name":           downloadResponse.PanDown.FName,
+		"regno":            downloadResponse.PanDown.Regno,
+		"dob_dt":           downloadResponse.PanDown.DobDt,
+		"doi_dt":           downloadResponse.PanDown.DoiDt,
+		"commence_dt":      downloadResponse.PanDown.CommenceDt,
+		"nationality":      downloadResponse.PanDown.Nationality,
+		"oth_nationality":  downloadResponse.PanDown.OthNationality,
+		"comp_status":      downloadResponse.PanDown.CompStatus,
+		"oth_comp_status":  downloadResponse.PanDown.OthCompStatus,
+		"res_status":       downloadResponse.PanDown.ResStatus,
+		"res_status_proof": downloadResponse.PanDown.ResStatusProof,
+		"uid_no":           downloadResponse.PanDown.UidNo,
+		"cor_add1":         downloadResponse.PanDown.CorAdd1,
+		"cor_add2":         downloadResponse.PanDown.CorAdd2,
+		"cor_add3":         downloadResponse.PanDown.CorAdd3,
+		"cor_city":         downloadResponse.PanDown.CorCity,
+		"cor_pincd":        downloadResponse.PanDown.CorPincd,
+		"cor_state":        downloadResponse.PanDown.CorState,
+		"cor_ctry":         downloadResponse.PanDown.CorCtry,
+		"off_no":           downloadResponse.PanDown.OffNo,
+		"res_no":           downloadResponse.PanDown.ResNo,
+		"mob_no":           downloadResponse.PanDown.MobNo,
+		"fax_no":           downloadResponse.PanDown.FaxNo,
+		"email":            downloadResponse.PanDown.Email,
+		"cor_add_proof":    downloadResponse.PanDown.CorAddProof,
+		"cor_add_ref":      downloadResponse.PanDown.CorAddRef,
+		"cor_add_dt":       downloadResponse.PanDown.CorAddDt,
+		"per_add1":         downloadResponse.PanDown.PerAdd1,
+		"per_add2":         downloadResponse.PanDown.PerAdd2,
+		"per_add3":         downloadResponse.PanDown.PerAdd3,
+		"per_city":         downloadResponse.PanDown.PerCity,
+		"per_pincd":        downloadResponse.PanDown.PerPincd,
+		"per_state":        downloadResponse.PanDown.PerState,
+		"per_ctry":         downloadResponse.PanDown.PerCtry,
+		"per_add_proof":    downloadResponse.PanDown.PerAddProof,
+		"per_add_ref":      downloadResponse.PanDown.PerAddRef,
+		"per_add_dt":       downloadResponse.PanDown.PerAddDt,
+		"income":           downloadResponse.PanDown.Income,
+		"occ":              downloadResponse.PanDown.Occ,
+		"oth_occ":          downloadResponse.PanDown.OthOcc,
+		"pol_conn":         downloadResponse.PanDown.PolConn,
+		"doc_proof":        downloadResponse.PanDown.DocProof,
+		"internal_ref":     downloadResponse.PanDown.InternalRef,
+		"branch_code":      downloadResponse.PanDown.BranchCode,
+		"mar_status":       downloadResponse.PanDown.MarStatus,
+		"netwrth":          downloadResponse.PanDown.Netwrth,
+		"networth_dt":      downloadResponse.PanDown.NetworthDt,
+		"incorp_plc":       downloadResponse.PanDown.IncorpPlc,
+		"otherinfo":        downloadResponse.PanDown.Otherinfo,
+		"filler1":          downloadResponse.PanDown.Filler1,
+		"filler2":          downloadResponse.PanDown.Filler2,
+		"filler3":          downloadResponse.PanDown.Filler3,
+		"remarks":          downloadResponse.PanDown.Remarks,
+		"status":           downloadResponse.PanDown.Status,
+		"status_dt":        downloadResponse.PanDown.StatusDt,
+		"error_desc":       downloadResponse.PanDown.ErrorDesc,
+		"dump_type":        downloadResponse.PanDown.DumpType,
+		"dnlddt":           downloadResponse.PanDown.Dnlddt,
+		"kra_info":         downloadResponse.PanDown.KraInfo,
+		"signature":        downloadResponse.PanDown.Signature,
+		"error":            downloadResponse.PanDown.Error,
 	}
 
 	return toolResult, true, nil
