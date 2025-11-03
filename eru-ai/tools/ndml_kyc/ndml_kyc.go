@@ -42,7 +42,6 @@ type NdmlDownloadParams struct {
 // SOAP Request/Response structures
 type AppPanInq struct {
 	PanNo     string `xml:"APP_PAN_NO"`
-	PanDob    string `xml:"APP_PAN_DOB"`
 	MobileNo  string `xml:"APP_MOBILE_NO"`
 	RequestNo string `xml:"APP_REQ_NO"`
 }
@@ -281,7 +280,6 @@ func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]
 	soapRequest := InquiryRequest{
 		PanInq: AppPanInq{
 			PanNo:     ndmlParams.PanNo,
-			PanDob:    ndmlParams.PanDob,
 			MobileNo:  ndmlParams.MobileNo,
 			RequestNo: ndmlParams.RequestNo,
 		},
