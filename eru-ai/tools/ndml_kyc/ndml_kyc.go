@@ -248,16 +248,27 @@ func (ndmlTool *NdmlTool) Execute(ctx context.Context, projectId string, tenantI
 }
 
 func (ndmlTool *NdmlTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
-	err := json.Unmarshal(toolObjJson, &ndmlTool)
+	logs.WithContext(ctx).Debug("NdmlTool BytesToTool - Start")
+	ndmlToolWithToken := NdmlTool{}
+	err := json.Unmarshal(toolObjJson, &ndmlToolWithToken)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return nil, err
 	}
-	return ndmlTool, nil
+	return &ndmlToolWithToken, nil
 }
 
 func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("NdmlTool ExecuteInquiry - Start")
+
+	url := "https://echo-http-requests.appspot.com/echo"
+	resp, _, _, _, err := utils.CallHttp(ctx, "GET", url, http.Header{}, map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		err = nil
+	}
+
+	logs.WithContext(ctx).Info(fmt.Sprintf("%+v", resp))
 
 	passcode, passkey, err := ndmlTool.getPasscode(ctx)
 	if err != nil {
@@ -363,7 +374,7 @@ func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]
 		"error":                 inquiryResponse.PanInq.Error,
 	}
 
-	return toolResult, true, nil
+	return toolResult, false, nil
 }
 
 func (ndmlTool *NdmlTool) ExecuteDocumentDownload(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
@@ -539,7 +550,7 @@ func (ndmlTool *NdmlTool) ExecuteDocumentDownload(ctx context.Context, params ma
 		"error":            downloadResponse.PanDown.Error,
 	}
 
-	return toolResult, true, nil
+	return toolResult, false, nil
 }
 
 func (ndmlTool *NdmlTool) callSoapService(ctx context.Context, xmlData []byte, passcode string) ([]byte, error) {
@@ -809,7 +820,16 @@ func (ndmlTool *NdmlTool) SetAttribute(ctx context.Context, attributeName string
 }
 
 func (ndmlTool *NdmlTool) GetBytes(ctx context.Context) ([]byte, error) {
-	toolJson, err := json.Marshal(ndmlTool)
+
+	ndmlToolWithToken := NdmlTool{
+		Tool:          ndmlTool.Tool,
+		SoapEndpoint:  ndmlTool.SoapEndpoint,
+		Username:      ndmlTool.Username,
+		Password:      ndmlTool.Password,
+		SkipTLSVerify: ndmlTool.SkipTLSVerify,
+		CaCert:        ndmlTool.CaCert,
+	}
+	toolJson, err := json.Marshal(ndmlToolWithToken)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return nil, err
