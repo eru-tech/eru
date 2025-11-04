@@ -78,46 +78,10 @@ func StateHandler(s store.StoreI) http.HandlerFunc {
 	}
 }
 
-func EchoHandler(w http.ResponseWriter, r *http.Request) {
-	err := r.ParseMultipartForm((1 << 20) * 10)
-	logs.Logger.Info(fmt.Sprint("r.ParseMultipartForm error = ", err))
-	formData := make(map[string][]string)
-	if err == nil {
-		formData = r.MultipartForm.Value
-	}
-	res := make(map[string]interface{})
-	res["FormData"] = formData
-	res["Host"] = r.Host
-	res["Header"] = r.Header
-	res["URL"] = r.URL
-	tmplBodyFromReq := json.NewDecoder(r.Body)
-	tmplBodyFromReq.DisallowUnknownFields()
-	var tmplBody interface{}
-	if err := tmplBodyFromReq.Decode(&tmplBody); err != nil {
-		logs.Logger.Error(err.Error())
-	}
-	res["Body"] = tmplBody
-	res["Method"] = r.Method
-	res["MultipartForm"] = r.MultipartForm
-	res["RequestURI"] = r.RequestURI
-	res["RemoteAddr"] = r.RemoteAddr
-	res["Response"] = r.Response
-	res["Cookies"] = r.Cookies()
-	FormatResponse(w, 200)
-	_ = json.NewEncoder(w).Encode(res)
-	logs.Logger.Info("w.Header() from echo handler")
-	logs.Logger.Info(fmt.Sprint(w.Header()))
-
-}
-func PeerEchoHandler(s store.StoreI) http.HandlerFunc {
+func EchoHandler(s store.StoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("PeerEchoHandler - Start")
-		vars := mux.Vars(r)
-		port := vars["port"]
-		if port == "" {
-			port = "8087"
-		}
-		url := fmt.Sprintf("http://localhost:%s/echo", port)
+		url := "https://echo-http-requests.appspot.com/echo"
 		resp, err := http.Get(url)
 		if err != nil {
 			FormatResponse(w, 400)
