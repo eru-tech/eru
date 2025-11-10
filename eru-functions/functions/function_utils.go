@@ -265,7 +265,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		}
 
 		if string(output) == "null" || string(output) == `"null"` {
-			err = logs.Err(ctx, fmt.Errorf("inside string(output) == \"null\" - %s", templateString), "")
+			_ = logs.Err(ctx, fmt.Errorf("inside string(output) == \"null\" - %s", templateString), "")
 			output = []byte("")
 		}
 		return
