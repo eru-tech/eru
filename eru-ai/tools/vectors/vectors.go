@@ -121,26 +121,23 @@ func (vectorstoreAccount *VectorstoreAccount) SearchVectors(ctx context.Context,
 	if vectorstoreAccount.VectorStore == nil {
 		return nil, false, fmt.Errorf("vectorstore not found")
 	}
-	if vectorSearchParams, vectorSearchParamsOk := params["params"]; vectorSearchParamsOk {
-		vectorSearchBytes, err := json.Marshal(vectorSearchParams)
-		if err != nil {
-			return nil, false, fmt.Errorf("error marshalling vectorrecords: %w", err)
-		}
-		vectorSearch := vectorstore.VectorRecordsSearch{}
-		err = json.Unmarshal(vectorSearchBytes, &vectorSearch)
-		if err != nil {
-			return nil, false, fmt.Errorf("error unmarshalling vectorrecords: %w", err)
-		}
-		vectorResults, err := vectorstoreAccount.VectorStore.SearchVectors(ctx, vectorSearch)
-		if err != nil {
-			return nil, false, fmt.Errorf("error searching vectors: %w", err)
-		}
-		toolResult = map[string]interface{}{
-			"vector_search": vectorResults,
-		}
-	} else {
-		return nil, false, fmt.Errorf("params not found")
+	vectorSearchBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, false, fmt.Errorf("error marshalling vectorrecords: %w", err)
 	}
+	vectorSearch := vectorstore.VectorRecordsSearch{}
+	err = json.Unmarshal(vectorSearchBytes, &vectorSearch)
+	if err != nil {
+		return nil, false, fmt.Errorf("error unmarshalling vectorrecords: %w", err)
+	}
+	vectorResults, err := vectorstoreAccount.VectorStore.SearchVectors(ctx, vectorSearch)
+	if err != nil {
+		return nil, false, fmt.Errorf("error searching vectors: %w", err)
+	}
+	toolResult = map[string]interface{}{
+		"vector_search": vectorResults,
+	}
+
 	return toolResult, false, nil
 }
 func (vectorstoreAccount *VectorstoreAccount) GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error) {

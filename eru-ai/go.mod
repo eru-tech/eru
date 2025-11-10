@@ -8,7 +8,9 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.38.0
 	github.com/aws/aws-sdk-go-v2/config v1.31.0
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.7.0
+	github.com/eru-tech/eru/eru-cache v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-db v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-functions v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000
@@ -20,6 +22,7 @@ require (
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-vectorstore v0.0.0-00010101000000-000000000000
 	github.com/google/go-cmp v0.7.0
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.0
 	github.com/playwright-community/playwright-go v0.5001.0
 	github.com/xeipuuv/gojsonschema v1.2.0
@@ -55,7 +58,6 @@ require (
 	github.com/deckarep/golang-set/v2 v2.7.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/eru-tech/eru/eru-cache v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-crypto v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-events v0.0.0-00010101000000-000000000000 // indirect
 	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000 // indirect
@@ -68,7 +70,6 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.1 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect

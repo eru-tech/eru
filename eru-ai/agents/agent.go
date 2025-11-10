@@ -1,18 +1,25 @@
 package agents
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"time"
 
 	models "github.com/eru-tech/eru/eru-ai/models"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	"github.com/eru-tech/eru/eru-cache/cache"
+	functions "github.com/eru-tech/eru/eru-functions/functions"
+	function_module_store "github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-server/server"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 )
 
 type AgentMessage struct {
@@ -47,6 +54,7 @@ type Agent struct {
 	Description         string                `json:"description"`
 	SystemPrompt        string                `json:"system_prompt"`
 	AgentTools          []AgentTools          `json:"agent_tools"`
+	Function            functions.FuncGroup   `json:"function" eru:"optional"`
 	ModelName           string                `json:"model"`
 	Model               models.ModelI         `json:"-"`
 	OutputSchema        eru_models.JSONSchema `json:"output_schema"`
@@ -137,6 +145,49 @@ func (agent *Agent) SetSummaryModel(model models.ModelI) {
 	agent.ConversationManager.SummaryModel = model
 }
 func (agent *Agent) ExecuteTools(ctx context.Context, chatRequest models.ChatRequest, agentTools []AgentTools, projectId string, tenantId string) (toolResults map[string]interface{}, err error) {
+
+	if agent.Function.FuncGroupName != "" {
+		chatRequestJSON, err := json.Marshal(chatRequest)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		headers := http.Header{}
+		headers.Add("Content-Type", "application/json")
+		r := &http.Request{
+			Method: "POST",
+			URL:    &url.URL{Scheme: "http", Host: "", Path: ""},
+			Header: headers,
+			Body:   io.NopCloser(bytes.NewBuffer(chatRequestJSON)),
+		}
+		reqBody := make(map[string]interface{})
+		var fms function_module_store.ModuleStoreI = &function_module_store.ModuleDbStore{}
+		err = fms.SaveProject(ctx, projectId, fms, false)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		err = fms.SaveFunc(ctx, agent.Function, projectId, fms, false)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		cloneFuncGroup, err := fms.ValidateFunc(ctx, agent.Function, projectId, "host", "url", "method", headers, reqBody, fms, true, "")
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		reqVars := make(map[string]*functions.TemplateVars)
+		resVars := make(map[string]*functions.TemplateVars)
+
+		response, _, err := cloneFuncGroup.Execute(ctx, r, 1, 1, "", "", false, reqVars, resVars)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		eru_utils.PrintResponseBody(ctx, response, "ExecuteTools response")
+	}
+
 	toolResults = make(map[string]interface{})
 	for i, agentTool := range agentTools {
 		tools := make(map[string]tools.Tooling)
@@ -156,7 +207,7 @@ func (agent *Agent) ExecuteTools(ctx context.Context, chatRequest models.ChatReq
 		}
 		if response.Content != nil {
 			toolParams := make(map[string]interface{})
-			toolParams["params"] = response.Content
+			toolParams = response.Content
 			toolResult, _, err := agentTool.Tool.Execute(ctx, projectId, tenantId, agentTool.ActionName, toolParams)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
@@ -212,6 +263,7 @@ func (agent *Agent) UnmarshalJSON(b []byte) error {
 		AgentName    string                `json:"agent_name"`
 		Description  string                `json:"description"`
 		SystemPrompt string                `json:"system_prompt"`
+		Function     functions.FuncGroup   `json:"function"`
 		AgentTools   []AgentTools          `json:"agent_tools"`
 		ModelName    string                `json:"model"`
 		OutputSchema eru_models.JSONSchema `json:"output_schema"`
@@ -230,7 +282,7 @@ func (agent *Agent) UnmarshalJSON(b []byte) error {
 	agent.ModelName = tempAgent.ModelName
 	agent.OutputSchema = tempAgent.OutputSchema
 	agent.RetryCount = tempAgent.RetryCount
-
+	agent.Function = tempAgent.Function
 	var agentMap map[string]*json.RawMessage
 	err := json.Unmarshal(b, &agentMap)
 	if err != nil {

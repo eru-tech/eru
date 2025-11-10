@@ -11,25 +11,24 @@ import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
+	"github.com/eru-tech/eru/eru-templates/gotemplate"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
 type EruqlToolParams struct {
 	QueryName string                 `json:"query_name" desc:"name of the query to be executed on eruql"`
-	Query     string                 `json:"query" desc:"actual graphql or sql query to be executed on eruql"`
 	ProjectId string                 `json:"project_id" eru:"required" desc:"project id in which the query is stored"`
 	Vars      map[string]interface{} `json:"vars" desc:"variables to execute the query with" default:"{}"`
 }
 
-type EruqlDirectSQLParams struct {
+type EruqSQLParams struct {
 	Query     string                 `json:"query" eru:"required" desc:"SQL query to be executed directly"`
 	ProjectId string                 `json:"project_id" eru:"required" desc:"project id for the query execution"`
-	DBAlias   string                 `json:"db_alias" eru:"required" desc:"database alias to execute the query against"`
 	Vars      map[string]interface{} `json:"vars" desc:"variables to execute the query with" default:"{}"`
 	Cols      string                 `json:"cols" desc:"column specifications for the query"`
 }
 
-type EruqlDirectGraphQLParams struct {
+type EruqlGraphQLParams struct {
 	Query     string                 `json:"query" eru:"required" desc:"GraphQL query to be executed directly"`
 	ProjectId string                 `json:"project_id" eru:"required" desc:"project id for the query execution"`
 	Operation string                 `json:"operation" desc:"GraphQL operation name"`
@@ -38,6 +37,9 @@ type EruqlDirectGraphQLParams struct {
 
 type EruqlTool struct {
 	tools.Tool
+	DbAlias                string `json:"db_alias" eru:"required" desc:"eruql database alias to execute the query against"`
+	MandatoryVarsQuery     string `json:"mandatory_vars_query" desc:"query to fetch mandatory variables" default:"get_org_processes"`
+	MandatoryVarsTransform string `json:"mandatory_vars_transform" desc:"gotemplate to transform query output into mandatory variables" default:"json"`
 }
 
 const (
@@ -59,12 +61,12 @@ var eruqlToolActions = []tools.ToolAction{
 	},
 	{
 		ActionName:   ExecuteSQL,
-		Description:  "Execute SQL query directly",
-		SystemPrompt: "Execute SQL query directly",
+		Description:  "This action executes a SQL query directly against the database",
+		SystemPrompt: "the values of 'vars' will be a map with key value pairs and it will be provided in the user's prompt.",
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(EruqlDirectSQLParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(EruqSQLParams{}))
 		},
 	},
 	{
@@ -74,7 +76,7 @@ var eruqlToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(EruqlDirectGraphQLParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(EruqlGraphQLParams{}))
 		},
 	},
 }
@@ -103,18 +105,71 @@ func (eruqlTool *EruqlTool) MakeFromJson(ctx context.Context, rj *json.RawMessag
 
 func (eruqlTool *EruqlTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("eruqlTool Execute - Start")
+	mandatoryVarsCheck := false
+	if eruqlTool.MandatoryVarsQuery != "" {
+		mandatoryVarsCheck = true
+	}
 	switch actionName {
 	case ExecuteQuery:
-		return eruqlTool.ExecuteQuery(ctx, params)
+		return eruqlTool.ExecuteQuery(ctx, projectId, tenantId, params, mandatoryVarsCheck)
 	case ExecuteSQL:
-		return eruqlTool.ExecuteSQL(ctx, params)
+		return eruqlTool.ExecuteSQL(ctx, projectId, tenantId, params, mandatoryVarsCheck)
 	case ExecuteGraphQL:
-		return eruqlTool.ExecuteGraphQL(ctx, params)
+		return eruqlTool.ExecuteGraphQL(ctx, projectId, tenantId, params, mandatoryVarsCheck)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
 }
+func (eruqlTool *EruqlTool) fetchMandatoryQueryVariables(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (map[string]interface{}, error) {
+	if params == nil {
+		err := logs.Err(ctx, errors.New("params is nil"), "")
+		return nil, err
+	}
+	vars, varsOk := params["vars"].(map[string]interface{})
+	if !varsOk || vars == nil {
+		params["vars"] = make(map[string]interface{})
+		vars = make(map[string]interface{})
+	} else {
+		vars = params["vars"].(map[string]interface{})
+	}
+	vars["org_process_id"] = tenantId
+	params["vars"] = vars
+	params["query_name"] = eruqlTool.MandatoryVarsQuery
+	result, _, err := eruqlTool.ExecuteQuery(ctx, projectId, tenantId, params, false)
+	if err != nil {
+		return nil, err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("result: %+v", result))
+	transformTemplate := gotemplate.GoTemplate{Name: "transform_mandatory_vars", Template: eruqlTool.MandatoryVarsTransform}
+	output, err := transformTemplate.Execute(ctx, result, "json")
+	if err != nil {
+		return nil, err
+	}
 
+	if out, outoK := output.(map[string]interface{}); outoK {
+		return out, nil
+	}
+	err = logs.Err(ctx, errors.New("output is not a map"), "")
+	return nil, err
+}
+
+func (eruqlTool *EruqlTool) checkMandatoryVars(ctx context.Context, projectId string, tenantId string, vars map[string]interface{}, mandatoryVarsCheck bool) (map[string]interface{}, error) {
+	if vars != nil {
+		_, orgIdOk := vars["org_id"].(string)
+		_, processIdOk := vars["process_id"].(string)
+		if orgIdOk && processIdOk {
+			mandatoryVarsCheck = false
+		}
+	}
+	if mandatoryVarsCheck {
+		mandatoryVars, err := eruqlTool.fetchMandatoryQueryVariables(ctx, projectId, tenantId, vars)
+		if err != nil {
+			return nil, err
+		}
+		return mandatoryVars, nil
+	}
+	return nil, nil
+}
 func (eruqlTool *EruqlTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
 	err := json.Unmarshal(toolObjJson, &eruqlTool)
 	if err != nil {
@@ -123,21 +178,31 @@ func (eruqlTool *EruqlTool) BytesToTool(ctx context.Context, toolObjJson []byte)
 	}
 	return eruqlTool, nil
 }
-func (eruqlTool *EruqlTool) ExecuteQuery(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (eruqlTool *EruqlTool) ExecuteQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, mandatoryVarsCheck bool) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("eruqlTool ExecuteQuery - Start")
 	eruqlToolParams := EruqlToolParams{}
-	if eruqlParams, eruqlParamsOk := params["params"]; eruqlParamsOk {
-		eruqlParamsBytes, err := json.Marshal(eruqlParams)
-		if err != nil {
-			return nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
-		}
-
-		err = json.Unmarshal(eruqlParamsBytes, &eruqlToolParams)
-		if err != nil {
-			err = logs.Err(ctx, err, "")
-			return nil, false, err
-		}
+	eruqlParamsBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
 	}
+
+	err = json.Unmarshal(eruqlParamsBytes, &eruqlToolParams)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+
+	mVars, err := eruqlTool.checkMandatoryVars(ctx, projectId, tenantId, params, mandatoryVarsCheck)
+	if err != nil {
+		return nil, false, err
+	}
+	if eruqlToolParams.Vars == nil {
+		eruqlToolParams.Vars = make(map[string]interface{})
+	}
+	for k, v := range mVars {
+		eruqlToolParams.Vars[k] = v
+	}
+
 	headers := http.Header{}
 	claims := ctx.Value("claims")
 	if claims != nil {
@@ -172,20 +237,25 @@ func (eruqlTool *EruqlTool) ExecuteQuery(ctx context.Context, params map[string]
 	return toolResult, true, nil
 }
 
-func (eruqlTool *EruqlTool) ExecuteSQL(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (eruqlTool *EruqlTool) ExecuteSQL(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, mandatoryVarsCheck bool) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("eruqlTool ExecuteDirectSQL - Start")
-	eruqlDirectSQLParams := EruqlDirectSQLParams{}
-	if eruqlParams, eruqlParamsOk := params["params"]; eruqlParamsOk {
-		eruqlParamsBytes, err := json.Marshal(eruqlParams)
-		if err != nil {
-			return nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
-		}
+	eruqlSQLParams := EruqSQLParams{}
+	eruqlParamsBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
+	}
 
-		err = json.Unmarshal(eruqlParamsBytes, &eruqlDirectSQLParams)
-		if err != nil {
-			err = logs.Err(ctx, err, "")
-			return nil, false, err
-		}
+	err = json.Unmarshal(eruqlParamsBytes, &eruqlSQLParams)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+	mVars, err := eruqlTool.checkMandatoryVars(ctx, projectId, tenantId, params, mandatoryVarsCheck)
+	if err != nil {
+		return nil, false, err
+	}
+	for k, v := range mVars {
+		eruqlSQLParams.Vars[k] = v
 	}
 	headers := http.Header{}
 	claims := ctx.Value("claims")
@@ -196,12 +266,12 @@ func (eruqlTool *EruqlTool) ExecuteSQL(ctx context.Context, params map[string]in
 	headers.Add("Accept", "application/json")
 
 	body := map[string]interface{}{
-		"query":    eruqlDirectSQLParams.Query,
-		"db_alias": eruqlDirectSQLParams.DBAlias,
-		"cols":     eruqlDirectSQLParams.Cols,
+		"query":    eruqlSQLParams.Query,
+		"db_alias": eruqlTool.DbAlias,
+		"cols":     eruqlSQLParams.Cols,
 	}
-	if eruqlDirectSQLParams.Vars != nil {
-		body["variables"] = eruqlDirectSQLParams.Vars
+	if eruqlSQLParams.Vars != nil {
+		body["variables"] = eruqlSQLParams.Vars
 	}
 
 	eruqlBaseUrlAny := ctx.Value("eruqlbaseurl")
@@ -214,7 +284,7 @@ func (eruqlTool *EruqlTool) ExecuteSQL(ctx context.Context, params map[string]in
 		err = errors.New("eruqlbaseurl is not set")
 		return nil, false, err
 	}
-	url := fmt.Sprint(eruqlBaseUrl, "/sql/", eruqlDirectSQLParams.ProjectId, "/execute")
+	url := fmt.Sprint(eruqlBaseUrl, "/sql/", eruqlSQLParams.ProjectId, "/execute")
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -225,20 +295,25 @@ func (eruqlTool *EruqlTool) ExecuteSQL(ctx context.Context, params map[string]in
 	return toolResult, true, nil
 }
 
-func (eruqlTool *EruqlTool) ExecuteGraphQL(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (eruqlTool *EruqlTool) ExecuteGraphQL(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, mandatoryVarsCheck bool) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("eruqlTool ExecuteDirectGraphQL - Start")
-	eruqlDirectGraphQLParams := EruqlDirectGraphQLParams{}
-	if eruqlParams, eruqlParamsOk := params["params"]; eruqlParamsOk {
-		eruqlParamsBytes, err := json.Marshal(eruqlParams)
-		if err != nil {
-			return nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
-		}
+	eruqlGraphQLParams := EruqlGraphQLParams{}
+	eruqlParamsBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
+	}
 
-		err = json.Unmarshal(eruqlParamsBytes, &eruqlDirectGraphQLParams)
-		if err != nil {
-			err = logs.Err(ctx, err, "")
-			return nil, false, err
-		}
+	err = json.Unmarshal(eruqlParamsBytes, &eruqlGraphQLParams)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+	mVars, err := eruqlTool.checkMandatoryVars(ctx, projectId, tenantId, params, mandatoryVarsCheck)
+	if err != nil {
+		return nil, false, err
+	}
+	for k, v := range mVars {
+		eruqlGraphQLParams.Vars[k] = v
 	}
 	headers := http.Header{}
 	claims := ctx.Value("claims")
@@ -249,11 +324,11 @@ func (eruqlTool *EruqlTool) ExecuteGraphQL(ctx context.Context, params map[strin
 	headers.Add("Accept", "application/json")
 
 	body := map[string]interface{}{
-		"query":     eruqlDirectGraphQLParams.Query,
-		"operation": eruqlDirectGraphQLParams.Operation,
+		"query":     eruqlGraphQLParams.Query,
+		"operation": eruqlGraphQLParams.Operation,
 	}
-	if eruqlDirectGraphQLParams.Vars != nil {
-		body["variables"] = eruqlDirectGraphQLParams.Vars
+	if eruqlGraphQLParams.Vars != nil {
+		body["variables"] = eruqlGraphQLParams.Vars
 	}
 
 	eruqlBaseUrlAny := ctx.Value("eruqlbaseurl")
@@ -266,7 +341,7 @@ func (eruqlTool *EruqlTool) ExecuteGraphQL(ctx context.Context, params map[strin
 		err = errors.New("eruqlbaseurl is not set")
 		return nil, false, err
 	}
-	url := fmt.Sprint(eruqlBaseUrl, "/graphql/", eruqlDirectGraphQLParams.ProjectId, "/execute")
+	url := fmt.Sprint(eruqlBaseUrl, "/graphql/", eruqlGraphQLParams.ProjectId, "/execute")
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())

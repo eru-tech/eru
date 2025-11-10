@@ -8,7 +8,6 @@ import (
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
-	tools "github.com/eru-tech/eru/eru-ai/tools"
 	utility "github.com/eru-tech/eru/eru-ai/tools/utility"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
@@ -101,14 +100,14 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 
 	chatRequest.Messages = append(chatRequest.Messages, models.Message{
 		Role:    "assistant",
-		Content: reflex_agent.SystemPrompt,
+		Content: fmt.Sprintf("%s\nTool results: %+v\n\n", reflex_agent.SystemPrompt, toolResults),
 		Name:    reflex_agent.AgentName,
 	})
-	chatRequest.Messages = append(chatRequest.Messages, models.Message{
+	/* chatRequest.Messages = append(chatRequest.Messages, models.Message{
 		Role:    "assistant",
 		Content: fmt.Sprintf("Tool results: %+v", toolResults),
 		Name:    reflex_agent.AgentName,
-	})
+	}) */
 	response := models.Message{}
 	if reflex_agent.OutputSchema.Type != "" {
 		outputTool := utility.StructuredOutputTool{}
@@ -166,16 +165,6 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 	logs.WithContext(ctx).Info(fmt.Sprintf("jsonI: %+v", jsonI))
 	return nil
 } */
-
-func (reflex_agent *ReflexAgent) callTool(ctx context.Context, projectId string, tenantId string, tool tools.Tooling, params map[string]interface{}) (map[string]interface{}, bool, error) {
-	logs.WithContext(ctx).Debug("callTool - Start")
-	return tool.Execute(ctx, projectId, tenantId, "", params)
-}
-
-func (reflex_agent *ReflexAgent) callModel(ctx context.Context, model models.ModelI, params map[string]interface{}) (map[string]interface{}, error) {
-	logs.WithContext(ctx).Debug("callModel - Start")
-	return nil, nil
-}
 
 func (reflex_agent *ReflexAgent) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
 	logs.WithContext(ctx).Debug("MakeFromJson - Start")

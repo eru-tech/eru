@@ -388,7 +388,9 @@ func (openaiModel *OpenAIModel) makeOpenAIChatToolRequest(ctx context.Context, c
 		toolParametersBytes, _ := json.Marshal(toolParameters)
 		logs.WithContext(ctx).Info(fmt.Sprint(string(toolParametersBytes)))
 
-		toolPrompt += fmt.Sprint("Tool prompt for Tool ", toolName, " is as follows :\n", toolSystemPromptI.(string))
+		if toolDescription != "" {
+			toolPrompt += fmt.Sprint("Tool prompt for Tool ", toolName, " is as follows :\n", toolSystemPromptI.(string))
+		}
 		reqTool := OpenAIRequestTools{
 			Type: "function",
 			Function: ToolFunction{
