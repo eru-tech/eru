@@ -411,6 +411,7 @@ func processMultipart(ctx context.Context, reqContentType string, request *http.
 				part, errPart := multiPart.NextRawPart()
 				if errPart == io.EOF {
 					err = logs.Err(ctx, fmt.Errorf("breaking becuase of eof"), "")
+					err = nil // this is to avoid the error being returned to the caller
 					break
 				}
 				if formDataRemove != nil {
