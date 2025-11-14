@@ -132,7 +132,7 @@ func (massiveTool *MassiveTool) getStocksRecursive(ctx context.Context, queryPar
 	if nextUrlField, exists := responseMap["next_url"]; exists {
 		if nextUrlStr, ok := nextUrlField.(string); ok && nextUrlStr != "" {
 			logs.WithContext(ctx).Info(fmt.Sprintf("Found next_url: %s, making recursive call", nextUrlStr))
-			time.Sleep(13 * time.Second)
+			time.Sleep(20 * time.Second)
 			nextTickers, err := massiveTool.getStocksRecursive(ctx, queryParams, nextUrlStr)
 			if err != nil {
 				return nil, err
