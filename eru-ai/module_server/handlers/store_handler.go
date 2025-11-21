@@ -12,6 +12,7 @@ import (
 	models "github.com/eru-tech/eru/eru-ai/models"
 	"github.com/eru-tech/eru/eru-ai/module_model"
 	"github.com/eru-tech/eru/eru-ai/module_store"
+	"github.com/eru-tech/eru/eru-ai/tools"
 	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -697,6 +698,10 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			if agentMessage.MessageId == "" {
 				agentMessage.MessageId = uuid.New().String()
 			}
+			claims := r.Header.Get("claims")
+			if claims != "" {
+				r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
+			}
 			agentResult, err := agent.Execute(r.Context(), agentMessage, conversationId, projectId, tenantId)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
@@ -714,7 +719,7 @@ func ToolCallbackHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		logs.WithContext(r.Context()).Debug("ToolCallbackHandler - Start")
-		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
+		ctx := context.WithValue(r.Context(), tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]

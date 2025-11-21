@@ -19,12 +19,6 @@ const (
 	INSERT_FUNC_ASYNC = "insert into eruai_cb_msemail (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
 )
 
-type contextKey string
-
-const (
-	eruFuncBaseUrlKey contextKey = "Erufuncbaseurl"
-)
-
 type MsNotificationCollection struct {
 	Value []MsNotification `json:"value"`
 }
@@ -342,8 +336,20 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 	gm := server.GetGlobalGoroutineManager(ctx)
 	gm.SafeGoWithRestartBehavior("ms-email-callback", func(bgCtx context.Context) {
 		// Copy any important values from the original context if needed
-		if eruFuncBaseUrl, ok := ctx.Value(eruFuncBaseUrlKey).(string); ok {
-			bgCtx = context.WithValue(bgCtx, eruFuncBaseUrlKey, eruFuncBaseUrl)
+
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
 		}
 
 		bodyBytes, err := json.Marshal(body)

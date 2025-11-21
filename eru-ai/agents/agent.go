@@ -19,7 +19,6 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-server/server"
-	eru_utils "github.com/eru-tech/eru/eru-utils"
 )
 
 type AgentMessage struct {
@@ -71,6 +70,7 @@ type AgentI interface {
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
 	//SetTools(tools map[string]tools.Tooling)
 	ExecuteTools(ctx context.Context, chatRequest models.ChatRequest, agentTools []AgentTools, projectId string, tenantId string) (toolResults map[string]interface{}, err error)
+	ExecuteAgentFunction(ctx context.Context, agentMessage AgentMessage, projectId string, tenantId string) (map[string]interface{}, error)
 	SetModel(model models.ModelI)
 	SetSummaryModel(model models.ModelI)
 	SetChatMemory(ctx context.Context, cacheStoreI cache.CacheStoreI) error
@@ -144,49 +144,66 @@ func (agent *Agent) SetModel(model models.ModelI) {
 func (agent *Agent) SetSummaryModel(model models.ModelI) {
 	agent.ConversationManager.SummaryModel = model
 }
-func (agent *Agent) ExecuteTools(ctx context.Context, chatRequest models.ChatRequest, agentTools []AgentTools, projectId string, tenantId string) (toolResults map[string]interface{}, err error) {
+func (agent *Agent) ExecuteAgentFunction(ctx context.Context, agentMessage AgentMessage, projectId string, tenantId string) (map[string]interface{}, error) {
+	logs.WithContext(ctx).Debug("ExecuteAgentFunction - Start")
 
-	if agent.Function.FuncGroupName != "" {
-		chatRequestJSON, err := json.Marshal(chatRequest)
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
-		}
-		headers := http.Header{}
-		headers.Add("Content-Type", "application/json")
-		r := &http.Request{
-			Method: "POST",
-			URL:    &url.URL{Scheme: "http", Host: "", Path: ""},
-			Header: headers,
-			Body:   io.NopCloser(bytes.NewBuffer(chatRequestJSON)),
-		}
-		reqBody := make(map[string]interface{})
-		var fms function_module_store.ModuleStoreI = &function_module_store.ModuleDbStore{}
-		err = fms.SaveProject(ctx, projectId, fms, false)
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
-		}
-		err = fms.SaveFunc(ctx, agent.Function, projectId, fms, false)
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
-		}
-		cloneFuncGroup, err := fms.ValidateFunc(ctx, agent.Function, projectId, "host", "url", "method", headers, reqBody, fms, true, "")
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
-		}
-		reqVars := make(map[string]*functions.TemplateVars)
-		resVars := make(map[string]*functions.TemplateVars)
-
-		response, _, err := cloneFuncGroup.Execute(ctx, r, 1, 1, "", "", false, reqVars, resVars)
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
-		}
-		eru_utils.PrintResponseBody(ctx, response, "ExecuteTools response")
+	chatRequestJSON, err := json.Marshal(agentMessage)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
+	headers := http.Header{}
+	headers.Add("Content-Type", "application/json")
+	claims := ctx.Value("claims")
+	if claims != "" {
+		headers.Add("claims", claims.(string))
+	}
+	r := &http.Request{
+		Method: "POST",
+		URL:    &url.URL{Scheme: "http", Host: "", Path: ""},
+		Header: headers,
+		Body:   io.NopCloser(bytes.NewBuffer(chatRequestJSON)),
+	}
+	reqBody := make(map[string]interface{})
+	var fms function_module_store.ModuleStoreI = &function_module_store.ModuleDbStore{}
+	err = fms.SaveProject(ctx, projectId, fms, false)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	err = fms.SaveFunc(ctx, agent.Function, projectId, fms, false)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	cloneFuncGroup, err := fms.ValidateFunc(ctx, agent.Function, projectId, "host", "url", "method", headers, reqBody, fms, true, "")
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	reqVars := make(map[string]*functions.TemplateVars)
+	resVars := make(map[string]*functions.TemplateVars)
+
+	response, _, err := cloneFuncGroup.Execute(ctx, r, 1, 1, "", "", false, reqVars, resVars)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	responseContent := make(map[string]interface{})
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	err = json.Unmarshal(responseBody, &responseContent)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	return responseContent, nil
+
+}
+func (agent *Agent) ExecuteTools(ctx context.Context, chatRequest models.ChatRequest, agentTools []AgentTools, projectId string, tenantId string) (toolResults map[string]interface{}, err error) {
 
 	toolResults = make(map[string]interface{})
 	for i, agentTool := range agentTools {

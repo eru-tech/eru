@@ -72,6 +72,12 @@ type ToolInputFields struct {
 	FieldDescription string `json:"field_description"`
 	FieldRequired    bool   `json:"field_required"`
 }
+type contextKey string
+
+const (
+	EruFuncBaseUrlKey contextKey = "Erufuncbaseurl"
+	eruFuncBaseUrlKey            = EruFuncBaseUrlKey
+)
 
 type Tooling interface {
 	GetSpec() Tooling
@@ -287,7 +293,19 @@ func (tool *Tool) ExecuteCallbackHook(ctx context.Context, projectId string, ten
 		if tool.HookAsyncEvent != "" {
 			asyncEvent = fmt.Sprint("/", tool.HookAsyncEvent)
 		}
-		url := fmt.Sprint(ctx.Value("Erufuncbaseurl").(string), "/", projectId, "/func/", tool.Hooks.CLBK, asyncEvent)
+		efurl := ctx.Value(eruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		url := fmt.Sprint(efurlString, "/", projectId, "/func/", tool.Hooks.CLBK, asyncEvent)
 		logs.WithContext(ctx).Info(fmt.Sprintf("url: %v", url))
 		headers := http.Header{}
 		headers.Add("Content-Type", "application/json")

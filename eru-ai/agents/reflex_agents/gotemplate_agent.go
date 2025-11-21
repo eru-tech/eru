@@ -7,7 +7,6 @@ import (
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
-	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	gotemplate "github.com/eru-tech/eru/eru-templates/gotemplate"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
@@ -20,8 +19,8 @@ type GoTemplateAgent struct {
 	agents.Agent
 }
 
-func (reflex_agent *GoTemplateAgent) GetSpec() agents.AgentI {
-	return reflex_agent
+func (goTemplateAgent *GoTemplateAgent) GetSpec() agents.AgentI {
+	return goTemplateAgent
 }
 
 func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {
@@ -228,16 +227,6 @@ func (goTemplateAgent *GoTemplateAgent) validate(ctx context.Context, templateCo
 		return nil, err
 	}
 	return output, nil
-}
-
-func (goTemplateAgent *GoTemplateAgent) callTool(ctx context.Context, projectId string, tenantId string, tool tools.Tooling, params map[string]interface{}) (map[string]interface{}, bool, error) {
-	logs.WithContext(ctx).Debug("callTool - Start")
-	return tool.Execute(ctx, projectId, tenantId, "", params)
-}
-
-func (goTemplateAgent *GoTemplateAgent) callModel(ctx context.Context, model models.ModelI, params map[string]interface{}) (map[string]interface{}, error) {
-	logs.WithContext(ctx).Debug("callModel - Start")
-	return nil, nil
 }
 
 func (goTemplateAgent *GoTemplateAgent) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
