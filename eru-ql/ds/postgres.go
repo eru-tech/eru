@@ -19,7 +19,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-var dbBlockedWords = []string{"--"}
+var dbBlockedWords = []string{}
 var dbBlockedRegex = []string{}
 
 type PostgresSqlMaker struct {
