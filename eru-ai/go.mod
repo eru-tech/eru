@@ -21,6 +21,7 @@ require (
 	github.com/eru-tech/eru/eru-templates v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-vectorstore v0.0.0-00010101000000-000000000000
+	github.com/gabriel-vasile/mimetype v1.4.11
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.0

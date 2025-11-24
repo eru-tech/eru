@@ -1,20 +1,22 @@
 package messengers
 
 type WhatsAppMessagePayload struct {
-	MessagingProduct string                          `json:"messaging_product"`
-	RecipientType    string                          `json:"recipient_type"`
-	To               string                          `json:"to"`
-	Type             string                          `json:"type"`
-	Context          *WhatsAppContext                `json:"context,omitempty"`
-	Template         *WhatsAppTemplateMessagePayload `json:"template,omitempty"`
-	Text             *WhatsAppTextMessagePayload     `json:"text,omitempty"`
-	Reaction         *WhatsAppReactionMessagePayload `json:"reaction,omitempty"`
-	Image            *WhatsAppMediaMessagePayload    `json:"image,omitempty"`
-	Video            *WhatsAppMediaMessagePayload    `json:"video,omitempty"`
-	Audio            *WhatsAppMediaMessagePayload    `json:"audio,omitempty"`
-	Document         *WhatsAppMediaMessagePayload    `json:"document,omitempty"`
-	Sticker          *WhatsAppMediaMessagePayload    `json:"sticker,omitempty"`
-	Contacts         []WhatsAppContactMessagePayload `json:"contacts,omitempty"`
+	MessagingProduct string                             `json:"messaging_product"`
+	RecipientType    string                             `json:"recipient_type"`
+	To               string                             `json:"to"`
+	Type             string                             `json:"type"`
+	Context          *WhatsAppContext                   `json:"context,omitempty"`
+	Template         *WhatsAppTemplateMessagePayload    `json:"template,omitempty"`
+	Text             *WhatsAppTextMessagePayload        `json:"text,omitempty"`
+	Reaction         *WhatsAppReactionMessagePayload    `json:"reaction,omitempty"`
+	Image            *WhatsAppMediaMessagePayload       `json:"image,omitempty"`
+	Video            *WhatsAppMediaMessagePayload       `json:"video,omitempty"`
+	Audio            *WhatsAppMediaMessagePayload       `json:"audio,omitempty"`
+	Document         *WhatsAppMediaMessagePayload       `json:"document,omitempty"`
+	Sticker          *WhatsAppMediaMessagePayload       `json:"sticker,omitempty"`
+	Contacts         []WhatsAppContactMessagePayload    `json:"contacts,omitempty"`
+	Location         *WhatsAppLocationMessagePayload    `json:"location,omitempty"`
+	Interactive      *WhatsAppInteractiveMessagePayload `json:"interactive,omitempty"`
 }
 
 type WhatsAppTemplateMessagePayload struct {
@@ -47,7 +49,80 @@ type WhatsAppMessageComponent struct {
 	Type       string                     `json:"type" eru:"required"`
 	Parameters []WhatsAppMessageParameter `json:"parameters" eru:"required"`
 }
+type WhatsAppLocationMessagePayload struct {
+	Latitude  string `json:"latitude" eru:"required"`
+	Longitude string `json:"longitude" eru:"required"`
+	Name      string `json:"name,omitempty"`
+	Address   string `json:"address,omitempty"`
+}
+type WhatsAppInteractiveHeader struct {
+	Type     string `json:"type" eru:"required"`
+	Document *struct {
+		Link string `json:"link,omitempty"`
+	} `json:"document,omitempty"`
+	Image *struct {
+		Id   string `json:"id,omitempty"`
+		Link string `json:"link,omitempty"`
+	} `json:"image,omitempty"`
+	Video *struct {
+		Link string `json:"link,omitempty"`
+	} `json:"video,omitempty"`
+	Text string `json:"text,omitempty"`
+}
+type WhatsAppInteractiveBody struct {
+	Text string `json:"text,omitempty"`
+}
+type WhatsAppInteractiveAction struct {
+	Name       string `json:"name,omitempty"`
+	Parameters *struct {
+		Country     string `json:"country,omitempty"`
+		Url         string `json:"url,omitempty"`
+		DisplayText string `json:"display_text,omitempty"`
+	} `json:"parameters,omitempty"`
+	Button  string `json:"button,omitempty"`
+	Buttons []struct {
+		Type  string `json:"type"`
+		Reply *struct {
+			Id    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"reply,omitempty"`
+	} `json:"buttons,omitempty"`
+	Sections []struct {
+		Title string `json:"title"`
+		Rows  []struct {
+			Id          string `json:"id"`
+			Title       string `json:"title"`
+			Description string `json:"description"`
+		} `json:"rows"`
+	} `json:"sections,omitempty"`
+	Cards []struct {
+		CardIndex int                        `json:"card_index"`
+		Type      string                     `json:"type"`
+		Header    *WhatsAppInteractiveHeader `json:"header,omitempty"`
+		Body      *WhatsAppInteractiveBody   `json:"body,omitempty"`
+		Footer    *WhatsAppInteractiveFooter `json:"footer,omitempty"`
+		Action    *struct {
+			ProductRetailerId string `json:"product_retailer_id,omitempty"`
+			CatalogId         string `json:"catalog_id,omitempty"`
+			Name              string `json:"name,omitempty"`
+			Parameters        *struct {
+				Url         string `json:"url"`
+				DisplayText string `json:"display_text"`
+			} `json:"parameters,omitempty"`
+		} `json:"action,omitempty"`
+	} `json:"cards,omitempty"`
+}
 
+type WhatsAppInteractiveFooter struct {
+	Text string `json:"text,omitempty"`
+}
+type WhatsAppInteractiveMessagePayload struct {
+	Type   string                     `json:"type" eru:"required"`
+	Header *WhatsAppInteractiveHeader `json:"header,omitempty"`
+	Body   *WhatsAppInteractiveBody   `json:"body" eru:"required"`
+	Action *WhatsAppInteractiveAction `json:"action" eru:"required"`
+	Footer *WhatsAppInteractiveFooter `json:"footer,omitempty"`
+}
 type WhatsAppContactMessagePayload struct {
 	Addresses []struct {
 		Street      string `json:"street"`
@@ -78,7 +153,7 @@ type WhatsAppContactMessagePayload struct {
 	} `json:"org"`
 	Phones []struct {
 		Phone string `json:"phone"`
-		WaId  string `json:"wa_id"`
+		WaId  string `json:"wa_id,omitempty"`
 		Type  string `json:"type"`
 	} `json:"phones,omitempty"`
 	Urls []struct {
