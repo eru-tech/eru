@@ -37,6 +37,8 @@ type zohoAccountWithToken struct {
 const (
 	GetTickets       = "get_tickets"
 	GetOrganizations = "get_organizations"
+	GetTicketThread  = "get_ticket_thread"
+	GetTicketContent = "get_ticket_content"
 	Login            = "login"
 	RenewToken       = "renew_token"
 	GetSsoUrl        = "get_sso_url"
@@ -61,7 +63,7 @@ type zohoDeskToolWithToken struct {
 
 func (zohoDeskTool *ZohoDeskTool) GetActionsList() []string {
 	actions := []string{}
-	actions = append(actions, GetTickets, GetOrganizations, Login, RenewToken, GetSsoUrl, StopAutoRenew)
+	actions = append(actions, GetTickets, GetOrganizations, GetTicketThread, GetTicketContent, Login, RenewToken, GetSsoUrl, StopAutoRenew)
 	return actions
 }
 
@@ -86,6 +88,10 @@ func (zohoDeskTool *ZohoDeskTool) Execute(ctx context.Context, projectId string,
 		return zohoDeskTool.GetTickets(ctx, params)
 	case GetOrganizations:
 		return zohoDeskTool.GetOrganizations(ctx, params)
+	case GetTicketThread:
+		return zohoDeskTool.GetTicketThread(ctx, params)
+	case GetTicketContent:
+		return zohoDeskTool.GetTicketContent(ctx, params)
 	case Login:
 		return zohoDeskTool.Login(ctx, projectId, tenantId, params, "")
 	case RenewToken:
@@ -141,6 +147,161 @@ func (zohoDeskTool *ZohoDeskTool) GetOrganizations(ctx context.Context, params m
 	queryParams := make(map[string]string)
 	for k, v := range params {
 		queryParams[k] = fmt.Sprint(v)
+	}
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+
+	toolResult = make(map[string]interface{})
+	if resMap, ok := res.(map[string]interface{}); ok {
+		toolResult = resMap
+	} else {
+		toolResult["data"] = res
+	}
+
+	return toolResult, false, nil
+}
+
+func (zohoDeskTool *ZohoDeskTool) GetTicketThread(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("GetTicketThread Execute - Start")
+
+	ticketId, ok := params["ticket_id"].(string)
+	if !ok {
+		err = errors.New("ticket_id is required")
+		logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+
+	url := fmt.Sprint(DeskBaseUrl, "/tickets/", ticketId, "/threads")
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprint("Zoho-oauthtoken ", zohoDeskTool.ZohoAccount.AccessToken))
+	headers.Set("orgId", zohoDeskTool.ZohoAccount.OrgId)
+	headers.Set("Content-Type", "application/json")
+
+	queryParams := make(map[string]string)
+	for k, v := range params {
+		if k != "ticket_id" {
+			queryParams[k] = fmt.Sprint(v)
+		}
+	}
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+
+	var threads []interface{}
+	if resMap, ok := res.(map[string]interface{}); ok {
+		if data, exists := resMap["data"]; exists {
+			if threadsArray, ok := data.([]interface{}); ok {
+				threads = threadsArray
+			} else {
+				threads = []interface{}{data}
+			}
+		} else {
+			toolResult = resMap
+			return toolResult, false, nil
+		}
+	} else if threadsArray, ok := res.([]interface{}); ok {
+		threads = threadsArray
+	} else {
+		toolResult = make(map[string]interface{})
+		toolResult["data"] = res
+		return toolResult, false, nil
+	}
+
+	enrichedThreads := make([]interface{}, 0, len(threads))
+	for _, thread := range threads {
+		threadMap, ok := thread.(map[string]interface{})
+		if !ok {
+			enrichedThreads = append(enrichedThreads, thread)
+			continue
+		}
+
+		threadId, exists := threadMap["id"].(string)
+		if !exists || threadId == "" {
+			enrichedThreads = append(enrichedThreads, thread)
+			continue
+		}
+
+		contentParams := make(map[string]interface{})
+		contentParams["ticket_id"] = ticketId
+		contentParams["thread_id"] = threadId
+		for k, v := range params {
+			if k != "ticket_id" {
+				contentParams[k] = v
+			}
+		}
+
+		contentResult, _, err := zohoDeskTool.GetTicketContent(ctx, contentParams)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("Error getting content for thread ", threadId, ": ", err.Error()))
+			enrichedThreads = append(enrichedThreads, thread)
+			continue
+		}
+
+		if contentData, ok := contentResult["data"].(map[string]interface{}); ok {
+			if attachments, exists := contentData["attachments"]; exists {
+				threadMap["attachments"] = attachments
+			}
+			if content, exists := contentData["content"]; exists {
+				threadMap["content"] = content
+			}
+		} else {
+			if attachments, exists := contentResult["attachments"]; exists {
+				threadMap["attachments"] = attachments
+			}
+			if content, exists := contentResult["content"]; exists {
+				threadMap["content"] = content
+			}
+		}
+
+		enrichedThreads = append(enrichedThreads, threadMap)
+	}
+
+	toolResult = make(map[string]interface{})
+	if resMap, ok := res.(map[string]interface{}); ok {
+		toolResult = resMap
+		toolResult["data"] = enrichedThreads
+	} else {
+		toolResult["data"] = enrichedThreads
+	}
+
+	return toolResult, false, nil
+}
+
+func (zohoDeskTool *ZohoDeskTool) GetTicketContent(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("GetTicketContent Execute - Start")
+
+	ticketId, ok := params["ticket_id"].(string)
+	if !ok {
+		err = errors.New("ticket_id is required")
+		logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+
+	threadId, ok := params["thread_id"].(string)
+	if !ok {
+		err = errors.New("thread_id is required")
+		logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+
+	url := fmt.Sprint(DeskBaseUrl, "/tickets/", ticketId, "/threads/", threadId)
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprint("Zoho-oauthtoken ", zohoDeskTool.ZohoAccount.AccessToken))
+	headers.Set("orgId", zohoDeskTool.ZohoAccount.OrgId)
+	headers.Set("Content-Type", "application/json")
+
+	queryParams := make(map[string]string)
+	for k, v := range params {
+		if k != "ticket_id" && k != "thread_id" {
+			queryParams[k] = fmt.Sprint(v)
+		}
 	}
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)

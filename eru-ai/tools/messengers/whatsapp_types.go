@@ -20,7 +20,7 @@ type WhatsAppMessagePayload struct {
 }
 
 type WhatsAppTemplateMessagePayload struct {
-	Components []WhatsAppMessageComponent `json:"components" eru:"required"`
+	Components []WhatsAppMessageComponent `json:"components"`
 	Language   WhatsAppLanguage           `json:"language" eru:"required"`
 	Name       string                     `json:"name,omitempty"`
 }

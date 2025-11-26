@@ -987,16 +987,50 @@ func (whatsAppTool *WhatsAppTool) GetMessageTemplates(ctx context.Context, param
 		queryParams["name"] = fmt.Sprintf("%v", name) // Template name filter
 	}
 
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+	allTemplates := make([]interface{}, 0)
+	err = whatsAppTool.fetchTemplatesRecursive(ctx, url, headers, queryParams, &allTemplates)
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("failed to get message templates: %s", err.Error()), "failed to get message templates")
 		return nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
-	toolResult["message_templates"] = res
+	toolResult["message_templates"] = allTemplates
 
 	return toolResult, false, nil
+}
+
+func (whatsAppTool *WhatsAppTool) fetchTemplatesRecursive(ctx context.Context, url string, headers http.Header, queryParams map[string]string, allTemplates *[]interface{}) error {
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+	if err != nil {
+		return err
+	}
+
+	resMap, ok := res.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("unexpected response format")
+	}
+
+	if data, exists := resMap["data"]; exists {
+		if templatesArray, ok := data.([]interface{}); ok {
+			*allTemplates = append(*allTemplates, templatesArray...)
+		}
+	}
+
+	if paging, exists := resMap["paging"].(map[string]interface{}); exists {
+		if cursors, exists := paging["cursors"].(map[string]interface{}); exists {
+			if after, exists := cursors["after"].(string); exists && after != "" {
+				nextQueryParams := make(map[string]string)
+				for k, v := range queryParams {
+					nextQueryParams[k] = v
+				}
+				nextQueryParams["after"] = after
+				return whatsAppTool.fetchTemplatesRecursive(ctx, url, headers, nextQueryParams, allTemplates)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (whatsAppTool *WhatsAppTool) MarkMessageAsRead(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
