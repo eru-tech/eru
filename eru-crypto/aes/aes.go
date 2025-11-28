@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
@@ -40,10 +41,10 @@ func (e *ecbEncrypter) BlockSize() int { return e.blockSize }
 
 func (e *ecbEncrypter) CryptBlocks(dst, src []byte) {
 	if len(src)%e.blockSize != 0 {
-		panic("crypto/cipher: input blocks are not full")
+		logs.WithContext(context.Background()).Error("crypto/cipher: input blocks are not full")
 	}
 	if len(dst) < len(src) {
-		panic("crypto/cipher: output is smaller than input")
+		logs.WithContext(context.Background()).Error("crypto/cipher: output is smaller than input")
 	}
 	for len(src) > 0 {
 		e.block.Encrypt(dst, src[:e.blockSize])
@@ -62,10 +63,10 @@ func (d *ecbDecrypter) BlockSize() int { return d.blockSize }
 
 func (d *ecbDecrypter) CryptBlocks(dst, src []byte) {
 	if len(src)%d.blockSize != 0 {
-		panic("crypto/cipher: input blocks are not full")
+		logs.WithContext(context.Background()).Error("crypto/cipher: input blocks are not full")
 	}
 	if len(dst) < len(src) {
-		panic("crypto/cipher: output is smaller than input")
+		logs.WithContext(context.Background()).Error("crypto/cipher: output is smaller than input")
 	}
 	for len(src) > 0 {
 		d.block.Decrypt(dst, src[:d.blockSize])

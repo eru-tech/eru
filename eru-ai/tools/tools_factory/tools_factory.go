@@ -2,6 +2,7 @@ package tools_factory
 
 import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
+	icicibank "github.com/eru-tech/eru/eru-ai/tools/banking/icicibank"
 	yesbank "github.com/eru-tech/eru/eru-ai/tools/banking/yesbank"
 	ecomm "github.com/eru-tech/eru/eru-ai/tools/ecomm"
 	emails "github.com/eru-tech/eru/eru-ai/tools/emails"
@@ -42,6 +43,8 @@ func GetTool(toolType string) tools.Tooling {
 		return new(ndml_kyc.NdmlTool)
 	case "YESBANK":
 		return new(yesbank.YesBankTool)
+	case "ICICIBANK":
+		return new(icicibank.IciciBankTool)
 	case "ZOHODESK":
 		return new(saas.ZohoDeskTool)
 	case "MASSIVE":

@@ -10,8 +10,9 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"strings"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 type RsaKeyPair struct {
@@ -82,6 +83,7 @@ func EncryptWithCert(ctx context.Context, plainBytes []byte, publicCert string) 
 	var cert *x509.Certificate
 	cert, _ = x509.ParseCertificate(block.Bytes)
 	rsaPublicKey := cert.PublicKey.(*rsa.PublicKey)
+	logs.WithContext(ctx).Info(fmt.Sprintf("EncryptWithCert - Public Key: %s", rsaPublicKey.N.String()))
 	return Encrypt(ctx, plainBytes, rsaPublicKey)
 }
 
@@ -114,22 +116,35 @@ func StringToKey(ctx context.Context, publicKeyStr string) (rsaPublicKey *rsa.Pu
 
 func Encrypt(ctx context.Context, plainBytes []byte, rsaPublicKey *rsa.PublicKey) (encryptedBytes []byte, err error) {
 	logs.WithContext(ctx).Debug("Encrypt - Start")
-
+	keySize := rsaPublicKey.N.BitLen() / 8
+	chunkSize := keySize - 11
 	encryptedBytes = make([]byte, 0, len(plainBytes))
-	for i := 0; i < len(plainBytes); i += 117 {
-		if i+117 < len(plainBytes) {
-			partial, err1 := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, plainBytes[i:i+117])
-			if err1 != nil {
-				logs.WithContext(ctx).Error(err1.Error())
-			}
-			encryptedBytes = append(encryptedBytes, partial...)
-		} else {
-			partial, err1 := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, plainBytes[i:])
-			if err1 != nil {
-				logs.WithContext(ctx).Error(err1.Error())
-			}
-			encryptedBytes = append(encryptedBytes, partial...)
+	/* for i := 0; i < len(plainBytes); i += 117 {
+	if i+117 < len(plainBytes) {
+		partial, err1 := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, plainBytes[i:i+117])
+		if err1 != nil {
+			logs.WithContext(ctx).Error(err1.Error())
 		}
+		encryptedBytes = append(encryptedBytes, partial...)
+	} else {
+		partial, err1 := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, plainBytes[i:])
+		if err1 != nil {
+			logs.WithContext(ctx).Error(err1.Error())
+		}
+		encryptedBytes = append(encryptedBytes, partial...)
+	}
+		} */
+	for i := 0; i < len(plainBytes); i += chunkSize {
+		end := i + chunkSize
+		if end > len(plainBytes) {
+			end = len(plainBytes)
+		}
+		partial, err1 := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, plainBytes[i:end])
+		if err1 != nil {
+			logs.WithContext(ctx).Error(err1.Error())
+			return nil, err1
+		}
+		encryptedBytes = append(encryptedBytes, partial...)
 	}
 	return
 }
@@ -152,6 +167,71 @@ func Decrypt(ctx context.Context, encryptedBytes []byte, privateKeyStr string) (
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return
+	}
+	return
+}
+
+func DecryptWithKey(ctx context.Context, encryptedBytes []byte, privateKeyStr string) (decryptedBytes []byte, err error) {
+	logs.WithContext(ctx).Debug("Decrypt - Start")
+	block, _ := pem.Decode([]byte(privateKeyStr))
+	if block == nil {
+		err = errors.New("failed to parse PEM block containing the key")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	privateKeyRaw, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+
+	privateKey, ok := privateKeyRaw.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("expected RSA private key in PKCS#8, got %T", privateKeyRaw)
+	}
+
+	decryptedBytes, err = privateKey.Decrypt(nil, encryptedBytes, &rsa.OAEPOptions{Hash: crypto.SHA256})
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return
+}
+
+func DecryptPKCS1v15(ctx context.Context, encryptedBytes []byte, privateKeyStr string) (decryptedBytes []byte, err error) {
+	logs.WithContext(ctx).Debug("DecryptPKCS1v15 - Start")
+	block, _ := pem.Decode([]byte(privateKeyStr))
+	if block == nil {
+		err = errors.New("failed to parse PEM block containing the key")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	privateKeyRaw, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+
+	privateKey, ok := privateKeyRaw.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("expected RSA private key in PKCS#8, got %T", privateKeyRaw)
+	}
+
+	keySize := privateKey.N.BitLen() / 8
+	decryptedBytes = make([]byte, 0, len(encryptedBytes))
+
+	for i := 0; i < len(encryptedBytes); i += keySize {
+		end := i + keySize
+		if end > len(encryptedBytes) {
+			end = len(encryptedBytes)
+		}
+		chunk := encryptedBytes[i:end]
+		partial, err1 := rsa.DecryptPKCS1v15(rand.Reader, privateKey, chunk)
+		if err1 != nil {
+			logs.WithContext(ctx).Error(err1.Error())
+			return nil, err1
+		}
+		decryptedBytes = append(decryptedBytes, partial...)
 	}
 	return
 }

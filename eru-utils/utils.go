@@ -374,11 +374,20 @@ func CreateHttpClientWithTLS(ctx context.Context, clientCertB64 string, clientKe
 func callHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("callHttp - Start")
 	req := &http.Request{}
-	if headers.Get("Content-Type") == "application/x-ndjson" {
+	contentType := headers.Get("Content-Type")
+	if contentType == "application/x-ndjson" {
 		if postBodyBytes, postBodyBytesOk := postBody.([]byte); postBodyBytesOk {
 			req, err = http.NewRequest(method, url, bytes.NewBuffer(postBodyBytes))
 		} else {
 			return nil, errors.New("postBody is not a []byte")
+		}
+	} else if contentType == "text/plain" {
+		if postBodyBytes, ok := postBody.([]byte); ok {
+			req, err = http.NewRequest(method, url, bytes.NewBuffer(postBodyBytes))
+		} else if postBodyStr, ok := postBody.(string); ok {
+			req, err = http.NewRequest(method, url, bytes.NewBufferString(postBodyStr))
+		} else {
+			return nil, errors.New("postBody must be string or []byte for text/plain content type")
 		}
 	} else if postBody != nil {
 		reqBody, reqBodyerr := json.Marshal(postBody)
