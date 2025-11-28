@@ -2,6 +2,7 @@ package saas
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,14 +36,15 @@ type zohoAccountWithToken struct {
 }
 
 const (
-	GetTickets       = "get_tickets"
-	GetOrganizations = "get_organizations"
-	GetTicketThread  = "get_ticket_thread"
-	GetTicketContent = "get_ticket_content"
-	Login            = "login"
-	RenewToken       = "renew_token"
-	GetSsoUrl        = "get_sso_url"
-	StopAutoRenew    = "stop_auto_renew"
+	GetTickets          = "get_tickets"
+	GetOrganizations    = "get_organizations"
+	GetTicketThread     = "get_ticket_thread"
+	GetTicketContent    = "get_ticket_content"
+	GetTicketAttachment = "get_ticket_attachment"
+	Login               = "login"
+	RenewToken          = "renew_token"
+	GetSsoUrl           = "get_sso_url"
+	StopAutoRenew       = "stop_auto_renew"
 )
 
 const (
@@ -63,7 +65,7 @@ type zohoDeskToolWithToken struct {
 
 func (zohoDeskTool *ZohoDeskTool) GetActionsList() []string {
 	actions := []string{}
-	actions = append(actions, GetTickets, GetOrganizations, GetTicketThread, GetTicketContent, Login, RenewToken, GetSsoUrl, StopAutoRenew)
+	actions = append(actions, GetTickets, GetOrganizations, GetTicketThread, GetTicketContent, GetTicketAttachment, Login, RenewToken, GetSsoUrl, StopAutoRenew)
 	return actions
 }
 
@@ -92,6 +94,8 @@ func (zohoDeskTool *ZohoDeskTool) Execute(ctx context.Context, projectId string,
 		return zohoDeskTool.GetTicketThread(ctx, params)
 	case GetTicketContent:
 		return zohoDeskTool.GetTicketContent(ctx, params)
+	case GetTicketAttachment:
+		return zohoDeskTool.GetTicketAttachment(ctx, params)
 	case Login:
 		return zohoDeskTool.Login(ctx, projectId, tenantId, params, "")
 	case RenewToken:
@@ -316,6 +320,78 @@ func (zohoDeskTool *ZohoDeskTool) GetTicketContent(ctx context.Context, params m
 	} else {
 		toolResult["data"] = res
 	}
+
+	return toolResult, false, nil
+}
+
+func (zohoDeskTool *ZohoDeskTool) GetTicketAttachment(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("GetTicketAttachment Execute - Start")
+
+	ticketId, ok := params["ticket_id"].(string)
+	if !ok {
+		err = errors.New("ticket_id is required")
+		logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+
+	threadId, ok := params["thread_id"].(string)
+	if !ok {
+		err = errors.New("thread_id is required")
+		logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+
+	attachmentId, ok := params["attachment_id"].(string)
+	if !ok {
+		err = errors.New("attachment_id is required")
+		logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+
+	url := fmt.Sprint(DeskBaseUrl, "/tickets/", ticketId, "/threads/", threadId, "/attachments/", attachmentId, "/content")
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprint("Zoho-oauthtoken ", zohoDeskTool.ZohoAccount.AccessToken))
+	headers.Set("orgId", zohoDeskTool.ZohoAccount.OrgId)
+	headers.Set("Content-Type", "application/json")
+
+	queryParams := make(map[string]string)
+	for k, v := range params {
+		if k != "ticket_id" && k != "thread_id" && k != "attachment_id" {
+			queryParams[k] = fmt.Sprint(v)
+		}
+	}
+
+	res, respHeaders, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+
+	var fileContent []byte
+	if resMap, ok := res.(map[string]interface{}); ok {
+		if body, exists := resMap["body"].(string); exists {
+			fileContent = []byte(body)
+		} else {
+			err = errors.New("response body not found")
+			logs.Err(ctx, err, "")
+			return nil, false, err
+		}
+	} else {
+		err = errors.New("unexpected response format")
+		logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+
+	mimeType := respHeaders.Get("Content-Type")
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+
+	base64Content := base64.StdEncoding.EncodeToString(fileContent)
+
+	toolResult = make(map[string]interface{})
+	toolResult["file"] = base64Content
+	toolResult["mime_type"] = mimeType
 
 	return toolResult, false, nil
 }
