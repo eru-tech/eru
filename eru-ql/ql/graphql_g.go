@@ -189,6 +189,14 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 								cs_a = csArray[0]
 								cs_c = csArray[0]
 							}
+							cscArray := strings.Split(cs_c, "~")
+							dt := ""
+							if len(cscArray) > 1 {
+								cs_c = cscArray[0]
+								dt = cscArray[1]
+								cs_a = fmt.Sprint(cs_a, "~", dt)
+							}
+
 							jc := sqlMaker.MakeJsonColumn(fv, cs_c)
 							n := ast.Name{field.Kind, field.Loc, jc}
 							al := ast.Name{field.Kind, field.Loc, fmt.Sprint(cs_a)}

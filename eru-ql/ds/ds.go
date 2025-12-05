@@ -2,6 +2,7 @@ package ds
 
 import (
 	"context"
+	b64 "encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -548,6 +549,7 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 	var innerResult [][]interface{}
 	firstRow := true
 	var innerResultDataTypes []ResultDataTypes
+	var innerResultDataTypesMap = make(map[string]ResultDataTypes)
 	for rows.Next() {
 		var innerResultRow []interface{}
 		var innerResultLabel []interface{}
@@ -564,13 +566,26 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 				if len(colHeaderArray) > 1 {
 					colHeader = colHeaderArray[1]
 				}
+				colHeaderArray = strings.Split(colHeader, "~")
+				dt := colType.DatabaseTypeName()
+				if len(colHeaderArray) > 1 {
+					colType.DatabaseTypeName()
+					colHeader = colHeaderArray[0]
+					dt = colHeaderArray[1]
+				}
 				innerResultLabel = append(innerResultLabel, colHeader)
 				ct := ""
 				if mapping[colType.Name()] != nil {
 					ct = reflect.TypeOf(mapping[colType.Name()]).String()
 				}
+				if dt == "b64" {
+					innerResultDataTypesMap[colType.Name()] = ResultDataTypes{ColName: colHeader, ColType: ct, ColDatabaseTypeName: dt}
+					dt = colType.DatabaseTypeName()
+				} else {
+					innerResultDataTypesMap[colType.Name()] = ResultDataTypes{ColName: colHeader, ColType: ct, ColDatabaseTypeName: myself.getDataTypeMapping(ctx, dt)}
+				}
+				innerResultDataTypes = append(innerResultDataTypes, ResultDataTypes{ColName: colHeader, ColType: ct, ColDatabaseTypeName: myself.getDataTypeMapping(ctx, dt)})
 
-				innerResultDataTypes = append(innerResultDataTypes, ResultDataTypes{ColName: colHeader, ColType: ct, ColDatabaseTypeName: myself.getDataTypeMapping(ctx, colType.DatabaseTypeName())})
 			}
 			if mapping[colType.Name()] != nil {
 				if reflect.TypeOf(mapping[colType.Name()]).String() == "[]uint8" && colType.DatabaseTypeName() == "NUMERIC" {
@@ -598,6 +613,41 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 					n := mapping[colType.Name()].(int64)
 					mapping[colType.Name()] = fmt.Sprintf("%d", n)
 					//}
+				} else if innerResultDataTypesMap[colType.Name()].ColDatabaseTypeName == "b64" {
+					strV, err := b64.StdEncoding.DecodeString(mapping[colType.Name()].(string))
+					if err != nil {
+						err = logs.Err(ctx, err, "")
+						err = nil // silently proceed even if base64 decoding fails
+					} else {
+						mapping[colType.Name()] = string(strV)
+					}
+				} else if innerResultDataTypesMap[colType.Name()].ColDatabaseTypeName == "JSON" {
+					var v interface{}
+					strValue, strValueOk := mapping[colType.Name()].(string)
+					if strValueOk {
+						err = json.Unmarshal([]byte(strValue), &v)
+						if err != nil {
+							err = logs.Err(ctx, err, "")
+							return nil, err
+						}
+						var newV []string
+						if reflect.TypeOf(v).Kind() == reflect.Slice {
+							for _, vv := range v.([]interface{}) {
+								strVV, err := json.Marshal(vv)
+								if err != nil {
+									err = logs.Err(ctx, err, "")
+									return nil, err
+								}
+								uqStrVV, err := strconv.Unquote(string(strVV))
+								if err != nil {
+									err = logs.Err(ctx, err, "")
+									return nil, err
+								}
+								newV = append(newV, uqStrVV)
+							}
+							mapping[colType.Name()] = strings.Join(newV, ",")
+						}
+					}
 				} else if (colType.DatabaseTypeName() == "JSONB" || colType.DatabaseTypeName() == "JSON") || colType.DatabaseTypeName() == "BPCHAR" {
 					mapping[colType.Name()] = string(mapping[colType.Name()].([]byte))
 				}
