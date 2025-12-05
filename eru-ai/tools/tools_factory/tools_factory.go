@@ -12,6 +12,7 @@ import (
 	repositories "github.com/eru-tech/eru/eru-ai/tools/repositories"
 	saas "github.com/eru-tech/eru/eru-ai/tools/saas"
 	stocks "github.com/eru-tech/eru/eru-ai/tools/stocks"
+	telecom "github.com/eru-tech/eru/eru-ai/tools/telecom"
 	utiltiy "github.com/eru-tech/eru/eru-ai/tools/utility"
 	vectorstore "github.com/eru-tech/eru/eru-ai/tools/vectors"
 	web_scraping "github.com/eru-tech/eru/eru-ai/tools/web_scraping"
@@ -49,6 +50,8 @@ func GetTool(toolType string) tools.Tooling {
 		return new(saas.ZohoDeskTool)
 	case "MASSIVE":
 		return new(stocks.MassiveTool)
+	case "OZONE":
+		return new(telecom.OzoneTool)
 	default:
 		return new(tools.Tool)
 	}
