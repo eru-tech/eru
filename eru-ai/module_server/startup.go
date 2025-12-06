@@ -2,6 +2,7 @@ package module_server
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/eru-tech/eru/eru-ai/module_server/handlers"
@@ -39,6 +40,7 @@ func StartUp(ctx context.Context) (module_store.ModuleStoreI, error) {
 		logs.WithContext(ctx).Info("'ERUAI_BASEURL' environment variable not found - setting default value as http://localhost:8088")
 	}
 	module_store.Eruaibaseurl = eruaibaseurl
+	logs.WithContext(ctx).Info(fmt.Sprintf("ERUAI_BASEURL: %s", module_store.Eruaibaseurl))
 
 	return module_store.LoadStore(ctx, handlers.StoreTableName, handlers.StoreTenantTableName)
 }
