@@ -41,16 +41,16 @@ var FuncThreads = 3
 var LoopThreads = 3
 var EventThreads = 3
 
-type contextKey string
+type ContextKey string
 
 const (
-	contextKeyEruqlbaseurl contextKey = "eruqlbaseurl"
-	contextKeyEruaibaseurl contextKey = "eruaibaseurl"
+	ContextKeyEruqlbaseurl ContextKey = "eruqlbaseurl"
+	ContextKeyEruaibaseurl ContextKey = "eruaibaseurl"
 )
 
 func getEruqlbaseurl(ctx context.Context) string {
 	if ctx != nil {
-		if baseurl, ok := ctx.Value(contextKeyEruqlbaseurl).(string); ok && baseurl != "" {
+		if baseurl, ok := ctx.Value(ContextKeyEruqlbaseurl).(string); ok && baseurl != "" {
 			return baseurl
 		}
 	}
@@ -59,7 +59,7 @@ func getEruqlbaseurl(ctx context.Context) string {
 
 func getEruaibaseurl(ctx context.Context) string {
 	if ctx != nil {
-		if baseurl, ok := ctx.Value(contextKeyEruaibaseurl).(string); ok && baseurl != "" {
+		if baseurl, ok := ctx.Value(ContextKeyEruaibaseurl).(string); ok && baseurl != "" {
 			return baseurl
 		}
 	}

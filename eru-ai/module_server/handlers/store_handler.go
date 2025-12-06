@@ -14,6 +14,7 @@ import (
 	"github.com/eru-tech/eru/eru-ai/module_store"
 	"github.com/eru-tech/eru/eru-ai/tools"
 	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
+	function_module_store "github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
@@ -24,13 +25,6 @@ import (
 
 const StoreTableName = "eruai_config"
 const StoreTenantTableName = "eruai_tenant_config"
-
-type contextKey string
-
-const (
-	contextKeyEruqlbaseurl contextKey = "eruqlbaseurl"
-	contextKeyEruaibaseurl contextKey = "eruaibaseurl"
-)
 
 func StoreLoadHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -710,8 +704,8 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
 			}
 
-			r = r.WithContext(context.WithValue(r.Context(), contextKeyEruaibaseurl, module_store.Eruaibaseurl))
-			r = r.WithContext(context.WithValue(r.Context(), contextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+			r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
+			r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
 			logs.WithContext(r.Context()).Info(fmt.Sprintf("Eruaibaseurl: %s", module_store.Eruaibaseurl))
 			logs.WithContext(r.Context()).Info(fmt.Sprintf("context: %s", r.Context()))
 			agentResult, err := agent.Execute(r.Context(), agentMessage, conversationId, projectId, tenantId)
