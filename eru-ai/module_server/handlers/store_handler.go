@@ -25,6 +25,13 @@ import (
 const StoreTableName = "eruai_config"
 const StoreTenantTableName = "eruai_tenant_config"
 
+type contextKey string
+
+const (
+	contextKeyEruqlbaseurl contextKey = "eruqlbaseurl"
+	contextKeyEruaibaseurl contextKey = "eruaibaseurl"
+)
+
 func StoreLoadHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sh.Lock()
@@ -702,6 +709,9 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			if claims != "" {
 				r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
 			}
+
+			r = r.WithContext(context.WithValue(r.Context(), contextKeyEruaibaseurl, module_store.Eruaibaseurl))
+			r = r.WithContext(context.WithValue(r.Context(), contextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
 			agentResult, err := agent.Execute(r.Context(), agentMessage, conversationId, projectId, tenantId)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)

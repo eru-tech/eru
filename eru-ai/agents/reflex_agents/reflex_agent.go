@@ -23,7 +23,6 @@ func (reflex_agent *ReflexAgent) GetSpec() agents.AgentI {
 
 func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
-
 	if reflex_agent.Function.FuncGroupName != "" {
 		response, err := reflex_agent.ExecuteAgentFunction(ctx, agentMessage, projectId, tenantId)
 		if err != nil {

@@ -640,8 +640,10 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 								}
 								uqStrVV, err := strconv.Unquote(string(strVV))
 								if err != nil {
-									err = logs.Err(ctx, err, "")
-									return nil, err
+									uqStrVV = string(strVV)
+								}
+								if uqStrVV == "null" {
+									uqStrVV = ""
 								}
 								newV = append(newV, uqStrVV)
 							}

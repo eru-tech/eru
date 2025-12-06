@@ -31,6 +31,14 @@ func StartUp(ctx context.Context) (module_store.ModuleStoreI, error) {
 		logs.WithContext(ctx).Info("'ERUQL_BASEURL' environment variable not found - setting default value as http://localhost:8087")
 	}
 	server_handlers.EruqlBaseUrl = eruqlbaseurl
+	module_store.Eruqlbaseurl = eruqlbaseurl
+
+	eruaibaseurl := os.Getenv("ERUAI_BASEURL")
+	if eruaibaseurl == "" {
+		eruaibaseurl = "http://localhost:8088"
+		logs.WithContext(ctx).Info("'ERUAI_BASEURL' environment variable not found - setting default value as http://localhost:8088")
+	}
+	module_store.Eruaibaseurl = eruaibaseurl
 
 	return module_store.LoadStore(ctx, handlers.StoreTableName, handlers.StoreTenantTableName)
 }

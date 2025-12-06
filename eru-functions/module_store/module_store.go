@@ -41,6 +41,31 @@ var FuncThreads = 3
 var LoopThreads = 3
 var EventThreads = 3
 
+type contextKey string
+
+const (
+	contextKeyEruqlbaseurl contextKey = "eruqlbaseurl"
+	contextKeyEruaibaseurl contextKey = "eruaibaseurl"
+)
+
+func getEruqlbaseurl(ctx context.Context) string {
+	if ctx != nil {
+		if baseurl, ok := ctx.Value(contextKeyEruqlbaseurl).(string); ok && baseurl != "" {
+			return baseurl
+		}
+	}
+	return Eruqlbaseurl
+}
+
+func getEruaibaseurl(ctx context.Context) string {
+	if ctx != nil {
+		if baseurl, ok := ctx.Value(contextKeyEruaibaseurl).(string); ok && baseurl != "" {
+			return baseurl
+		}
+	}
+	return Eruaibaseurl
+}
+
 const (
 	UPDATE_FUNC_ASYNC    = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
 	SELECT_FUNC_ASYNC    = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
@@ -476,8 +501,9 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			r.RewriteUrl = fmt.Sprint("/store/", projectId, "/myquery/execute/", funcStep.QueryName, output, encode)
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
-			tmpSplit := strings.Split(Eruqlbaseurl, "://")
-			tg.Host = Eruqlbaseurl
+			eruqlbaseurl := getEruqlbaseurl(ctx)
+			tmpSplit := strings.Split(eruqlbaseurl, "://")
+			tg.Host = eruqlbaseurl
 			tg.Scheme = "https"
 			if len(tmpSplit) > 0 {
 				tg.Scheme = tmpSplit[0]
@@ -508,8 +534,9 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/tool/", funcStep.ToolName, toolAction)
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
-			tmpSplit := strings.Split(Eruaibaseurl, "://")
-			tg.Host = Eruaibaseurl
+			eruaibaseurl := getEruaibaseurl(ctx)
+			tmpSplit := strings.Split(eruaibaseurl, "://")
+			tg.Host = eruaibaseurl
 			tg.Scheme = "https"
 			if len(tmpSplit) > 0 {
 				tg.Scheme = tmpSplit[0]
@@ -527,8 +554,9 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/agent/", funcStep.AgentName)
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
-			tmpSplit := strings.Split(Eruaibaseurl, "://")
-			tg.Host = Eruaibaseurl
+			eruaibaseurl := getEruaibaseurl(ctx)
+			tmpSplit := strings.Split(eruaibaseurl, "://")
+			tg.Host = eruaibaseurl
 			tg.Scheme = "https"
 			if len(tmpSplit) > 0 {
 				tg.Scheme = tmpSplit[0]
