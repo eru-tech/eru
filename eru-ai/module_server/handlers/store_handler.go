@@ -835,54 +835,69 @@ func ToolExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				}
 			}
 
-			/* vectorStoreName, _ := tool.GetAttribute(r.Context(), "vectorstore_name")
-			if vectorStoreName != nil {
-				vectorStoreName := vectorStoreName.(string)
-				vectorStore, err := sh.Store.GetVectorStore(r.Context(), projectId, tenantId, vectorStoreName, sh.Store)
-				if err != nil {
-					server_handlers.FormatResponse(w, 400)
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-					return
+			toolResult, persistStore, err := tool.Execute(ctx, projectId, tenantId, actionName, toolParams.Params)
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			} else {
+				if persistStore {
+					err = sh.Store.SaveTool(r.Context(), tool, projectId, tenantId, sh.Store, true)
+					if err != nil {
+						logs.WithContext(r.Context()).Error(err.Error())
+						server_handlers.FormatResponse(w, 400)
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					}
 				}
-				vectorStoreClone, err := sh.Store.GetVectorStoreCloneObject(r.Context(), projectId, tenantId, vectorStore, sh.Store)
-				if err != nil {
-					server_handlers.FormatResponse(w, 400)
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-				} else {
-					tool.SetAttribute(r.Context(), "vectorstore", vectorStoreClone)
-				}
+				server_handlers.FormatResponse(w, 200)
+				_ = json.NewEncoder(w).Encode(toolResult)
+			}
+		}
+	}
+}
 
-				embed, err := vectorStoreClone.GetEmbed(ctx)
-				if err != nil {
-					server_handlers.FormatResponse(w, 400)
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-				}
+func ToolWhatsAppEndpointExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 
-				dimension := vectorStoreClone.GetAttribute(ctx, "dimension")
-				dimensionInt := 0
-				if dimension != "" {
-					dimensionInt, err = strconv.Atoi(dimension)
-					if err != nil {
-						server_handlers.FormatResponse(w, 400)
-						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-					}
+		logs.WithContext(r.Context()).Debug("ToolExecuteHandler - Start")
+		ctx := context.WithValue(r.Context(), "eruauthbaseurl", module_store.Eruauthbaseurl)
+		ctx = context.WithValue(ctx, "eruaiport", module_store.Eruaiport)
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		toolName := vars["toolname"]
+		actionName := vars["actionname"]
+		endpoint := vars["endpoint"]
+		tool, err := sh.Store.GetTool(r.Context(), projectId, tenantId, toolName, actionName, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			toolParamsFromReq := json.NewDecoder(r.Body)
+			toolParamsFromReq.DisallowUnknownFields()
+
+			type tParams struct {
+				Params map[string]interface{} `json:"params"`
+			}
+
+			var toolParams tParams
+			var toolParamsMap map[string]interface{}
+			if err := toolParamsFromReq.Decode(&toolParamsMap); err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+			if toolParams.Params == nil {
+				toolParams.Params = make(map[string]interface{})
+			}
+			toolParams.Params = toolParamsMap
+			queryParams := r.URL.Query()
+			for key, values := range queryParams {
+				if len(values) > 0 {
+					toolParams.Params[key] = values[0]
 				}
-				embed.Dimension = dimensionInt
-				embed.Metric = vectorStoreClone.GetAttribute(ctx, "metric")
-				if embed.ModelName != "" {
-					model, err := sh.Store.GetModel(ctx, projectId, tenantId, embed.ModelName, sh.Store)
-					if err != nil {
-						server_handlers.FormatResponse(w, 400)
-						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-					}
-					embed.Model = model
-					err = vectorStoreClone.SetEmbed(ctx, embed)
-					if err != nil {
-						server_handlers.FormatResponse(w, 400)
-						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-					}
-				}
-			} */
+			}
+			toolParams.Params["endpoint"] = endpoint
 
 			toolResult, persistStore, err := tool.Execute(ctx, projectId, tenantId, actionName, toolParams.Params)
 			if err != nil {

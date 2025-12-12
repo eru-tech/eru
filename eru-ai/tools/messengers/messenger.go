@@ -24,6 +24,10 @@ const (
 
 	Login     = "login"
 	GetSsoUrl = "get_sso_url"
+
+	RegisterPublicKey = "register_public_key"
+	FetchPublicKey    = "fetch_public_key"
+	FlowEndpoint      = "flow_endpoint"
 )
 
 type MessengerAccount struct {

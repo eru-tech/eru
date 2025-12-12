@@ -3,7 +3,6 @@ package messengers
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +14,10 @@ import (
 	"net/textproto"
 	"strings"
 
+	aes "github.com/eru-tech/eru/eru-crypto/aes"
+	rsa "github.com/eru-tech/eru/eru-crypto/rsa"
+	erusha "github.com/eru-tech/eru/eru-crypto/sha"
+
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
@@ -24,6 +27,7 @@ import (
 )
 
 const (
+	INSERT_ENPOINT_REQUEST     = "insert into eruai_wa_endpoint (project_id, tenant_id, request_body) values ($1, $2, $3)"
 	INSERT_FUNC_ASYNC_WHATSAPP = "insert into eruai_cb_whatsapp (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
 	WHATSAPP_BASE_URL          = "https://graph.facebook.com"
 )
@@ -34,11 +38,12 @@ type WhatsAppTool struct {
 }
 
 type WhatsAppAccount struct {
-	PhoneNumberId     string `json:"phone_number_id"`
+	PhoneNumberId     string `json:"phone_number_id" eru:"required"`
 	BusinessAccountId string `json:"business_account_id"`
-	ApiKey            string `json:"api_key"`
+	ApiKey            string `json:"api_key" eru:"required"`
 	WebhookUrl        string `json:"webhook_url"`
 	ApiVersion        string `json:"api_version"`
+	PrivateKey        string `json:"private_key"`
 }
 
 func (whatsAppTool *WhatsAppTool) GetActionsList() []string {
@@ -56,6 +61,9 @@ func (whatsAppTool *WhatsAppTool) GetActionsList() []string {
 	actions = append(actions, SendTypingIndicator)
 	actions = append(actions, GetThroughput)
 	actions = append(actions, CreateGroup)
+	actions = append(actions, RegisterPublicKey)
+	actions = append(actions, FetchPublicKey)
+	actions = append(actions, FlowEndpoint)
 	actions = append(actions, Callback)
 	return actions
 }
@@ -117,6 +125,21 @@ func (whatsAppTool *WhatsAppTool) GetMcpTools() []tools.McpToolList {
 		ToolDescription: "Create a WhatsApp group",
 		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", CreateGroup),
 	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        RegisterPublicKey,
+		ToolDescription: "Register a public key for WhatsApp Business Encryption",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", RegisterPublicKey),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        FetchPublicKey,
+		ToolDescription: "Fetch the registered public key for WhatsApp Business Encryption",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", FetchPublicKey),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        FlowEndpoint,
+		ToolDescription: "Handle WhatsApp Flows encryption and decryption",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", FlowEndpoint),
+	})
 	return mcpTools
 }
 
@@ -163,6 +186,12 @@ func (whatsAppTool *WhatsAppTool) Execute(ctx context.Context, projectId string,
 		return whatsAppTool.GetThroughput(ctx, params)
 	case CreateGroup:
 		return whatsAppTool.CreateGroup(ctx, params)
+	case RegisterPublicKey:
+		return whatsAppTool.RegisterPublicKey(ctx, params)
+	case FetchPublicKey:
+		return whatsAppTool.FetchPublicKey(ctx, params)
+	case FlowEndpoint:
+		return whatsAppTool.FlowEndpoint(ctx, params, projectId, tenantId)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -775,7 +804,7 @@ func (whatsAppTool *WhatsAppTool) RetrieveMedia(ctx context.Context, params map[
 		return nil, false, err
 	}
 
-	hash := sha256.Sum256(fileBytes)
+	hash := erusha.NewSHA256(fileBytes)
 	calculatedSha256 := hex.EncodeToString(hash[:])
 
 	if shaOk && expectedSha256Str != "" {
@@ -1283,6 +1312,175 @@ func (whatsAppTool *WhatsAppTool) CreateGroup(ctx context.Context, params map[st
 		toolResult["status_code"] = statusCode
 	}
 
+	return toolResult, false, nil
+}
+
+func (whatsAppTool *WhatsAppTool) RegisterPublicKey(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("RegisterPublicKey Execute - Start")
+
+	key, keyOk := params["business_public_key"]
+	if !keyOk {
+		err = logs.Err(ctx, errors.New("business_public_key parameter is required"), "business_public_key parameter is required")
+		return nil, false, err
+	}
+	keyStr, ok := key.(string)
+	if !ok {
+		err = logs.Err(ctx, errors.New("business_public_key must be a string"), "business_public_key must be a string")
+		return nil, false, err
+	}
+	keyText, err := base64.StdEncoding.DecodeString(keyStr)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to decode business_public_key: %s", err.Error()), "failed to decode business_public_key")
+		return nil, false, err
+	}
+
+	apiVersion := whatsAppTool.WhatsAppAccount.ApiVersion
+	if apiVersion == "" {
+		apiVersion = "v18.0"
+	}
+
+	urlPath := fmt.Sprintf("%s/%s/%s/whatsapp_business_encryption", WHATSAPP_BASE_URL, apiVersion, whatsAppTool.WhatsAppAccount.PhoneNumberId)
+
+	formData := map[string]string{
+		"business_public_key": string(keyText),
+	}
+
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.WhatsAppAccount.ApiKey))
+	headers.Set("Content-Type", "application/x-www-form-urlencoded")
+	headers.Set("Accept", "application/json")
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, urlPath, headers, formData, []*http.Cookie{}, map[string]string{}, nil)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to register public key: %s", err.Error()), "failed to register public key")
+		return nil, false, err
+	}
+
+	toolResult = map[string]interface{}{
+		"response": res,
+	}
+
+	return toolResult, false, nil
+}
+
+func (whatsAppTool *WhatsAppTool) FetchPublicKey(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("FetchPublicKey Execute - Start")
+
+	apiVersion := whatsAppTool.WhatsAppAccount.ApiVersion
+	if apiVersion == "" {
+		apiVersion = "v18.0"
+	}
+
+	urlPath := fmt.Sprintf("%s/%s/%s/whatsapp_business_encryption", WHATSAPP_BASE_URL, apiVersion, whatsAppTool.WhatsAppAccount.PhoneNumberId)
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.WhatsAppAccount.ApiKey))
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Accept", "application/json")
+
+	res, _, _, statusCode, err := utils.CallHttp(ctx, http.MethodGet, urlPath, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to fetch public key: %s", err.Error()), "failed to fetch public key")
+		return nil, false, err
+	}
+
+	toolResult = make(map[string]interface{})
+	if statusCode == http.StatusOK {
+		toolResult["public_key_info"] = res
+	} else {
+		toolResult["response"] = res
+		toolResult["status_code"] = statusCode
+	}
+
+	return toolResult, false, nil
+}
+
+func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[string]interface{}, projectId string, tenantId string) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("FlowEndpoint Execute - Start")
+
+	type flowRequestParams struct {
+		EncryptedFlowData string `json:"encrypted_flow_data" eru:"required"`
+		EncryptedAESKey   string `json:"encrypted_aes_key" eru:"required"`
+		InitialVector     string `json:"initial_vector" eru:"required"`
+	}
+
+	flowRequest := flowRequestParams{}
+	flowRequestBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, false, fmt.Errorf("error marshalling flow request: %w", err)
+	}
+
+	err = json.Unmarshal(flowRequestBytes, &flowRequest)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+	/* err = utils.ValidateStruct(ctx, flowRequest, "")
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, false, err
+	} */
+
+	var insertQueries []*models.Queries
+	insertQueryFuncAsync := models.Queries{}
+	insertQueryFuncAsync.Query = whatsAppTool.ToolDb.GetDbQuery(ctx, INSERT_ENPOINT_REQUEST)
+	insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, projectId, tenantId, string(flowRequestBytes))
+	insertQueryFuncAsync.Rank = 1
+	insertQueries = append(insertQueries, &insertQueryFuncAsync)
+
+	_, insertOutputErr := utils.ExecuteDbSave(ctx, whatsAppTool.ToolDb.GetConn(), insertQueries)
+	if insertOutputErr != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to insert query: %s", err.Error()), "failed to insert query")
+		return
+	}
+
+	privateKeyBytes, err := base64.StdEncoding.DecodeString(whatsAppTool.WhatsAppAccount.PrivateKey)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+	privateKey := string(privateKeyBytes)
+
+	// Decrypt the AES key
+	encryptedAESKeyBytes, _ := base64.StdEncoding.DecodeString(flowRequest.EncryptedAESKey)
+	decryptedKeyBytes, err := rsa.DecryptPKCS1v15(ctx, encryptedAESKeyBytes, privateKey)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+	initialVectorBytes, _ := base64.StdEncoding.DecodeString(flowRequest.InitialVector)
+	flowDataBytes, _ := base64.StdEncoding.DecodeString(flowRequest.EncryptedFlowData)
+
+	decryptedFlowDataBytes, err := aes.DecryptGCM(ctx, flowDataBytes, decryptedKeyBytes, initialVectorBytes)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+
+	var decryptedBody map[string]interface{}
+	if err := json.Unmarshal(decryptedFlowDataBytes, &decryptedBody); err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+
+	// Create a response object
+	response := map[string]interface{}{
+		"screen": "DETAILS",
+		"data":   map[string]string{"some_key": "some_value"},
+	}
+	responseBytes, err := json.Marshal(response)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+	encryptedResponseBytes, err := aes.EncryptGCM(ctx, responseBytes, decryptedKeyBytes, initialVectorBytes)
+	if err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, false, err
+	}
+	encryptedResponse := base64.StdEncoding.EncodeToString(encryptedResponseBytes)
+	toolResult = map[string]interface{}{
+		"encrypted_response": encryptedResponse,
+	}
 	return toolResult, false, nil
 }
 
