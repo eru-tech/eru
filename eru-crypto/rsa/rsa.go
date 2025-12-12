@@ -184,7 +184,6 @@ func DecryptWithKey(ctx context.Context, encryptedBytes []byte, privateKeyStr st
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-
 	privateKey, ok := privateKeyRaw.(*rsa.PrivateKey)
 	if !ok {
 		return nil, fmt.Errorf("expected RSA private key in PKCS#8, got %T", privateKeyRaw)

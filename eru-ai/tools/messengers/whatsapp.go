@@ -1420,7 +1420,7 @@ func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[s
 		return nil, false, err
 	} */
 
-	var insertQueries []*models.Queries
+	/* var insertQueries []*models.Queries
 	insertQueryFuncAsync := models.Queries{}
 	insertQueryFuncAsync.Query = whatsAppTool.ToolDb.GetDbQuery(ctx, INSERT_ENPOINT_REQUEST)
 	insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, projectId, tenantId, string(flowRequestBytes))
@@ -1431,7 +1431,7 @@ func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[s
 	if insertOutputErr != nil {
 		err = logs.Err(ctx, fmt.Errorf("failed to insert query: %s", err.Error()), "failed to insert query")
 		return
-	}
+	} */
 
 	privateKeyBytes, err := base64.StdEncoding.DecodeString(whatsAppTool.WhatsAppAccount.PrivateKey)
 	if err != nil {
@@ -1442,7 +1442,7 @@ func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[s
 
 	// Decrypt the AES key
 	encryptedAESKeyBytes, _ := base64.StdEncoding.DecodeString(flowRequest.EncryptedAESKey)
-	decryptedKeyBytes, err := rsa.DecryptPKCS1v15(ctx, encryptedAESKeyBytes, privateKey)
+	decryptedKeyBytes, err := rsa.DecryptWithKey(ctx, encryptedAESKeyBytes, privateKey)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return nil, false, err

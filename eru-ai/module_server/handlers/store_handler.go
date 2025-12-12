@@ -901,7 +901,7 @@ func ToolWhatsAppEndpointExecuteHandler(sh *module_store.StoreHolder) http.Handl
 
 			toolResult, persistStore, err := tool.Execute(ctx, projectId, tenantId, actionName, toolParams.Params)
 			if err != nil {
-				server_handlers.FormatResponse(w, 400)
+				server_handlers.FormatResponse(w, 421)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			} else {
 				if persistStore {
@@ -912,8 +912,19 @@ func ToolWhatsAppEndpointExecuteHandler(sh *module_store.StoreHolder) http.Handl
 						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 					}
 				}
-				server_handlers.FormatResponse(w, 200)
-				_ = json.NewEncoder(w).Encode(toolResult)
+				encryptedResponse, ok := toolResult["encrypted_response"]
+				if ok {
+					encryptedResponseStr, ok := encryptedResponse.(string)
+					if ok {
+						w.Header().Set("Cache-Control", "no-store")
+						w.Header().Set("Content-Type", "plain/text")
+						w.WriteHeader(200)
+						w.Write([]byte(encryptedResponseStr))
+						return
+					}
+				}
+				server_handlers.FormatResponse(w, 421)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "decryption failed"})
 			}
 		}
 	}
