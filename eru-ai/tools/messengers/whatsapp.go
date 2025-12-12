@@ -1464,8 +1464,7 @@ func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[s
 
 	// Create a response object
 	response := map[string]interface{}{
-		"screen": "DETAILS",
-		"data":   map[string]string{"some_key": "some_value"},
+		"data": map[string]string{"status": "active"},
 	}
 	responseBytes, err := json.Marshal(response)
 	if err != nil {
