@@ -119,8 +119,8 @@ type ShipmentItem struct {
 }
 
 type TaxWithheldComponent struct {
-	TaxCollectionModel string     `json:"TaxCollectionModel,omitempty"`
-	TaxesWithheld      []Currency `json:"TaxesWithheld,omitempty"`
+	TaxCollectionModel string            `json:"TaxCollectionModel,omitempty"`
+	TaxesWithheld      []ChargeComponent `json:"TaxesWithheld,omitempty"`
 }
 
 type Promotion struct {
