@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	INSERT_ENPOINT_REQUEST     = "insert into eruai_wa_endpoint (project_id, tenant_id, request_body) values ($1, $2, $3)"
+	INSERT_ENPOINT_REQUEST     = "insert into eruai_wa_endpoint (project_id, tenant_id, request_body,decrypted_request_body) values ($1, $2, $3, $4)"
 	INSERT_FUNC_ASYNC_WHATSAPP = "insert into eruai_cb_whatsapp (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
 	WHATSAPP_BASE_URL          = "https://graph.facebook.com"
 )
@@ -1414,24 +1414,11 @@ func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[s
 		err = logs.Err(ctx, err, "")
 		return nil, false, err
 	}
-	/* err = utils.ValidateStruct(ctx, flowRequest, "")
+	err = utils.ValidateStruct(ctx, flowRequest, "")
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return nil, false, err
-	} */
-
-	/* var insertQueries []*models.Queries
-	insertQueryFuncAsync := models.Queries{}
-	insertQueryFuncAsync.Query = whatsAppTool.ToolDb.GetDbQuery(ctx, INSERT_ENPOINT_REQUEST)
-	insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, projectId, tenantId, string(flowRequestBytes))
-	insertQueryFuncAsync.Rank = 1
-	insertQueries = append(insertQueries, &insertQueryFuncAsync)
-
-	_, insertOutputErr := utils.ExecuteDbSave(ctx, whatsAppTool.ToolDb.GetConn(), insertQueries)
-	if insertOutputErr != nil {
-		err = logs.Err(ctx, fmt.Errorf("failed to insert query: %s", err.Error()), "failed to insert query")
-		return
-	} */
+	}
 
 	privateKeyBytes, err := base64.StdEncoding.DecodeString(whatsAppTool.WhatsAppAccount.PrivateKey)
 	if err != nil {
@@ -1460,6 +1447,19 @@ func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[s
 	if err := json.Unmarshal(decryptedFlowDataBytes, &decryptedBody); err != nil {
 		err = logs.Err(ctx, err, "")
 		return nil, false, err
+	}
+
+	var insertQueries []*models.Queries
+	insertQueryFuncAsync := models.Queries{}
+	insertQueryFuncAsync.Query = whatsAppTool.ToolDb.GetDbQuery(ctx, INSERT_ENPOINT_REQUEST)
+	insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, projectId, tenantId, string(flowRequestBytes), string(decryptedFlowDataBytes))
+	insertQueryFuncAsync.Rank = 1
+	insertQueries = append(insertQueries, &insertQueryFuncAsync)
+
+	_, insertOutputErr := utils.ExecuteDbSave(ctx, whatsAppTool.ToolDb.GetConn(), insertQueries)
+	if insertOutputErr != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to insert query: %s", err.Error()), "failed to insert query")
+		return
 	}
 
 	// Create a response object
