@@ -1462,10 +1462,26 @@ func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[s
 		return
 	}
 
-	// Create a response object
-	response := map[string]interface{}{
-		"data": map[string]string{"status": "active"},
+	action, actionOk := decryptedBody["action"]
+	if !actionOk {
+		err = logs.Err(ctx, fmt.Errorf("action not found in decrypted body"), "action not found in decrypted body")
+		return nil, false, err
 	}
+	actionString, _ := action.(string)
+
+	// Create a response object
+	response := make(map[string]interface{})
+	if actionString == "ping" {
+		response = map[string]interface{}{
+			"data": map[string]string{"status": "active"},
+		}
+	} else if actionString == "data_exchange" {
+		response = map[string]interface{}{
+			"screen": "DETAILS",
+			"data":   map[string]string{"is_upi": "true", "is_account": "false", "emi": "₹ 21,000", "tenure": "2 months", "amount": "₹ 600"},
+		}
+	}
+
 	responseBytes, err := json.Marshal(response)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
