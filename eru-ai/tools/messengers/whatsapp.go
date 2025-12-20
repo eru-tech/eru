@@ -1473,12 +1473,12 @@ func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[s
 	response := make(map[string]interface{})
 	if actionString == "ping" {
 		response = map[string]interface{}{
-			"data": map[string]string{"status": "active"},
+			"data": map[string]interface{}{"status": "active"},
 		}
 	} else if actionString == "data_exchange" {
 		response = map[string]interface{}{
 			"screen": "DETAILS",
-			"data":   map[string]string{"is_upi": "true", "is_account": "false", "emi": "₹ 21,000", "tenure": "2 months", "amount": "₹ 600"},
+			"data":   map[string]interface{}{"is_upi": true, "is_account": false, "emi": "₹ 21,000", "tenure": "2 months", "amount": "₹ 600"},
 		}
 	}
 
