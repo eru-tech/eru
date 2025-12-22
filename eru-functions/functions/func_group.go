@@ -495,6 +495,9 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 					Request:       request,
 					Header:        condRespHeader,
 				}
+				if funcStep.ConditionFailMessage == "" {
+					response = nil
+				}
 				responses = append(responses, response)
 				if err != nil {
 					err = logs.Err(ctx, fmt.Errorf("error for  false condition : %w", err), "")
