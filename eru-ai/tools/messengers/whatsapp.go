@@ -1398,6 +1398,7 @@ func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[s
 	logs.WithContext(ctx).Debug("FlowEndpoint Execute - Start")
 
 	type flowRequestParams struct {
+		Endpoint          string `json:"endpoint" eru:"required"`
 		EncryptedFlowData string `json:"encrypted_flow_data" eru:"required"`
 		EncryptedAESKey   string `json:"encrypted_aes_key" eru:"required"`
 		InitialVector     string `json:"initial_vector" eru:"required"`
@@ -1476,14 +1477,7 @@ func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[s
 			"data": map[string]interface{}{"status": "active"},
 		}
 	} else {
-		endpoint, endpointOk := decryptedBody["endpoint"]
-		if !endpointOk {
-			err = logs.Err(ctx, fmt.Errorf("endpoint not found in decrypted body"), "endpoint not found in decrypted body")
-			return nil, false, err
-		}
-		endpointString, _ := endpoint.(string)
-
-		res, err := whatsAppTool.ExecuteFunction(ctx, projectId, tenantId, endpointString, decryptedBody, nil)
+		res, err := whatsAppTool.ExecuteFunction(ctx, projectId, tenantId, flowRequest.Endpoint, decryptedBody, nil)
 		if err != nil {
 			err = logs.Err(ctx, err, "")
 			return nil, false, err
