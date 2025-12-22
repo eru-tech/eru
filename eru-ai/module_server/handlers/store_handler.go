@@ -799,6 +799,8 @@ func ToolExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("ToolExecuteHandler - Start")
 		ctx := context.WithValue(r.Context(), "eruauthbaseurl", module_store.Eruauthbaseurl)
 		ctx = context.WithValue(ctx, "eruaiport", module_store.Eruaiport)
+		ctx = context.WithValue(ctx, tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
+
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
