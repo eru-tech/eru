@@ -1475,10 +1475,24 @@ func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[s
 		response = map[string]interface{}{
 			"data": map[string]interface{}{"status": "active"},
 		}
-	} else if actionString == "data_exchange" {
-		response = map[string]interface{}{
-			"screen": "DETAILS",
-			"data":   map[string]interface{}{"is_upi": true, "is_account": false, "emi": "₹ 21,000", "tenure": "2 months", "amount": "₹ 600"},
+	} else {
+		endpoint, endpointOk := decryptedBody["endpoint"]
+		if !endpointOk {
+			err = logs.Err(ctx, fmt.Errorf("endpoint not found in decrypted body"), "endpoint not found in decrypted body")
+			return nil, false, err
+		}
+		endpointString, _ := endpoint.(string)
+
+		res, err := whatsAppTool.ExecuteFunction(ctx, projectId, tenantId, endpointString, decryptedBody, nil)
+		if err != nil {
+			err = logs.Err(ctx, err, "")
+			return nil, false, err
+		}
+		responseOk := false
+		response, responseOk = res.(map[string]interface{})
+		if !responseOk {
+			err = logs.Err(ctx, fmt.Errorf("response is not a map[string]interface{}"), "response is not a map[string]interface{}")
+			return nil, false, err
 		}
 	}
 

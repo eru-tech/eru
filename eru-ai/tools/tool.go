@@ -319,6 +319,38 @@ func (tool *Tool) ExecuteCallbackHook(ctx context.Context, projectId string, ten
 	}
 	return nil, nil
 }
+
+func (tool *Tool) ExecuteFunction(ctx context.Context, projectId string, tenantId string, functionName string, body map[string]interface{}, params map[string][]string) (functionResult interface{}, err error) {
+	logs.WithContext(ctx).Info("ExecuteFunction - Start")
+	paramMap := make(map[string]string)
+	for k, v := range params {
+		paramMap[k] = strings.Join(v, ",")
+	}
+	efurl := ctx.Value(eruFuncBaseUrlKey)
+	if efurl == nil {
+		err = errors.New("erufuncbaseurl not found in context")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	efurlString, ok := efurl.(string)
+	if !ok {
+		err = errors.New("erufuncbaseurl is not a string")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	url := fmt.Sprint(efurlString, "/", projectId, "/func/", functionName)
+	logs.WithContext(ctx).Info(fmt.Sprintf("url: %v", url))
+	headers := http.Header{}
+	headers.Add("Content-Type", "application/json")
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, nil, nil, paramMap, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("res: %v", res))
+	return res, nil
+}
+
 func (tool *Tool) SaveTenantSecret(ctx context.Context, projectId string, tenantId string, secretName string, secretValue string) (err error) {
 	logs.WithContext(ctx).Debug("saveTenantSecret Execute - Start")
 	eruaiport := ctx.Value("eruaiport").(string)
