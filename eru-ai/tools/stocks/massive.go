@@ -23,6 +23,7 @@ const (
 	MarketHolidays = "market_holidays"
 	StockSplits    = "stock_splits"
 	StockDividends = "stock_dividends"
+	GetIndiceValue = "get_indice_value"
 )
 
 type MassiveTool struct {
@@ -36,7 +37,7 @@ const (
 
 func (massiveTool *MassiveTool) GetActionsList() []string {
 	actions := []string{}
-	actions = append(actions, GetStocks, GetStockPrices, MarketHolidays, StockSplits, StockDividends)
+	actions = append(actions, GetStocks, GetStockPrices, MarketHolidays, StockSplits, StockDividends, GetIndiceValue)
 	return actions
 }
 
@@ -67,6 +68,8 @@ func (massiveTool *MassiveTool) Execute(ctx context.Context, projectId string, t
 		return massiveTool.GetStockSplits(ctx, params)
 	case StockDividends:
 		return massiveTool.GetStockDividends(ctx, params)
+	case GetIndiceValue:
+		return massiveTool.GetIndiceValue(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -353,6 +356,50 @@ func (massiveTool *MassiveTool) getStockDividendsRecursive(ctx context.Context, 
 	logs.WithContext(ctx).Debug(fmt.Sprintf("No more next_url found. Total dividends collected: %d", len(allDividends)))
 
 	return allDividends, nil
+}
+
+func (massiveTool *MassiveTool) GetIndiceValue(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("GetIndiceValue Execute - Start")
+
+	ticker, exists := params["ticker"]
+	if !exists {
+		return nil, false, errors.New("ticker parameter is required")
+	}
+	tickerStr := fmt.Sprintf("%v", ticker)
+	if tickerStr == "" {
+		return nil, false, errors.New("ticker parameter cannot be empty")
+	}
+
+	date, exists := params["date"]
+	if !exists {
+		return nil, false, errors.New("date parameter is required")
+	}
+	dateStr := fmt.Sprintf("%v", date)
+	if dateStr == "" {
+		return nil, false, errors.New("date parameter cannot be empty")
+	}
+
+	url := fmt.Sprint(MassiveBaseUrl, "/v1/open-close/", tickerStr, "/", dateStr)
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+
+	queryParams := make(map[string]string)
+	for k, v := range params {
+		if k != "ticker" && k != "date" {
+			queryParams[k] = fmt.Sprintf("%v", v)
+		}
+	}
+	queryParams["apiKey"] = massiveTool.MassiveAccount.ApiKey
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, false, err
+	}
+
+	toolResult = make(map[string]interface{})
+	toolResult["data"] = res
+	return toolResult, false, nil
 }
 
 func (massiveTool *MassiveTool) GetBytes(ctx context.Context) ([]byte, error) {
