@@ -517,7 +517,12 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 			return jwt.CreateJWT(ctx, privateKeyStr, claimsMap, nil)
 		},
 		"jwtClaims": func(token string, jwkUrl string) (claims interface{}, err error) {
-			return jwt.DecryptTokenJWK(ctx, token, jwkUrl)
+			claims, err = jwt.DecryptTokenJWK(ctx, token, jwkUrl)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, nil
+			}
+			return
 		},
 		"evalFilter": func(filter map[string]interface{}, record map[string]interface{}) (result bool, err error) {
 			return EvalFilter(ctx, filter, record)
