@@ -52,6 +52,7 @@ type AuthI interface {
 	GetUrl(ctx context.Context, state string) (url string, oAuthParams OAuthParams, err error)
 	SetKms(ctx context.Context, kmsObj kms.KmsStoreI) (err error)
 	ApiTokenToUserToken(ctx context.Context, projectId string, apiToken string) (identity Identity, loginSuccess LoginSuccess, err error)
+	GetIdToken(ctx context.Context, projectId string, identityId string) (idToken string, err error)
 }
 
 const (
@@ -638,6 +639,10 @@ func (auth *Auth) VerifyCode(ctx context.Context, verifyCode VerifyCode, tokenOb
 
 func (auth *Auth) ApiTokenToUserToken(ctx context.Context, projectId string, apiTokenHash string) (identiy Identity, loginSuccess LoginSuccess, err error) {
 	logs.WithContext(ctx).Info("ApiTokenToUserToken Method not implemented")
+	return
+}
+func (auth *Auth) GetIdToken(ctx context.Context, projectId string, identityId string) (idToken string, err error) {
+	logs.WithContext(ctx).Info("GetIdToken Method not implemented")
 	return
 }
 

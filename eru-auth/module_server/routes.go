@@ -67,6 +67,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/fetchtokens").HandlerFunc(module_handlers.FetchTokensHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/gettokens").HandlerFunc(module_handlers.GetTokensHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/getusertoken").HandlerFunc(module_handlers.GetUserTokensHandler(sh))
+	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/getidtoken").HandlerFunc(module_handlers.GetIdTokenHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/generatetempcode").HandlerFunc(module_handlers.GenerateTempCodeHandler(sh))
 	authRouter.Methods(http.MethodGet).PathPrefix("/{authname}/getuser").HandlerFunc(module_handlers.GetUserHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/updateuser").HandlerFunc(module_handlers.UpdateUserHandler(sh))

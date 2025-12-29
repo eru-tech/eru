@@ -193,6 +193,63 @@ func GetUserTokensHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	}
 }
 
+func GetIdTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("GetUserTokensHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		fetchTokenFromReq := json.NewDecoder(r.Body)
+
+		fetchTokenFromReq.DisallowUnknownFields()
+		type fetchToken struct {
+			Id string `json:"id" eru:"required"`
+		}
+		var fetchTokenObj fetchToken
+
+		if err := fetchTokenFromReq.Decode(&fetchTokenObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err := utils.ValidateStruct(r.Context(), fetchTokenObj, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+		}
+
+		idToken, err := authObjI.GetIdToken(r.Context(), projectId, fetchTokenObj.Id)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"id_token": idToken})
+		return
+	}
+}
+
 func GetTokensHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
