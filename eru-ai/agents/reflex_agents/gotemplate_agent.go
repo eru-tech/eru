@@ -200,6 +200,8 @@ func (goTemplateAgent *GoTemplateAgent) execute(ctx context.Context, chatRequest
 	if gotemplate, gotemplateOk := toolResults["gotemplate"].(map[string]interface{}); gotemplateOk {
 		if code, codeOk := gotemplate["code"]; codeOk {
 			agentOutput["code"] = code
+		} else {
+			agentOutput["code"] = ""
 		}
 	}
 	templateCode, templateCodeOk := agentOutput["code"].(string)
