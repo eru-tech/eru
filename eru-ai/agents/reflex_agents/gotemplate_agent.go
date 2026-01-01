@@ -202,7 +202,11 @@ func (goTemplateAgent *GoTemplateAgent) execute(ctx context.Context, chatRequest
 			agentOutput["code"] = code
 		}
 	}
-	templateCode := agentOutput["code"].(string)
+	templateCode, templateCodeOk := agentOutput["code"].(string)
+	if !templateCodeOk {
+		logs.WithContext(ctx).Error("code is not present in the params")
+		return nil, fmt.Errorf("code is not present in the params")
+	}
 	var output interface{}
 	output, err = goTemplateAgent.validate(ctx, templateCode, contextStringI, "json", currentTry)
 	if err != nil {
