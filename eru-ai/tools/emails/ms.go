@@ -420,7 +420,7 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 }
 
 func (msEmailTool *MsEmailTool) GetToolCbUrl(projectId string, tenantId string) string {
-	return fmt.Sprint(msEmailTool.CallbackBaseUrl, "/", projectId, "/", tenantId, "/callback/tool/", msEmailTool.ToolName)
+	return fmt.Sprint(msEmailTool.CallbackBaseUrl, "/", projectId, "/whatsapp/", tenantId, "/callback/tool/", msEmailTool.ToolName)
 }
 
 func (msEmailTool *MsEmailTool) GetSsoUrl(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
