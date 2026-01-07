@@ -27,9 +27,9 @@ import (
 )
 
 const (
-	INSERT_ENPOINT_REQUEST     = "insert into eruai_wa_endpoint (project_id, tenant_id, request_body,decrypted_request_body) values ($1, $2, $3, $4)"
-	INSERT_FUNC_ASYNC_WHATSAPP = "insert into eruai_cb_whatsapp (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
-	WHATSAPP_BASE_URL          = "https://graph.facebook.com"
+	INSERT_ENPOINT_REQUEST  = "insert into eruai_wa_endpoint (project_id, tenant_id, request_body,decrypted_request_body) values ($1, $2, $3, $4)"
+	INSERT_CALLBACK_REQUEST = "insert into eruai_cb_whatsapp (project_id, tenant_id, waba_id, msg, msg_params, msg_from) values ($1, $2, $3, $4, $5, $6)"
+	WHATSAPP_BASE_URL       = "https://graph.facebook.com"
 )
 
 type WhatsAppTool struct {
@@ -38,12 +38,13 @@ type WhatsAppTool struct {
 }
 
 type WhatsAppAccount struct {
-	PhoneNumberId     string `json:"phone_number_id" eru:"required"`
-	BusinessAccountId string `json:"business_account_id"`
-	ApiKey            string `json:"api_key" eru:"required"`
-	WebhookUrl        string `json:"webhook_url"`
-	ApiVersion        string `json:"api_version"`
-	PrivateKey        string `json:"private_key"`
+	PhoneNumberId            string `json:"phone_number_id" eru:"required"`
+	BusinessAccountId        string `json:"business_account_id"`
+	ApiKey                   string `json:"api_key" eru:"required"`
+	WebhookUrl               string `json:"webhook_url"`
+	ApiVersion               string `json:"api_version"`
+	PrivateKey               string `json:"private_key"`
+	WebhookSubscriptionToken string `json:"webhook_subscription_token"`
 }
 
 func (whatsAppTool *WhatsAppTool) GetActionsList() []string {
@@ -1535,11 +1536,6 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 		hubVerifyToken = verifyToken[0]
 	}
 
-	if hubMode == "subscribe" && hubVerifyToken == whatsAppTool.WhatsAppAccount.WebhookUrl {
-		logs.WithContext(ctx).Info("Webhook verification successful")
-		return hubChallenge, false, nil
-	}
-
 	gm := server.GetGlobalGoroutineManager(ctx)
 	gm.SafeGoWithRestartBehavior("whatsapp-webhook-callback", func(bgCtx context.Context) {
 		if eruFuncBaseUrl, ok := ctx.Value("Erufuncbaseurl").(string); ok {
@@ -1558,19 +1554,6 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 			return
 		}
 
-		var insertQueries []*models.Queries
-		insertQueryFuncAsync := models.Queries{}
-		insertQueryFuncAsync.Query = whatsAppTool.ToolDb.GetDbQuery(bgCtx, INSERT_FUNC_ASYNC_WHATSAPP)
-		insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, projectId, tenantId, string(bodyBytes), string(paramBytes))
-		insertQueryFuncAsync.Rank = 1
-		insertQueries = append(insertQueries, &insertQueryFuncAsync)
-
-		_, insertOutputErr := utils.ExecuteDbSave(bgCtx, whatsAppTool.ToolDb.GetConn(), insertQueries)
-		if insertOutputErr != nil {
-			err = logs.Err(bgCtx, fmt.Errorf("failed to insert query: %s", err.Error()), "failed to insert query")
-			return
-		}
-
 		var webhookPayload WhatsAppWebhookPayload
 		err = json.Unmarshal(bodyBytes, &webhookPayload)
 		if err != nil {
@@ -1578,138 +1561,51 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 			return
 		}
 
-		if webhookPayload.Object == "whatsapp_business_account" {
-			for _, entry := range webhookPayload.Entry {
-				for _, change := range entry.Changes {
-					if change.Field == "messages" {
-						processMessages := true
+		wabaId := ""
+		msgFrom := ""
 
-						if len(change.Value.Messages) > 0 {
-							for _, message := range change.Value.Messages {
-								logs.WithContext(bgCtx).Info(fmt.Sprintf("Received message from %s: %s (Type: %s)", message.From, message.Id, message.Type))
-
-								if processMessages {
-									// Structure message data for consistent processing
-									messageDetails := map[string]interface{}{
-										"message_id":      message.Id,
-										"from":            message.From,
-										"timestamp":       message.Timestamp,
-										"type":            message.Type,
-										"tenant_id":       tenantId,
-										"project_id":      projectId,
-										"phone_number_id": change.Value.Metadata.PhoneNumberId,
-									}
-
-									// Add message content based on type
-									switch message.Type {
-									case "text":
-										messageDetails["text"] = message.Text.Body
-									case "image":
-										messageDetails["image"] = map[string]interface{}{
-											"id":        message.Image.Id,
-											"caption":   message.Image.Caption,
-											"mime_type": message.Image.MimeType,
-											"sha256":    message.Image.Sha256,
-										}
-									case "audio":
-										messageDetails["audio"] = map[string]interface{}{
-											"id":        message.Audio.Id,
-											"mime_type": message.Audio.MimeType,
-										}
-									case "video":
-										messageDetails["video"] = map[string]interface{}{
-											"id":        message.Video.Id,
-											"caption":   message.Video.Caption,
-											"filename":  message.Video.Filename,
-											"mime_type": message.Video.MimeType,
-										}
-									case "document":
-										messageDetails["document"] = map[string]interface{}{
-											"id":        message.Document.Id,
-											"caption":   message.Document.Caption,
-											"filename":  message.Document.Filename,
-											"mime_type": message.Document.MimeType,
-										}
-									case "location":
-										messageDetails["location"] = map[string]interface{}{
-											"latitude":  message.Location.Latitude,
-											"longitude": message.Location.Longitude,
-											"name":      message.Location.Name,
-											"address":   message.Location.Address,
-										}
-									}
-
-									hookBody := map[string]interface{}{
-										"type":       "incoming_message",
-										"message":    messageDetails,
-										"metadata":   change.Value.Metadata,
-										"contacts":   change.Value.Contacts,
-										"tenant_id":  tenantId,
-										"event_time": message.Timestamp,
-									}
-
-									hookResult, err := whatsAppTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, hookBody, params)
-									if err != nil {
-										err = logs.Err(bgCtx, fmt.Errorf("failed to execute callback hook: %s", err.Error()), "failed to execute callback hook")
-										return
-									}
-									logs.WithContext(bgCtx).Info(fmt.Sprint("Message callback result: ", hookResult))
+		if len(webhookPayload.Entry) > 0 {
+			wabaId = webhookPayload.Entry[0].Id
+			if len(webhookPayload.Entry[0].Changes) > 0 {
+				c := webhookPayload.Entry[0].Changes[0]
+				if cValue, cValueOk := c["value"]; cValueOk {
+					if cValueMap, cValueMapOk := cValue.(map[string]interface{}); cValueMapOk {
+						if cValueMetaData, cValueMetaDataOk := cValueMap["metadata"]; cValueMetaDataOk {
+							if cValueMetaDataMap, cValueMetaDataMapOk := cValueMetaData.(map[string]interface{}); cValueMetaDataMapOk {
+								if cValueMetaDataMap["display_phone_number"] != nil {
+									msgFrom = cValueMetaDataMap["display_phone_number"].(string)
 								}
-							}
-						}
-
-						if len(change.Value.Statuses) > 0 {
-							for _, status := range change.Value.Statuses {
-								logs.WithContext(bgCtx).Info(fmt.Sprintf("Message status update: %s - %s for recipient %s", status.Id, status.Status, status.RecipientId))
-
-								// Store detailed status information for tracking
-								statusDetails := map[string]interface{}{
-									"message_id":      status.Id,
-									"status":          status.Status, // sent, delivered, read, failed
-									"timestamp":       status.Timestamp,
-									"recipient_id":    status.RecipientId,
-									"tenant_id":       tenantId,
-									"project_id":      projectId,
-									"phone_number_id": change.Value.Metadata.PhoneNumberId,
-								}
-
-								// Add conversation and pricing info if available
-								if status.Conversation.Id != "" {
-									statusDetails["conversation_id"] = status.Conversation.Id
-									statusDetails["conversation_origin"] = status.Conversation.Origin.Type
-									if status.Conversation.ExpirationTimestamp != "" {
-										statusDetails["conversation_expiration"] = status.Conversation.ExpirationTimestamp
-									}
-								}
-
-								if status.Pricing.PricingModel != "" {
-									statusDetails["pricing_billable"] = status.Pricing.Billable
-									statusDetails["pricing_model"] = status.Pricing.PricingModel
-									statusDetails["pricing_category"] = status.Pricing.Category
-								}
-
-								hookBody := map[string]interface{}{
-									"type":       "message_status",
-									"status":     statusDetails,
-									"metadata":   change.Value.Metadata,
-									"tenant_id":  tenantId,
-									"event_time": status.Timestamp,
-								}
-
-								hookResult, err := whatsAppTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, hookBody, params)
-								if err != nil {
-									err = logs.Err(bgCtx, fmt.Errorf("failed to execute callback hook: %s", err.Error()), "failed to execute callback hook")
-									return
-								}
-								logs.WithContext(bgCtx).Info(fmt.Sprint("Status callback result: ", hookResult))
 							}
 						}
 					}
 				}
 			}
 		}
+
+		var insertQueries []*models.Queries
+		insertQueryCallbackRequest := models.Queries{}
+		insertQueryCallbackRequest.Query = whatsAppTool.ToolDb.GetDbQuery(bgCtx, INSERT_CALLBACK_REQUEST)
+		insertQueryCallbackRequest.Vals = append(insertQueryCallbackRequest.Vals, projectId, tenantId, wabaId, string(bodyBytes), string(paramBytes), msgFrom)
+		insertQueryCallbackRequest.Rank = 1
+		insertQueries = append(insertQueries, &insertQueryCallbackRequest)
+
+		_, insertOutputErr := utils.ExecuteDbSave(bgCtx, whatsAppTool.ToolDb.GetConn(), insertQueries)
+		if insertOutputErr != nil {
+			err = logs.Err(bgCtx, fmt.Errorf("failed to insert query: %s", err.Error()), "failed to insert query")
+			return
+		}
+
 	}, server.ContinueOnMaxRetries)
 
+	if hubMode == "subscribe" {
+		if hubVerifyToken == whatsAppTool.WhatsAppAccount.WebhookSubscriptionToken {
+			logs.WithContext(ctx).Info("Webhook verification successful")
+			return hubChallenge, false, nil
+		} else {
+			logs.WithContext(ctx).Info("Webhook verification failed")
+			return "", false, errors.New("webhook verification failed")
+		}
+	}
 	return "OK", false, nil
 }
 

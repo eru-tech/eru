@@ -170,6 +170,16 @@ type WhatsAppMessageParameter struct {
 type WhatsAppWebhookPayload struct {
 	Object string `json:"object"`
 	Entry  []struct {
+		Id            string                   `json:"id,omitempty"`
+		Changes       []map[string]interface{} `json:"changes,omitempty"`
+		ChangedFields []string                 `json:"changed_fields,omitempty"`
+		Time          int64                    `json:"time,omitempty"`
+	} `json:"entry,omitempty"`
+}
+
+/* type WhatsAppWebhookPayload struct {
+	Object string `json:"object"`
+	Entry  []struct {
 		Id      string `json:"id"`
 		Changes []struct {
 			Value struct {
@@ -270,7 +280,7 @@ type WhatsAppWebhookPayload struct {
 			Field string `json:"field"`
 		} `json:"changes"`
 	} `json:"entry"`
-}
+} */
 
 type WhatsAppMessageResponse struct {
 	MessagingProduct string `json:"messaging_product"`

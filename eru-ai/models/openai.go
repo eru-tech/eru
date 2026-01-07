@@ -312,12 +312,10 @@ func (openaiModel *OpenAIModel) QueryModel(ctx context.Context, chatRequest Chat
 }
 func (openaiModel *OpenAIModel) makeOpenAIChatRequestContent(ctx context.Context, message Message) (openAIRequestMessageContent []OpenAIRequestMessageContent) {
 	logs.WithContext(ctx).Debug("makeOpenAIChatRequestContent - Start")
-	if message.Content != "" {
-		openAIRequestMessageContent = append(openAIRequestMessageContent, TextContent{
-			Type: "text",
-			Text: message.Content,
-		})
-	}
+	openAIRequestMessageContent = append(openAIRequestMessageContent, TextContent{
+		Type: "text",
+		Text: message.Content,
+	})
 	if len(message.Files) > 0 {
 		for _, file := range message.Files {
 			if file.FileData != "" {
