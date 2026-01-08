@@ -740,13 +740,26 @@ func ToolCallbackHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			toolBodyFromReq := json.NewDecoder(r.Body)
 			toolBodyFromReq.DisallowUnknownFields()
 
-			var toolBody map[string]interface{}
-			if err := toolBodyFromReq.Decode(&toolBody); err != nil {
-				logs.WithContext(r.Context()).Error(err.Error())
-				//server_handlers.FormatResponse(w, 400)
-				//json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-				//return
-				toolBody = make(map[string]interface{})
+			toolBody := make(map[string]interface{})
+
+			contentType := r.Header.Get("content-type")
+			switch contentType {
+			case "application/json":
+				if err := toolBodyFromReq.Decode(&toolBody); err != nil {
+					logs.WithContext(r.Context()).Error(err.Error())
+					toolBody = make(map[string]interface{})
+				}
+			case "application/x-www-form-urlencoded":
+				if err := r.ParseForm(); err != nil {
+					logs.WithContext(r.Context()).Error(err.Error())
+					toolBody = make(map[string]interface{})
+				} else {
+					for key, values := range r.PostForm {
+						if len(values) > 0 {
+							toolBody[key] = values[0]
+						}
+					}
+				}
 			}
 
 			params := r.URL.Query()

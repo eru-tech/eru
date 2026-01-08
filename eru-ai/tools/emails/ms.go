@@ -323,9 +323,6 @@ func (msEmailTool *MsEmailTool) GetToolCallback() tools.ToolCallback {
 
 func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, tenantId string, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("Callback Execute - Start")
-	_ = actionName
-	_ = body
-	_ = params
 
 	validationString := ""
 	if vToken, vTokenOk := params["validationToken"]; vTokenOk {
@@ -420,7 +417,7 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 }
 
 func (msEmailTool *MsEmailTool) GetToolCbUrl(projectId string, tenantId string) string {
-	return fmt.Sprint(msEmailTool.CallbackBaseUrl, "/", projectId, "/whatsapp/", tenantId, "/callback/tool/", msEmailTool.ToolName)
+	return fmt.Sprint(msEmailTool.CallbackBaseUrl, "/", projectId, "/callback/", tenantId, "/tool/", msEmailTool.ToolName)
 }
 
 func (msEmailTool *MsEmailTool) GetSsoUrl(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {

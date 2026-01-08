@@ -3,21 +3,29 @@ package telecom
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	models "github.com/eru-tech/eru/eru-models"
+	"github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
 const (
 	Call     = "call"
 	FetchCDR = "fetch_cdr"
+	Callback = "callback"
 )
 
 const (
 	OzoneBaseUrl = "https://in1-ccaas-api.ozonetel.com"
+)
+
+const (
+	INSERT_FUNC_ASYNC = "insert into eruai_cb_ozonetel (project_id, tenant_id, oz_data, oz_params) values ($1, $2, $3, $4)"
 )
 
 type OzoneTool struct {
@@ -49,7 +57,78 @@ func (ozoneTool *OzoneTool) GetActionsList() []string {
 	actions := []string{}
 	actions = append(actions, Call)
 	actions = append(actions, FetchCDR)
+	actions = append(actions, Callback)
 	return actions
+}
+
+func (ozoneTool *OzoneTool) GetToolCallback() tools.ToolCallback {
+	return tools.ToolCallback{
+		ResponseContentType: "application/json",
+	}
+}
+
+func (ozoneTool *OzoneTool) Callback(ctx context.Context, projectId string, tenantId string, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("Callback Execute - Start")
+
+	// Process the message in a separate goroutine with panic recovery using global GoroutineManager
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("ms-email-callback", func(bgCtx context.Context) {
+		// Copy any important values from the original context if needed
+
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		bodyBytes, err := json.Marshal(body)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		paramsMap := map[string]string{}
+		for k, v := range params {
+			paramsMap[k] = v[0]
+		}
+		paramBytes, err := json.Marshal(paramsMap)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+
+		var insertQueries []*models.Queries
+		insertQueryFuncAsync := models.Queries{}
+		insertQueryFuncAsync.Query = ozoneTool.ToolDb.GetDbQuery(bgCtx, INSERT_FUNC_ASYNC)
+		insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, projectId, tenantId, string(bodyBytes), string(paramBytes))
+		insertQueryFuncAsync.Rank = 1
+		insertQueries = append(insertQueries, &insertQueryFuncAsync)
+		_, insertOutputErr := utils.ExecuteDbSave(bgCtx, ozoneTool.ToolDb.GetConn(), insertQueries)
+		if insertOutputErr != nil {
+			logs.WithContext(bgCtx).Error(insertOutputErr.Error())
+			return
+		}
+
+		hookResult, err := ozoneTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, body, params)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	callbackResultMap := map[string]string{
+		"Status": "Success",
+	}
+	return callbackResultMap, false, nil
 }
 
 func (ozoneTool *OzoneTool) GetMcpTools() []tools.McpToolList {

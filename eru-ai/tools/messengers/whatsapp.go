@@ -1595,6 +1595,13 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 			return
 		}
 
+		hookResult, err := whatsAppTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, body, params)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+
 	}, server.ContinueOnMaxRetries)
 
 	if hubMode == "subscribe" {
