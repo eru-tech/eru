@@ -1510,7 +1510,7 @@ func (whatsAppTool *WhatsAppTool) FlowEndpoint(ctx context.Context, params map[s
 
 func (whatsAppTool *WhatsAppTool) GetToolCallback() tools.ToolCallback {
 	return tools.ToolCallback{
-		ResponseContentType: "application/json",
+		ResponseContentType: "plain/text",
 	}
 }
 
