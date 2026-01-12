@@ -1538,8 +1538,19 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 
 	gm := server.GetGlobalGoroutineManager(ctx)
 	gm.SafeGoWithRestartBehavior("whatsapp-webhook-callback", func(bgCtx context.Context) {
-		if eruFuncBaseUrl, ok := ctx.Value("Erufuncbaseurl").(string); ok {
-			bgCtx = context.WithValue(bgCtx, "Erufuncbaseurl", eruFuncBaseUrl)
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
 		}
 
 		bodyBytes, err := json.Marshal(body)

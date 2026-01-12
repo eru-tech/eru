@@ -46,7 +46,9 @@ type WhatsAppContext struct {
 	MessageId string `json:"message_id" eru:"required"`
 }
 type WhatsAppMessageComponent struct {
+	Index      *int                       `json:"index,omitempty"`
 	Type       string                     `json:"type" eru:"required"`
+	SubType    string                     `json:"sub_type,omitempty"`
 	Parameters []WhatsAppMessageParameter `json:"parameters" eru:"required"`
 }
 type WhatsAppLocationMessagePayload struct {
@@ -96,7 +98,7 @@ type WhatsAppInteractiveAction struct {
 		} `json:"rows"`
 	} `json:"sections,omitempty"`
 	Cards []struct {
-		CardIndex int                        `json:"card_index"`
+		CardIndex int                        `json:"card_index,omitempty"`
 		Type      string                     `json:"type"`
 		Header    *WhatsAppInteractiveHeader `json:"header,omitempty"`
 		Body      *WhatsAppInteractiveBody   `json:"body,omitempty"`
@@ -163,8 +165,13 @@ type WhatsAppContactMessagePayload struct {
 }
 
 type WhatsAppMessageParameter struct {
-	Type string `json:"type" eru:"required"`
-	Text string `json:"text,omitempty"`
+	Index  *int   `json:"index,omitempty"`
+	Type   string `json:"type" eru:"required"`
+	Text   string `json:"text,omitempty"`
+	Action struct {
+		FlowActionData map[string]interface{} `json:"flow_action_data,omitempty"`
+		FlowToken      string                 `json:"flow_token,omitempty"`
+	} `json:"action,omitempty"`
 }
 
 type WhatsAppWebhookPayload struct {

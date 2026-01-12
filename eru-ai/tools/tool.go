@@ -293,7 +293,7 @@ func (tool *Tool) ExecuteCallbackHook(ctx context.Context, projectId string, ten
 		if tool.HookAsyncEvent != "" {
 			asyncEvent = fmt.Sprint("/", tool.HookAsyncEvent)
 		}
-		efurl := ctx.Value(eruFuncBaseUrlKey)
+		efurl := ctx.Value(EruFuncBaseUrlKey)
 		if efurl == nil {
 			err = errors.New("erufuncbaseurl not found in context")
 			logs.WithContext(ctx).Error(err.Error())
