@@ -403,7 +403,7 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 					"mail":      readMsg,
 					"tenant_id": tenantId,
 				}
-				hookResult, err := msEmailTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, body, params)
+				hookResult, err := msEmailTool.ExecuteHook(bgCtx, "clbk", "", projectId, tenantId, body, params)
 				if err != nil {
 					logs.WithContext(bgCtx).Error(err.Error())
 					return

@@ -112,11 +112,26 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 		Content: reflex_agent.SystemPrompt,
 		Name:    reflex_agent.AgentName,
 	})
-	chatRequest.Messages = append(chatRequest.Messages, models.Message{
-		Role:    "assistant",
-		Content: fmt.Sprintf("Tool results: %+v", toolResults),
-		Name:    reflex_agent.AgentName,
-	})
+
+	toolResultsBytes, err := json.Marshal(toolResults)
+	if err != nil {
+		chatRequest.Messages = append(chatRequest.Messages, models.Message{
+			Role:    "assistant",
+			Content: fmt.Sprintf("Tool results: %+v", toolResults),
+			Name:    reflex_agent.AgentName,
+		})
+	} else {
+		contentStr := `Tool results is as given below
+		
+		`
+		chatRequest.Messages = append(chatRequest.Messages, models.Message{
+			Role: "assistant",
+			Content: fmt.Sprint(contentStr, string(toolResultsBytes), `
+			`),
+			Name: reflex_agent.AgentName,
+		})
+	}
+
 	response := models.Message{}
 	if reflex_agent.OutputSchema.Type != "" {
 		outputTool := utility.StructuredOutputTool{}
@@ -139,7 +154,14 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
-		agentOutput["output"] = response.Content
+		responseMap := map[string]interface{}{}
+		err = json.Unmarshal([]byte(response.Content), &responseMap)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			agentOutput["output"] = response.Content
+		} else {
+			agentOutput["output"] = responseMap
+		}
 	}
 	logs.WithContext(ctx).Info(fmt.Sprintf("Response: %+v", response.Content))
 	/* if err != nil {

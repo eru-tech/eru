@@ -382,6 +382,13 @@ When generating EruComponent.properties.base (and optional responsive breakpoint
       "description": "Override align-items for individual flex items"
     }
   ],
+  "pie_chart": [
+    {
+      "key": "pieData",
+      "default_value": "",
+      "description": "convert query output shared in the context to pie chart data format [{"name":"Label 1",value:10},{"name":"Label 2",value:20}]"
+    }
+  ],
   "grid_container": [
     {
       "key": "grid_template_columns",

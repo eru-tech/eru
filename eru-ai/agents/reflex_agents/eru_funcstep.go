@@ -112,11 +112,21 @@ func (erufuncstep_agent *EruFuncStepAgent) execute(ctx context.Context, chatRequ
 		Content: erufuncstep_agent.SystemPrompt,
 		Name:    erufuncstep_agent.AgentName,
 	})
-	chatRequest.Messages = append(chatRequest.Messages, models.Message{
-		Role:    "assistant",
-		Content: fmt.Sprintf("Tool results: %+v", toolResults),
-		Name:    erufuncstep_agent.AgentName,
-	})
+	toolResultsBytes, err := json.Marshal(toolResults)
+	if err != nil {
+		chatRequest.Messages = append(chatRequest.Messages, models.Message{
+			Role:    "assistant",
+			Content: fmt.Sprintf("Tool results: %+v", toolResults),
+			Name:    erufuncstep_agent.AgentName,
+		})
+	} else {
+		chatRequest.Messages = append(chatRequest.Messages, models.Message{
+			Role:    "assistant",
+			Content: fmt.Sprintf("Tool results: %+s", string(toolResultsBytes)),
+			Name:    erufuncstep_agent.AgentName,
+		})
+	}
+
 	response := models.Message{}
 	if erufuncstep_agent.OutputSchema.Type != "" {
 		outputTool := utility.StructuredOutputTool{}

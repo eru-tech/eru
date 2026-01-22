@@ -24,10 +24,10 @@ type McpToolList struct {
 	ComponentUrl    string `json:"component_url"`
 }
 type ToolHooks struct {
-	CLBK string `json:"clbk"` //callback
-	POEX string `json:"poex"` //post execute
-	ARSU string `json:"arsu"` //auto renew subscription
-	ARRT string `json:"arrt"` //auto renew refresh token
+	CLBK string            `json:"clbk"` //callback
+	POEX map[string]string `json:"poex"` //post execute
+	ARSU string            `json:"arsu"` //auto renew subscription
+	ARRT string            `json:"arrt"` //auto renew refresh token
 }
 
 type Tool struct {
@@ -96,7 +96,7 @@ type Tooling interface {
 	SetAttribute(ctx context.Context, attributeName string, attributeValue interface{}) (err error)
 	GetToolCallback() ToolCallback
 	GetToolCbUrl(projectId string, tenantId string) string
-	ExecuteCallbackHook(ctx context.Context, projectId string, tenantId string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error)
+	ExecuteHook(ctx context.Context, hookType string, actionName string, projectId string, tenantId string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error)
 	GetToolDb() db.DbI
 	SetToolDb(db.DbI)
 	SetScheduler(scheduler.SchedulerI)
@@ -282,9 +282,27 @@ func (tool *Tool) ValidateAction(ctx context.Context, actionName string, realToo
 	return
 }
 
-func (tool *Tool) ExecuteCallbackHook(ctx context.Context, projectId string, tenantId string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error) {
+func (tool *Tool) ExecuteHook(ctx context.Context, hookType string, actionName string, projectId string, tenantId string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error) {
 	logs.WithContext(ctx).Info("ExecuteCallbackHook - Start")
-	if tool.Hooks.CLBK != "" {
+	hookFunction := ""
+	switch hookType {
+	case "clbk":
+		hookFunction = tool.Hooks.CLBK
+	case "poex":
+		if tool.Hooks.POEX != nil {
+			hookFunction = tool.Hooks.POEX[actionName]
+		}
+	case "arsu":
+		hookFunction = tool.Hooks.ARSU
+	case "arrt":
+		hookFunction = tool.Hooks.ARRT
+	default:
+		err = errors.New("callback type not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+
+	if hookFunction != "" {
 		paramMap := make(map[string]string)
 		for k, v := range params {
 			paramMap[k] = strings.Join(v, ",")
@@ -305,10 +323,14 @@ func (tool *Tool) ExecuteCallbackHook(ctx context.Context, projectId string, ten
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
-		url := fmt.Sprint(efurlString, "/", projectId, "/func/", tool.Hooks.CLBK, asyncEvent)
+		url := fmt.Sprint(efurlString, "/", projectId, "/func/", hookFunction, asyncEvent)
 		logs.WithContext(ctx).Info(fmt.Sprintf("url: %v", url))
 		headers := http.Header{}
 		headers.Add("Content-Type", "application/json")
+		claims := ctx.Value("claims")
+		if claims != nil {
+			headers.Add("claims", claims.(string))
+		}
 		res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, nil, nil, paramMap, body)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())

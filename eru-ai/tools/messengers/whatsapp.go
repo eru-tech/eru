@@ -160,56 +160,98 @@ func (whatsAppTool *WhatsAppTool) MakeFromJson(ctx context.Context, rj *json.Raw
 
 func (whatsAppTool *WhatsAppTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("WhatsAppTool Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case SendMessage:
-		return whatsAppTool.SendMessage(ctx, params)
+		toolResult, toolRequest, persistStore, err = whatsAppTool.SendMessage(ctx, params)
 	case SubscribeWebhooks:
-		return whatsAppTool.SubscribeWebhooks(ctx, projectId, tenantId, params)
+		toolResult, persistStore, err = whatsAppTool.SubscribeWebhooks(ctx, projectId, tenantId, params)
 	case GetMessageStatus:
-		return whatsAppTool.GetMessageStatus(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.GetMessageStatus(ctx, params)
 	case UploadMedia:
-		return whatsAppTool.UploadMedia(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.UploadMedia(ctx, params)
 	case RetrieveMedia:
-		return whatsAppTool.RetrieveMedia(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.RetrieveMedia(ctx, params)
 	case DeleteMedia:
-		return whatsAppTool.DeleteMedia(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.DeleteMedia(ctx, params)
 	case GetMediaUrl:
-		return whatsAppTool.GetMediaUrl(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.GetMediaUrl(ctx, params)
 	case GetBusinessProfile:
-		return whatsAppTool.GetBusinessProfile(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.GetBusinessProfile(ctx, params)
 	case GetMessageTemplates:
-		return whatsAppTool.GetMessageTemplates(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.GetMessageTemplates(ctx, params)
 	case MarkMessageAsRead:
-		return whatsAppTool.MarkMessageAsRead(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.MarkMessageAsRead(ctx, params)
 	case SendTypingIndicator:
-		return whatsAppTool.SendTypingIndicator(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.SendTypingIndicator(ctx, params)
 	case GetThroughput:
-		return whatsAppTool.GetThroughput(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.GetThroughput(ctx, params)
 	case CreateGroup:
-		return whatsAppTool.CreateGroup(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.CreateGroup(ctx, params)
 	case RegisterPublicKey:
-		return whatsAppTool.RegisterPublicKey(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.RegisterPublicKey(ctx, params)
 	case FetchPublicKey:
-		return whatsAppTool.FetchPublicKey(ctx, params)
+		toolResult, persistStore, err = whatsAppTool.FetchPublicKey(ctx, params)
 	case FlowEndpoint:
-		return whatsAppTool.FlowEndpoint(ctx, params, projectId, tenantId)
+		toolResult, persistStore, err = whatsAppTool.FlowEndpoint(ctx, params, projectId, tenantId)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		hookResult, err := whatsAppTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
-func (whatsAppTool *WhatsAppTool) SendMessage(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (whatsAppTool *WhatsAppTool) SendMessage(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("SendMessage Execute - Start")
 
 	messageType, messageTypeOk := params["message_type"]
 	if !messageTypeOk {
 		err = logs.Err(ctx, errors.New("message_type parameter is required"), "message_type parameter is required")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	messageTypeStr, messageTypeStrOk := messageType.(string)
 	if !messageTypeStrOk {
 		err = logs.Err(ctx, errors.New("message_type must be a string"), "message_type must be a string")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	messageSubType, messageSubTypeOk := params["message_sub_type"]
@@ -220,28 +262,28 @@ func (whatsAppTool *WhatsAppTool) SendMessage(ctx context.Context, params map[st
 	to, toOk := params["to"]
 	if !toOk {
 		err = logs.Err(ctx, errors.New("recipient phone number is required"), "recipient phone number is required")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	toStr, toStrOk := to.(string)
 	if !toStrOk {
 		err = logs.Err(ctx, errors.New("recipient phone number must be a string"), "recipient phone number must be a string")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if toStr == "" {
 		err = logs.Err(ctx, errors.New("recipient phone number cannot be empty"), "recipient phone number cannot be empty")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	messagePayloadParams, messagePayloadParamsOk := params["message_payload"]
 	if !messagePayloadParamsOk {
 		err = logs.Err(ctx, errors.New("message_payload parameter is required"), "message_payload parameter is required")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	messagePayloadParamsBytes, err := json.Marshal(messagePayloadParams)
 	if err != nil {
 		err = logs.Err(ctx, errors.New("failed to marshal message payload"), "failed to marshal message payload")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	whatsAppMessagePayload := WhatsAppMessagePayload{
@@ -256,131 +298,131 @@ func (whatsAppTool *WhatsAppTool) SendMessage(ctx context.Context, params map[st
 		err = json.Unmarshal(messagePayloadParamsBytes, &messagePayload)
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("failed to unmarshal template message payload: %s", err.Error()), "failed to unmarshal template message payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		err = utils.ValidateStruct(ctx, messagePayload, "")
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("incorrect message payload: %s", err.Error()), fmt.Sprintf("incorrect message payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		whatsAppMessagePayload.Template = &messagePayload
 		if whatsAppMessagePayload.Template.Name == "" || whatsAppMessagePayload.Template.Language.Code == "" {
 			err = logs.Err(ctx, fmt.Errorf("incorrect template payload"), fmt.Sprintf("incorrect template payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 	case "text":
 		messagePayload := WhatsAppTextMessagePayload{}
 		err = json.Unmarshal(messagePayloadParamsBytes, &messagePayload)
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("failed to unmarshal text message payload: %s", err.Error()), "failed to unmarshal text message payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		err = utils.ValidateStruct(ctx, messagePayload, "")
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("incorrect message payload: %s", err.Error()), fmt.Sprintf("incorrect message payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		whatsAppMessagePayload.Text = &messagePayload
 		if whatsAppMessagePayload.Text.Body == "" {
 			err = logs.Err(ctx, fmt.Errorf("incorrect text payload"), fmt.Sprintf("incorrect text payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 	case "reaction":
 		messagePayload := WhatsAppReactionMessagePayload{}
 		err = json.Unmarshal(messagePayloadParamsBytes, &messagePayload)
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("failed to unmarshal reaction message payload: %s", err.Error()), "failed to unmarshal reaction message payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		err = utils.ValidateStruct(ctx, messagePayload, "")
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("incorrect message payload: %s", err.Error()), fmt.Sprintf("incorrect message payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		whatsAppMessagePayload.Reaction = &messagePayload
 		if whatsAppMessagePayload.Reaction.MessageId == "" || whatsAppMessagePayload.Reaction.Emoji == "" {
 			err = logs.Err(ctx, fmt.Errorf("incorrect reaction payload"), fmt.Sprintf("incorrect reaction payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 	case "image":
 		messagePayload := WhatsAppMediaMessagePayload{}
 		err = json.Unmarshal(messagePayloadParamsBytes, &messagePayload)
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("failed to unmarshal image message payload: %s", err.Error()), "failed to unmarshal image message payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		err = utils.ValidateStruct(ctx, messagePayload, "")
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("incorrect message payload: %s", err.Error()), fmt.Sprintf("incorrect message payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		whatsAppMessagePayload.Image = &messagePayload
 		if (whatsAppMessagePayload.Image.Id == "" && whatsAppMessagePayload.Image.Link == "") || (whatsAppMessagePayload.Image.Id != "" && whatsAppMessagePayload.Image.Link != "") {
 			err = logs.Err(ctx, fmt.Errorf("either id or link is required in image payload"), fmt.Sprintf("either id or link is required in image payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 	case "video":
 		messagePayload := WhatsAppMediaMessagePayload{}
 		err = json.Unmarshal(messagePayloadParamsBytes, &messagePayload)
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("failed to unmarshal video message payload: %s", err.Error()), "failed to unmarshal video message payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		err = utils.ValidateStruct(ctx, messagePayload, "")
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("incorrect message payload: %s", err.Error()), fmt.Sprintf("incorrect message payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		whatsAppMessagePayload.Video = &messagePayload
 		if (whatsAppMessagePayload.Video.Id == "" && whatsAppMessagePayload.Video.Link == "") || (whatsAppMessagePayload.Video.Id != "" && whatsAppMessagePayload.Video.Link != "") {
 			err = logs.Err(ctx, fmt.Errorf("either id or link is required in video payload"), fmt.Sprintf("either id or link is required in video payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 	case "audio":
 		messagePayload := WhatsAppMediaMessagePayload{}
 		err = json.Unmarshal(messagePayloadParamsBytes, &messagePayload)
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("failed to unmarshal audio message payload: %s", err.Error()), "failed to unmarshal audio message payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		err = utils.ValidateStruct(ctx, messagePayload, "")
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("incorrect message payload: %s", err.Error()), fmt.Sprintf("incorrect message payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		whatsAppMessagePayload.Audio = &messagePayload
 		if (whatsAppMessagePayload.Audio.Id == "" && whatsAppMessagePayload.Audio.Link == "") || (whatsAppMessagePayload.Audio.Id != "" && whatsAppMessagePayload.Audio.Link != "") {
 			err = logs.Err(ctx, fmt.Errorf("either id or link is required in audio payload"), fmt.Sprintf("either id or link is required in audio payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 	case "document":
 		messagePayload := WhatsAppMediaMessagePayload{}
 		err = json.Unmarshal(messagePayloadParamsBytes, &messagePayload)
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("failed to unmarshal document message payload: %s", err.Error()), "failed to unmarshal document message payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		err = utils.ValidateStruct(ctx, messagePayload, "")
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("incorrect message payload: %s", err.Error()), fmt.Sprintf("incorrect message payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		whatsAppMessagePayload.Document = &messagePayload
 		if (whatsAppMessagePayload.Document.Id == "" && whatsAppMessagePayload.Document.Link == "") || (whatsAppMessagePayload.Document.Id != "" && whatsAppMessagePayload.Document.Link != "") {
 			err = logs.Err(ctx, fmt.Errorf("either id or link is required in document payload"), fmt.Sprintf("either id or link is required in document payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 	case "sticker":
 		messagePayload := WhatsAppMediaMessagePayload{}
 		err = json.Unmarshal(messagePayloadParamsBytes, &messagePayload)
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("failed to unmarshal sticker message payload: %s", err.Error()), "failed to unmarshal sticker message payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		whatsAppMessagePayload.Sticker = &messagePayload
 		if (whatsAppMessagePayload.Sticker.Id == "" && whatsAppMessagePayload.Sticker.Link == "") || (whatsAppMessagePayload.Sticker.Id != "" && whatsAppMessagePayload.Sticker.Link != "") {
 			err = logs.Err(ctx, fmt.Errorf("either id or link is required in sticker payload"), fmt.Sprintf("either id or link is required in sticker payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 	case "contacts":
 		messagePayload := []WhatsAppContactMessagePayload{}
@@ -388,14 +430,14 @@ func (whatsAppTool *WhatsAppTool) SendMessage(ctx context.Context, params map[st
 		err = json.Unmarshal(messagePayloadParamsBytes, &messagePayload)
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("failed to unmarshal contact message payload: %s", err.Error()), "failed to unmarshal contact message payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 
 		whatsAppMessagePayload.Contacts = messagePayload
 		for _, contact := range whatsAppMessagePayload.Contacts {
 			if contact.Name.FormattedName == "" {
 				err = logs.Err(ctx, fmt.Errorf("formatted name is required in contact payload"), fmt.Sprintf("formatted name is required in contact payload: %s", err.Error()))
-				return nil, false, err
+				return nil, nil, false, err
 			}
 		}
 	case "location":
@@ -403,119 +445,119 @@ func (whatsAppTool *WhatsAppTool) SendMessage(ctx context.Context, params map[st
 		err = json.Unmarshal(messagePayloadParamsBytes, &messagePayload)
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("failed to unmarshal location message payload: %s", err.Error()), "failed to unmarshal location message payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		err = utils.ValidateStruct(ctx, messagePayload, "")
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("incorrect message payload: %s", err.Error()), fmt.Sprintf("incorrect message payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		whatsAppMessagePayload.Location = &messagePayload
 
 	case "interactive":
 		if messageSubTypeStr == "" {
 			err = logs.Err(ctx, fmt.Errorf("message_sub_type parameter is required"), "message_sub_type parameter is required")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		var messagePayload WhatsAppInteractiveMessagePayload
 		err = json.Unmarshal(messagePayloadParamsBytes, &messagePayload)
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("failed to unmarshal interactive message payload: %s", err.Error()), "failed to unmarshal interactive message payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		err = utils.ValidateStruct(ctx, messagePayload, "")
 		if err != nil {
 			err = logs.Err(ctx, fmt.Errorf("incorrect message payload: %s", err.Error()), fmt.Sprintf("incorrect message payload: %s", err.Error()))
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		whatsAppMessagePayload.Interactive = &messagePayload
 		switch messageSubTypeStr {
 		case "cta_url":
 			if whatsAppMessagePayload.Interactive.Action.Name == "" || whatsAppMessagePayload.Interactive.Action.Parameters == nil || whatsAppMessagePayload.Interactive.Action.Parameters.DisplayText == "" || whatsAppMessagePayload.Interactive.Action.Parameters.Url == "" {
 				err = logs.Err(ctx, fmt.Errorf("name , display text and url are required in action payload"), "name , display text and url are required in action payload")
-				return nil, false, err
+				return nil, nil, false, err
 			}
 		case "list":
 			if whatsAppMessagePayload.Interactive.Action.Button == "" {
 				err = logs.Err(ctx, fmt.Errorf("button is required in action payload"), "button is required in action payload")
-				return nil, false, err
+				return nil, nil, false, err
 			}
 			if len(whatsAppMessagePayload.Interactive.Action.Sections) == 0 {
 				err = logs.Err(ctx, fmt.Errorf("sections are required in action payload"), "sections are required in action payload")
-				return nil, false, err
+				return nil, nil, false, err
 			}
 			for _, section := range whatsAppMessagePayload.Interactive.Action.Sections {
 				if section.Title == "" {
 					err = logs.Err(ctx, fmt.Errorf("title is required in section payload"), "title is required in section payload")
-					return nil, false, err
+					return nil, nil, false, err
 				}
 				if len(section.Rows) == 0 {
 					err = logs.Err(ctx, fmt.Errorf("rows are required in section payload"), "rows are required in section payload")
-					return nil, false, err
+					return nil, nil, false, err
 				}
 				for _, row := range section.Rows {
 					if row.Id == "" || row.Title == "" || row.Description == "" {
 						err = logs.Err(ctx, fmt.Errorf("id, title and description are required in row payload"), "id, title and description are required in row payload")
-						return nil, false, err
+						return nil, nil, false, err
 					}
 				}
 			}
 		case "carousel":
 			if len(whatsAppMessagePayload.Interactive.Action.Cards) < 2 || len(whatsAppMessagePayload.Interactive.Action.Cards) > 10 {
 				err = logs.Err(ctx, fmt.Errorf("cards must be between 2 and 10"), "cards must be between 2 and 10")
-				return nil, false, err
+				return nil, nil, false, err
 			}
 			for _, card := range whatsAppMessagePayload.Interactive.Action.Cards {
 				if card.CardIndex < 0 || card.CardIndex > 9 || card.Type == "" {
 					err = logs.Err(ctx, fmt.Errorf("card index (0-9) and type are required in card payload"), "card index, type are required in card payload")
-					return nil, false, err
+					return nil, nil, false, err
 				}
 				if card.Type == "cta_url" && (card.Body == nil || card.Body.Text == "" || card.Action == nil || card.Action.Name == "" || card.Action.Parameters == nil || card.Action.Parameters.DisplayText == "" || card.Action.Parameters.Url == "") {
 					err = logs.Err(ctx, fmt.Errorf("body text, action name, display text and url are required in action payload"), "body text, action name, display text and url are required in action payload")
-					return nil, false, err
+					return nil, nil, false, err
 				}
 				if card.Type == "product" && (card.Action == nil || card.Action.ProductRetailerId == "" || card.Action.CatalogId == "") {
 					err = logs.Err(ctx, fmt.Errorf("product retailer id, catalog id are required in action payload"), "product retailer id, catalog id are required in action payload")
-					return nil, false, err
+					return nil, nil, false, err
 				}
 			}
 		case "button":
 			if len(whatsAppMessagePayload.Interactive.Action.Buttons) == 0 || len(whatsAppMessagePayload.Interactive.Action.Buttons) > 3 {
 				err = logs.Err(ctx, fmt.Errorf("buttons must be between 1 and 3"), "buttons must be between 1 and 3")
-				return nil, false, err
+				return nil, nil, false, err
 			}
 			for _, button := range whatsAppMessagePayload.Interactive.Action.Buttons {
 				if button.Type == "" || button.Reply == nil || button.Reply.Id == "" || button.Reply.Title == "" {
 					err = logs.Err(ctx, fmt.Errorf("type, id and title are required in button payload"), "type, id and title are required in button payload")
-					return nil, false, err
+					return nil, nil, false, err
 				}
 			}
 		}
 	case "location_request_message":
 		if whatsAppMessagePayload.Interactive.Action.Name != "send_location" {
 			err = logs.Err(ctx, fmt.Errorf("name must be send_location in action payload"), "name must be send_location in action payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 	case "address_message":
 		if whatsAppMessagePayload.Interactive.Action.Name != "address_message" {
 			err = logs.Err(ctx, fmt.Errorf("name must be address_message in action payload"), "name must be send_address in action payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		if whatsAppMessagePayload.Interactive.Action.Parameters == nil || whatsAppMessagePayload.Interactive.Action.Parameters.Country == "" {
 			err = logs.Err(ctx, fmt.Errorf("country is required in parameters payload"), "country is required in parameters payload")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 	}
 	err = utils.ValidateStruct(ctx, whatsAppMessagePayload, "")
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("incorrect message payload: %s", err.Error()), fmt.Sprintf("incorrect message payload: %s", err.Error()))
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	whatsAppMessagePayloadBytes, err := json.Marshal(whatsAppMessagePayload)
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("failed to marshal message payload: %s", err.Error()), "failed to marshal message payload")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprintf("Sending message payload: %s", string(whatsAppMessagePayloadBytes)))
 
@@ -533,7 +575,7 @@ func (whatsAppTool *WhatsAppTool) SendMessage(ctx context.Context, params map[st
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, whatsAppMessagePayload)
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("failed to send message: %s", err.Error()), "failed to send message")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -553,7 +595,7 @@ func (whatsAppTool *WhatsAppTool) SendMessage(ctx context.Context, params map[st
 		toolResult["status"] = "sent"
 	}
 
-	return toolResult, false, nil
+	return toolResult, whatsAppMessagePayload, false, nil
 }
 
 func (whatsAppTool *WhatsAppTool) SubscribeWebhooks(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
@@ -1606,7 +1648,7 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 			return
 		}
 
-		hookResult, err := whatsAppTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, body, params)
+		hookResult, err := whatsAppTool.ExecuteHook(bgCtx, "clbk", "", projectId, tenantId, body, params)
 		if err != nil {
 			logs.WithContext(bgCtx).Error(err.Error())
 			return

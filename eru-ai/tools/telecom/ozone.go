@@ -117,7 +117,7 @@ func (ozoneTool *OzoneTool) Callback(ctx context.Context, projectId string, tena
 			return
 		}
 
-		hookResult, err := ozoneTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, body, params)
+		hookResult, err := ozoneTool.ExecuteHook(bgCtx, "clbk", "", projectId, tenantId, body, params)
 		if err != nil {
 			logs.WithContext(bgCtx).Error(err.Error())
 			return

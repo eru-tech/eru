@@ -797,7 +797,7 @@ func (slackTool *SlackTool) Callback(ctx context.Context, projectId string, tena
 					"event_time": eventPayload.EventTime,
 				}
 
-				hookResult, err := slackTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, hookBody, params)
+				hookResult, err := slackTool.ExecuteHook(bgCtx, "clbk", "", projectId, tenantId, hookBody, params)
 				if err != nil {
 					logs.WithContext(bgCtx).Error(err.Error())
 					return

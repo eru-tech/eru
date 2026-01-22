@@ -69,6 +69,7 @@ func (EruWidgetAgent *EruWidgetAgent) Execute(ctx context.Context, agentMessage 
 		Content: agentMessage.Content,
 		Name:    EruWidgetAgent.AgentName,
 	}
+	contextVariableString = fmt.Sprintf("this is the actual data that has been fetched based on user prompt. Analyse the best possible way to display this and is in lines with any specific user's prompt \n\n %s Based on componenet selection, you will have to convert the data format into component specific format as required in the component's properties\n\n", agentMessage.Params["context"], contextVariableString)
 	msg1 := models.Message{
 		Role:    "assistant",
 		Content: contextVariableString,
