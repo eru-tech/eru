@@ -1594,6 +1594,8 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 		} else {
 			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
 		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
 
 		bodyBytes, err := json.Marshal(body)
 		if err != nil {
