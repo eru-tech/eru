@@ -45,6 +45,8 @@ var ExpectedCacheTableSchema = map[string]CacheTableColumn{
 	"expires_at":    {TblName: "eru_cache", ColName: "expires_at", OwnDataType: "datetime", IsNullable: true, PrimaryKey: false},
 	"access_count":  {TblName: "eru_cache", ColName: "access_count", OwnDataType: "biginteger", IsNullable: false, PrimaryKey: false, DefaultValue: "0"},
 	"last_accessed": {TblName: "eru_cache", ColName: "last_accessed", OwnDataType: "datetime", IsNullable: false, PrimaryKey: false, DefaultValue: "CURRENT_TIMESTAMP"},
+	"created_by":    {TblName: "eru_cache", ColName: "created_by", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 100},
+	"agent_name":    {TblName: "eru_cache", ColName: "agent_name", OwnDataType: "varchar", IsNullable: false, PrimaryKey: false, CharMaxLength: 100},
 }
 
 type CacheData struct {
@@ -57,6 +59,8 @@ type CacheData struct {
 	ExpiresAt    time.Time `json:"expires_at"`
 	AccessCount  int       `json:"access_count"`
 	LastAccessed time.Time `json:"last_accessed"`
+	CreatedBy    string    `json:"created_by"`
+	AgentName    string    `json:"agent_name"`
 }
 
 // CacheStoreI defines the interface for a generic cache.
@@ -72,7 +76,8 @@ type CacheStoreI interface {
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
 	SyncPersistence(ctx context.Context, cacheStoreI CacheStoreI) error
 	SyncToDatabase(ctx context.Context, projectId string, cacheData []CacheData) error
-	LoadFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string) ([]CacheData, error)
+	LoadFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string, agentName string, createdBy string) ([]CacheData, error)
+	LoadListFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string, agentName string, createdBy string) (cacheData []CacheData, err error)
 }
 
 // CacheStore is a base struct to be embedded by specific implementations.
@@ -432,7 +437,7 @@ func (cs *CacheStore) SyncToDatabase(ctx context.Context, projectId string, cach
 	return nil
 }
 
-func (cs *CacheStore) LoadFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string) (cacheData []CacheData, err error) {
+func (cs *CacheStore) LoadFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string, agentName string, createdBy string) (cacheData []CacheData, err error) {
 	logs.WithContext(ctx).Debug("LoadFromDatabase - Start")
 
 	if !cs.PersistEnabled {
@@ -461,16 +466,24 @@ func (cs *CacheStore) LoadFromDatabase(ctx context.Context, projectId, tenantId,
     expires_at
     access_count
     last_accessed
+	created_by
+	agent_name
   }
 }`
 	query = strings.Replace(query, "$$dbalias$$", fmt.Sprintf("@%s", cs.CacheDbAlias), -1)
 
+	whereClause := map[string]interface{}{
+		"project_id": projectId,
+		"tenant_id":  tenantId,
+		"created_by": createdBy,
+		"agent_name": agentName,
+	}
+	if cacheKey != "" {
+		whereClause["cache_key"] = cacheKey
+	}
+
 	variables := map[string]interface{}{
-		"where": map[string]interface{}{
-			"cache_key":  cacheKey,
-			"project_id": projectId,
-			"tenant_id":  tenantId,
-		},
+		"where": whereClause,
 	}
 
 	requestBody := map[string]interface{}{
@@ -507,6 +520,90 @@ func (cs *CacheStore) LoadFromDatabase(ctx context.Context, projectId, tenantId,
 		if !ok {
 			// Try to convert each entry individually
 			if cacheEntries, ok := responseData["cache"].([]interface{}); ok {
+				cacheData = make([]CacheData, len(cacheEntries))
+				for i, entry := range cacheEntries {
+					if entryMap, ok := entry.(map[string]interface{}); ok {
+						entryBytes, err := json.Marshal(entryMap)
+						if err != nil {
+							return nil, fmt.Errorf("failed to marshal cache entry: %v", err)
+						}
+						if err := json.Unmarshal(entryBytes, &cacheData[i]); err != nil {
+							return nil, fmt.Errorf("failed to unmarshal cache entry: %v", err)
+						}
+					}
+				}
+				return cacheData, nil
+			}
+			return []CacheData{}, nil
+		}
+		return cacheData, nil
+
+	} else {
+		return []CacheData{}, nil
+	}
+}
+
+func (cs *CacheStore) LoadListFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string, agentName string, createdBy string) (cacheData []CacheData, err error) {
+	logs.WithContext(ctx).Debug("LoadFromDatabase - Start")
+
+	if !cs.PersistEnabled {
+		logs.WithContext(ctx).Info("Persistence not enabled, skipping database load")
+		return nil, nil
+	}
+
+	if cs.CacheDbAlias == "" {
+		return nil, fmt.Errorf("cache database alias not configured")
+	}
+
+	eruqlURL := os.Getenv("ERUQL_BASEURL")
+	if eruqlURL == "" {
+		return nil, fmt.Errorf("ERUQL_BASEURL environment variable not set")
+	}
+
+	query := `with minsk as (select cache_key, min(cache_sk) cache_sk, max(updated_at) last_updated from eru_cache group by cache_key) select a.*, b.last_updated from eru_cache a inner join minsk b on a.cache_sk=b.cache_sk where project_id='$$project_id$$' and tenant_id='$$tenant_id$$' and agent_name='$$agent_name$$'`
+	//and created_by = '$$userid$$'
+
+	query = strings.Replace(query, "$$project_id$$", projectId, -1)
+	query = strings.Replace(query, "$$tenant_id$$", tenantId, -1)
+	query = strings.Replace(query, "$$agent_name$$", agentName, -1)
+	query = strings.Replace(query, "$$userid$$", createdBy, -1)
+
+	requestBody := map[string]interface{}{
+		"query":    query,
+		"db_alias": cs.CacheDbAlias,
+		"cols":     "",
+		"vars":     map[string]interface{}{},
+	}
+
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+
+	url := fmt.Sprintf("%s/sql/%s/execute", strings.TrimSuffix(eruqlURL, "/"), projectId)
+
+	res, _, _, statusCode, err := utils.CallHttp(ctx, "POST", url, headers, nil, nil, nil, requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query cache data from database: %v", err)
+	}
+
+	if statusCode != http.StatusOK {
+		return nil, fmt.Errorf("database query returned status: %d", statusCode)
+	}
+
+	if res == nil {
+		logs.WithContext(ctx).Info("No cache data found in database")
+		return []CacheData{}, nil
+	}
+	if resArray, ok := res.([]interface{}); !ok {
+		return nil, fmt.Errorf("unexpected response format from database")
+	} else if len(resArray) > 0 {
+		responseData, ok := resArray[0].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("unexpected response format from database")
+		}
+		cacheData, ok := responseData["Results"].([]CacheData)
+		if !ok {
+			// Try to convert each entry individually
+			if cacheEntries, ok := responseData["Results"].([]interface{}); ok {
 				cacheData = make([]CacheData, len(cacheEntries))
 				for i, entry := range cacheEntries {
 					if entryMap, ok := entry.(map[string]interface{}); ok {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
@@ -23,9 +24,8 @@ func (goTemplateAgent *GoTemplateAgent) GetSpec() agents.AgentI {
 	return goTemplateAgent
 }
 
-func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {
+func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (agents.AgentMessage, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
-	agentOutput := make(map[string]interface{})
 	contextStringI, contextStringIOk := agentMessage.Params["context"]
 	if contextStringIOk {
 		if contextString, contextStringOk := contextStringI.(string); contextStringOk {
@@ -33,7 +33,7 @@ func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessag
 			err := json.Unmarshal([]byte(contextString), &contextMap)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
-				return nil, err
+				return agents.AgentMessage{}, err
 			}
 			agentMessage.Params["context"] = contextMap
 		}
@@ -42,7 +42,7 @@ func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessag
 	jsonSchemaString, err := json.Marshal(contextJsonSchema)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return agents.AgentMessage{}, err
 	}
 
 	templateCode, templateCodeOk := agentMessage.Params["code"]
@@ -163,51 +163,59 @@ func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessag
 
 	logs.WithContext(ctx).Info(contextVariableString)
 
-	msg := models.Message{
+	/* msg := models.Message{
 		Role:    "assistant",
 		Content: agentMessage.Content,
 		Name:    goTemplateAgent.AgentName,
-	}
-	msg1 := models.Message{
+	} */
+	msg := models.Message{
 		Role:    "assistant",
 		Content: contextVariableString,
 		Name:    goTemplateAgent.AgentName,
 	}
-	chatRequest := models.ChatRequest{
-		Messages: []models.Message{
-			msg,
-			msg1,
-		},
+
+	chatRequest, conversation, err := goTemplateAgent.LoadConversations(ctx, conversationId, agentMessage, projectId, tenantId)
+	if err != nil {
+		return agents.AgentMessage{}, err
 	}
-	_ = chatRequest
-	agentOutput, err = goTemplateAgent.execute(ctx, chatRequest, contextStringI, goTemplateAgent.AgentTools, goTemplateAgent.AgentName, goTemplateAgent.SystemPrompt, 1, projectId, tenantId)
+
+	chatRequest.Messages = append(chatRequest.Messages, msg)
+	agentOutput, err := goTemplateAgent.execute(ctx, chatRequest, contextStringI, goTemplateAgent.AgentTools, goTemplateAgent.AgentName, goTemplateAgent.SystemPrompt, 1, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return agents.AgentMessage{}, err
+	}
+
+	agentOutput.MessageId = agentMessage.MessageId
+	conversation.Messages = append(conversation.Messages, agentOutput)
+	conversation.NewMessages = append(conversation.NewMessages, agentOutput)
+	err = goTemplateAgent.SaveConversation(ctx, conversation, projectId, tenantId)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
+		return agents.AgentMessage{}, err
 	}
 	return agentOutput, nil
 }
-func (goTemplateAgent *GoTemplateAgent) execute(ctx context.Context, chatRequest models.ChatRequest, contextStringI interface{}, agentTools []agents.AgentTools, agentName string, systemPrompt string, currentTry int, projectId string, tenantId string) (map[string]interface{}, error) {
-	agentOutput := make(map[string]interface{})
-
+func (goTemplateAgent *GoTemplateAgent) execute(ctx context.Context, chatRequest models.ChatRequest, contextStringI interface{}, agentTools []agents.AgentTools, agentName string, systemPrompt string, currentTry int, projectId string, tenantId string) (agentOutput agents.AgentMessage, err error) {
 	toolResults, err := goTemplateAgent.ExecuteTools(ctx, chatRequest, goTemplateAgent.AgentTools, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return agents.AgentMessage{}, err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprintf("Tool results: %+v", toolResults))
+	agentOutputAction := agents.AgentOutputAction{}
 
 	if gotemplate, gotemplateOk := toolResults["gotemplate"].(map[string]interface{}); gotemplateOk {
 		if code, codeOk := gotemplate["code"]; codeOk {
-			agentOutput["code"] = code
+			agentOutputAction.Action = map[string]interface{}{"code": code}
 		} else {
-			agentOutput["code"] = ""
+			agentOutputAction.Action = map[string]interface{}{"code": ""}
 		}
 	}
-	templateCode, templateCodeOk := agentOutput["code"].(string)
+	templateCode, templateCodeOk := agentOutputAction.Action["code"].(string)
 	if !templateCodeOk {
 		logs.WithContext(ctx).Error("code is not present in the params")
-		return nil, fmt.Errorf("code is not present in the params")
+		return agents.AgentMessage{}, fmt.Errorf("code is not present in the params")
 	}
 	var output interface{}
 	output, err = goTemplateAgent.validate(ctx, templateCode, contextStringI, "json", currentTry)
@@ -219,10 +227,16 @@ func (goTemplateAgent *GoTemplateAgent) execute(ctx context.Context, chatRequest
 			chatRequest.Messages[1].Content = fmt.Sprint(chatRequest.Messages[1].Content, "\n", errMsgString)
 			return goTemplateAgent.execute(ctx, chatRequest, contextStringI, agentTools, goTemplateAgent.AgentName, goTemplateAgent.SystemPrompt, currentTry+1, projectId, tenantId)
 		}
-		return nil, err
+		return agents.AgentMessage{}, err
 	}
-	agentOutput["output"] = output
-	agentOutput["retry_count"] = currentTry
+	agentOutputAction.Action["output"] = output
+	agentOutputActions := []agents.AgentOutputAction{agentOutputAction}
+	agentOutput = agents.AgentMessage{
+		Role:             "assistant",
+		Actions:          agentOutputActions,
+		MessageTimestamp: time.Now(),
+		RetryCount:       currentTry,
+	}
 	return agentOutput, nil
 }
 func (goTemplateAgent *GoTemplateAgent) validate(ctx context.Context, templateCode string, contextVars interface{}, outputFormat string, currentTry int) (interface{}, error) {

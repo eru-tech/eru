@@ -97,5 +97,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	aiRouter.PathPrefix("/callback/{tenant}/tool/{toolname}").HandlerFunc(module_handlers.ToolCallbackHandler(sh))
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/execute/agent/{agentname}/{conversationid}").HandlerFunc(module_handlers.AgentExecuteHandler(sh))
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/execute/agent/{agentname}").HandlerFunc(module_handlers.AgentExecuteHandler(sh))
+	aiRouter.Methods(http.MethodGet).PathPrefix("/{tenant}/list/conversations/{agentname}/{conversationid}").HandlerFunc(module_handlers.FetchConversationHandler(sh))
+	aiRouter.Methods(http.MethodGet).PathPrefix("/{tenant}/list/conversations/{agentname}").HandlerFunc(module_handlers.ListConversationsHandler(sh))
 
 }

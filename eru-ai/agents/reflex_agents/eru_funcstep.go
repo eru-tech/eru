@@ -20,22 +20,33 @@ func (erufuncstep_agent *EruFuncStepAgent) GetSpec() agents.AgentI {
 	return erufuncstep_agent
 }
 
-func (erufuncstep_agent *EruFuncStepAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {
+func (erufuncstep_agent *EruFuncStepAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (agents.AgentMessage, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
 
 	if erufuncstep_agent.Function.FuncGroupName != "" {
 		response, err := erufuncstep_agent.ExecuteAgentFunction(ctx, agentMessage, projectId, tenantId)
 		if err != nil {
 			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to execute agent function: %v", err))
-			return nil, err
+			return agents.AgentMessage{}, err
 		}
-		return response, nil
+		agentOutputAction := agents.AgentOutputAction{
+			Action: response,
+		}
+		agentOutputActions := []agents.AgentOutputAction{agentOutputAction}
+		agentResponseMessage := agents.AgentMessage{
+			Role:             "assistant",
+			Content:          "",
+			Actions:          agentOutputActions,
+			MessageId:        agentMessage.MessageId, //same as the user message
+			MessageTimestamp: time.Now(),
+		}
+		return agentResponseMessage, nil
 	}
 
 	conversation, err := erufuncstep_agent.LoadConversationHistory(ctx, conversationId, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to load conversation history: %v", err))
-		return nil, err
+		return agents.AgentMessage{}, err
 	}
 	agentMessage.Role = "user"
 	agentMessage.MessageTimestamp = time.Now()
@@ -71,17 +82,16 @@ func (erufuncstep_agent *EruFuncStepAgent) Execute(ctx context.Context, agentMes
 	response, err := erufuncstep_agent.execute(ctx, chatRequest, erufuncstep_agent.AgentTools, 1, conversationId, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to execute agent: %v", err))
-		return nil, err
+		return agents.AgentMessage{}, err
 	}
 
-	responseBytes, err := json.Marshal(response)
-	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to marshal response: %v", err))
-		return nil, err
+	agentAction := agents.AgentOutputAction{
+		Action: response,
 	}
+	agentOutputActions := []agents.AgentOutputAction{agentAction}
 	agentResponseMessage := agents.AgentMessage{
 		Role:             "assistant",
-		Content:          string(responseBytes),
+		Actions:          agentOutputActions,
 		MessageId:        agentMessage.MessageId, //same as the user message
 		MessageTimestamp: time.Now(),
 	}
@@ -90,10 +100,10 @@ func (erufuncstep_agent *EruFuncStepAgent) Execute(ctx context.Context, agentMes
 	err = erufuncstep_agent.SaveConversation(ctx, conversation, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
-		return nil, err
+		return agents.AgentMessage{}, err
 	}
 
-	return response, nil
+	return agentResponseMessage, nil
 }
 
 func (erufuncstep_agent *EruFuncStepAgent) execute(ctx context.Context, chatRequest models.ChatRequest, agentTools []agents.AgentTools, currentTry int, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {

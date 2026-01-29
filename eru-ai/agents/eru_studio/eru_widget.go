@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
@@ -22,9 +23,8 @@ func (EruWidgetAgent *EruWidgetAgent) GetSpec() agents.AgentI {
 	return EruWidgetAgent
 }
 
-func (EruWidgetAgent *EruWidgetAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {
+func (EruWidgetAgent *EruWidgetAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (agents.AgentMessage, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
-	agentOutput := make(map[string]interface{})
 	contextStringI, contextStringIOk := agentMessage.Params["context"]
 	if contextStringIOk {
 		if contextString, contextStringOk := contextStringI.(string); contextStringOk {
@@ -32,7 +32,7 @@ func (EruWidgetAgent *EruWidgetAgent) Execute(ctx context.Context, agentMessage 
 			err := json.Unmarshal([]byte(contextString), &contextMap)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
-				return nil, err
+				return agents.AgentMessage{}, err
 			}
 			agentMessage.Params["context"] = contextMap
 		}
@@ -41,7 +41,7 @@ func (EruWidgetAgent *EruWidgetAgent) Execute(ctx context.Context, agentMessage 
 	jsonSchemaString, err := json.Marshal(contextJsonSchema)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return agents.AgentMessage{}, err
 	}
 	_ = jsonSchemaString
 	eruComponentString := ""
@@ -62,45 +62,59 @@ func (EruWidgetAgent *EruWidgetAgent) Execute(ctx context.Context, agentMessage 
 
 	contextVariableString := fmt.Sprint(contextVariablePrompt, eruComponentString)
 
-	logs.WithContext(ctx).Info(contextVariableString)
-
-	msg := models.Message{
+	/* msg := models.Message{
 		Role:    "assistant",
 		Content: agentMessage.Content,
 		Name:    EruWidgetAgent.AgentName,
-	}
+	} */
 	contextVariableString = fmt.Sprintf("this is the actual data that has been fetched based on user prompt. Analyse the best possible way to display this and is in lines with any specific user's prompt \n\n %s Based on componenet selection, you will have to convert the data format into component specific format as required in the component's properties\n\n", agentMessage.Params["context"], contextVariableString)
-	msg1 := models.Message{
+	msg := models.Message{
 		Role:    "assistant",
 		Content: contextVariableString,
 		Name:    EruWidgetAgent.AgentName,
 	}
-	chatRequest := models.ChatRequest{
-		Messages: []models.Message{
-			msg,
-			msg1,
-		},
+	chatRequest, conversation, err := EruWidgetAgent.LoadConversations(ctx, conversationId, agentMessage, projectId, tenantId)
+	if err != nil {
+		return agents.AgentMessage{}, err
 	}
-	_ = chatRequest
-	agentOutput, err = EruWidgetAgent.execute(ctx, chatRequest, contextStringI, EruWidgetAgent.AgentTools, EruWidgetAgent.AgentName, EruWidgetAgent.SystemPrompt, 1, projectId, tenantId)
+
+	chatRequest.Messages = append(chatRequest.Messages, msg)
+	agentOutput, err := EruWidgetAgent.execute(ctx, chatRequest, EruWidgetAgent.AgentTools, EruWidgetAgent.AgentName, EruWidgetAgent.SystemPrompt, 1, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return agents.AgentMessage{}, err
+	}
+	agentOutput.MessageId = agentMessage.MessageId
+
+	conversation.Messages = append(conversation.Messages, agentOutput)
+	conversation.NewMessages = append(conversation.NewMessages, agentOutput)
+	err = EruWidgetAgent.SaveConversation(ctx, conversation, projectId, tenantId)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
+		return agents.AgentMessage{}, err
 	}
 	return agentOutput, nil
 }
-func (EruWidgetAgent *EruWidgetAgent) execute(ctx context.Context, chatRequest models.ChatRequest, contextStringI interface{}, agentTools []agents.AgentTools, agentName string, systemPrompt string, currentTry int, projectId string, tenantId string) (map[string]interface{}, error) {
-	agentOutput := make(map[string]interface{})
+func (EruWidgetAgent *EruWidgetAgent) execute(ctx context.Context, chatRequest models.ChatRequest, agentTools []agents.AgentTools, agentName string, systemPrompt string, currentTry int, projectId string, tenantId string) (agentOutput agents.AgentMessage, err error) {
 
 	toolResults, err := EruWidgetAgent.ExecuteTools(ctx, chatRequest, EruWidgetAgent.AgentTools, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return agents.AgentMessage{}, err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprintf("Tool results: %+v", toolResults))
 
-	agentOutput = toolResults
+	agentOutputAction := agents.AgentOutputAction{
+		ActionName: "eru_widget",
+		Action:     toolResults,
+	}
+	agentOutputActions := []agents.AgentOutputAction{agentOutputAction}
 
+	agentOutput = agents.AgentMessage{
+		Role:             "assistant",
+		Actions:          agentOutputActions,
+		MessageTimestamp: time.Now(),
+	}
 	/*templateCode, templateCodeOk := agentOutput["code"].(string)
 	if !templateCodeOk {
 		logs.WithContext(ctx).Error("code is not present in the params")
@@ -118,7 +132,7 @@ func (EruWidgetAgent *EruWidgetAgent) execute(ctx context.Context, chatRequest m
 		}
 		return nil, err
 	} */
-	agentOutput["retry_count"] = currentTry
+	agentOutput.RetryCount = currentTry
 	return agentOutput, nil
 }
 

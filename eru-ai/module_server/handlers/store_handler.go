@@ -669,6 +669,71 @@ func ToolRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		}
 	}
 }
+func FetchConversationHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FetchConversationHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		agentName := vars["agentname"]
+		conversationId := vars["conversationid"]
+		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, agentName, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		}
+
+		claims := r.Header.Get("claims")
+		if claims != "" {
+			r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
+		}
+
+		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
+		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+
+		conversation, err := agent.LoadConversationHistory(r.Context(), conversationId, projectId, tenantId)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(conversation)
+		}
+
+	}
+}
+func ListConversationsHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ListConversationsHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		agentName := vars["agentname"]
+		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, agentName, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		}
+
+		claims := r.Header.Get("claims")
+		if claims != "" {
+			r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
+		}
+
+		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
+		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+
+		conversations, err := agent.LoadConversationList(r.Context(), projectId, tenantId)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(conversations)
+		}
+
+	}
+}
 
 func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

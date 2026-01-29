@@ -21,18 +21,50 @@ func (reflex_agent *ReflexAgent) GetSpec() agents.AgentI {
 	return reflex_agent
 }
 
-func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {
+func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (agents.AgentMessage, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
+	chatRequest, conversation, err := reflex_agent.LoadConversations(ctx, conversationId, agentMessage, projectId, tenantId)
+	if err != nil {
+		return agents.AgentMessage{}, err
+	}
 	if reflex_agent.Function.FuncGroupName != "" {
+
+		agentOutputAction := agents.AgentOutputAction{}
 		response, err := reflex_agent.ExecuteAgentFunction(ctx, agentMessage, projectId, tenantId)
 		if err != nil {
 			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to execute agent function: %v", err))
-			return nil, err
+			return agents.AgentMessage{}, err
 		}
-		return response, nil
+		responseBytes, err := json.Marshal(response)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to marshal agent function response: %v", err))
+			return agents.AgentMessage{}, err
+		}
+		var agentMessaage agents.AgentMessage
+		err = json.Unmarshal(responseBytes, &agentMessaage)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to unmarshal agent function response: %v", err))
+			agentOutputAction.Action = response
+			agentOutputActions := []agents.AgentOutputAction{agentOutputAction}
+			agentMessaage = agents.AgentMessage{
+				Role:             "assistant",
+				Content:          "",
+				Actions:          agentOutputActions,
+				MessageId:        agentMessage.MessageId, //same as the user message
+				MessageTimestamp: time.Now(),
+			}
+		}
+		conversation.Messages = append(conversation.Messages, agentMessaage)
+		conversation.NewMessages = append(conversation.NewMessages, agentMessaage)
+		err = reflex_agent.SaveConversation(ctx, conversation, projectId, tenantId)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
+			return agents.AgentMessage{}, err
+		}
+		return agentMessaage, nil
 	}
 
-	conversation, err := reflex_agent.LoadConversationHistory(ctx, conversationId, projectId, tenantId)
+	/* conversation, err := reflex_agent.LoadConversationHistory(ctx, conversationId, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to load conversation history: %v", err))
 		return nil, err
@@ -67,43 +99,32 @@ func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agent
 		chatRequest = models.ChatRequest{
 			Messages: []models.Message{msg},
 		}
-	}
-	response, err := reflex_agent.execute(ctx, chatRequest, reflex_agent.AgentTools, 1, conversationId, projectId, tenantId)
+	} */
+
+	response, err := reflex_agent.execute(ctx, chatRequest, reflex_agent.AgentTools, 1, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to execute agent: %v", err))
-		return nil, err
+		return agents.AgentMessage{}, err
 	}
 
-	responseBytes, err := json.Marshal(response)
-	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to marshal response: %v", err))
-		return nil, err
-	}
-	agentResponseMessage := agents.AgentMessage{
-		Role:             "assistant",
-		Content:          string(responseBytes),
-		MessageId:        agentMessage.MessageId, //same as the user message
-		MessageTimestamp: time.Now(),
-	}
-	conversation.Messages = append(conversation.Messages, agentResponseMessage)
-	conversation.NewMessages = append(conversation.NewMessages, agentResponseMessage)
+	response.MessageId = agentMessage.MessageId
+	conversation.Messages = append(conversation.Messages, response)
+	conversation.NewMessages = append(conversation.NewMessages, response)
 	err = reflex_agent.SaveConversation(ctx, conversation, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
-		return nil, err
+		return agents.AgentMessage{}, err
 	}
-
 	return response, nil
 }
 
-func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models.ChatRequest, agentTools []agents.AgentTools, currentTry int, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {
+func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models.ChatRequest, agentTools []agents.AgentTools, currentTry int, projectId string, tenantId string) (agentOutput agents.AgentMessage, err error) {
 	logs.WithContext(ctx).Debug("validate - Start")
-	agentOutput := make(map[string]interface{})
 
 	toolResults, err := reflex_agent.ExecuteTools(ctx, chatRequest, agentTools, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return agents.AgentMessage{}, err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprintf("Tool results: %+v", toolResults))
 
@@ -131,7 +152,7 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 			Name: reflex_agent.AgentName,
 		})
 	}
-
+	agentResponse := make(map[string]interface{})
 	response := models.Message{}
 	if reflex_agent.OutputSchema.Type != "" {
 		outputTool := utility.StructuredOutputTool{}
@@ -141,27 +162,37 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 		outputTool.SetAttribute(ctx, "tool_name", "structured_output")
 		outputTool.SetAttribute(ctx, "tool_type", "STRUCTURED_OUTPUT")
 		outputTool.SetToolAction("structured_output")
-		agentResponse, err := reflex_agent.ExecuteTools(ctx, chatRequest, []agents.AgentTools{{Tool: &outputTool, ToolOutputType: "json"}}, projectId, tenantId)
+		agentResponse, err = reflex_agent.ExecuteTools(ctx, chatRequest, []agents.AgentTools{{Tool: &outputTool, ToolOutputType: "json"}}, projectId, tenantId)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
+			return agents.AgentMessage{}, err
 		}
-		agentOutput["output"] = agentResponse
 
 	} else {
 		response, err = reflex_agent.Model.QueryModel(ctx, chatRequest)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
-			return nil, err
+			return agents.AgentMessage{}, err
 		}
 		responseMap := map[string]interface{}{}
 		err = json.Unmarshal([]byte(response.Content), &responseMap)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
-			agentOutput["output"] = response.Content
+			agentResponse["output"] = response.Content
 		} else {
-			agentOutput["output"] = responseMap
+			agentResponse = responseMap
 		}
+	}
+	agentOutputAction := agents.AgentOutputAction{
+		ActionName: "eru_widget",
+		Action:     agentResponse,
+	}
+	agentOutputActions := []agents.AgentOutputAction{agentOutputAction}
+
+	agentOutput = agents.AgentMessage{
+		Role:             "assistant",
+		Actions:          agentOutputActions,
+		MessageTimestamp: time.Now(),
 	}
 	logs.WithContext(ctx).Info(fmt.Sprintf("Response: %+v", response.Content))
 	/* if err != nil {
@@ -181,7 +212,7 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 		return nil, err
 	} */
 
-	agentOutput["retry_count"] = currentTry
+	agentOutput.RetryCount = currentTry
 	return agentOutput, err
 }
 

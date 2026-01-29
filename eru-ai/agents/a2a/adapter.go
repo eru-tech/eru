@@ -29,10 +29,10 @@ func (a *Adapter) Discover(ctx context.Context) ([]AgentCard, error) {
 	return cards, nil
 }
 
-func (a *Adapter) SubmitTask(ctx context.Context, agentName string, msg agents.AgentMessage, conversationId string, projectId string, tenantId string) (map[string]interface{}, error) {
+func (a *Adapter) SubmitTask(ctx context.Context, agentName string, msg agents.AgentMessage, conversationId string, projectId string, tenantId string) (agents.AgentMessage, error) {
 	ag := a.Registry.Get(ctx, agentName)
 	if ag == nil {
-		return nil, nil
+		return agents.AgentMessage{}, nil
 	}
 	return ag.Execute(ctx, msg, conversationId, projectId, tenantId)
 }

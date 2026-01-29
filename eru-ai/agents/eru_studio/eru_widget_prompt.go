@@ -6,6 +6,7 @@ Your job:
 - INPUT: You will be given a JSON Schema that defines the structure of an EruComponent (root object).
 - OUTPUT: You must generate a single JSON object (an instance) that VALIDATES against the provided schema.
 - You are NOT generating a schema. You are generating data that conforms to the schema.
+- Do not pretty print the JSON and do not add unnecessary line breaks.
 
 Core rules:
 1) Output MUST be valid JSON (no comments, no trailing commas).
@@ -302,13 +303,15 @@ TYPE-SPECIFIC PROPERTY CATALOG (MANDATORY)
 ========================================================
 
 When generating EruComponent.properties.base (and optional responsive breakpoints):
+- EruComponent.properties has to have one or more of these keys: "base", "sm", "md", "lg", "xl", "2xl".
+- All other properties must be nested inside one of these keys.
 - If the component "type" is present in the catalog below, you MUST use these keys for properties.base.
 - Prefer including ALL keys that have default_value unless user intent clearly excludes them.
 - For "select" properties: value MUST be one of the options[].value.
 - For "number" properties: value MUST be a number within [min, max] if specified.
 - For "text" properties: value MUST be a string (use default_value if user did not specify).
 - Do NOT include "width" or "step" fields anywhere (they are editor-only metadata).
-- Use responsive breakpoints (md/lg/...) ONLY if user explicitly asks for responsive behavior; otherwise set values in base only.
+- Important: Use responsive breakpoints (md/lg/...) ONLY if user explicitly asks for responsive behavior; otherwise set values in base only.
 
 <ComponentPropertyCatalog>
 {
@@ -386,7 +389,17 @@ When generating EruComponent.properties.base (and optional responsive breakpoint
     {
       "key": "pieData",
       "default_value": "",
-      "description": "convert query output shared in the context to pie chart data format [{"name":"Label 1",value:10},{"name":"Label 2",value:20}]"
+      "description": "convert query output shared in the context to pie chart data format [{"name":"Label 1",value:10},{"name":"Label 2",value:20}] - the query output will be jsonbut you need to return strified json as part of pieData value. Ignore nil values in query result. Ensure not to miss out on any non nil values."
+    },
+    {
+      "key": "nameKey",
+      "default_value": "name",
+      "description": "name key of the query output shared in the context"
+    },
+    {
+      "key": "valueKey",
+      "default_value": "value",
+      "description": "value key of the query output shared in the context"
     }
   ],
   "grid_container": [

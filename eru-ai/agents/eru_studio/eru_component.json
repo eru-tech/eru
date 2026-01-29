@@ -13,58 +13,7 @@
     "properties": {
         "id": {
             "type": "string",
-            "description": "Unique identifier for the component.",
-            "enum": [
-                "text",
-                "button",
-                "image",
-                "button_toggle",
-                "badge",
-                "chips",
-                "icon",
-                "progress_bar",
-                "progress_spinner",
-                "flex_container",
-                "grid_container",
-                "card",
-                "divider",
-                "expansion_panel",
-                "list",
-                "stepper",
-                "tree",
-                "grid_list",
-                "page_ref",
-                "phone",
-                "email",
-                "number",
-                "currency",
-                "date",
-                "datetime",
-                "time-picker",
-                "duration",
-                "website",
-                "textarea",
-                "textbox",
-                "checkbox",
-                "select",
-                "attachment",
-                "location",
-                "people",
-                "priority",
-                "progress",
-                "rating",
-                "status",
-                "tag",
-                "toolbar",
-                "menu",
-                "sidenav",
-                "tabs",
-                "grid",
-                "eru_page",
-                "line_chart",
-                "bar_chart",
-                "pie_chart"
-            ]
+            "description": "Unique identifier for the component."
         },
         "type": {
             "type": "string",
@@ -76,7 +25,15 @@
         },
         "properties": {
             "$ref": "#/$defs/ResponsiveEruComponentProperties",
-            "description": "Component properties; supports known fields plus arbitrary component-specific keys."
+            "description": "Component properties; supports known fields plus arbitrary component-specific keys.",
+            "enum": [
+                "base",
+                "sm",
+                "md",
+                "lg",
+                "xl",
+                "2xl"
+            ]
         },
         "styles": {
             "$ref": "#/$defs/ComponentStyles",
@@ -209,6 +166,14 @@
         "ResponsiveEruComponentProperties": {
             "type": "object",
             "additionalProperties": false,
+            "enum": [
+                "base",
+                "sm",
+                "md",
+                "lg",
+                "xl",
+                "2xl"
+            ],
             "properties": {
                 "base": {
                     "$ref": "#/$defs/EruComponentProperties",

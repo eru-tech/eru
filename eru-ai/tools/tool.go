@@ -24,10 +24,10 @@ type McpToolList struct {
 	ComponentUrl    string `json:"component_url"`
 }
 type ToolHooks struct {
-	CLBK string            `json:"clbk"` //callback
-	POEX map[string]string `json:"poex"` //post execute
-	ARSU string            `json:"arsu"` //auto renew subscription
-	ARRT string            `json:"arrt"` //auto renew refresh token
+	CLBK string            `json:"clbk,omitempty"` //callback
+	POEX map[string]string `json:"poex,omitempty"` //post execute
+	ARSU string            `json:"arsu,omitempty"` //auto renew subscription
+	ARRT string            `json:"arrt,omitempty"` //auto renew refresh token
 }
 
 type Tool struct {
