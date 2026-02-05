@@ -49,7 +49,7 @@ type WhatsAppMessageComponent struct {
 	Index      *int                       `json:"index,omitempty"`
 	Type       string                     `json:"type" eru:"required"`
 	SubType    string                     `json:"sub_type,omitempty"`
-	Parameters []WhatsAppMessageParameter `json:"parameters" eru:"required"`
+	Parameters []WhatsAppMessageParameter `json:"parameters,omitempty"`
 }
 type WhatsAppLocationMessagePayload struct {
 	Latitude  string `json:"latitude" eru:"required"`
@@ -165,9 +165,27 @@ type WhatsAppContactMessagePayload struct {
 }
 
 type WhatsAppMessageParameter struct {
-	Index  *int   `json:"index,omitempty"`
-	Type   string `json:"type" eru:"required"`
-	Text   string `json:"text,omitempty"`
+	Index *int   `json:"index,omitempty"`
+	Type  string `json:"type" eru:"required"`
+	Text  string `json:"text,omitempty"`
+	Image *struct {
+		Link string `json:"link,omitempty"`
+		Id   string `json:"id,omitempty"`
+	} `json:"image,omitempty"`
+	Video *struct {
+		Link string `json:"link,omitempty"`
+		Id   string `json:"id,omitempty"`
+	} `json:"video,omitempty"`
+	Document *struct {
+		Link string `json:"link,omitempty"`
+		Id   string `json:"id,omitempty"`
+	} `json:"document,omitempty"`
+	Location *struct {
+		Latitude  string `json:"latitude,omitempty"`
+		Longitude string `json:"longitude,omitempty"`
+		Name      string `json:"name,omitempty"`
+		Address   string `json:"address,omitempty"`
+	} `json:"location,omitempty"`
 	Action struct {
 		FlowActionData map[string]interface{} `json:"flow_action_data,omitempty"`
 		FlowToken      string                 `json:"flow_token,omitempty"`

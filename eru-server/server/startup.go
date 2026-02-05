@@ -97,7 +97,7 @@ func LaunchWithContext(ctx context.Context, serverRouter *mux.Router, port strin
 	corsObj := handlers.MakeCorsObject()
 
 	//r := otelhttp.NewHandler(corsObj.Handler(panicRecoveryMiddleware(concurrencyLimitMiddleware(contextCancellationMiddleware(requestIdMiddleWare(otelMiddleWare(serverRouter)))))), handlers.ServerName)
-	r := otelhttp.NewHandler(corsObj.Handler(panicRecoveryMiddleware(contextCancellationMiddleware(requestIdMiddleWare(otelMiddleWare(serverRouter))))), handlers.ServerName)
+	r := otelhttp.NewHandler(corsObj.Handler(requestIdMiddleWare(panicRecoveryMiddleware(contextCancellationMiddleware(otelMiddleWare(serverRouter))))), handlers.ServerName)
 	http.Handle("/", r)
 
 	// Start HTTP server with critical restart behavior - shutdown service if server fails

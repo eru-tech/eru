@@ -45,7 +45,9 @@ func requestIdMiddleWare(next http.Handler) http.Handler {
 		if traceId == "00000000000000000000000000000000" {
 			traceId = ""
 		}
-		r = r.WithContext(logs.NewContext(r.Context(), zap.String(server_handlers.RequestIdKey, requestID), zap.String("spanID", spanId), zap.String("traceID", traceId)))
+
+		ctx := context.WithValue(r.Context(), server_handlers.RequestIdKey, requestID)
+		r = r.WithContext(logs.NewContext(ctx, zap.String(server_handlers.RequestIdKey, requestID), zap.String("spanID", spanId), zap.String("traceID", traceId)))
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -55,7 +57,10 @@ func requestIdMiddleWare(next http.Handler) http.Handler {
 
 func otelMiddleWare(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := r.Header.Get(server_handlers.RequestIdKey)
+		requestID, _ := r.Context().Value(server_handlers.RequestIdKey).(string)
+		if requestID == "" {
+			requestID = r.Header.Get(server_handlers.RequestIdKey)
+		}
 		pspan := oteltrace.SpanFromContext(r.Context())
 		//if !span.IsRecording() {
 		//	logs.WithContext(r.Context()).Info("Span not found - making new tracer")
@@ -102,8 +107,12 @@ func panicRecoveryMiddleware(next http.Handler) http.Handler {
 					"message": err.Error(),
 				}
 
-				if requestId := r.Context().Value("requestId"); requestId != nil {
-					errorResponse["request_id"] = requestId
+				requestID, _ := r.Context().Value(server_handlers.RequestIdKey).(string)
+				if requestID == "" {
+					requestID = r.Header.Get(server_handlers.RequestIdKey)
+				}
+				if requestID != "" {
+					errorResponse["request_id"] = requestID
 				}
 
 				json.NewEncoder(w).Encode(errorResponse)
@@ -179,8 +188,12 @@ func contextCancellationMiddleware(next http.Handler) http.Handler {
 								"message": "Request handler panicked",
 							}
 
-							if requestId := r.Header.Get(server_handlers.RequestIdKey); requestId != "" {
-								errorResponse["request_id"] = requestId
+							requestID, _ := r.Context().Value(server_handlers.RequestIdKey).(string)
+							if requestID == "" {
+								requestID = r.Header.Get(server_handlers.RequestIdKey)
+							}
+							if requestID != "" {
+								errorResponse["request_id"] = requestID
 							}
 
 							json.NewEncoder(w).Encode(errorResponse)
@@ -211,8 +224,12 @@ func contextCancellationMiddleware(next http.Handler) http.Handler {
 					"message": "Request cancelled due to service shutdown",
 				}
 
-				if requestId := r.Header.Get(server_handlers.RequestIdKey); requestId != "" {
-					errorResponse["request_id"] = requestId
+				requestID, _ := r.Context().Value(server_handlers.RequestIdKey).(string)
+				if requestID == "" {
+					requestID = r.Header.Get(server_handlers.RequestIdKey)
+				}
+				if requestID != "" {
+					errorResponse["request_id"] = requestID
 				}
 
 				json.NewEncoder(w).Encode(errorResponse)
@@ -264,8 +281,12 @@ func concurrencyLimitMiddleware(next http.Handler) http.Handler {
 				"retry_after": "5s",
 			}
 
-			if requestId := r.Header.Get(server_handlers.RequestIdKey); requestId != "" {
-				errorResponse["request_id"] = requestId
+			requestID, _ := r.Context().Value(server_handlers.RequestIdKey).(string)
+			if requestID == "" {
+				requestID = r.Header.Get(server_handlers.RequestIdKey)
+			}
+			if requestID != "" {
+				errorResponse["request_id"] = requestID
 			}
 
 			json.NewEncoder(w).Encode(errorResponse)

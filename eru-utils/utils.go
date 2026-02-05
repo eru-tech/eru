@@ -222,7 +222,10 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	//logs.WithContext(ctx).Info(fmt.Sprintf("ctx: %+v", ctx))
 
 	req = req.WithContext(ctx)
-
+	requestId := ctx.Value("request_id")
+	if requestId != nil {
+		req.Header.Set("request_id", requestId.(string))
+	}
 	/*
 			host := req.URL.Host
 			ips, err := net.LookupIP(host)
