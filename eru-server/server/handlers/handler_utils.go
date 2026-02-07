@@ -20,7 +20,7 @@ func MakeCorsObject() *cors.Cors {
 	return cors.New(cors.Options{
 		AllowCredentials: true,
 		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Original-Endpoint", "Id_token"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Original-Endpoint", "Id_token", "Claims"},
 		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
 			dn := strings.Split(s, "//")[1]
 			logs.Logger.Info(fmt.Sprint("dn = ", dn))
