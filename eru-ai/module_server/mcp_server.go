@@ -125,7 +125,7 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context) (server.MCPListToolsResu
 			}
 
 			for _, agentName := range agentNames {
-				agent, err := s.store.Store.GetAgent(ctx, projectName, tenant.TenantId, agentName, s.store.Store)
+				agent, err := s.store.Store.GetAgent(ctx, projectName, tenant.TenantId, "", agentName, s.store.Store)
 				if err != nil {
 					continue
 				}
@@ -186,7 +186,7 @@ func (s *EruAIMCPServer) CallTool(ctx context.Context, conversationId string, pa
 }
 
 func (s *EruAIMCPServer) executeAgent(ctx context.Context, conversationId, project, tenant, agentName string, arguments map[string]interface{}) (server.MCPCallToolResult, error) {
-	agent, err := s.store.Store.GetAgent(ctx, project, tenant, agentName, s.store.Store)
+	agent, err := s.store.Store.GetAgent(ctx, project, tenant, "", agentName, s.store.Store)
 	if err != nil {
 		return server.MCPCallToolResult{}, err
 	}

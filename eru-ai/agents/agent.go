@@ -219,7 +219,7 @@ func (agent *Agent) LoadConversations(ctx context.Context, conversationId string
 	}
 	agentMessage.Role = "user"
 	agentMessage.MessageTimestamp = time.Now()
-	conversation.Messages = append(conversation.Messages, agentMessage)
+	//	conversation.Messages = append(conversation.Messages, agentMessage)
 	conversation.NewMessages = append(conversation.NewMessages, agentMessage)
 
 	msg := models.Message{

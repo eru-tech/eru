@@ -44,7 +44,7 @@ type ModuleStoreI interface {
 	GetModel(ctx context.Context, projectId string, tenantId string, modelName string, s ModuleStoreI) (models.ModelI, error)
 	SaveAgent(ctx context.Context, agentObj agents.AgentI, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
 	RemoveAgent(ctx context.Context, agentName string, projectId string, tenantId string, realStore ModuleStoreI) error
-	GetAgent(ctx context.Context, projectId string, tenantId string, agentName string, s ModuleStoreI) (agents.AgentI, error)
+	GetAgent(ctx context.Context, projectId string, tenantId string, conversationId string, agentName string, s ModuleStoreI) (agents.AgentI, error)
 	SaveVectorStore(ctx context.Context, vectorStoreObj vectorstore.VectorStoreI, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
 	RemoveVectorStore(ctx context.Context, vectorStoreName string, projectId string, tenantId string, realStore ModuleStoreI) error
 	GetVectorStore(ctx context.Context, projectId string, tenantId string, vectorStoreName string, realStore ModuleStoreI) (vectorstore.VectorStoreI, error)
@@ -237,18 +237,22 @@ func (ms *ModuleStore) GetModelClone(ctx context.Context, projectId string, tena
 	if err != nil {
 		return
 	}
+	var modelObj models.ModelI
 	if _, ok := prj.Tenants[tenantId]; !ok {
 		err = errors.New("tenant " + tenantId + " not found")
 		logs.WithContext(ctx).Error(err.Error())
 		return
-	} else if modelObj, ok := prj.Tenants[tenantId].Models[modelName]; !ok {
-		err = errors.New("model " + modelName + " not found")
-		logs.WithContext(ctx).Error(err.Error())
-		return
-	} else {
-		modelObjClone, err = ms.GetModelCloneObject(ctx, projectId, tenantId, modelObj, s)
-		return
+	} else if modelObj, ok = prj.Tenants[tenantId].Models[modelName]; !ok {
+		if projectModelObj, ok := prj.Tenants[projectId].Models[modelName]; ok {
+			modelObj = projectModelObj
+		} else {
+			err = errors.New("model " + modelName + " not found")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
 	}
+	modelObjClone, err = ms.GetModelCloneObject(ctx, projectId, tenantId, modelObj, s)
+	return
 }
 
 func (ms *ModuleStore) GetModelCloneObject(ctx context.Context, projectId string, tenantId string, modelObj models.ModelI, s ModuleStoreI) (modelObjClone models.ModelI, err error) {
@@ -261,7 +265,7 @@ func (ms *ModuleStore) GetModelCloneObject(ctx context.Context, projectId string
 		logs.WithContext(ctx).Error(modelObjJsonErr.Error())
 		return
 	}
-	modelObjJson = s.ReplaceTenantVariables(ctx, projectId, tenantId, modelObjJson)
+	modelObjJson = s.ReplaceTenantVariables(ctx, projectId, tenantId, "", modelObjJson)
 	modelObjJson = s.ReplaceVariables(ctx, projectId, modelObjJson, nil)
 
 	iCloneI := reflect.New(reflect.TypeOf(modelObj))
@@ -339,89 +343,93 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 	if err != nil {
 		return
 	}
+	var toolObj tools.Tooling
 	if _, ok := prj.Tenants[tenantId]; !ok {
 		err = errors.New("tenant " + tenantId + " not found")
 		logs.WithContext(ctx).Error(err.Error())
 		return
-	} else if toolObj, ok := prj.Tenants[tenantId].Tools[toolName]; !ok {
-		err = errors.New("tool " + toolName + " not found")
-		logs.WithContext(ctx).Error(err.Error())
-		return
-	} else {
-		err = toolObj.ValidateAction(ctx, actionName, toolObj)
-		if err != nil {
-			return
-		}
-		err = toolObj.SetPrivateAttributes(ctx, toolObj)
-		if err != nil {
-			return
-		}
-		toolObjClone, err = ms.GetToolCloneObject(ctx, projectId, tenantId, toolObj, s)
-		toolObjClone.SetToolDb(db.GetDb(s.GetDbType()))
-		toolObjClone.GetToolDb().SetConn(s.GetConn())
-		toolObjClone.SetToolAction(actionName)
-		if err != nil {
-			return
-		}
-		var scheduler scheduler.SchedulerI
-		scheduler, err = s.FetchScheduler(ctx, projectId)
-		if err == nil {
-			toolObjClone.SetScheduler(scheduler)
+	} else if toolObj, ok = prj.Tenants[tenantId].Tools[toolName]; !ok {
+		if projectToolObj, ok := prj.Tenants[projectId].Tools[toolName]; ok {
+			toolObj = projectToolObj
 		} else {
-			err = nil //ignore error and allow rest of object to be cloned
+			err = errors.New("tool " + toolName + " not found")
+			logs.WithContext(ctx).Error(err.Error())
+			return
 		}
-
-		vectorStoreName, _ := toolObjClone.GetAttribute(ctx, "vectorstore_name")
-		if vectorStoreName != nil {
-			vectorStoreName := vectorStoreName.(string)
-			vectorStore, vectorStoreErr := s.GetVectorStore(ctx, projectId, tenantId, vectorStoreName, s)
-			if vectorStoreErr != nil {
-				err = vectorStoreErr
-				logs.WithContext(ctx).Error(err.Error())
-				return
-			}
-			vectorStoreClone, vectorStoreCloneErr := s.GetVectorStoreCloneObject(ctx, projectId, tenantId, vectorStore, s)
-			if vectorStoreCloneErr != nil {
-				err = vectorStoreCloneErr
-				logs.WithContext(ctx).Error(err.Error())
-				return
-			} else {
-				toolObjClone.SetAttribute(ctx, "vectorstore", vectorStoreClone)
-			}
-
-			embed, embedErr := vectorStoreClone.GetEmbed(ctx)
-			if embedErr != nil {
-				err = embedErr
-				logs.WithContext(ctx).Error(err.Error())
-				return
-			}
-
-			dimension := vectorStoreClone.GetAttribute(ctx, "dimension")
-			dimensionInt := 0
-			if dimension != "" {
-				dimensionInt, err = strconv.Atoi(dimension)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-					return
-				}
-			}
-			embed.Dimension = dimensionInt
-			embed.Metric = vectorStoreClone.GetAttribute(ctx, "metric")
-			if embed.ModelName != "" {
-				model, err := s.GetModel(ctx, projectId, tenantId, embed.ModelName, s)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-				}
-				embed.Model = model
-				err = vectorStoreClone.SetEmbed(ctx, embed)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-				}
-			}
-		}
-
+	}
+	err = toolObj.ValidateAction(ctx, actionName, toolObj)
+	if err != nil {
 		return
 	}
+	err = toolObj.SetPrivateAttributes(ctx, toolObj)
+	if err != nil {
+		return
+	}
+	toolObjClone, err = ms.GetToolCloneObject(ctx, projectId, tenantId, toolObj, s)
+	toolObjClone.SetToolDb(db.GetDb(s.GetDbType()))
+	toolObjClone.GetToolDb().SetConn(s.GetConn())
+	toolObjClone.SetToolAction(actionName)
+	if err != nil {
+		return
+	}
+	var scheduler scheduler.SchedulerI
+	scheduler, err = s.FetchScheduler(ctx, projectId)
+	if err == nil {
+		toolObjClone.SetScheduler(scheduler)
+	} else {
+		err = nil //ignore error and allow rest of object to be cloned
+	}
+
+	vectorStoreName, _ := toolObjClone.GetAttribute(ctx, "vectorstore_name")
+	if vectorStoreName != nil {
+		vectorStoreName := vectorStoreName.(string)
+		vectorStore, vectorStoreErr := s.GetVectorStore(ctx, projectId, tenantId, vectorStoreName, s)
+		if vectorStoreErr != nil {
+			err = vectorStoreErr
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		vectorStoreClone, vectorStoreCloneErr := s.GetVectorStoreCloneObject(ctx, projectId, tenantId, vectorStore, s)
+		if vectorStoreCloneErr != nil {
+			err = vectorStoreCloneErr
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			toolObjClone.SetAttribute(ctx, "vectorstore", vectorStoreClone)
+		}
+
+		embed, embedErr := vectorStoreClone.GetEmbed(ctx)
+		if embedErr != nil {
+			err = embedErr
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+
+		dimension := vectorStoreClone.GetAttribute(ctx, "dimension")
+		dimensionInt := 0
+		if dimension != "" {
+			dimensionInt, err = strconv.Atoi(dimension)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return
+			}
+		}
+		embed.Dimension = dimensionInt
+		embed.Metric = vectorStoreClone.GetAttribute(ctx, "metric")
+		if embed.ModelName != "" {
+			model, err := s.GetModel(ctx, projectId, tenantId, embed.ModelName, s)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			embed.Model = model
+			err = vectorStoreClone.SetEmbed(ctx, embed)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+		}
+	}
+
+	return
 }
 
 func (ms *ModuleStore) GetToolCloneObject(ctx context.Context, projectId string, tenantId string, toolObj tools.Tooling, s ModuleStoreI) (toolObjClone tools.Tooling, err error) {
@@ -431,7 +439,7 @@ func (ms *ModuleStore) GetToolCloneObject(ctx context.Context, projectId string,
 	if toolObjJsonErr != nil {
 		return
 	}
-	toolObjJson = s.ReplaceTenantVariables(ctx, projectId, tenantId, toolObjJson)
+	toolObjJson = s.ReplaceTenantVariables(ctx, projectId, tenantId, "", toolObjJson)
 	toolObjJson = s.ReplaceVariables(ctx, projectId, toolObjJson, nil)
 
 	return toolObj.BytesToTool(ctx, toolObjJson)
@@ -453,7 +461,7 @@ func (ms *ModuleStore) GetVectorStoreCloneObject(ctx context.Context, projectId 
 	if vectorStoreObjJsonErr != nil {
 		return
 	}
-	vectorStoreObjJson = s.ReplaceTenantVariables(ctx, projectId, tenantId, vectorStoreObjJson)
+	vectorStoreObjJson = s.ReplaceTenantVariables(ctx, projectId, tenantId, "", vectorStoreObjJson)
 	vectorStoreObjJson = s.ReplaceVariables(ctx, projectId, vectorStoreObjJson, nil)
 
 	return vectorStoreObj.BytesToVectorStore(ctx, vectorStoreObjJson)
@@ -517,43 +525,45 @@ func (ms *ModuleStore) RemoveAgent(ctx context.Context, agentName string, projec
 	}
 }
 
-func (ms *ModuleStore) GetAgentClone(ctx context.Context, projectId string, tenantId string, agentName string, s ModuleStoreI) (agentObjClone agents.AgentI, err error) {
+func (ms *ModuleStore) GetAgentClone(ctx context.Context, projectId string, tenantId string, conversationId string, agentName string, s ModuleStoreI) (agentObjClone agents.AgentI, err error) {
 	logs.WithContext(ctx).Debug("GetAgentClone - Start")
 	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
 		return
 	}
+	var agentObj agents.AgentI
 	if _, ok := prj.Tenants[tenantId]; !ok {
 		err = errors.New("tenant " + tenantId + " not found")
 		logs.WithContext(ctx).Error(err.Error())
 		return
-	} else if agentObj, ok := prj.Tenants[tenantId].Agents[agentName]; !ok {
-		err = errors.New("agent " + agentName + " not found")
-		logs.WithContext(ctx).Error(err.Error())
-		return
-	} else {
-		agentObjClone, err = ms.GetAgentCloneObject(ctx, projectId, tenantId, agentObj, s)
-		if err != nil {
+	} else if agentObj, ok = prj.Tenants[tenantId].Agents[agentName]; !ok {
+		if projectAgentObj, ok := prj.Tenants[projectId].Agents[agentName]; ok {
+			agentObj = projectAgentObj
+		} else {
+			err = errors.New("agent " + agentName + " not found")
+			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
-		if ok {
-			cacheI := agentObj.GetChatMemory()
-			if cacheI != nil {
-				err := agentObjClone.GetChatMemory().SyncPersistence(ctx, agentObj.GetChatMemory())
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-		err = agentObjClone.ValidateChatMemory(ctx, projectId)
+	}
+	agentObjClone, err = ms.GetAgentCloneObject(ctx, projectId, tenantId, conversationId, agentObj, s)
+	if err != nil {
+		return
+	}
+	cacheI := agentObj.GetChatMemory()
+	if cacheI != nil {
+		err := agentObjClone.GetChatMemory().SyncPersistence(ctx, agentObj.GetChatMemory())
 		if err != nil {
 			return nil, err
 		}
-		return
 	}
+	err = agentObjClone.ValidateChatMemory(ctx, projectId)
+	if err != nil {
+		return nil, err
+	}
+	return
 }
 
-func (ms *ModuleStore) GetAgentCloneObject(ctx context.Context, projectId string, tenantId string, agentObj agents.AgentI, s ModuleStoreI) (agentObjClone agents.AgentI, err error) {
+func (ms *ModuleStore) GetAgentCloneObject(ctx context.Context, projectId string, tenantId string, conversationId string, agentObj agents.AgentI, s ModuleStoreI) (agentObjClone agents.AgentI, err error) {
 	logs.WithContext(ctx).Debug("GetAgentCloneObject - Start")
 
 	agentObjJson, agentObjJsonErr := json.Marshal(agentObj)
@@ -563,7 +573,7 @@ func (ms *ModuleStore) GetAgentCloneObject(ctx context.Context, projectId string
 		logs.WithContext(ctx).Error(agentObjJsonErr.Error())
 		return
 	}
-	agentObjJson = s.ReplaceTenantVariables(ctx, projectId, tenantId, agentObjJson)
+	agentObjJson = s.ReplaceTenantVariables(ctx, projectId, tenantId, conversationId, agentObjJson)
 	agentObjJson = s.ReplaceVariables(ctx, projectId, agentObjJson, nil)
 
 	iCloneI := reflect.New(reflect.TypeOf(agentObj))
@@ -600,9 +610,9 @@ func (ms *ModuleStore) populateAgentTools(ctx context.Context, projectId string,
 	return nil
 }
 
-func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId string, agentName string, s ModuleStoreI) (agents.AgentI, error) {
+func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId string, conversationId string, agentName string, s ModuleStoreI) (agents.AgentI, error) {
 	logs.WithContext(ctx).Debug("GetAgent - Start")
-	agent, err := ms.GetAgentClone(ctx, projectId, tenantId, agentName, s)
+	agent, err := ms.GetAgentClone(ctx, projectId, tenantId, conversationId, agentName, s)
 	if err != nil {
 		return nil, err
 	}

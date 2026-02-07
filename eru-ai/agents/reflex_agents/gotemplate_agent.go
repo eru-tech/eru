@@ -26,19 +26,21 @@ func (goTemplateAgent *GoTemplateAgent) GetSpec() agents.AgentI {
 
 func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (agents.AgentMessage, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
+	contextMap := make(map[string]interface{})
 	contextStringI, contextStringIOk := agentMessage.Params["context"]
 	if contextStringIOk {
 		if contextString, contextStringOk := contextStringI.(string); contextStringOk {
-			contextMap := make(map[string]interface{})
 			err := json.Unmarshal([]byte(contextString), &contextMap)
 			if err != nil {
 				logs.WithContext(ctx).Error(err.Error())
 				return agents.AgentMessage{}, err
 			}
 			agentMessage.Params["context"] = contextMap
+		} else if contextMapI, contextMapOk := contextStringI.(map[string]interface{}); contextMapOk {
+			contextMap = contextMapI
 		}
 	}
-	contextJsonSchema := eru_utils.GenerateJSONSchema(ctx, agentMessage.Params)
+	contextJsonSchema := eru_utils.GenerateJSONSchema(ctx, contextMap)
 	jsonSchemaString, err := json.Marshal(contextJsonSchema)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -161,8 +163,6 @@ func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessag
 
 	contextVariableString = fmt.Sprint(templateCodeString, contextVariableString, contextVariablePrompt, templateVarsSchemaString)
 
-	logs.WithContext(ctx).Info(contextVariableString)
-
 	/* msg := models.Message{
 		Role:    "assistant",
 		Content: agentMessage.Content,
@@ -223,8 +223,8 @@ func (goTemplateAgent *GoTemplateAgent) execute(ctx context.Context, chatRequest
 		logs.WithContext(ctx).Error(err.Error())
 		//TODO make retry configurable and part of agent config
 		if currentTry < goTemplateAgent.RetryCount {
-			errMsgString := fmt.Sprintf("Error in the gotemplate code. Please try again. \n Error: %s \n Erroneous Tenplate Code generated in previous try: %s", err.Error(), templateCode)
-			chatRequest.Messages[1].Content = fmt.Sprint(chatRequest.Messages[1].Content, "\n", errMsgString)
+			errMsgString := fmt.Sprintf("There was error in previous attempt to generate go template **START OF PREVIOUS TEMPLATE** %s **END OF PREVIOUS TEMPLATE**. \n Error: %s \n Please try again and ensure not to generate same template code again and improvize to resolve the error", templateCode, err.Error())
+			chatRequest.Messages[1].Content = fmt.Sprint(errMsgString, "\n\n", chatRequest.Messages[1].Content)
 			return goTemplateAgent.execute(ctx, chatRequest, contextStringI, agentTools, goTemplateAgent.AgentName, goTemplateAgent.SystemPrompt, currentTry+1, projectId, tenantId)
 		}
 		return agents.AgentMessage{}, err
@@ -264,7 +264,6 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 	goTmpl := gotemplate.GoTemplate{Name: templateName, Template: templateString}
 	output, err = goTmpl.ExecuteWithErrors(ctx, vars, outputType)
 	if err != nil {
-		err = logs.Err(ctx, fmt.Errorf("goTmpl.ExecuteWithErrors error : %w", err), "")
 		return nil, err
 	}
 	return

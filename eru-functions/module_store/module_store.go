@@ -550,8 +550,11 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			r.RouteName = funcStep.AgentName
 			r.Url = "/"
 			r.MatchType = "PREFIX"
-
-			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/agent/", funcStep.AgentName)
+			conversationId := ""
+			if funcStep.ConversationId != "" {
+				conversationId = fmt.Sprint("/", funcStep.ConversationId)
+			}
+			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/agent/", funcStep.AgentName, conversationId)
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
 			eruaibaseurl := getEruaibaseurl(ctx)

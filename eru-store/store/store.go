@@ -65,7 +65,7 @@ type StoreI interface {
 	FetchVars(ctx context.Context, projectId string) (variables Variables, err error)
 	FetchTenantVars(ctx context.Context, projectId string) (variables map[string]Variables, err error)
 	ReplaceVariables(ctx context.Context, projectId string, text []byte, varMap map[string]interface{}) (returnText []byte)
-	ReplaceTenantVariables(ctx context.Context, projectId string, tenantId string, text []byte) (returnText []byte)
+	ReplaceTenantVariables(ctx context.Context, projectId string, tenantId string, conversationId string, text []byte) (returnText []byte)
 	SaveTenantSecret(ctx context.Context, projectId string, tenantId string, newSecret Secrets, s StoreI) (err error)
 	RemoveTenantSecret(ctx context.Context, projectId string, tenantId string, key string, s StoreI) (err error)
 	SaveRepo(ctx context.Context, projectId string, repo repos.RepoI, s StoreI, persist bool) (err error)
@@ -608,10 +608,11 @@ func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text
 	}
 	return []byte(textStr)
 }
-func (store *Store) ReplaceTenantVariables(ctx context.Context, projectId string, tenantId string, text []byte) (returnText []byte) {
+func (store *Store) ReplaceTenantVariables(ctx context.Context, projectId string, tenantId string, conversationId string, text []byte) (returnText []byte) {
 	logs.WithContext(ctx).Debug("ReplaceTenantVariables - Start")
 	textStr := string(text)
 	textStr = strings.Replace(textStr, "$VAR_tenant_id", tenantId, -1)
+	textStr = strings.Replace(textStr, "$VAR_conversation_id", conversationId, -1)
 	if _, prjVarsOk := store.TenantVariables[projectId]; prjVarsOk {
 		if _, tenantVarsOk := store.TenantVariables[projectId][tenantId]; tenantVarsOk {
 			for k, v := range store.TenantVariables[projectId][tenantId].Secrets {

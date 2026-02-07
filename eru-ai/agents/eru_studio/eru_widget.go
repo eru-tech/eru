@@ -10,6 +10,7 @@ import (
 	models "github.com/eru-tech/eru/eru-ai/models"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/uuid"
 	//eru_models "github.com/eru-tech/eru/eru-models"
 )
 
@@ -25,9 +26,11 @@ func (EruWidgetAgent *EruWidgetAgent) GetSpec() agents.AgentI {
 
 func (EruWidgetAgent *EruWidgetAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (agents.AgentMessage, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
+	agentContextString := ""
 	contextStringI, contextStringIOk := agentMessage.Params["context"]
 	if contextStringIOk {
 		if contextString, contextStringOk := contextStringI.(string); contextStringOk {
+			agentContextString = contextString
 			contextMap := make(map[string]interface{})
 			err := json.Unmarshal([]byte(contextString), &contextMap)
 			if err != nil {
@@ -35,6 +38,13 @@ func (EruWidgetAgent *EruWidgetAgent) Execute(ctx context.Context, agentMessage 
 				return agents.AgentMessage{}, err
 			}
 			agentMessage.Params["context"] = contextMap
+		} else {
+			agentContextbytes, err := json.Marshal(agentMessage.Params["context"])
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return agents.AgentMessage{}, err
+			}
+			agentContextString = string(agentContextbytes)
 		}
 	}
 	contextJsonSchema := eru_utils.GenerateJSONSchema(ctx, agentMessage.Params)
@@ -67,7 +77,11 @@ func (EruWidgetAgent *EruWidgetAgent) Execute(ctx context.Context, agentMessage 
 		Content: agentMessage.Content,
 		Name:    EruWidgetAgent.AgentName,
 	} */
-	contextVariableString = fmt.Sprintf("this is the actual data that has been fetched based on user prompt. Analyse the best possible way to display this and is in lines with any specific user's prompt \n\n %s Based on componenet selection, you will have to convert the data format into component specific format as required in the component's properties\n\n", agentMessage.Params["context"], contextVariableString)
+	widgetId := conversationId
+	if widgetId == "" {
+		widgetId = uuid.New().String()
+	}
+	contextVariableString = fmt.Sprintf("this is the actual data that has been fetched based on user prompt. Analyse the best possible way to display this and is in lines with any specific user's prompt. There could be nil data or empty json, handle these cases gracefully by populating default value provided for data key of properties in respective component. \n\n START OF DATA %s \n\n END OF DATA \n\n Based on componenet selection, you will have to convert the data format into component specific format as required in the component's properties\n\n %s \n\n use %s as widget id", agentContextString, contextVariableString, widgetId)
 	msg := models.Message{
 		Role:    "assistant",
 		Content: contextVariableString,

@@ -82,6 +82,7 @@ type FuncStep struct {
 	ToolAction              string        `json:"tool_action"`
 	AgentName               string        `json:"agent_name"`
 	TenantId                string        `json:"tenant_id"`
+	ConversationId          string        `json:"conversation_id"`
 	Route                   Route         `json:"-"`
 	FuncKey                 string        `json:"-"`
 	ParentFuncGroupName     string        `json:"-"`

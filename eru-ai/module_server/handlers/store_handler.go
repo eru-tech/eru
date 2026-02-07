@@ -677,7 +677,7 @@ func FetchConversationHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		tenantId := vars["tenant"]
 		agentName := vars["agentname"]
 		conversationId := vars["conversationid"]
-		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, agentName, sh.Store)
+		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, conversationId, agentName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -709,7 +709,7 @@ func ListConversationsHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
 		agentName := vars["agentname"]
-		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, agentName, sh.Store)
+		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, "", agentName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -743,7 +743,7 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		tenantId := vars["tenant"]
 		agentName := vars["agentname"]
 		conversationId := vars["conversationid"]
-		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, agentName, sh.Store)
+		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, conversationId, agentName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -753,7 +753,9 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 
 			var agentMessage agents.AgentMessage
 			if err := agentParamsFromReq.Decode(&agentMessage); err != nil {
+				utils.PrintRequestBody(r.Context(), r, "")
 				logs.WithContext(r.Context()).Error(err.Error())
+
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 				return
