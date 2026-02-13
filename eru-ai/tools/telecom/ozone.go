@@ -89,6 +89,11 @@ func (ozoneTool *OzoneTool) Callback(ctx context.Context, projectId string, tena
 		} else {
 			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
 		}
+		if body == nil {
+			body = make(map[string]interface{})
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
 
 		bodyBytes, err := json.Marshal(body)
 		if err != nil {

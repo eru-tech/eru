@@ -560,7 +560,7 @@ func (cs *CacheStore) LoadListFromDatabase(ctx context.Context, projectId, tenan
 		return nil, fmt.Errorf("ERUQL_BASEURL environment variable not set")
 	}
 
-	query := `with minsk as (select cache_key, min(cache_sk) cache_sk, max(updated_at) last_updated from eru_cache group by cache_key) select a.*, b.last_updated from eru_cache a inner join minsk b on a.cache_sk=b.cache_sk where project_id='$$project_id$$' and tenant_id='$$tenant_id$$' and agent_name='$$agent_name$$'`
+	query := `with minsk as (select cache_key,agent_name, min(cache_sk) cache_sk, max(updated_at) last_updated from eru_cache group by cache_key,agent_name) select a.*, b.last_updated from eru_cache a inner join minsk b on a.cache_sk=b.cache_sk and a.agent_name=b.agent_name where a.project_id='$$project_id$$' and a.tenant_id='$$tenant_id$$' and a.agent_name='$$agent_name$$'`
 	//and created_by = '$$userid$$'
 
 	query = strings.Replace(query, "$$project_id$$", projectId, -1)

@@ -169,7 +169,7 @@ func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessag
 		Name:    goTemplateAgent.AgentName,
 	} */
 	msg := models.Message{
-		Role:    "assistant",
+		Role:    "system",
 		Content: contextVariableString,
 		Name:    goTemplateAgent.AgentName,
 	}
