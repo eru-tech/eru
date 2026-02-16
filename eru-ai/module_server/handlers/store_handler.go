@@ -773,8 +773,6 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 
 			r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
 			r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
-			logs.WithContext(r.Context()).Info(fmt.Sprintf("Eruaibaseurl: %s", module_store.Eruaibaseurl))
-			logs.WithContext(r.Context()).Info(fmt.Sprintf("context: %s", r.Context()))
 			agentResult, err := agent.Execute(r.Context(), agentMessage, conversationId, projectId, tenantId)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)

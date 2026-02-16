@@ -75,6 +75,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	serverRouter.PathPrefix("/{project}/wf/{wfname}").HandlerFunc(module_handlers.WfHandler(sh))
 
+	serverRouter.PathPrefix("/{project}/notify").HandlerFunc(module_handlers.NotifyHandler(sh))
 	serverRouter.PathPrefix("/asynctest").HandlerFunc(module_handlers.RouteAsyncTestHandler(sh))
 	serverRouter.PathPrefix("/").HandlerFunc(module_handlers.RouteForwardHandler(sh))
 

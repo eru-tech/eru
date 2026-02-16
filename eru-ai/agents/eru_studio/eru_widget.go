@@ -81,7 +81,12 @@ func (EruWidgetAgent *EruWidgetAgent) Execute(ctx context.Context, agentMessage 
 	if widgetId == "" {
 		widgetId = uuid.New().String()
 	}
-	contextVariableString = fmt.Sprintf("this is the actual data that has been fetched based on user prompt. Analyse the best possible way to display this and is in lines with any specific user's prompt. There could be nil data or empty json, handle these cases gracefully by populating default value provided for data key of properties in respective component. \n\n START OF DATA %s \n\n END OF DATA \n\n Based on componenet selection, you will have to convert the data format into component specific format as required in the component's properties\n\n %s \n\n use %s as widget id", agentContextString, contextVariableString, widgetId)
+
+	if agentContextString != "" {
+		agentContextString = fmt.Sprintf("this is the actual data that has been fetched based on user prompt. Analyse the best possible way to display this and is in lines with any specific user's prompt. There could be nil data or empty json, handle these cases gracefully by populating default value provided for data key of properties in respective component. \n\n START OF DATA %s \n\n END OF DATA \n\n", agentContextString)
+	}
+	contextVariableString = fmt.Sprintf("%s Based on componenet selection, you will have to add the 'data' property into component specific format as required in the component's properties. Ensure that the data is always stringified.\n\n %s \n\n use %s as widget id", agentContextString, contextVariableString, widgetId)
+
 	msg := models.Message{
 		Role:    "assistant",
 		Content: contextVariableString,

@@ -126,7 +126,6 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 		logs.WithContext(ctx).Error(err.Error())
 		return agents.AgentMessage{}, err
 	}
-	logs.WithContext(ctx).Info(fmt.Sprintf("Tool results: %+v", toolResults))
 
 	chatRequest.Messages = append(chatRequest.Messages, models.Message{
 		Role:    "assistant",

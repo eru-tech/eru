@@ -3,12 +3,14 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	//"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
 
+	"github.com/eru-tech/eru/eru-events/events"
 	"github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -119,4 +121,121 @@ func RouteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			}
 		}
 	}
+}
+
+func NotifyHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("NotifyHandler - Start")
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+		channel := r.URL.Query().Get("channel")
+		if channel == "" {
+			channel = "demo" // default for testing
+		}
+
+		// SSE headers
+		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache, no-transform")
+		w.Header().Set("Connection", "keep-alive")
+
+		// Tell client how quickly to retry
+		fmt.Fprintf(w, "retry: 1000\n\n")
+		flusher.Flush()
+
+		ctx := r.Context()
+
+		keepAlive := time.NewTicker(15 * time.Second)
+		defer keepAlive.Stop()
+
+		var eventIs []events.EventI
+		if projectId != "" {
+			event, err := sh.Store.FetchEvent(ctx, projectId, channel)
+			if err == nil {
+				eventType, _ := event.GetAttribute("event_type")
+				if eventType == "DB" {
+					event.SetCon(sh.Store.GetConn(), sh.Store.GetDbType())
+				}
+				eventIs = append(eventIs, event)
+			}
+		} else {
+			// fallback to all projects if no projectId is provided
+			projects := sh.Store.GetProjectList(ctx)
+			for _, p := range projects {
+				if pid, ok := p["ProjectId"].(string); ok {
+					event, err := sh.Store.FetchEvent(ctx, pid, channel)
+					if err == nil {
+						eventType, _ := event.GetAttribute("event_type")
+						if eventType == "DB" {
+							event.SetCon(sh.Store.GetConn(), sh.Store.GetDbType())
+						}
+						eventIs = append(eventIs, event)
+					}
+				}
+			}
+		}
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-keepAlive.C:
+				// Comment ping to keep connection alive
+				fmt.Fprintf(w, ": ping %d\n\n", time.Now().Unix())
+				flusher.Flush()
+			default:
+				foundMsg := false
+				for _, eventI := range eventIs {
+					evts, err := eventI.Poll(ctx)
+					if err == nil {
+						for _, e := range evts {
+							// Stream as named event "message"
+							writeSSE(w, "message", e.Msg)
+							flusher.Flush()
+							_ = eventI.DeleteMessage(ctx, e.MsgIdentifer)
+							foundMsg = true
+						}
+					}
+				}
+				if !foundMsg {
+					// Wait before next poll if no messages, while still checking for context cancellation
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(2 * time.Second):
+					}
+				}
+			}
+		}
+	}
+}
+func writeSSE(w http.ResponseWriter, event string, data string) {
+	if event != "" {
+		fmt.Fprintf(w, "event: %s\n", event)
+	}
+	// data lines must be line-safe
+	for _, line := range splitLines(data) {
+		fmt.Fprintf(w, "data: %s\n", line)
+	}
+	fmt.Fprint(w, "\n")
+}
+func splitLines(s string) []string {
+	// simple split to ensure no raw newlines break SSE framing
+	out := []string{}
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			out = append(out, s[start:i])
+			start = i + 1
+		}
+	}
+	out = append(out, s[start:])
+	return out
 }

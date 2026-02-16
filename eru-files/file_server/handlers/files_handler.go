@@ -64,22 +64,29 @@ func FileDownloadHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		storageName := vars["storagename"]
-
+		fileName := vars["filename"]
+		folderPath := vars["folderpath"]
 		//var err error
 
 		//ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
 		//defer cancel()
 		//_ = ctx
 
-		dfFromReq := json.NewDecoder(r.Body)
-		dfFromReq.DisallowUnknownFields()
-		//dfFromObj := make(map[string]string)
 		dfFromObj := module_store.FileDownloadRequest{}
-		if err := dfFromReq.Decode(&dfFromObj); err != nil {
-			logs.WithContext(r.Context()).Error(err.Error())
-			server_handlers.FormatResponse(w, 400)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			return
+
+		if fileName != "" && folderPath != "" {
+			dfFromObj.FolderPath = folderPath
+			dfFromObj.FileName = fileName
+		} else {
+			dfFromReq := json.NewDecoder(r.Body)
+			dfFromReq.DisallowUnknownFields()
+			//dfFromObj := make(map[string]string)
+			if err := dfFromReq.Decode(&dfFromObj); err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
 		}
 		if dfFromObj.ExcelAsJson || dfFromObj.CsvAsJson {
 			file, err := sh.Store.DownloadFileAsJson(r.Context(), projectId, storageName, dfFromObj, sh.Store)
@@ -115,22 +122,27 @@ func FileDownloadHandlerB64(sh *module_store.StoreHolder) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		storageName := vars["storagename"]
-
+		fileName := vars["filename"]
+		folderPath := vars["folderpath"]
 		var err error
 
 		//ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
 		//defer cancel()
 		//_ = ctx
-
-		dfFromReq := json.NewDecoder(r.Body)
-		dfFromReq.DisallowUnknownFields()
-		//dfFromObj := make(map[string]string)
 		dfFromObj := module_store.FileDownloadRequest{}
-		if err := dfFromReq.Decode(&dfFromObj); err != nil {
-			logs.WithContext(r.Context()).Error(err.Error())
-			server_handlers.FormatResponse(w, 400)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			return
+		if fileName != "" && folderPath != "" {
+			dfFromObj.FolderPath = folderPath
+			dfFromObj.FileName = fileName
+		} else {
+			dfFromReq := json.NewDecoder(r.Body)
+			dfFromReq.DisallowUnknownFields()
+			//dfFromObj := make(map[string]string)
+			if err := dfFromReq.Decode(&dfFromObj); err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
 		}
 
 		fileB64, mimeType, err := sh.Store.DownloadFileB64(r.Context(), projectId, storageName, dfFromObj, sh.Store)

@@ -629,8 +629,6 @@ func (openaiModel *OpenAIModel) makeOpenAIChatToolRequest(ctx context.Context, c
 		//toolParameters := toolParametersI.(eru_models.JSONSchema)
 
 		toolParameters := tool.GetParameters()
-		toolParametersBytes, _ := json.Marshal(toolParameters)
-		logs.WithContext(ctx).Info(fmt.Sprint(string(toolParametersBytes)))
 
 		toolPrompt += fmt.Sprint("Tool prompt for Tool ", toolName, " is as follows :\n", toolSystemPromptI.(string))
 		reqTool := OpenAIRequestTools{

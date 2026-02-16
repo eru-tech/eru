@@ -394,7 +394,7 @@ When generating EruComponent.properties.base (and optional responsive breakpoint
   {
       "key": "data",
       "default_value": "[{/"name/": /"A1/", /"value/": 335}, {/"name/": /"B/", /"value/": 310}, {/"name/": /"C/", /"value/": 234}, {/"name/": /"D/", /"value/": 135}]",
-      "description": "convert query output shared in the context to pie chart data format [{"name":"Label 1",value:10},{"name":"Label 2",value:20}] - the query output will be json but you need to return stringified json as part of data value. Ignore nil values in query result. Ensure not to miss out on any non nil values. Double check that value set is a VALID JSON and is stringified."
+      "description": "This property holds actual json data in stringified format (json as string) that will be used to display pie chart. Default format is provided."
     },
     {
       "key": "nameKey",
