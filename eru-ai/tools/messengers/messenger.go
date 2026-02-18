@@ -25,9 +25,14 @@ const (
 	Login     = "login"
 	GetSsoUrl = "get_sso_url"
 
-	RegisterPublicKey = "register_public_key"
-	FetchPublicKey    = "fetch_public_key"
-	FlowEndpoint      = "flow_endpoint"
+	RegisterPublicKey     = "register_public_key"
+	FetchPublicKey        = "fetch_public_key"
+	FlowEndpoint          = "flow_endpoint"
+	CreateMessageTemplate = "create_message_template"
+	DownloadFlowDocument  = "download_flow_document"
+	FetchTemplates        = "fetch_templates"
+	EditMessageTemplate   = "edit_message_template"
+	DeleteMessageTemplate = "delete_message_template"
 )
 
 type MessengerAccount struct {

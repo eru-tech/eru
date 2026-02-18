@@ -3,6 +3,8 @@ package messengers
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -31,6 +33,58 @@ const (
 	INSERT_CALLBACK_REQUEST = "insert into eruai_cb_whatsapp (project_id, tenant_id, waba_id, msg, msg_params, msg_from) values ($1, $2, $3, $4, $5, $6)"
 	WHATSAPP_BASE_URL       = "https://graph.facebook.com"
 )
+
+type WhatsAppCreateTemplateRequest struct {
+	Name       string                      `json:"name" eru:"required"`
+	Category   string                      `json:"category" eru:"required"`
+	Language   string                      `json:"language" eru:"required"`
+	Components []WhatsAppTemplateComponent `json:"components" eru:"required"`
+}
+
+type WhatsAppTemplateComponent struct {
+	Type      string                   `json:"type" eru:"required"`
+	Format    string                   `json:"format,omitempty"`
+	Text      string                   `json:"text,omitempty"`
+	Buttons   []WhatsAppTemplateButton `json:"buttons,omitempty"`
+	Example   *WhatsAppTemplateExample `json:"example,omitempty"`
+	CardIndex *int                     `json:"card_index,omitempty"`
+	Cards     []interface{}            `json:"cards,omitempty"` // Can be refined if needed
+}
+
+type WhatsAppTemplateButton struct {
+	Type           string   `json:"type" eru:"required"`
+	Text           string   `json:"text,omitempty"`
+	PhoneNumber    string   `json:"phone_number,omitempty"`
+	Url            string   `json:"url,omitempty"`
+	OtpType        string   `json:"otp_type,omitempty"`
+	Autofill       *bool    `json:"autofill,omitempty"`
+	Example        []string `json:"example,omitempty"`
+	FlowAction     string   `json:"flow_action,omitempty"`
+	FlowId         int64    `json:"flow_id,omitempty"`
+	NavigateScreen string   `json:"navigate_screen,omitempty"`
+}
+
+type WhatsAppTemplateExample struct {
+	HeaderHandle []string   `json:"header_handle,omitempty"`
+	HeaderText   []string   `json:"header_text,omitempty"`
+	BodyText     [][]string `json:"body_text,omitempty"`
+}
+
+type WhatsAppDownloadFlowDocumentRequest struct {
+	CdnUrl             string                     `json:"cdn_url" eru:"required"`
+	MediaId            string                     `json:"media_id"`
+	FileName           string                     `json:"file_name" eru:"required"`
+	EncryptionMetadata WhatsAppEncryptionMetadata `json:"encryption_metadata" eru:"required"`
+}
+
+type WhatsAppEncryptionMetadata struct {
+	Iv            string `json:"iv" eru:"required"`
+	Hmac          string `json:"hmac" eru:"required"`
+	HmacKey       string `json:"hmac_key" eru:"required"`
+	EncryptedHash string `json:"encrypted_hash" eru:"required"`
+	EncryptionKey string `json:"encryption_key" eru:"required"`
+	PlaintextHash string `json:"plaintext_hash" eru:"required"`
+}
 
 type WhatsAppTool struct {
 	tools.Tool
@@ -65,6 +119,11 @@ func (whatsAppTool *WhatsAppTool) GetActionsList() []string {
 	actions = append(actions, RegisterPublicKey)
 	actions = append(actions, FetchPublicKey)
 	actions = append(actions, FlowEndpoint)
+	actions = append(actions, CreateMessageTemplate)
+	actions = append(actions, DownloadFlowDocument)
+	actions = append(actions, FetchTemplates)
+	actions = append(actions, EditMessageTemplate)
+	actions = append(actions, DeleteMessageTemplate)
 	actions = append(actions, Callback)
 	return actions
 }
@@ -141,6 +200,32 @@ func (whatsAppTool *WhatsAppTool) GetMcpTools() []tools.McpToolList {
 		ToolDescription: "Handle WhatsApp Flows encryption and decryption",
 		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", FlowEndpoint),
 	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        CreateMessageTemplate,
+		ToolDescription: "Create a new WhatsApp message template",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", CreateMessageTemplate),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        DownloadFlowDocument,
+		ToolDescription: "Download and decrypt encrypted media from WhatsApp CDN",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", DownloadFlowDocument),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        FetchTemplates,
+		ToolDescription: "Fetch WhatsApp message templates by ID, name, or all",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", FetchTemplates),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        EditMessageTemplate,
+		ToolDescription: "Edit an existing WhatsApp message template by ID",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", EditMessageTemplate),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        DeleteMessageTemplate,
+		ToolDescription: "Delete an existing WhatsApp message template by Name or ID/Name",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", DeleteMessageTemplate),
+	})
+
 	return mcpTools
 }
 
@@ -190,10 +275,20 @@ func (whatsAppTool *WhatsAppTool) Execute(ctx context.Context, projectId string,
 		toolResult, persistStore, err = whatsAppTool.CreateGroup(ctx, params)
 	case RegisterPublicKey:
 		toolResult, persistStore, err = whatsAppTool.RegisterPublicKey(ctx, params)
+	case CreateMessageTemplate:
+		toolResult, persistStore, err = whatsAppTool.CreateMessageTemplate(ctx, params)
 	case FetchPublicKey:
 		toolResult, persistStore, err = whatsAppTool.FetchPublicKey(ctx, params)
 	case FlowEndpoint:
 		toolResult, persistStore, err = whatsAppTool.FlowEndpoint(ctx, params, projectId, tenantId)
+	case DownloadFlowDocument:
+		toolResult, persistStore, err = whatsAppTool.DownloadFlowDocument(ctx, params)
+	case FetchTemplates:
+		toolResult, persistStore, err = whatsAppTool.FetchTemplates(ctx, params)
+	case EditMessageTemplate:
+		toolResult, persistStore, err = whatsAppTool.EditMessageTemplate(ctx, params)
+	case DeleteMessageTemplate:
+		toolResult, persistStore, err = whatsAppTool.DeleteMessageTemplate(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -1072,6 +1167,64 @@ func (whatsAppTool *WhatsAppTool) GetMessageTemplates(ctx context.Context, param
 	return toolResult, false, nil
 }
 
+func (whatsAppTool *WhatsAppTool) FetchTemplates(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("FetchTemplates Execute - Start")
+
+	apiVersion := whatsAppTool.WhatsAppAccount.ApiVersion
+	if apiVersion == "" {
+		apiVersion = "v18.0"
+	}
+
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.WhatsAppAccount.ApiKey))
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Accept", "application/json")
+
+	// 1. Fetch by ID
+	if templateId, ok := params["id"].(string); ok && templateId != "" {
+		url := fmt.Sprintf("%s/%s/%s", WHATSAPP_BASE_URL, apiVersion, templateId)
+		res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, nil, nil)
+		if err != nil {
+			return nil, false, logs.Err(ctx, err, "failed to fetch template by id")
+		}
+		toolResult = make(map[string]interface{})
+		toolResult["template"] = res
+		return toolResult, false, nil
+	}
+
+	// 2. Fetch by Name or All
+	businessAccountId := whatsAppTool.WhatsAppAccount.BusinessAccountId
+	if businessAccountId == "" {
+		return nil, false, logs.Err(ctx, errors.New("business_account_id is required"), "business_account_id is required")
+	}
+
+	url := fmt.Sprintf("%s/%s/%s/message_templates", WHATSAPP_BASE_URL, apiVersion, businessAccountId)
+	queryParams := map[string]string{}
+
+	if name, ok := params["name"].(string); ok && name != "" {
+		queryParams["name"] = name
+	}
+	if fields, ok := params["fields"].(string); ok && fields != "" {
+		queryParams["fields"] = fields
+	}
+	if status, ok := params["status"].(string); ok && status != "" {
+		queryParams["status"] = status
+	}
+	if limit, ok := params["limit"]; ok {
+		queryParams["limit"] = fmt.Sprintf("%v", limit)
+	}
+
+	allTemplates := make([]interface{}, 0)
+	err = whatsAppTool.fetchTemplatesRecursive(ctx, url, headers, queryParams, &allTemplates)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to fetch templates")
+	}
+
+	toolResult = make(map[string]interface{})
+	toolResult["templates"] = allTemplates
+	return toolResult, false, nil
+}
+
 func (whatsAppTool *WhatsAppTool) fetchTemplatesRecursive(ctx context.Context, url string, headers http.Header, queryParams map[string]string, allTemplates *[]interface{}) error {
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
@@ -1671,6 +1824,155 @@ func (whatsAppTool *WhatsAppTool) Callback(ctx context.Context, projectId string
 	return "OK", false, nil
 }
 
+func (whatsAppTool *WhatsAppTool) CreateMessageTemplate(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("CreateMessageTemplate Execute - Start")
+
+	apiVersion := whatsAppTool.WhatsAppAccount.ApiVersion
+	if apiVersion == "" {
+		apiVersion = "v18.0"
+	}
+
+	businessAccountId := whatsAppTool.WhatsAppAccount.BusinessAccountId
+	if businessAccountId == "" {
+		err = logs.Err(ctx, fmt.Errorf("business_account_id is required to create message templates"), "business_account_id is required to create message templates")
+		return nil, false, err
+	}
+
+	url := fmt.Sprintf("%s/%s/%s/message_templates", WHATSAPP_BASE_URL, apiVersion, businessAccountId)
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.WhatsAppAccount.ApiKey))
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Accept", "application/json")
+
+	// Map params to WhatsAppCreateTemplateRequest
+	var req WhatsAppCreateTemplateRequest
+	reqBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to marshal template creation request")
+	}
+	err = json.Unmarshal(reqBytes, &req)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to unmarshal template creation request into struct")
+	}
+
+	// Double check required fields (though they might be validated by graph API)
+	if req.Name == "" || req.Category == "" || req.Language == "" || len(req.Components) == 0 {
+		return nil, false, logs.Err(ctx, fmt.Errorf("name, category, language and components are required"), "name, category, language and components are required")
+	}
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, nil, req)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to call WhatsApp API for template creation")
+	}
+
+	resMap, ok := res.(map[string]interface{})
+	if !ok {
+		return nil, false, logs.Err(ctx, fmt.Errorf("unexpected response format from WhatsApp API"), "unexpected response format")
+	}
+
+	// Check for error in response
+	if errorVal, exists := resMap["error"]; exists {
+		return nil, false, logs.Err(ctx, fmt.Errorf("WhatsApp API error: %v", errorVal), "WhatsApp API returned an error")
+	}
+
+	toolResult = resMap
+	return toolResult, false, nil
+}
+
+func (whatsAppTool *WhatsAppTool) EditMessageTemplate(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("EditMessageTemplate Execute - Start")
+
+	apiVersion := whatsAppTool.WhatsAppAccount.ApiVersion
+	if apiVersion == "" {
+		apiVersion = "v18.0"
+	}
+
+	templateId, ok := params["id"].(string)
+	if !ok || templateId == "" {
+		return nil, false, logs.Err(ctx, errors.New("id is required to edit a message template"), "id is required")
+	}
+
+	url := fmt.Sprintf("%s/%s/%s", WHATSAPP_BASE_URL, apiVersion, templateId)
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.WhatsAppAccount.ApiKey))
+	headers.Set("Content-Type", "application/json")
+
+	// Map params to WhatsAppCreateTemplateRequest (since payload is similar)
+	var req WhatsAppCreateTemplateRequest
+	reqBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to marshal template edit request")
+	}
+	err = json.Unmarshal(reqBytes, &req)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to unmarshal template edit request into struct")
+	}
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, nil, req)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to call WhatsApp API for template edit")
+	}
+
+	resMap, ok := res.(map[string]interface{})
+	if !ok {
+		return nil, false, logs.Err(ctx, fmt.Errorf("unexpected response format from WhatsApp API"), "unexpected response format")
+	}
+
+	if errorVal, exists := resMap["error"]; exists {
+		return nil, false, logs.Err(ctx, fmt.Errorf("WhatsApp API error: %v", errorVal), "WhatsApp API returned an error")
+	}
+
+	toolResult = resMap
+	return toolResult, false, nil
+}
+
+func (whatsAppTool *WhatsAppTool) DeleteMessageTemplate(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("DeleteMessageTemplate Execute - Start")
+
+	apiVersion := whatsAppTool.WhatsAppAccount.ApiVersion
+	if apiVersion == "" {
+		apiVersion = "v18.0"
+	}
+
+	businessAccountId := whatsAppTool.WhatsAppAccount.BusinessAccountId
+	if businessAccountId == "" {
+		return nil, false, logs.Err(ctx, errors.New("business_account_id is required"), "business_account_id is required")
+	}
+
+	templateName, ok := params["name"].(string)
+	if !ok || templateName == "" {
+		return nil, false, logs.Err(ctx, errors.New("template name is required"), "name is required")
+	}
+
+	url := fmt.Sprintf("%s/%s/%s/message_templates", WHATSAPP_BASE_URL, apiVersion, businessAccountId)
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.WhatsAppAccount.ApiKey))
+
+	queryParams := map[string]string{}
+	queryParams["name"] = templateName
+
+	if templateId, ok := params["id"].(string); ok && templateId != "" {
+		queryParams["hsm_id"] = templateId
+	}
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodDelete, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to delete message template")
+	}
+
+	resMap, ok := res.(map[string]interface{})
+	if !ok {
+		return nil, false, logs.Err(ctx, fmt.Errorf("unexpected response format from WhatsApp API"), "unexpected response format")
+	}
+
+	if errorVal, exists := resMap["error"]; exists {
+		return nil, false, logs.Err(ctx, fmt.Errorf("WhatsApp API error: %v", errorVal), "WhatsApp API returned an error")
+	}
+
+	toolResult = resMap
+	return toolResult, false, nil
+}
+
 func (whatsAppTool *WhatsAppTool) GetToolCbUrl(projectId string, tenantId string) string {
 	return fmt.Sprint(whatsAppTool.CallbackBaseUrl, "/", projectId, "/", tenantId, "/callback/tool/", whatsAppTool.ToolName)
 }
@@ -1691,4 +1993,125 @@ func (whatsAppTool *WhatsAppTool) BytesToTool(ctx context.Context, toolObjJson [
 		return nil, err
 	}
 	return whatsAppTool, nil
+}
+
+func (whatsAppTool *WhatsAppTool) DownloadFlowDocument(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("DownloadFlowDocument Execute - Start")
+
+	paramsBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to marshal params")
+	}
+
+	var request WhatsAppDownloadFlowDocumentRequest
+	err = json.Unmarshal(paramsBytes, &request)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to unmarshal download flow document request")
+	}
+
+	if err := utils.ValidateStruct(ctx, request, ""); err != nil {
+		return nil, false, logs.Err(ctx, err, "invalid request parameters")
+	}
+
+	// 1. Download cdn_file file from cdn_url
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, request.CdnUrl, nil)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to create download request")
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to download media")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, false, logs.Err(ctx, fmt.Errorf("media download failed with status %d", resp.StatusCode), "media download failed")
+	}
+
+	cdnFile, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to read downloaded file")
+	}
+
+	// 2. Make sure SHA256(cdn_file) == enc_hash
+	encHashBytes, err := base64.StdEncoding.WithPadding(base64.NoPadding).DecodeString(request.EncryptionMetadata.EncryptedHash)
+	if err != nil {
+		encHashBytes, err = base64.StdEncoding.DecodeString(request.EncryptionMetadata.EncryptedHash)
+		if err != nil {
+			return nil, false, logs.Err(ctx, err, "failed to decode encrypted_hash")
+		}
+	}
+	calculatedEncHash := erusha.NewSHA256(cdnFile)
+	if !bytes.Equal(calculatedEncHash, encHashBytes) {
+		return nil, false, logs.Err(ctx, errors.New("encrypted hash mismatch"), "encrypted hash mismatch")
+	}
+
+	// 3. Validate HMAC-SHA256
+	// For reference, cdn_file = ciphertext & hmac10
+	if len(cdnFile) < 10 {
+		return nil, false, logs.Err(ctx, errors.New("downloaded file too small"), "downloaded file too small")
+	}
+	ciphertext := cdnFile[:len(cdnFile)-10]
+	hmac10 := cdnFile[len(cdnFile)-10:]
+
+	ivBytes, err := base64.StdEncoding.DecodeString(request.EncryptionMetadata.Iv)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to decode iv")
+	}
+	hmacKeyBytes, err := base64.StdEncoding.DecodeString(request.EncryptionMetadata.HmacKey)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to decode hmac_key")
+	}
+
+	// Calculate HMAC with hmac_key, initialization vector (encryption_metadata.iv) and ciphertext
+	h := hmac.New(sha256.New, hmacKeyBytes)
+	h.Write(ivBytes)
+	h.Write(ciphertext)
+	calculatedHmac := h.Sum(nil)
+
+	if !bytes.Equal(calculatedHmac[:10], hmac10) {
+		return nil, false, logs.Err(ctx, errors.New("HMAC validation failed"), "HMAC validation failed")
+	}
+
+	// 4. Decrypt media content
+	encryptionKeyBytes, err := base64.StdEncoding.DecodeString(request.EncryptionMetadata.EncryptionKey)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to decode encryption_key")
+	}
+
+	decryptedMediaWithPadding, err := aes.DecryptCBC(ctx, ciphertext, encryptionKeyBytes, ivBytes)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to decrypt media")
+	}
+
+	// Remove padding (AES256 uses blocks of 16 bytes, padding algorithm is pkcs7)
+	decryptedMedia, err := aes.Unpad(decryptedMediaWithPadding)
+	if err != nil {
+		return nil, false, logs.Err(ctx, err, "failed to unpad decrypted media")
+	}
+
+	// 5. Validate the decrypted media
+	// Make sure SHA256(decrypted_media) = plaintext_hash
+	plaintextHashBytes, err := base64.StdEncoding.WithPadding(base64.NoPadding).DecodeString(request.EncryptionMetadata.PlaintextHash)
+	if err != nil {
+		plaintextHashBytes, err = base64.StdEncoding.DecodeString(request.EncryptionMetadata.PlaintextHash)
+		if err != nil {
+			return nil, false, logs.Err(ctx, err, "failed to decode plaintext_hash")
+		}
+	}
+	calculatedPlaintextHash := erusha.NewSHA256(decryptedMedia)
+	if !bytes.Equal(calculatedPlaintextHash, plaintextHashBytes) {
+		return nil, false, logs.Err(ctx, errors.New("plaintext hash mismatch"), "plaintext hash mismatch")
+	}
+
+	fileBase64 := base64.StdEncoding.EncodeToString(decryptedMedia)
+
+	toolResult = make(map[string]interface{})
+	toolResult["file_content"] = fileBase64
+	toolResult["file_name"] = request.FileName
+	toolResult["media_id"] = request.MediaId
+
+	return toolResult, false, nil
 }

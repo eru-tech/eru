@@ -370,7 +370,7 @@ func (iciciBankTool *IciciBankTool) ExecuteRegistrationStatus(ctx context.Contex
 		return nil, false, err
 	}
 
-	url := fmt.Sprintf("%s/api/Corporate/CIB_SV/v1/RegistrationStatus", iciciBankTool.BaseUrl)
+	url := fmt.Sprintf("%s/v1/RegistrationStatus", iciciBankTool.BaseUrl)
 
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json; charset=utf-8")
@@ -420,13 +420,17 @@ func (iciciBankTool *IciciBankTool) ExecuteBalanceInquiry(ctx context.Context, p
 		URN:       iciciBankTool.URN,
 		AccountNo: accountNo,
 	}
-
+	x, _ := json.Marshal(balanceInquiryParams)
+	logs.WithContext(ctx).Info(fmt.Sprintf("IciciBankTool ExecuteBalanceInquiry - balanceInquiryParams: %s", string(x)))
 	requestPayload, encryptedFingerprintB64, err := iciciBankTool.encryptRequestPayload(ctx, balanceInquiryParams)
 	if err != nil {
 		return nil, false, err
 	}
+	y, _ := json.Marshal(requestPayload)
+	logs.WithContext(ctx).Info(fmt.Sprintf("IciciBankTool ExecuteBalanceInquiry - requestPayload: %s", string(y)))
+	logs.WithContext(ctx).Info(fmt.Sprintf("IciciBankTool ExecuteBalanceInquiry - encryptedFingerprintB64: %s", encryptedFingerprintB64))
 
-	url := fmt.Sprintf("%s/api/Corporate/CIB_SV/v1/BalanceInquiry", iciciBankTool.BaseUrl)
+	url := fmt.Sprintf("%s/v1/BalanceInquiry", iciciBankTool.BaseUrl)
 
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json; charset=utf-8")
@@ -438,9 +442,9 @@ func (iciciBankTool *IciciBankTool) ExecuteBalanceInquiry(ctx context.Context, p
 		headers.Set("apikey", iciciBankTool.ApiKey)
 	}
 
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, requestPayload)
+	res, _, _, sc, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, requestPayload)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Error(fmt.Sprintf(err.Error(), " :status code = %d", sc))
 		return nil, false, err
 	}
 
@@ -493,7 +497,7 @@ func (iciciBankTool *IciciBankTool) ExecuteAccountStatement(ctx context.Context,
 		return nil, false, err
 	}
 
-	url := fmt.Sprintf("%s/api/Corporate/CIB_SV/v1/AccountStatement", iciciBankTool.BaseUrl)
+	url := fmt.Sprintf("%s/v1/AccountStatement", iciciBankTool.BaseUrl)
 
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json; charset=utf-8")
@@ -593,7 +597,7 @@ func (iciciBankTool *IciciBankTool) ExecuteTransaction(ctx context.Context, para
 		return nil, false, err
 	}
 
-	url := fmt.Sprintf("%s/api/Corporate/CIB_SV/v1/Transaction", iciciBankTool.BaseUrl)
+	url := fmt.Sprintf("%s/v1/Transaction", iciciBankTool.BaseUrl)
 
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json; charset=utf-8")
@@ -649,7 +653,7 @@ func (iciciBankTool *IciciBankTool) ExecuteTransactionInquiry(ctx context.Contex
 		return nil, false, err
 	}
 
-	url := fmt.Sprintf("%s/api/Corporate/CIB_SV/v1/TransactionInquiry", iciciBankTool.BaseUrl)
+	url := fmt.Sprintf("%s/v1/TransactionInquiry", iciciBankTool.BaseUrl)
 
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json; charset=utf-8")
@@ -705,7 +709,7 @@ func (iciciBankTool *IciciBankTool) ExecuteNeftStatus(ctx context.Context, param
 		return nil, false, err
 	}
 
-	url := fmt.Sprintf("%s/api/Corporate/CIB_SV/VPA/v1/CIBNEFTStatus", iciciBankTool.BaseUrl)
+	url := fmt.Sprintf("%s/VPA/v1/CIBNEFTStatus", iciciBankTool.BaseUrl)
 
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json; charset=utf-8")
