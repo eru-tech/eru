@@ -79,7 +79,6 @@ type WhatsAppDownloadFlowDocumentRequest struct {
 
 type WhatsAppEncryptionMetadata struct {
 	Iv            string `json:"iv" eru:"required"`
-	Hmac          string `json:"hmac" eru:"required"`
 	HmacKey       string `json:"hmac_key" eru:"required"`
 	EncryptedHash string `json:"encrypted_hash" eru:"required"`
 	EncryptionKey string `json:"encryption_key" eru:"required"`

@@ -2,6 +2,7 @@ package tools_factory
 
 import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
+	aggregators "github.com/eru-tech/eru/eru-ai/tools/aggregators"
 	icicibank "github.com/eru-tech/eru/eru-ai/tools/banking/icicibank"
 	yesbank "github.com/eru-tech/eru/eru-ai/tools/banking/yesbank"
 	ecomm "github.com/eru-tech/eru/eru-ai/tools/ecomm"
@@ -20,6 +21,10 @@ import (
 
 func GetTool(toolType string) tools.Tooling {
 	switch toolType {
+	case "CYGNET":
+		return new(aggregators.CygnetTool)
+	case "PERFIOS":
+		return new(aggregators.PerfiosTool)
 	case "PLAYWRIGHT":
 		return new(web_scraping.PlaywrightTool)
 	case "STRUCTURED_OUTPUT":
