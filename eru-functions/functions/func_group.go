@@ -1397,6 +1397,28 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		}
 	}
 
+	if strings.HasPrefix(funcStep.ToolAction, "{{") {
+		avars := &FuncTemplateVars{}
+		avars.Vars = vars
+		avars.ResVars = resVars
+		avars.ReqVars = reqVars
+		output, apErr := processTemplate(ctx, "tool_action", funcStep.ToolAction, avars, "string", funcStep.Route.TokenSecretKey)
+		if apErr != nil {
+			// ignore error if it is no value
+			if apErr.Error() != "Template returned <no value>" {
+				tErrs = append(tErrs, apErr.Error())
+			}
+		}
+		if string(output) != "" {
+			path, pErr := strconv.Unquote(string(output))
+			if pErr != nil {
+				err = logs.Err(ctx, fmt.Errorf("strconv.Unquote error : %w", pErr), "")
+				path = string(output)
+			}
+			funcStep.Route.RewriteUrl = strings.Replace(funcStep.Route.RewriteUrl, funcStep.ToolAction, path, 1)
+		}
+	}
+
 	if strings.HasPrefix(funcStep.AgentName, "{{") {
 		avars := &FuncTemplateVars{}
 		avars.Vars = vars
