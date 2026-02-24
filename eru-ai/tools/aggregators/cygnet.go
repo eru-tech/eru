@@ -43,15 +43,16 @@ const (
 
 type CygnetTool struct {
 	tools.Tool
-	ClientId        string `json:"client_id" eru:"required"`
-	ClientSecret    string `json:"client_secret" eru:"required"`
-	BaseUrl         string `json:"base_url" eru:"required"`
-	User            string `json:"user" eru:"required"`
-	Password        string `json:"password" eru:"required"`
-	CygnetPublicKey string `json:"cygnet_public_key" eru:"required"`
-	AuthToken       string `json:"-"`
-	Expiry          int    `json:"-"`
-	AesKey          []byte `json:"-"`
+	ClientId        string    `json:"client_id" eru:"required"`
+	ClientSecret    string    `json:"client_secret" eru:"required"`
+	BaseUrl         string    `json:"base_url" eru:"required"`
+	User            string    `json:"user" eru:"required"`
+	Password        string    `json:"password" eru:"required"`
+	CygnetPublicKey string    `json:"cygnet_public_key" eru:"required"`
+	AuthToken       string    `json:"-"`
+	Expiry          int       `json:"-"`
+	expiryTime      time.Time `json:"-"`
+	AesKey          []byte    `json:"-"`
 }
 
 type CygnetGstDataPayload struct {
@@ -353,6 +354,17 @@ func (cygnetTool *CygnetTool) MakeFromJson(ctx context.Context, rj *json.RawMess
 
 func (cygnetTool *CygnetTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool Execute - Start")
+
+	if actionName != Login {
+		if cygnetTool.AuthToken == "" || cygnetTool.expiryTime.IsZero() || time.Now().After(cygnetTool.expiryTime) {
+			logs.WithContext(ctx).Info("Token empty or expired, triggering auto-login")
+			_, _, loginErr := cygnetTool.Login(ctx, projectId, tenantId, params)
+			if loginErr != nil {
+				return nil, false, fmt.Errorf("auto-login failed: %v", loginErr)
+			}
+		}
+	}
+
 	switch actionName {
 	case Login:
 		return cygnetTool.Login(ctx, projectId, tenantId, params)
@@ -456,6 +468,7 @@ func (cygnetTool *CygnetTool) Login(ctx context.Context, projectId string, tenan
 	}
 	cygnetTool.AuthToken = cygnetLoginResponse.AuthToken
 	cygnetTool.Expiry = cygnetLoginResponse.Expiry
+	cygnetTool.expiryTime = time.Now().Add(time.Duration(cygnetLoginResponse.Expiry-10) * time.Minute)
 	cygnetTool.AesKey = rawKey
 
 	toolResult = make(map[string]interface{})

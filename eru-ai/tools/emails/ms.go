@@ -334,6 +334,11 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 	gm.SafeGoWithRestartBehavior("ms-email-callback", func(bgCtx context.Context) {
 		// Copy any important values from the original context if needed
 
+		requestId := ctx.Value("request_id")
+		if requestId != nil {
+			bgCtx = context.WithValue(bgCtx, "request_id", requestId)
+		}
+
 		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
 		if efurl == nil {
 			err = errors.New("erufuncbaseurl not found in context")
@@ -348,12 +353,13 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 		} else {
 			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
 		}
-
+		logs.WithContext(bgCtx).Info(fmt.Sprint("body: ", body))
 		bodyBytes, err := json.Marshal(body)
 		if err != nil {
 			logs.WithContext(bgCtx).Error(err.Error())
 			return
 		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint("bodyBytes: ", string(bodyBytes)))
 
 		paramBytes, err := json.Marshal(params)
 		if err != nil {

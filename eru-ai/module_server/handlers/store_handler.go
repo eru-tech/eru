@@ -804,10 +804,9 @@ func ToolCallbackHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		} else {
 			toolBodyFromReq := json.NewDecoder(r.Body)
 			toolBodyFromReq.DisallowUnknownFields()
-
 			toolBody := make(map[string]interface{})
-
-			contentType := r.Header.Get("content-type")
+			contentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
+			logs.WithContext(r.Context()).Info(fmt.Sprintf("contentType: %v", contentType))
 			switch contentType {
 			case "application/json":
 				if err := toolBodyFromReq.Decode(&toolBody); err != nil {
