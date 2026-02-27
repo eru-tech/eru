@@ -323,6 +323,10 @@ func (whatsAppTool *WhatsAppTool) Execute(ctx context.Context, projectId string,
 		body["tenant_id"] = tenantId
 		body["project_id"] = projectId
 
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
 		hookResult, err := whatsAppTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
 		if err != nil {
 			logs.WithContext(bgCtx).Error(err.Error())
