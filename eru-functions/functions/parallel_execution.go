@@ -64,6 +64,56 @@ type EventResult struct {
 	EventMsgs []events.EventMsg
 }
 
+type StepStatus struct {
+	Finished     chan struct{}
+	ResponseVars map[string]FuncTemplateVars
+	RequestVars  map[string]FuncTemplateVars
+}
+
+type StepSync struct {
+	Steps sync.Map // map[string]*StepStatus
+}
+
+var stepSyncKey = "stepSync"
+
+func InitStepSync(ctx context.Context) context.Context {
+	if ctx.Value(stepSyncKey) != nil {
+		return ctx
+	}
+	return context.WithValue(ctx, stepSyncKey, &StepSync{})
+}
+
+func signalStep(ctx context.Context, stepName string, responseVars map[string]FuncTemplateVars, requestVars map[string]FuncTemplateVars) {
+	ssI := ctx.Value(stepSyncKey)
+	if ssI == nil {
+		return
+	}
+	ss := ssI.(*StepSync)
+	statusI, _ := ss.Steps.LoadOrStore(stepName, &StepStatus{Finished: make(chan struct{})})
+	status := statusI.(*StepStatus)
+	status.ResponseVars = responseVars
+	status.RequestVars = requestVars
+	// check if already closed to avoid panic
+	select {
+	case <-status.Finished:
+	default:
+		close(status.Finished)
+	}
+}
+
+func WaitForStep(ctx context.Context, stepName string) (map[string]FuncTemplateVars, map[string]FuncTemplateVars) {
+	ssI := ctx.Value(stepSyncKey)
+	if ssI == nil {
+		logs.WithContext(ctx).Info(fmt.Sprint("stepSync not found in context for step wait: ", stepName))
+		return nil, nil
+	}
+	ss := ssI.(*StepSync)
+	statusI, _ := ss.Steps.LoadOrStore(stepName, &StepStatus{Finished: make(chan struct{})})
+	status := statusI.(*StepStatus)
+	<-status.Finished
+	return status.ResponseVars, status.RequestVars
+}
+
 func worker(ctx context.Context, route *Route, wg *sync.WaitGroup, jobs chan Job, results chan Result) {
 	logs.WithContext(ctx).Debug("worker - Start")
 	defer func() {
@@ -212,6 +262,7 @@ func workerFunc(ctx context.Context, wg *sync.WaitGroup, funcJobs chan FuncJob, 
 
 		output := FuncResult{funcJob, resp, FuncTemplateVars{}, cloneFuncVarsMap, e, asyncFuncDataBatch}
 		funcResults <- output
+		signalStep(ctx, funcJob.funcStep.FuncKey, cloneFuncVarsMap, cloneFuncVarsMap)
 		//	logs.FileLogger.Info(fmt.Sprint("parallel_execution workerFunc ended for ", funcJob.funcStep.FuncKey))
 	}
 	wg.Done()
@@ -328,6 +379,9 @@ func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan Func
 		}
 		output := FuncResult{funcJob, resp, cloneFuncVars, nil, e, asyncFuncDataBatch}
 		funcResults <- output
+		resVarsMap := make(map[string]FuncTemplateVars)
+		resVarsMap[funcJob.funcStep.FuncKey] = cloneFuncVars
+		signalStep(ctx, funcJob.funcStep.FuncKey, resVarsMap, resVarsMap)
 		//logs.FileLogger.Info(fmt.Sprint("parallel_execution workerFuncInner ended for ", funcJob.funcStep.FuncKey))
 	}
 	wg.Done()

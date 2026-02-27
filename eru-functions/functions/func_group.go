@@ -102,6 +102,7 @@ type FuncStep struct {
 	FsDb                 db.DbI               `json:"-"`
 	RemoveRequestFields  []string             `json:"remove_request_fields"`
 	RemoveResponseFields []string             `json:"remove_response_fields"`
+	WaitFor              string               `json:"wait_for"`
 }
 
 func (funcGroup *FuncGroup) Clone(ctx context.Context) (cloneFuncGroup *FuncGroup, err error) {
@@ -170,6 +171,7 @@ func (funcStep *FuncStep) Clone(ctx context.Context) (cloneFuncStep *FuncStep, e
 
 func (funcGroup *FuncGroup) Execute(ctx context.Context, request *http.Request, FuncThreads int, LoopThreads int, funcStepName string, endFuncStepName string, fromAsync bool, reqVars map[string]*TemplateVars, resVars map[string]*TemplateVars) (response *http.Response, funcVarsMap map[string]FuncTemplateVars, err error) {
 	logs.WithContext(ctx).Debug("FuncGroup Execute - Start")
+	ctx = InitStepSync(ctx)
 	//reqVars := make(map[string]*TemplateVars)
 	//resVars := make(map[string]*TemplateVars)
 	response, funcVarsMap, _, err = RunFuncSteps(ctx, funcGroup.FuncSteps, request, reqVars, resVars, "", FuncThreads, LoopThreads, funcStepName, endFuncStepName, false, fromAsync, false)
@@ -434,6 +436,35 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 	var vars *TemplateVars
 	strCond := "true"
 	logs.WithContext(ctx).Info(fmt.Sprint("started from RunFuncStep for , ", funcStep.FuncKey, " = ", started))
+
+	if (funcStep.FuncKey == funcStepName || started || funcStepName == "") && funcStep.WaitFor != "" {
+		logs.WithContext(ctx).Info(fmt.Sprint(funcStep.FuncKey, " is waiting for ", funcStep.WaitFor))
+		waitedRes, waitedReq := WaitForStep(ctx, funcStep.WaitFor)
+		if waitedRes != nil {
+			for _, wv := range waitedRes {
+				for rkk, rvv := range wv.ResVars {
+					safeSetVar(resVars, rkk, rvv)
+				}
+				for rkk, rvv := range wv.ReqVars {
+					safeSetVar(reqVars, rkk, rvv)
+				}
+			}
+		}
+		if waitedReq != nil {
+			for _, wv := range waitedReq {
+				for rkk, rvv := range wv.ResVars {
+					safeSetVar(resVars, rkk, rvv)
+				}
+				for rkk, rvv := range wv.ReqVars {
+					safeSetVar(reqVars, rkk, rvv)
+				}
+			}
+		}
+	}
+
+	defer func() {
+		signalStep(ctx, funcStep.FuncKey, funcVarsMap, funcVarsMap)
+	}()
 
 	if funcStep.FuncKey == funcStepName || started || funcStepName == "" {
 		//started = true
@@ -1035,6 +1066,11 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 
 	funcVars.ResVars = resVars
 	funcVars.ReqVars = reqVars
+	resVarsMap := make(map[string]FuncTemplateVars)
+	reqVarsMap := make(map[string]FuncTemplateVars)
+	resVarsMap[funcStep.FuncKey] = funcVars
+	reqVarsMap[funcStep.FuncKey] = funcVars
+	signalStep(ctx, funcStep.FuncKey, resVarsMap, reqVarsMap)
 	//logs.FileLogger.Info(fmt.Sprint("RunFuncStepInner ended for ", funcStep.FuncKey))
 	return
 }
