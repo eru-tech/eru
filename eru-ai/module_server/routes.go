@@ -20,7 +20,13 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	// MCP server endpoints using eru-server infrastructure
 	mcpServer := NewEruAIMCPServer(sh)
 
-	// Production WebSocket MCP endpoint
+	// Streamable HTTP MCP endpoint (Claude Desktop compatible)
+	mcpHttpHandler := server.CreateMCPHttpHandler(mcpServer)
+	serverRouter.Methods(http.MethodPost).Path("/mcp").HandlerFunc(mcpHttpHandler)
+	serverRouter.Methods(http.MethodGet).Path("/mcp").HandlerFunc(mcpHttpHandler)
+	serverRouter.Methods(http.MethodDelete).Path("/mcp").HandlerFunc(mcpHttpHandler)
+
+	// WebSocket MCP endpoint
 	serverRouter.Methods(http.MethodGet).Path("/mcp/websocket").HandlerFunc(
 		server.CreateMCPWebSocketHandler(mcpServer),
 	)

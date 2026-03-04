@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"sync"
 
+	"github.com/google/uuid"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
@@ -111,12 +114,13 @@ type MCPServer interface {
 type MCPMessageHandler struct {
 	server      MCPServer
 	initialized bool
+	sessionId   string
 }
 
-func NewMCPMessageHandler(server MCPServer) *MCPMessageHandler {
+func NewMCPMessageHandler(server MCPServer, sessionId string) *MCPMessageHandler {
 	return &MCPMessageHandler{
-		server:      server,
-		initialized: false,
+		server:    server,
+		sessionId: sessionId,
 	}
 }
 
@@ -156,7 +160,6 @@ func (h *MCPMessageHandler) handleInitialize(ctx context.Context, request MCPMes
 		return h.createErrorResponse(request.ID, -32603, "Initialize failed", err.Error())
 	}
 
-	// Mark as initialized
 	h.initialized = true
 
 	resultBytes, err := json.Marshal(result)
@@ -175,15 +178,9 @@ func (h *MCPMessageHandler) handleInitialize(ctx context.Context, request MCPMes
 
 func (h *MCPMessageHandler) handleInitialized(ctx context.Context, request MCPMessage) ([]byte, error) {
 	h.initialized = true
-	logs.WithContext(ctx).Info("MCP server initialized")
-	logs.WithContext(ctx).Info(fmt.Sprintf("request: %v", request))
-	response := MCPMessage{
-		JSONRPCVersion: "2.0",
-		ID:             request.ID,
-		Result:         json.RawMessage("{}"),
-	}
-
-	return json.Marshal(response)
+	logs.WithContext(ctx).Info("MCP client initialized notification received")
+	// initialized is a client notification — no id, no response required
+	return nil, nil
 }
 
 func (h *MCPMessageHandler) handleListTools(ctx context.Context, request MCPMessage) ([]byte, error) {
@@ -222,8 +219,7 @@ func (h *MCPMessageHandler) handleCallTool(ctx context.Context, request MCPMessa
 	}
 
 	logs.WithContext(ctx).Info(fmt.Sprintf("Calling tool: %s", params.Name))
-	conversationId := "" //TODO: get conversationId from mcp client request
-	result, err := h.server.CallTool(ctx, conversationId, params)
+	result, err := h.server.CallTool(ctx, h.sessionId, params)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Tool execution error: %v", err))
 		return h.createErrorResponse(request.ID, -32603, fmt.Sprintf("Tool execution failed: %v", err), nil)
@@ -256,6 +252,110 @@ func (h *MCPMessageHandler) createErrorResponse(id interface{}, code int, messag
 	return json.Marshal(response)
 }
 
+// MCPSessionManager manages per-session MCPMessageHandler instances for HTTP transport.
+type MCPSessionManager struct {
+	mu       sync.RWMutex
+	sessions map[string]*MCPMessageHandler
+	server   MCPServer
+}
+
+func NewMCPSessionManager(server MCPServer) *MCPSessionManager {
+	return &MCPSessionManager{
+		sessions: make(map[string]*MCPMessageHandler),
+		server:   server,
+	}
+}
+
+func (m *MCPSessionManager) GetOrCreate(sessionId string) *MCPMessageHandler {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if h, ok := m.sessions[sessionId]; ok {
+		return h
+	}
+	h := NewMCPMessageHandler(m.server, sessionId)
+	m.sessions[sessionId] = h
+	return h
+}
+
+func (m *MCPSessionManager) Delete(sessionId string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.sessions, sessionId)
+}
+
+// CreateMCPHttpHandler creates an HTTP handler for the MCP Streamable HTTP transport.
+// Claude Desktop connects to this via POST /mcp (JSON-RPC) and GET /mcp (SSE for server notifications).
+func CreateMCPHttpHandler(server MCPServer) http.HandlerFunc {
+	manager := NewMCPSessionManager(server)
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		sessionId := r.Header.Get("Mcp-Session-Id")
+
+		switch r.Method {
+		case http.MethodPost:
+			if sessionId == "" {
+				sessionId = uuid.New().String()
+			}
+
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, "Bad request", http.StatusBadRequest)
+				return
+			}
+
+			handler := manager.GetOrCreate(sessionId)
+			response, err := handler.HandleMessage(ctx, body)
+			if err != nil {
+				logs.WithContext(ctx).Error("MCP HTTP handler error: " + err.Error())
+				http.Error(w, "Internal error", http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Mcp-Session-Id", sessionId)
+
+			if response == nil {
+				// Notification accepted — no body
+				w.WriteHeader(http.StatusAccepted)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write(response)
+
+		case http.MethodGet:
+			// SSE stream for server-to-client notifications
+			if sessionId == "" {
+				sessionId = uuid.New().String()
+			}
+			manager.GetOrCreate(sessionId)
+
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Connection", "keep-alive")
+			w.Header().Set("Mcp-Session-Id", sessionId)
+			w.WriteHeader(http.StatusOK)
+
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+
+			// Hold open until client disconnects
+			<-ctx.Done()
+
+		case http.MethodDelete:
+			if sessionId != "" {
+				manager.Delete(sessionId)
+			}
+			w.WriteHeader(http.StatusNoContent)
+
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
 func CreateMCPWebSocketHandler(server MCPServer, config ...WebSocketConfig) http.HandlerFunc {
 	var wsConfig WebSocketConfig
 	if len(config) > 0 {
@@ -268,10 +368,9 @@ func CreateMCPWebSocketHandler(server MCPServer, config ...WebSocketConfig) http
 		wsConfig.Subprotocols = []string{"mcp"}
 	}
 
-	// Return a handler that creates a new message handler per connection
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Create a new message handler for this connection
-		messageHandler := NewMCPMessageHandler(server)
+		sessionId := uuid.New().String()
+		messageHandler := NewMCPMessageHandler(server, sessionId)
 		wsHandler := NewWebSocketHandler(messageHandler.HandleMessage, wsConfig)
 		wsHandler.ServeHTTP(w, r)
 	}
