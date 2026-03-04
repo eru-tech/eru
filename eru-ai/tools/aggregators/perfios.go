@@ -369,12 +369,13 @@ func (perfiosTool *PerfiosTool) DocumentDownloadRequest(ctx context.Context, pro
 }
 
 func (perfiosTool *PerfiosTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
-	err := json.Unmarshal(toolObjJson, &perfiosTool)
+	newTool := &PerfiosTool{}
+	err := json.Unmarshal(toolObjJson, newTool)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return nil, err
 	}
-	return perfiosTool, nil
+	return newTool, nil
 }
 
 func (perfiosTool *PerfiosTool) GetBytes(ctx context.Context) ([]byte, error) {

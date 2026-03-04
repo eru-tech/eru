@@ -21,6 +21,13 @@ func (reflex_agent *ReflexAgent) GetSpec() agents.AgentI {
 	return reflex_agent
 }
 
+func (reflex_agent *ReflexAgent) GetSystemPrompt() string {
+	const systemPrompt = `
+	
+	`
+	return systemPrompt
+}
+
 func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (agents.AgentMessage, error) {
 	logs.WithContext(ctx).Debug("Agent Execute - Start")
 	chatRequest, conversation, err := reflex_agent.LoadConversations(ctx, conversationId, agentMessage, projectId, tenantId)
@@ -64,43 +71,6 @@ func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agent
 		return agentMessaage, nil
 	}
 
-	/* conversation, err := reflex_agent.LoadConversationHistory(ctx, conversationId, projectId, tenantId)
-	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to load conversation history: %v", err))
-		return nil, err
-	}
-	agentMessage.Role = "user"
-	agentMessage.MessageTimestamp = time.Now()
-	conversation.Messages = append(conversation.Messages, agentMessage)
-	conversation.NewMessages = append(conversation.NewMessages, agentMessage)
-
-	msg := models.Message{
-		Role:    agentMessage.Role,
-		Content: agentMessage.Content,
-		Name:    reflex_agent.AgentName,
-		Files:   agentMessage.Files,
-	}
-
-	// Build chat request with conversation history management
-	var chatRequest models.ChatRequest
-	if reflex_agent.ConversationManager != nil {
-		managedRequest, err := reflex_agent.ConversationManager.BuildChatRequest(ctx, conversation, msg, reflex_agent.AgentName)
-		if err != nil {
-			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to build managed chat request: %v", err))
-			// Fallback to simple request if conversation management fails
-			chatRequest = models.ChatRequest{
-				Messages: []models.Message{msg},
-			}
-		} else {
-			chatRequest = *managedRequest
-		}
-	} else {
-		// Fallback to simple request if no conversation manager is configured
-		chatRequest = models.ChatRequest{
-			Messages: []models.Message{msg},
-		}
-	} */
-
 	response, err := reflex_agent.execute(ctx, chatRequest, reflex_agent.AgentTools, 1, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to execute agent: %v", err))
@@ -119,7 +89,7 @@ func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agent
 }
 
 func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models.ChatRequest, agentTools []agents.AgentTools, currentTry int, projectId string, tenantId string) (agentOutput agents.AgentMessage, err error) {
-	logs.WithContext(ctx).Debug("validate - Start")
+	logs.WithContext(ctx).Debug("execute - Start")
 
 	toolResults, err := reflex_agent.ExecuteTools(ctx, chatRequest, agentTools, projectId, tenantId)
 	if err != nil {
@@ -127,9 +97,15 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 		return agents.AgentMessage{}, err
 	}
 
+	sp := ""
+	if reflex_agent.GetProvider() != nil {
+		sp = reflex_agent.GetProvider().GetSystemPrompt()
+	}
+	sp += "\n" + reflex_agent.SystemPrompt
+
 	chatRequest.Messages = append(chatRequest.Messages, models.Message{
 		Role:    "assistant",
-		Content: reflex_agent.SystemPrompt,
+		Content: sp,
 		Name:    reflex_agent.AgentName,
 	})
 
@@ -166,7 +142,6 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 			logs.WithContext(ctx).Error(err.Error())
 			return agents.AgentMessage{}, err
 		}
-
 	} else {
 		response, err = reflex_agent.Model.QueryModel(ctx, chatRequest)
 		if err != nil {
@@ -182,8 +157,25 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 			agentResponse = responseMap
 		}
 	}
+
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		logs.WithContext(ctx).Info(fmt.Sprintf("%+v", response.Content))
+		if currentTry < reflex_agent.RetryCount {
+			errMsgString := fmt.Sprintf("Error in the json string. Please try again. \n Error: %s \n Erroneous JSON Code generated in previous try: %s", err.Error(), response.Content)
+			msg := models.Message{
+				Role:    "user",
+				Content: errMsgString,
+				Name:    reflex_agent.AgentName,
+				Files:   []models.FileMessage{},
+			}
+			chatRequest.Messages = append(chatRequest.Messages, msg)
+			return reflex_agent.execute(ctx, chatRequest, reflex_agent.AgentTools, currentTry+1, projectId, tenantId)
+		}
+		return agents.AgentMessage{}, err
+	}
 	agentOutputAction := agents.AgentOutputAction{
-		ActionName: "eru_widget",
+		ActionName: reflex_agent.AgentName,
 		Action:     agentResponse,
 	}
 	agentOutputActions := []agents.AgentOutputAction{agentOutputAction}
@@ -193,39 +185,15 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 		Actions:          agentOutputActions,
 		MessageTimestamp: time.Now(),
 	}
-	logs.WithContext(ctx).Info(fmt.Sprintf("Response: %+v", response.Content))
-	/* if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		logs.WithContext(ctx).Info(fmt.Sprintf("%+v", response.Content))
-		if currentTry < reflex_agent.RetryCount {
-			errMsgString := fmt.Sprintf("Error in the json string. Please try again. \n Error: %s \n Erroneous JSON Code generated in previous try: %s", err.Error(), response.Content["raw"])
-			msg := models.Message{
-				Role:      "user",
-				Content:   errMsgString,
-				Name:      reflex_agent.AgentName,
-				Files:     []models.FileMessage{},
-			}
-			chatRequest.Messages = append(chatRequest.Messages, msg)
-			return reflex_agent.execute(ctx, chatRequest, reflex_agent.Tools, reflex_agent.AgentName, reflex_agent.SystemPrompt, currentTry+1)
-		}
-		return nil, err
-	} */
-
 	agentOutput.RetryCount = currentTry
 	return agentOutput, err
 }
 
-/* func (reflex_agent *ReflexAgent) validate(ctx context.Context, jsonString string) error {
+func (reflex_agent *ReflexAgent) validate(ctx context.Context, jsonString string) error {
 	logs.WithContext(ctx).Debug("validate - Start")
-	jsonI := map[string]interface{}{}
-	err := json.Unmarshal([]byte(jsonString), &jsonI)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return err
-	}
-	logs.WithContext(ctx).Info(fmt.Sprintf("jsonI: %+v", jsonI))
+	logs.WithContext(ctx).Info(fmt.Sprintf("jsonString: %+v", jsonString))
 	return nil
-} */
+}
 
 func (reflex_agent *ReflexAgent) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
 	logs.WithContext(ctx).Debug("MakeFromJson - Start")

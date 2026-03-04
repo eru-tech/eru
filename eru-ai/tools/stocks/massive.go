@@ -412,10 +412,11 @@ func (massiveTool *MassiveTool) GetBytes(ctx context.Context) ([]byte, error) {
 }
 
 func (massiveTool *MassiveTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
-	err := json.Unmarshal(toolObjJson, &massiveTool)
+	newTool := &MassiveTool{}
+	err := json.Unmarshal(toolObjJson, newTool)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return nil, err
 	}
-	return massiveTool, nil
+	return newTool, nil
 }

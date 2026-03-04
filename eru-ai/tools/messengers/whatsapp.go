@@ -1990,12 +1990,13 @@ func (whatsAppTool *WhatsAppTool) GetBytes(ctx context.Context) ([]byte, error) 
 }
 
 func (whatsAppTool *WhatsAppTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
-	err := json.Unmarshal(toolObjJson, &whatsAppTool)
+	newTool := &WhatsAppTool{}
+	err := json.Unmarshal(toolObjJson, newTool)
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("failed to unmarshal tool: %s", err.Error()), "failed to unmarshal tool")
 		return nil, err
 	}
-	return whatsAppTool, nil
+	return newTool, nil
 }
 
 func (whatsAppTool *WhatsAppTool) DownloadFlowDocument(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {

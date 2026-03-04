@@ -14,6 +14,8 @@ func GetAgent(agentType string) agents.AgentI {
 		return new(reflex_agents.GoTemplateAgent)
 	case "ERU_WIDGET":
 		return new(eru_studio.EruWidgetAgent)
+	case "ERU_FUNCSTEP":
+		return new(reflex_agents.EruFuncStepAgent)
 	default:
 		return new(agents.Agent)
 	}

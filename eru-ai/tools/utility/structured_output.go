@@ -54,10 +54,11 @@ func (soTool *StructuredOutputTool) GetSpec() tools.Tooling {
 	return soTool
 }
 func (soTool *StructuredOutputTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
-	err := json.Unmarshal(toolObjJson, &soTool)
+	newTool := &StructuredOutputTool{}
+	err := json.Unmarshal(toolObjJson, newTool)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return nil, err
 	}
-	return soTool, nil
+	return newTool, nil
 }

@@ -171,13 +171,15 @@ func (eruqlTool *EruqlTool) checkMandatoryVars(ctx context.Context, projectId st
 	return nil, nil
 }
 func (eruqlTool *EruqlTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
-	err := json.Unmarshal(toolObjJson, &eruqlTool)
+	newTool := &EruqlTool{}
+	err := json.Unmarshal(toolObjJson, newTool)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return nil, err
 	}
-	return eruqlTool, nil
+	return newTool, nil
 }
+
 func (eruqlTool *EruqlTool) ExecuteQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, mandatoryVarsCheck bool) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("eruqlTool ExecuteQuery - Start")
 	eruqlToolParams := EruqlToolParams{}
