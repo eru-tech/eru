@@ -313,15 +313,15 @@ func CreateMCPHttpHandler(server MCPServer) http.HandlerFunc {
 			}
 
 			w.Header().Set("Mcp-Session-Id", sessionId)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
 
 			if response == nil {
-				// Notification accepted — no body
-				w.WriteHeader(http.StatusAccepted)
+				// Notification — no JSON-RPC response body required, return empty object
+				w.Write([]byte("{}"))
 				return
 			}
 
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
 			w.Write(response)
 
 		case http.MethodGet:
