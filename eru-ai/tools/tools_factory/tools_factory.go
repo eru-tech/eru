@@ -8,6 +8,7 @@ import (
 	ecomm "github.com/eru-tech/eru/eru-ai/tools/ecomm"
 	emails "github.com/eru-tech/eru/eru-ai/tools/emails"
 	eru "github.com/eru-tech/eru/eru-ai/tools/eru"
+	mcp_client "github.com/eru-tech/eru/eru-ai/tools/mcp_client"
 	messengers "github.com/eru-tech/eru/eru-ai/tools/messengers"
 	ndml_kyc "github.com/eru-tech/eru/eru-ai/tools/ndml_kyc"
 	repositories "github.com/eru-tech/eru/eru-ai/tools/repositories"
@@ -33,8 +34,8 @@ func GetTool(toolType string) tools.Tooling {
 		return new(emails.MsEmailTool)
 	case "AMAZON":
 		return new(ecomm.AmazonTool)
-	/* case "MCP":
-	return new(mcp.MCPToolImpl) */
+	case "MCP_CLIENT":
+		return new(mcp_client.MCPClientTool)
 	case "GITHUB":
 		return new(repositories.GithubTool)
 	case "WHATSAPP":
