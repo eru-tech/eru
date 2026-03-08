@@ -68,20 +68,15 @@ const (
 )
 
 func (msEmailTool *MsEmailTool) GetActionsList() []string {
-	actions := []string{}
-	actions = append(actions, ReadEmail)
-	actions = append(actions, SendEmail)
-	actions = append(actions, SubscribeEmail)
-	actions = append(actions, ReadMessage)
-	actions = append(actions, Callback)
-	actions = append(actions, GetSsoUrl)
-	actions = append(actions, Login)
-	actions = append(actions, RenewToken)
-	actions = append(actions, RenewSubscription)
-	actions = append(actions, StopAutoRenew)
-	actions = append(actions, StopSubscription)
-	actions = append(actions, ReadConversation)
-	return actions
+	return []string{
+		ReadEmail, SendEmail, SubscribeEmail, ReadMessage, Callback,
+		GetSsoUrl, Login, RenewToken, RenewSubscription, StopAutoRenew,
+		StopSubscription, ReadConversation,
+		ListCalendarEvents, GetCalendarEvent, CreateCalendarEvent,
+		UpdateCalendarEvent, DeleteCalendarEvent, AcceptCalendarEvent,
+		DeclineCalendarEvent, TentativeCalendarEvent, CancelCalendarEvent,
+		ListCalendars, SubscribeCalendar,
+	}
 }
 
 func (msEmailTool *MsEmailTool) GetMcpTools() []tools.McpToolList {
@@ -105,6 +100,61 @@ func (msEmailTool *MsEmailTool) GetMcpTools() []tools.McpToolList {
 		ToolName:        ReadConversation,
 		ToolDescription: "Read all messages in a conversation from your Microsoft 365 account",
 		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", ReadConversation),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        ListCalendarEvents,
+		ToolDescription: "List calendar events from your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", ListCalendarEvents),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        GetCalendarEvent,
+		ToolDescription: "Get a specific calendar event from your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", GetCalendarEvent),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        CreateCalendarEvent,
+		ToolDescription: "Create a new calendar event in your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", CreateCalendarEvent),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        UpdateCalendarEvent,
+		ToolDescription: "Update an existing calendar event in your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", UpdateCalendarEvent),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        DeleteCalendarEvent,
+		ToolDescription: "Delete a calendar event from your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", DeleteCalendarEvent),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        AcceptCalendarEvent,
+		ToolDescription: "Accept a calendar event invitation in your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", AcceptCalendarEvent),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        DeclineCalendarEvent,
+		ToolDescription: "Decline a calendar event invitation in your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", DeclineCalendarEvent),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        TentativeCalendarEvent,
+		ToolDescription: "Tentatively accept a calendar event invitation in your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", TentativeCalendarEvent),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        CancelCalendarEvent,
+		ToolDescription: "Cancel a calendar event in your Microsoft 365 account (organizer only)",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", CancelCalendarEvent),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        ListCalendars,
+		ToolDescription: "List all calendars in your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", ListCalendars),
+	})
+	mcpTools = append(mcpTools, tools.McpToolList{
+		ToolName:        SubscribeCalendar,
+		ToolDescription: "Subscribe to calendar change notifications in your Microsoft 365 account",
+		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", SubscribeCalendar),
 	})
 	return mcpTools
 }
@@ -148,6 +198,28 @@ func (msEmailTool *MsEmailTool) Execute(ctx context.Context, projectId string, t
 		return msEmailTool.StopSubscription(ctx, projectId, tenantId, params)
 	case ReadConversation:
 		return msEmailTool.ReadConversation(ctx, params)
+	case ListCalendarEvents:
+		return msEmailTool.ListCalendarEvents(ctx, params)
+	case GetCalendarEvent:
+		return msEmailTool.GetCalendarEvent(ctx, params)
+	case CreateCalendarEvent:
+		return msEmailTool.CreateCalendarEvent(ctx, params)
+	case UpdateCalendarEvent:
+		return msEmailTool.UpdateCalendarEvent(ctx, params)
+	case DeleteCalendarEvent:
+		return msEmailTool.DeleteCalendarEvent(ctx, params)
+	case AcceptCalendarEvent:
+		return msEmailTool.AcceptCalendarEvent(ctx, params)
+	case DeclineCalendarEvent:
+		return msEmailTool.DeclineCalendarEvent(ctx, params)
+	case TentativeCalendarEvent:
+		return msEmailTool.TentativeCalendarEvent(ctx, params)
+	case CancelCalendarEvent:
+		return msEmailTool.CancelCalendarEvent(ctx, params)
+	case ListCalendars:
+		return msEmailTool.ListCalendars(ctx, params)
+	case SubscribeCalendar:
+		return msEmailTool.SubscribeCalendar(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}

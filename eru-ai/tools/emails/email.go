@@ -32,4 +32,16 @@ const (
 	RenewSubscription = "renew_subscription"
 	StopAutoRenew     = "stop_auto_renew"
 	StopSubscription  = "stop_subscription"
+
+	ListCalendarEvents     = "list_calendar_events"
+	GetCalendarEvent       = "get_calendar_event"
+	CreateCalendarEvent    = "create_calendar_event"
+	UpdateCalendarEvent    = "update_calendar_event"
+	DeleteCalendarEvent    = "delete_calendar_event"
+	AcceptCalendarEvent    = "accept_calendar_event"
+	DeclineCalendarEvent   = "decline_calendar_event"
+	TentativeCalendarEvent = "tentative_calendar_event"
+	CancelCalendarEvent    = "cancel_calendar_event"
+	ListCalendars          = "list_calendars"
+	SubscribeCalendar      = "subscribe_calendar"
 )

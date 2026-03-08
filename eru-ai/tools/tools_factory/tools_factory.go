@@ -32,6 +32,8 @@ func GetTool(toolType string) tools.Tooling {
 		return new(utiltiy.StructuredOutputTool)
 	case "MS_EMAIL":
 		return new(emails.MsEmailTool)
+	case "GOOGLE_MAIL":
+		return new(emails.GoogleMailTool)
 	case "AMAZON":
 		return new(ecomm.AmazonTool)
 	case "MCP_CLIENT":
