@@ -50,7 +50,8 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 		w.Write([]byte(fmt.Sprintf(`{"tools_count":%d,"status":"ready","server_info":{"name":"eru-ai-mcp-server","version":"1.0.0"}}`, len(tools.Tools))))
 	})
 
-	// A2A minimal endpoints
+	// A2A endpoints
+	serverRouter.Methods(http.MethodGet).Path("/.well-known/agent.json").HandlerFunc(module_handlers.A2AWellKnownHandler(sh))
 	serverRouter.Methods(http.MethodPost).Path("/a2a/task.submit").HandlerFunc(module_handlers.A2ATaskSubmitHandler(sh))
 	serverRouter.Methods(http.MethodGet).Path("/a2a/task.status").HandlerFunc(module_handlers.A2ATaskStatusHandler(sh))
 	serverRouter.Methods(http.MethodGet).Path("/a2a/agent.discover").HandlerFunc(module_handlers.A2AAgentDiscoverHandler(sh))

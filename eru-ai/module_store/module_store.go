@@ -61,6 +61,7 @@ type ModuleStoreI interface {
 	RemoveTool(ctx context.Context, toolName string, projectId string, tenantId string, realStore ModuleStoreI) error
 	GetTool(ctx context.Context, projectId string, tenantId string, toolName string, actionName string, s ModuleStoreI) (tools.Tooling, error)
 	GetAgentNames(ctx context.Context, projectID string, tenantID string) (agentNames []string, err error)
+	GetAgentDescriptions(ctx context.Context, projectId string, tenantId string) (descriptions map[string]string, err error)
 	GetToolNames(ctx context.Context, projectID string, tenantID string) (toolNames []string, err error)
 }
 
@@ -733,6 +734,27 @@ func (ms *ModuleStore) GetAgentNames(ctx context.Context, projectId string, tena
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
+}
+
+func (ms *ModuleStore) GetAgentDescriptions(ctx context.Context, projectId string, tenantId string) (map[string]string, error) {
+	logs.WithContext(ctx).Debug("GetAgentDescriptions - Start")
+	if prj, ok := ms.Projects[projectId]; ok {
+		result := make(map[string]string)
+		for _, tenant := range prj.Tenants {
+			if tenantId == "" || tenantId == tenant.TenantId {
+				for agentName, agentI := range tenant.Agents {
+					desc, _ := agentI.GetAttribute(ctx, "description")
+					if d, ok := desc.(string); ok {
+						result[agentName] = d
+					}
+				}
+			}
+		}
+		return result, nil
+	}
+	err := errors.New("Project " + projectId + " does not exist")
+	logs.WithContext(ctx).Error(err.Error())
+	return nil, err
 }
 
 func (ms *ModuleStore) GetToolNames(ctx context.Context, projectId string, tenantId string) (toolNames []string, err error) {

@@ -9,7 +9,8 @@ import (
 type AgentCard struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
-	Tools       []string `json:"tools"`
+	URL         string   `json:"url,omitempty"`
+	Tools       []string `json:"tools,omitempty"`
 }
 
 type Adapter struct {

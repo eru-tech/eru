@@ -8,23 +8,11 @@ import (
 	"github.com/eru-tech/eru/eru-ai/agents"
 	"github.com/eru-tech/eru/eru-ai/agents/a2a"
 	"github.com/eru-tech/eru/eru-ai/module_store"
+	function_module_store "github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
+	"github.com/google/uuid"
 )
-
-type A2AHandlers struct {
-	Adapter  *a2a.Adapter
-	Registry *agents.AgentRegistry
-}
-
-func getAdapter(ctx context.Context, sh *module_store.StoreHolder) *A2AHandlers {
-	// Registry can be global/singleton; for now instantiate a new one
-	reg := agents.NewAgentRegistry()
-	// Register PlanningAgent under a default name
-	pa := &agents.Agent{}
-	reg.Register(ctx, "planning", pa)
-	return &A2AHandlers{Adapter: a2a.NewAdapter(reg), Registry: reg}
-}
 
 func A2ATaskSubmitHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -34,13 +22,11 @@ func A2ATaskSubmitHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		ctx = context.WithValue(ctx, "origin", r.Header.Get("Origin"))
 
 		var body struct {
-			Goal    string                 `json:"goal"`
-			Plan    map[string]interface{} `json:"plan"`
-			Context map[string]interface{} `json:"context"`
-			Agent   string                 `json:"agent"`
-			Project string                 `json:"project"`
-			Tenant  string                 `json:"tenant"`
-			Message agents.AgentMessage    `json:"message"`
+			Agent          string              `json:"agent"`
+			Project        string              `json:"project"`
+			Tenant         string              `json:"tenant"`
+			ConversationId string              `json:"conversation_id"`
+			Message        agents.AgentMessage `json:"message"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
@@ -48,21 +34,30 @@ func A2ATaskSubmitHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			return
 		}
 
-		a := getAdapter(ctx, sh)
-		agentName := body.Agent
-		if agentName == "" {
-			agentName = "planning"
+		if claims := r.Header.Get("claims"); claims != "" {
+			ctx = context.WithValue(ctx, "claims", claims)
+		} else {
+			ctx = context.WithValue(ctx, "claims", "")
+		}
+		ctx = context.WithValue(ctx, function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl)
+		ctx = context.WithValue(ctx, function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl)
+
+		conversationId := body.ConversationId
+		if conversationId == "" {
+			conversationId = uuid.New().String()
+		}
+		if body.Message.MessageId == "" {
+			body.Message.MessageId = uuid.New().String()
 		}
 
-		// inject auth and trace headers for downstream propagation
-		if auth := r.Header.Get("Authorization"); auth != "" {
-			ctx = context.WithValue(ctx, "authorization", auth)
-		}
-		if tp := r.Header.Get("traceparent"); tp != "" {
-			ctx = context.WithValue(ctx, "traceparent", tp)
+		agent, err := sh.Store.GetAgent(ctx, body.Project, body.Tenant, conversationId, body.Agent, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
 		}
 
-		res, err := a.Adapter.SubmitTask(ctx, agentName, body.Message, body.Project+":"+body.Tenant, body.Project, body.Tenant)
+		res, err := agent.Execute(ctx, body.Message, conversationId, body.Project, body.Tenant)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -86,9 +81,45 @@ func A2AAgentDiscoverHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("A2AAgentDiscoverHandler - Start")
 		ctx := context.WithValue(r.Context(), "allowed_origins", server_handlers.AllowedOrigins)
 		ctx = context.WithValue(ctx, "origin", r.Header.Get("Origin"))
-		a := getAdapter(ctx, sh)
-		cards, _ := a.Adapter.Discover(ctx)
+
+		projectId := r.URL.Query().Get("project")
+		tenantId := r.URL.Query().Get("tenant")
+
+		descriptions, err := sh.Store.GetAgentDescriptions(ctx, projectId, tenantId)
+		if err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		cards := make([]a2a.AgentCard, 0, len(descriptions))
+		for name, desc := range descriptions {
+			cards = append(cards, a2a.AgentCard{
+				Name:        name,
+				Description: desc,
+				URL:         module_store.Eruaibaseurl + "/" + projectId + "/" + tenantId + "/execute/agent/" + name,
+			})
+		}
 		server_handlers.FormatResponse(w, http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"agents": cards})
+	}
+}
+
+func A2AWellKnownHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("A2AWellKnownHandler - Start")
+		card := map[string]interface{}{
+			"name":        "eru-ai",
+			"description": "Eru AI Agent Service - multi-tenant AI agent execution platform",
+			"url":         module_store.Eruaibaseurl,
+			"version":     "1.0.0",
+			"capabilities": map[string]interface{}{
+				"streaming":         false,
+				"pushNotifications": false,
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(card)
 	}
 }
