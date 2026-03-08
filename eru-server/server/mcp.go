@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -325,7 +326,21 @@ func CreateMCPHttpHandler(server MCPServer) http.HandlerFunc {
 			w.Write(response)
 
 		case http.MethodGet:
-			// SSE stream for server-to-client notifications
+			// Older MCP clients (Cursor, early Claude Desktop) connect via WebSocket
+			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+				wsConfig := DefaultWebSocketConfig()
+				wsConfig.Subprotocols = []string{"mcp"}
+				sid := sessionId
+				if sid == "" {
+					sid = uuid.New().String()
+				}
+				sessionHandler := manager.GetOrCreate(sid)
+				wsHandler := NewWebSocketHandler(sessionHandler.HandleMessage, wsConfig)
+				wsHandler.ServeHTTP(w, r)
+				return
+			}
+
+			// Streamable HTTP: SSE stream for server-to-client notifications
 			if sessionId == "" {
 				sessionId = uuid.New().String()
 			}
