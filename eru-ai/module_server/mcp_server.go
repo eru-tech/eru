@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	MCPProtocolVersion = "2025-06-18"
+	MCPProtocolVersion = "2025-11-25"
 	ServerName         = "eru-ai-mcp-server"
 	ServerVersion      = "1.0.1"
 	mcpNameSep         = "__"
@@ -37,11 +37,21 @@ func NewEruAIMCPServer(store *module_store.StoreHolder) *EruAIMCPServer {
 	}
 }
 
+var supportedVersions = map[string]bool{
+	"2025-11-25": true,
+	"2024-11-05": true,
+}
+
 func (s *EruAIMCPServer) Initialize(ctx context.Context, params server.MCPInitializeParams) (server.MCPInitializeResult, error) {
-	logs.WithContext(ctx).Info(fmt.Sprintf("MCP client initializing: %s v%s", params.ClientInfo.Name, params.ClientInfo.Version))
+	logs.WithContext(ctx).Info(fmt.Sprintf("MCP client initializing: %s v%s protocol %s", params.ClientInfo.Name, params.ClientInfo.Version, params.ProtocolVersion))
+
+	negotiated := MCPProtocolVersion
+	if supportedVersions[params.ProtocolVersion] {
+		negotiated = params.ProtocolVersion
+	}
 
 	return server.MCPInitializeResult{
-		ProtocolVersion: MCPProtocolVersion,
+		ProtocolVersion: negotiated,
 		Capabilities:    s.capabilities,
 		ServerInfo: server.MCPServerInfo{
 			Name:    ServerName,

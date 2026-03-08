@@ -136,13 +136,20 @@ func (h *MCPMessageHandler) HandleMessage(ctx context.Context, data []byte) ([]b
 	switch request.Method {
 	case "initialize":
 		return h.handleInitialize(ctx, request)
-	case "initialized":
+	case "initialized", "notifications/initialized":
 		return h.handleInitialized(ctx, request)
+	case "ping":
+		return h.handlePing(ctx, request)
 	case "tools/list":
 		return h.handleListTools(ctx, request)
 	case "tools/call":
 		return h.handleCallTool(ctx, request)
 	default:
+		// Notifications have no id — must not send an error response
+		if request.ID == nil {
+			logs.WithContext(ctx).Info(fmt.Sprintf("MCP: ignoring notification %q", request.Method))
+			return nil, nil
+		}
 		return h.createErrorResponse(request.ID, -32601, "Method not found", nil)
 	}
 }
@@ -182,6 +189,16 @@ func (h *MCPMessageHandler) handleInitialized(ctx context.Context, request MCPMe
 	logs.WithContext(ctx).Info("MCP client initialized notification received")
 	// initialized is a client notification — no id, no response required
 	return nil, nil
+}
+
+func (h *MCPMessageHandler) handlePing(ctx context.Context, request MCPMessage) ([]byte, error) {
+	emptyResult, _ := json.Marshal(map[string]interface{}{})
+	response := MCPMessage{
+		JSONRPCVersion: "2.0",
+		ID:             request.ID,
+		Result:         emptyResult,
+	}
+	return json.Marshal(response)
 }
 
 func (h *MCPMessageHandler) handleListTools(ctx context.Context, request MCPMessage) ([]byte, error) {
