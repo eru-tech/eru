@@ -5,6 +5,7 @@ import (
 	aggregators "github.com/eru-tech/eru/eru-ai/tools/aggregators"
 	icicibank "github.com/eru-tech/eru/eru-ai/tools/banking/icicibank"
 	yesbank "github.com/eru-tech/eru/eru-ai/tools/banking/yesbank"
+	ckyc "github.com/eru-tech/eru/eru-ai/tools/ckyc"
 	ecomm "github.com/eru-tech/eru/eru-ai/tools/ecomm"
 	emails "github.com/eru-tech/eru/eru-ai/tools/emails"
 	eru "github.com/eru-tech/eru/eru-ai/tools/eru"
@@ -47,6 +48,8 @@ func GetTool(toolType string) tools.Tooling {
 		return new(eru.EruqlTool)
 	case "NDMLKYC":
 		return new(ndml_kyc.NdmlTool)
+	case "CKYC":
+		return new(ckyc.CkycTool)
 	case "YESBANK":
 		return new(yesbank.YesBankTool)
 	case "ICICIBANK":

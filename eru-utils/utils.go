@@ -173,6 +173,7 @@ func PrintRequestBody(ctx context.Context, request *http.Request, msg string) {
 	logs.WithContext(ctx).Debug("PrintRequestBody - Start")
 	logs.WithContext(ctx).Info(msg)
 	logs.WithContext(ctx).Info(fmt.Sprintf("request.URL: %+v", request.URL))
+	logs.WithContext(ctx).Info(fmt.Sprintf("request.URL: %+v", request.Header))
 
 	if request != nil {
 		if request.Body != nil {
@@ -224,6 +225,9 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	if requestId != nil {
 		req.Header.Set("request_id", requestId.(string))
 	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("req.URL.Host: %+v, req.Host: %+v", req.URL.Host, req.Host))
+	req.Header.Add("Host", req.URL.Host)
+
 	/*
 			host := req.URL.Host
 			ips, err := net.LookupIP(host)
@@ -289,9 +293,10 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	//for _, c := range req.Cookies() {
 	//	logs.WithContext(ctx).Info(c.String())
 	//}
-
+	logs.WithContext(ctx).Info("before HTTPClientTransporter")
 	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
-
+	logs.WithContext(ctx).Info("after HTTPClientTransporter")
+	logs.WithContext(ctx).Info(fmt.Sprintf("resp: %+v", resp))
 	//resp, err = otelhttp.NewTransport(http.DefaultTransport).RoundTrip(req)
 
 	//resp, err = http.DefaultTransport.RoundTrip(req)
@@ -543,6 +548,7 @@ func callHttpWithTLS(ctx context.Context, method string, url string, headers htt
 		return
 	}
 	req = req.WithContext(ctx)
+	req.Host = req.URL.Host
 
 	for _, v := range reqCookies {
 		req.AddCookie(v)

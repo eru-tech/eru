@@ -14,6 +14,7 @@ import (
 	"github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
 )
 
@@ -21,6 +22,7 @@ func RouteForwardHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		logs.WithContext(r.Context()).Info("RouteForwardHandler - Start")
+		utils.PrintRequestBody(r.Context(), r, "RouteForwardHandler - Request")
 		defer r.Body.Close()
 		// Extract the host and url from incoming request
 		host, url := extractHostUrl(r)

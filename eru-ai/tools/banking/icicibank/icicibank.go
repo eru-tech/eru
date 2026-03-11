@@ -709,7 +709,7 @@ func (iciciBankTool *IciciBankTool) ExecuteNeftStatus(ctx context.Context, param
 		return nil, false, err
 	}
 
-	url := fmt.Sprintf("%s/VPA/v1/CIBNEFTStatus", iciciBankTool.BaseUrl)
+	url := strings.Replace(iciciBankTool.BaseUrl, "/Corporate/CIB", "/v1/CIBNEFTStatus", -1)
 
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json; charset=utf-8")
