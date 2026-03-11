@@ -357,21 +357,22 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 			return
 		}
 	}
-	err = toolObj.ValidateAction(ctx, actionName, toolObj)
-	if err != nil {
-		return
-	}
-	err = toolObj.SetPrivateAttributes(ctx, toolObj)
-	if err != nil {
-		return
-	}
 	toolObjClone, err = ms.GetToolCloneObject(ctx, projectId, tenantId, toolObj, s)
+	if err != nil {
+		return
+	}
+	err = toolObjClone.ValidateAction(ctx, actionName, toolObjClone)
+	if err != nil {
+		return
+	}
+	err = toolObjClone.SetPrivateAttributes(ctx, toolObjClone)
+	if err != nil {
+		return
+	}
 	toolObjClone.SetToolDb(db.GetDb(s.GetDbType()))
 	toolObjClone.GetToolDb().SetConn(s.GetConn())
 	toolObjClone.SetToolAction(actionName)
-	if err != nil {
-		return
-	}
+
 	var scheduler scheduler.SchedulerI
 	scheduler, err = s.FetchScheduler(ctx, projectId)
 	if err == nil {
@@ -549,6 +550,7 @@ func (ms *ModuleStore) GetAgentClone(ctx context.Context, projectId string, tena
 	if err != nil {
 		return
 	}
+	agentObjClone.SetProvider(agentObj.GetProvider())
 	cacheI := agentObj.GetChatMemory()
 	if cacheI != nil {
 		err := agentObjClone.GetChatMemory().SyncPersistence(ctx, agentObj.GetChatMemory())

@@ -1211,12 +1211,13 @@ func (cygnetTool *CygnetTool) gstDataAction(ctx context.Context, actionName stri
 }
 
 func (cygnetTool *CygnetTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
-	err := json.Unmarshal(toolObjJson, &cygnetTool)
+	newTool := &CygnetTool{}
+	err := json.Unmarshal(toolObjJson, newTool)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
 		return nil, err
 	}
-	return cygnetTool, nil
+	return newTool, nil
 }
 
 func (cygnetTool *CygnetTool) GetBytes(ctx context.Context) ([]byte, error) {

@@ -41,3 +41,6 @@ eru-sql-llm-analysis.md
 eru-ai/app
 eru-gateway/app
 eru-functions/app
+launch.json
+tasks.json
+.gitignore

@@ -54,6 +54,9 @@ type AgentTools struct {
 	ToolOutputType string        `json:"tool_output_type"`
 	Tool           tools.Tooling `json:"-"`
 }
+type SystemPromptProvider interface {
+	GetSystemPrompt() string
+}
 type Agent struct {
 	AgentType           string                `json:"agent_type" eru:"required"`
 	AgentName           string                `json:"agent_name" eru:"required"`
@@ -68,6 +71,7 @@ type Agent struct {
 	ChatMemory          cache.CacheStoreI     `json:"chat_memory"`
 	ConversationConfig  *ConversationConfig   `json:"conversation_config"`
 	ConversationManager *ConversationManager  `json:"-"`
+	Provider            SystemPromptProvider  `json:"-"`
 }
 
 type AgentI interface {
@@ -88,10 +92,20 @@ type AgentI interface {
 	SaveConversation(ctx context.Context, conversation *Conversation, projectId string, tenantId string) error
 	GetConversationConfig() *ConversationConfig
 	InitializeConversationManager(ctx context.Context)
+	GetProvider() SystemPromptProvider
+	SetProvider(provider SystemPromptProvider)
 }
 
 func (agent *Agent) GetSpec() AgentI {
 	return agent
+}
+
+func (agent *Agent) GetProvider() SystemPromptProvider {
+	return agent.Provider
+}
+
+func (agent *Agent) SetProvider(provider SystemPromptProvider) {
+	agent.Provider = provider
 }
 
 func (agent *Agent) Execute(ctx context.Context, agentMessage AgentMessage, conversationId string, projectId string, tenantId string) (AgentMessage, error) {
