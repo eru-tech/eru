@@ -10,6 +10,7 @@ import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 	vectorstore "github.com/eru-tech/eru/eru-vectorstore/vectorstore"
 )
@@ -72,14 +73,60 @@ func (vectorstoreAccount *VectorstoreAccount) MakeFromJson(ctx context.Context, 
 
 func (vectorstoreAccount *VectorstoreAccount) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("vectorstoreAccount Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case SaveVectors:
-		return vectorstoreAccount.SaveVectors(ctx, params)
+		toolResult, toolRequest, persistStore, err = vectorstoreAccount.SaveVectors(ctx, params)
 	case SearchVectors:
-		return vectorstoreAccount.SearchVectors(ctx, params)
+		toolResult, toolRequest, persistStore, err = vectorstoreAccount.SearchVectors(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := vectorstoreAccount.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
 func (vectorstoreAccount *VectorstoreAccount) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
@@ -92,54 +139,54 @@ func (vectorstoreAccount *VectorstoreAccount) BytesToTool(ctx context.Context, t
 	return newTool, nil
 }
 
-func (vectorstoreAccount *VectorstoreAccount) SaveVectors(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (vectorstoreAccount *VectorstoreAccount) SaveVectors(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("vectorstoreAccount Train - Start")
 
 	if vectorstoreAccount.VectorStore == nil {
-		return nil, false, fmt.Errorf("vectorstore not found")
+		return nil, nil, false, fmt.Errorf("vectorstore not found")
 	}
 
 	vectorRecordsBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling vectorrecords: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling vectorrecords: %w", err)
 	}
 	vectorRecords := vectorstore.VectorRecords{}
 	err = json.Unmarshal(vectorRecordsBytes, &vectorRecords)
 	if err != nil {
-		return nil, false, fmt.Errorf("error unmarshalling vectorrecords: %w", err)
+		return nil, nil, false, fmt.Errorf("error unmarshalling vectorrecords: %w", err)
 	}
 	err = vectorstoreAccount.VectorStore.SaveVectors(ctx, vectorRecords)
 	if err != nil {
-		return nil, false, fmt.Errorf("error saving vectors: %w", err)
+		return nil, nil, false, fmt.Errorf("error saving vectors: %w", err)
 	}
 	toolResult = map[string]interface{}{
 		"message": "vectors saved successfully",
 	}
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": params}, false, nil
 }
-func (vectorstoreAccount *VectorstoreAccount) SearchVectors(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (vectorstoreAccount *VectorstoreAccount) SearchVectors(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("vectorstoreAccount Search - Start")
 	if vectorstoreAccount.VectorStore == nil {
-		return nil, false, fmt.Errorf("vectorstore not found")
+		return nil, nil, false, fmt.Errorf("vectorstore not found")
 	}
 	vectorSearchBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling vectorrecords: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling vectorrecords: %w", err)
 	}
 	vectorSearch := vectorstore.VectorRecordsSearch{}
 	err = json.Unmarshal(vectorSearchBytes, &vectorSearch)
 	if err != nil {
-		return nil, false, fmt.Errorf("error unmarshalling vectorrecords: %w", err)
+		return nil, nil, false, fmt.Errorf("error unmarshalling vectorrecords: %w", err)
 	}
 	vectorResults, err := vectorstoreAccount.VectorStore.SearchVectors(ctx, vectorSearch)
 	if err != nil {
-		return nil, false, fmt.Errorf("error searching vectors: %w", err)
+		return nil, nil, false, fmt.Errorf("error searching vectors: %w", err)
 	}
 	toolResult = map[string]interface{}{
 		"vector_search": vectorResults,
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": params}, false, nil
 }
 func (vectorstoreAccount *VectorstoreAccount) GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error) {
 	switch attributeName {

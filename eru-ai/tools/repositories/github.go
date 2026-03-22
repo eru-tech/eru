@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	repos "github.com/eru-tech/eru/eru-repos/repos"
+	server "github.com/eru-tech/eru/eru-server/server"
 )
 
 type GithubTool struct {
@@ -30,8 +32,10 @@ func (ghTool *GithubTool) MakeFromJson(ctx context.Context, rj *json.RawMessage)
 }
 
 func (ghTool *GithubTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
-	logs.WithContext(ctx).Debug("PlaywrightTool Execute - Start")
+	logs.WithContext(ctx).Debug("GithubTool Execute - Start")
 	logs.WithContext(ctx).Info("ghTool.Executed")
+	var toolRequest interface{}
+	toolRequest = params
 	contents := ""
 	fileName := ""
 	if contentI, contentIOk := params["contents"]; contentIOk {
@@ -54,5 +58,50 @@ func (ghTool *GithubTool) Execute(ctx context.Context, projectId string, tenantI
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, false, err
 	}
-	return map[string]interface{}{"content": "Commit successful"}, false, nil
+	toolResult = map[string]interface{}{"content": "Commit successful"}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := ghTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, false, nil
 }

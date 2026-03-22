@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -259,4 +260,139 @@ func RsaPublicKeyToJWK(ctx context.Context, publicKeyStr string, kid string) (jw
 // Convert big.Int to bytes
 func bigIntToBytes(i int) []byte {
 	return []byte{byte(i >> 24), byte(i >> 16), byte(i >> 8), byte(i)}
+}
+
+func EncryptOAEP(ctx context.Context, plainBytes []byte, publicKeyStr string, label []byte) (encryptedBytes []byte, err error) {
+	logs.WithContext(ctx).Debug("EncryptOAEP - Start")
+	block, _ := pem.Decode([]byte(publicKeyStr))
+	if block == nil {
+		err = errors.New("failed to parse PEM block containing the key")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+
+	var rsaPublicKey *rsa.PublicKey
+	if block.Type == "CERTIFICATE" {
+		var cert *x509.Certificate
+		cert, err = x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		var ok bool
+		rsaPublicKey, ok = cert.PublicKey.(*rsa.PublicKey)
+		if !ok {
+			err = errors.New("certificate does not contain an RSA public key")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+	} else {
+		publicKey, err1 := x509.ParsePKIXPublicKey(block.Bytes)
+		if err1 != nil {
+			rsaPublicKey, err = x509.ParsePKCS1PublicKey(block.Bytes)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return
+			}
+		} else {
+			var ok bool
+			rsaPublicKey, ok = publicKey.(*rsa.PublicKey)
+			if !ok {
+				err = errors.New("Value returned from ParsePKIXPublicKey was not an RSA public key")
+				logs.WithContext(ctx).Error(err.Error())
+				return
+			}
+		}
+	}
+	return rsa.EncryptOAEP(sha256.New(), rand.Reader, rsaPublicKey, plainBytes, label)
+}
+
+func Sign(ctx context.Context, data []byte, privateKeyStr string, hash crypto.Hash) (signature []byte, err error) {
+	logs.WithContext(ctx).Debug("Sign - Start")
+	block, _ := pem.Decode([]byte(privateKeyStr))
+	if block == nil {
+		err = errors.New("failed to parse PEM block containing the key")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	var privateKey *rsa.PrivateKey
+	privateKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		privateKeyRaw, err8 := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err8 != nil {
+			logs.WithContext(ctx).Error(err8.Error())
+			return nil, err8
+		}
+		var ok bool
+		privateKey, ok = privateKeyRaw.(*rsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("expected RSA private key, got %T", privateKeyRaw)
+		}
+	}
+
+	h := hash.New()
+	h.Write(data)
+	digest := h.Sum(nil)
+
+	return rsa.SignPKCS1v15(rand.Reader, privateKey, hash, digest)
+}
+
+func DecryptOAEP(ctx context.Context, encryptedBytes []byte, privateKeyStr string, label []byte) (decryptedBytes []byte, err error) {
+	logs.WithContext(ctx).Debug("DecryptOAEP - Start")
+	block, _ := pem.Decode([]byte(privateKeyStr))
+	if block == nil {
+		err = errors.New("failed to parse PEM block containing the key")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	var privateKey *rsa.PrivateKey
+	privateKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		privateKeyRaw, err8 := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err8 != nil {
+			logs.WithContext(ctx).Error(err8.Error())
+			return nil, err8
+		}
+		var ok bool
+		privateKey, ok = privateKeyRaw.(*rsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("expected RSA private key, got %T", privateKeyRaw)
+		}
+	}
+
+	return rsa.DecryptOAEP(sha256.New(), rand.Reader, privateKey, encryptedBytes, label)
+}
+
+func Verify(ctx context.Context, data []byte, signature []byte, publicKeyStr string, hash crypto.Hash) (err error) {
+	logs.WithContext(ctx).Debug("Verify - Start")
+	rsaPublicKey, err := StringToKey(ctx, publicKeyStr)
+	if err != nil {
+		return
+	}
+	h := hash.New()
+	h.Write(data)
+	digest := h.Sum(nil)
+	return rsa.VerifyPKCS1v15(rsaPublicKey, hash, digest, signature)
+}
+
+func VerifyWithCert(ctx context.Context, data []byte, signature []byte, publicCert string, hash crypto.Hash) (err error) {
+	logs.WithContext(ctx).Debug("VerifyWithCert - Start")
+	block, _ := pem.Decode([]byte(publicCert))
+	if block == nil {
+		return errors.New("failed to parse PEM block containing the key")
+	}
+	var cert *x509.Certificate
+	cert, err = x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	rsaPublicKey, ok := cert.PublicKey.(*rsa.PublicKey)
+	if !ok {
+		return errors.New("certificate does not contain an RSA public key")
+	}
+	h := hash.New()
+	h.Write(data)
+	digest := h.Sum(nil)
+	return rsa.VerifyPKCS1v15(rsaPublicKey, hash, digest, signature)
 }

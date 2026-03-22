@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"time"
 
+	"errors"
+
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -119,26 +122,72 @@ func (perfiosTool *PerfiosTool) MakeFromJson(ctx context.Context, rj *json.RawMe
 
 func (perfiosTool *PerfiosTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("PerfiosTool Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case ProfileAction:
-		return perfiosTool.Profile(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = perfiosTool.Profile(ctx, projectId, tenantId, params)
 	case FinancialsAction:
-		return perfiosTool.Financials(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = perfiosTool.Financials(ctx, projectId, tenantId, params)
 	case FinancialsLLPAction:
-		return perfiosTool.FinancialsLLP(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = perfiosTool.FinancialsLLP(ctx, projectId, tenantId, params)
 	case DocumentDownloadRequestAction:
-		return perfiosTool.DocumentDownloadRequest(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = perfiosTool.DocumentDownloadRequest(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := perfiosTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
-func (perfiosTool *PerfiosTool) Profile(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (perfiosTool *PerfiosTool) Profile(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("PerfiosTool Profile - Start")
 
 	id, ok := params["id"].(string)
 	if !ok || id == "" {
-		return nil, false, fmt.Errorf("id is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("id is required and must be a non-empty string")
 	}
 	payload := map[string]interface{}{
 		"id": id,
@@ -151,7 +200,7 @@ func (perfiosTool *PerfiosTool) Profile(ctx context.Context, projectId string, t
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{"id": id}, []*http.Cookie{}, map[string]string{}, payload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -161,23 +210,23 @@ func (perfiosTool *PerfiosTool) Profile(ctx context.Context, projectId string, t
 		toolResult["response"] = res
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
 }
 
-func (perfiosTool *PerfiosTool) Financials(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (perfiosTool *PerfiosTool) Financials(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	return perfiosTool.executeFinancials(ctx, "/v3/corp/docs/financialSummary/", params, false)
 }
 
-func (perfiosTool *PerfiosTool) FinancialsLLP(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (perfiosTool *PerfiosTool) FinancialsLLP(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	return perfiosTool.executeFinancials(ctx, "/v3/corp/docs/llpFinancialSummary/", params, true)
 }
 
-func (perfiosTool *PerfiosTool) executeFinancials(ctx context.Context, endpoint string, params map[string]interface{}, isLLP bool) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (perfiosTool *PerfiosTool) executeFinancials(ctx context.Context, endpoint string, params map[string]interface{}, isLLP bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("PerfiosTool executeFinancials - Start")
 
 	id, ok := params["id"].(string)
 	if !ok || id == "" {
-		return nil, false, fmt.Errorf("id is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("id is required and must be a non-empty string")
 	}
 
 	consent, ok := params["consent"].(string)
@@ -220,7 +269,7 @@ func (perfiosTool *PerfiosTool) executeFinancials(ctx context.Context, endpoint 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{"id": id}, []*http.Cookie{}, map[string]string{}, payload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -230,7 +279,7 @@ func (perfiosTool *PerfiosTool) executeFinancials(ctx context.Context, endpoint 
 		toolResult["response"] = res
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
 }
 
 func (perfiosTool *PerfiosTool) generateFinancialYears() []string {
@@ -254,12 +303,12 @@ func (perfiosTool *PerfiosTool) generateFinancialYears() []string {
 	return fys
 }
 
-func (perfiosTool *PerfiosTool) DocumentDownloadRequest(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (perfiosTool *PerfiosTool) DocumentDownloadRequest(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("PerfiosTool DocumentDownloadRequest - Start")
 
 	id, ok := params["id"].(string)
 	if !ok || id == "" {
-		return nil, false, fmt.Errorf("id is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("id is required and must be a non-empty string")
 	}
 
 	consent, ok := params["consent"].(string)
@@ -343,7 +392,7 @@ func (perfiosTool *PerfiosTool) DocumentDownloadRequest(ctx context.Context, pro
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{"id": id}, []*http.Cookie{}, map[string]string{}, payload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -353,7 +402,7 @@ func (perfiosTool *PerfiosTool) DocumentDownloadRequest(ctx context.Context, pro
 		toolResult["response"] = res
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
 }
 
 func (perfiosTool *PerfiosTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {

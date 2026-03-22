@@ -10,6 +10,7 @@ import (
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -578,29 +579,75 @@ func (amazonTool *AmazonTool) MakeFromJson(ctx context.Context, rj *json.RawMess
 
 func (amazonTool *AmazonTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("AmazonTool Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case GetOrders:
-		return amazonTool.GetOrders(ctx, params)
+		toolResult, toolRequest, persistStore, err = amazonTool.GetOrders(ctx, params)
 	case GetOrderItems:
-		return amazonTool.GetOrderItems(ctx, params)
+		toolResult, toolRequest, persistStore, err = amazonTool.GetOrderItems(ctx, params)
 	case GetFinancialEvents:
-		return amazonTool.GetFinancialEvents(ctx, params)
+		toolResult, toolRequest, persistStore, err = amazonTool.GetFinancialEvents(ctx, params)
 	case GetFinancialEventGroups:
-		return amazonTool.GetFinancialEventGroups(ctx, params)
+		toolResult, toolRequest, persistStore, err = amazonTool.GetFinancialEventGroups(ctx, params)
 	case Login:
-		return amazonTool.Login(ctx, projectId, tenantId, params, "")
+		toolResult, toolRequest, persistStore, err = amazonTool.Login(ctx, projectId, tenantId, params, "")
 	case RenewToken:
-		return amazonTool.RenewToken(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = amazonTool.RenewToken(ctx, projectId, tenantId, params)
 	case GetSsoUrl:
-		return amazonTool.GetSsoUrl(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = amazonTool.GetSsoUrl(ctx, projectId, tenantId, params)
 	case StopAutoRenew:
-		return amazonTool.StopAutoRenew(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = amazonTool.StopAutoRenew(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := amazonTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
-func (amazonTool *AmazonTool) GetOrders(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (amazonTool *AmazonTool) GetOrders(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetOrders Execute - Start")
 
 	nextToken := ""
@@ -614,12 +661,12 @@ func (amazonTool *AmazonTool) GetOrders(ctx context.Context, params map[string]i
 	// Call recursively to get all orders
 	consolidatedResponse, err := amazonTool.getOrdersRecursive(ctx, queryParams, nextToken)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["orders"] = consolidatedResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
 func (amazonTool *AmazonTool) getOrdersRecursive(ctx context.Context, queryParams map[string]string, nextToken string) ([]interface{}, error) {
@@ -684,17 +731,17 @@ func (amazonTool *AmazonTool) getOrdersRecursive(ctx context.Context, queryParam
 	return allOrders, nil
 }
 
-func (amazonTool *AmazonTool) GetOrderItems(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (amazonTool *AmazonTool) GetOrderItems(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetOrderItems Execute - Start")
 
 	// Extract order_id from params
 	orderId, exists := params["order_id"]
 	if !exists {
-		return nil, false, errors.New("order_id parameter is required")
+		return nil, nil, false, errors.New("order_id parameter is required")
 	}
 	orderIdStr := orderId.(string)
 	if orderIdStr == "" {
-		return nil, false, errors.New("order_id parameter cannot be empty")
+		return nil, nil, false, errors.New("order_id parameter cannot be empty")
 	}
 
 	// Build URL with order_id in path
@@ -716,14 +763,14 @@ func (amazonTool *AmazonTool) GetOrderItems(ctx context.Context, params map[stri
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// Parse response
 	responseMap, ok := res.(map[string]interface{})
 	if !ok {
 		logs.WithContext(ctx).Error("Response is not a map")
-		return nil, false, errors.New("invalid response format")
+		return nil, nil, false, errors.New("invalid response format")
 	}
 
 	toolResult = make(map[string]interface{})
@@ -740,10 +787,10 @@ func (amazonTool *AmazonTool) GetOrderItems(ctx context.Context, params map[stri
 		}
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
-func (amazonTool *AmazonTool) GetFinancialEventGroups(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (amazonTool *AmazonTool) GetFinancialEventGroups(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetFinancialEventGroups Execute - Start")
 
 	nextToken := ""
@@ -757,12 +804,12 @@ func (amazonTool *AmazonTool) GetFinancialEventGroups(ctx context.Context, param
 	// Call recursively to get all financial event groups
 	consolidatedResponse, err := amazonTool.getFinancialEventGroupsRecursive(ctx, queryParams, nextToken)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["financial_event_groups"] = consolidatedResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
 func (amazonTool *AmazonTool) getFinancialEventGroupsRecursive(ctx context.Context, queryParams map[string]string, nextToken string) ([]interface{}, error) {
@@ -827,7 +874,7 @@ func (amazonTool *AmazonTool) getFinancialEventGroupsRecursive(ctx context.Conte
 	return allGroups, nil
 }
 
-func (amazonTool *AmazonTool) GetFinancialEvents(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (amazonTool *AmazonTool) GetFinancialEvents(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetFinancialEvents Execute - Start")
 
 	nextToken := ""
@@ -850,7 +897,7 @@ func (amazonTool *AmazonTool) GetFinancialEvents(ctx context.Context, params map
 	// Call recursively to get all financial events with structured merging
 	consolidatedFinancialEvents, err := amazonTool.getFinancialEventsRecursive(ctx, queryParams, nextToken, financialGroupId, orderId)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -870,7 +917,7 @@ func (amazonTool *AmazonTool) GetFinancialEvents(ctx context.Context, params map
 		toolResult["financial_events"] = simplifiedEvents
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
 func (amazonTool *AmazonTool) getFinancialEventsRecursive(ctx context.Context, queryParams map[string]string, nextToken string, financialGroupId string, orderId string) (*FinancialEvents, error) {
@@ -957,7 +1004,7 @@ func (amazonTool *AmazonTool) getFinancialEventsRecursiveHelper(ctx context.Cont
 	return consolidatedEvents, nil
 }
 
-func (amazonTool *AmazonTool) GetSsoUrl(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (amazonTool *AmazonTool) GetSsoUrl(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetSsoUrl Execute - Start")
 
 	eruauthUrl := ctx.Value("eruauthbaseurl").(string)
@@ -972,29 +1019,29 @@ func (amazonTool *AmazonTool) GetSsoUrl(ctx context.Context, projectId string, t
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, qParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	toolResultOk := false
 	toolResult, toolResultOk = res.(map[string]interface{})
 	if !toolResultOk {
 		err = errors.New("toolResult is not a map")
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("toolResult: ", toolResult))
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": qParams}, false, nil
 }
-func (amazonTool *AmazonTool) RenewToken(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (amazonTool *AmazonTool) RenewToken(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	params["refresh_token"] = amazonTool.AmazonAccount.RefreshToken
 	return amazonTool.Login(ctx, projectId, tenantId, params, "/renew")
 }
 
-func (amazonTool *AmazonTool) Login(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, renewStr string) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (amazonTool *AmazonTool) Login(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, renewStr string) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("Login Execute - Start")
 	if amazonTool.AuthName == "" {
 		err = errors.New("auth name is required")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	eruauthUrl := ctx.Value("eruauthbaseurl").(string)
 	url := fmt.Sprint(eruauthUrl, "/", projectId, "/", amazonTool.AuthName, "/idptoken", renewStr)
@@ -1004,7 +1051,7 @@ func (amazonTool *AmazonTool) Login(ctx context.Context, projectId string, tenan
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, params)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	var amazonTokens AmazonTokens
@@ -1012,22 +1059,22 @@ func (amazonTool *AmazonTool) Login(ctx context.Context, projectId string, tenan
 	err = json.Unmarshal(resBytes, &amazonTokens)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	err = json.Unmarshal(resBytes, &amazonTokens)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	err = amazonTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(amazonTool.ToolName, "_access_token"), amazonTokens.AccessToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	err = amazonTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(amazonTool.ToolName, "_refresh_token"), amazonTokens.RefreshToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	amazonTool.AmazonAccount.TokenExpirationDateTime = time.Now().UTC().Add(time.Duration(amazonTokens.ExpiresIn) * time.Second).Format(time.RFC3339)
@@ -1051,7 +1098,7 @@ func (amazonTool *AmazonTool) Login(ctx context.Context, projectId string, tenan
 		hookBodyBytes, err := json.Marshal(hookBody)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
-			return nil, persistStore, err
+			return nil, nil, persistStore, err
 		}
 		jobName := fmt.Sprint(amazonTool.ToolName, "_", amazonTool.Tool.Hooks.ARRT, "_", tenantId)
 		err = amazonTool.Scheduler.Unschedule(ctx, "", jobName)
@@ -1065,13 +1112,13 @@ func (amazonTool *AmazonTool) Login(ctx context.Context, projectId string, tenan
 		cronStr := utils.GetCronStr(ctx, time.Now().UTC().Add(1*time.Hour))
 		jobId, err := amazonTool.Scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
 		if err != nil {
-			return nil, persistStore, err
+			return nil, nil, persistStore, err
 		}
 		logs.WithContext(ctx).Info(fmt.Sprint("jobId: ", jobId))
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["login_status"] = "success"
-	return toolResult, persistStore, nil
+	return toolResult, map[string]interface{}{"body": params}, persistStore, nil
 }
 
 func (amazonTool *AmazonTool) SetPrivateAttributes(ctx context.Context, realTool tools.Tooling) (err error) {
@@ -1120,16 +1167,16 @@ func (amazonTool *AmazonTool) BytesToTool(ctx context.Context, toolObjJson []byt
 	return amazonTool, nil
 }
 
-func (amazonTool *AmazonTool) StopAutoRenew(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (amazonTool *AmazonTool) StopAutoRenew(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	if amazonTool.Scheduler == nil {
 		err = errors.New("scheduler not defined")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	amazonTool.Scheduler.Unschedule(ctx, "", fmt.Sprint(amazonTool.ToolName, "_", amazonTool.Tool.Hooks.ARRT, "_", tenantId))
 	toolResult = make(map[string]interface{})
 	toolResult["stop_auto_renew_status"] = "success"
 	amazonTool.AmazonAccount.TokenExpirationDateTime = ""
 	persistStore = true
-	return toolResult, persistStore, nil
+	return toolResult, map[string]interface{}{"body": params}, persistStore, nil
 }

@@ -11,6 +11,7 @@ import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
+	server "github.com/eru-tech/eru/eru-server/server"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
@@ -109,16 +110,62 @@ func (eruqlTool *EruqlTool) Execute(ctx context.Context, projectId string, tenan
 	if eruqlTool.MandatoryVarsQuery != "" {
 		mandatoryVarsCheck = true
 	}
+	var toolRequest interface{}
 	switch actionName {
 	case ExecuteQuery:
-		return eruqlTool.ExecuteQuery(ctx, projectId, tenantId, params, mandatoryVarsCheck)
+		toolResult, toolRequest, persistStore, err = eruqlTool.ExecuteQuery(ctx, projectId, tenantId, params, mandatoryVarsCheck)
 	case ExecuteSQL:
-		return eruqlTool.ExecuteSQL(ctx, projectId, tenantId, params, mandatoryVarsCheck)
+		toolResult, toolRequest, persistStore, err = eruqlTool.ExecuteSQL(ctx, projectId, tenantId, params, mandatoryVarsCheck)
 	case ExecuteGraphQL:
-		return eruqlTool.ExecuteGraphQL(ctx, projectId, tenantId, params, mandatoryVarsCheck)
+		toolResult, toolRequest, persistStore, err = eruqlTool.ExecuteGraphQL(ctx, projectId, tenantId, params, mandatoryVarsCheck)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := eruqlTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 func (eruqlTool *EruqlTool) fetchMandatoryQueryVariables(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (map[string]interface{}, error) {
 	if params == nil {
@@ -135,7 +182,7 @@ func (eruqlTool *EruqlTool) fetchMandatoryQueryVariables(ctx context.Context, pr
 	vars["org_process_id"] = tenantId
 	params["vars"] = vars
 	params["query_name"] = eruqlTool.MandatoryVarsQuery
-	result, _, err := eruqlTool.ExecuteQuery(ctx, projectId, tenantId, params, false)
+	result, _, _, err := eruqlTool.ExecuteQuery(ctx, projectId, tenantId, params, false)
 	if err != nil {
 		return nil, err
 	}
@@ -180,23 +227,23 @@ func (eruqlTool *EruqlTool) BytesToTool(ctx context.Context, toolObjJson []byte)
 	return newTool, nil
 }
 
-func (eruqlTool *EruqlTool) ExecuteQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, mandatoryVarsCheck bool) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (eruqlTool *EruqlTool) ExecuteQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, mandatoryVarsCheck bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("eruqlTool ExecuteQuery - Start")
 	eruqlToolParams := EruqlToolParams{}
 	eruqlParamsBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
 	}
 
 	err = json.Unmarshal(eruqlParamsBytes, &eruqlToolParams)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	mVars, err := eruqlTool.checkMandatoryVars(ctx, projectId, tenantId, params, mandatoryVarsCheck)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if eruqlToolParams.Vars == nil {
 		eruqlToolParams.Vars = make(map[string]interface{})
@@ -222,39 +269,39 @@ func (eruqlTool *EruqlTool) ExecuteQuery(ctx context.Context, projectId string, 
 	eruqlBaseUrl, ok := eruqlBaseUrlAny.(string)
 	if !ok {
 		err = errors.New("eruqlbaseurl is not a string")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if eruqlBaseUrl == "" {
 		err = errors.New("eruqlbaseurl is not set")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	url := fmt.Sprint(eruqlBaseUrl, "/store/", eruqlToolParams.ProjectId, "/myquery/execute/", eruqlToolParams.QueryName)
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
-	return toolResult, true, nil
+	return toolResult, body, true, nil
 }
 
-func (eruqlTool *EruqlTool) ExecuteSQL(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, mandatoryVarsCheck bool) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (eruqlTool *EruqlTool) ExecuteSQL(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, mandatoryVarsCheck bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("eruqlTool ExecuteDirectSQL - Start")
 	eruqlSQLParams := EruqSQLParams{}
 	eruqlParamsBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
 	}
 
 	err = json.Unmarshal(eruqlParamsBytes, &eruqlSQLParams)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	mVars, err := eruqlTool.checkMandatoryVars(ctx, projectId, tenantId, params, mandatoryVarsCheck)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	for k, v := range mVars {
 		eruqlSQLParams.Vars[k] = v
@@ -280,39 +327,39 @@ func (eruqlTool *EruqlTool) ExecuteSQL(ctx context.Context, projectId string, te
 	eruqlBaseUrl, ok := eruqlBaseUrlAny.(string)
 	if !ok {
 		err = errors.New("eruqlbaseurl is not a string")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if eruqlBaseUrl == "" {
 		err = errors.New("eruqlbaseurl is not set")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	url := fmt.Sprint(eruqlBaseUrl, "/sql/", eruqlSQLParams.ProjectId, "/execute")
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
-	return toolResult, true, nil
+	return toolResult, body, true, nil
 }
 
-func (eruqlTool *EruqlTool) ExecuteGraphQL(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, mandatoryVarsCheck bool) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (eruqlTool *EruqlTool) ExecuteGraphQL(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, mandatoryVarsCheck bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("eruqlTool ExecuteDirectGraphQL - Start")
 	eruqlGraphQLParams := EruqlGraphQLParams{}
 	eruqlParamsBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling eruqlparams: %w", err)
 	}
 
 	err = json.Unmarshal(eruqlParamsBytes, &eruqlGraphQLParams)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	mVars, err := eruqlTool.checkMandatoryVars(ctx, projectId, tenantId, params, mandatoryVarsCheck)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	for k, v := range mVars {
 		eruqlGraphQLParams.Vars[k] = v
@@ -337,21 +384,21 @@ func (eruqlTool *EruqlTool) ExecuteGraphQL(ctx context.Context, projectId string
 	eruqlBaseUrl, ok := eruqlBaseUrlAny.(string)
 	if !ok {
 		err = errors.New("eruqlbaseurl is not a string")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if eruqlBaseUrl == "" {
 		err = errors.New("eruqlbaseurl is not set")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	url := fmt.Sprint(eruqlBaseUrl, "/graphql/", eruqlGraphQLParams.ProjectId, "/execute")
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
-	return toolResult, true, nil
+	return toolResult, body, true, nil
 }
 
 func (eruqlTool *EruqlTool) GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error) {

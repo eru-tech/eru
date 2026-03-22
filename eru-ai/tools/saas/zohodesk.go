@@ -11,6 +11,7 @@ import (
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -85,31 +86,77 @@ func (zohoDeskTool *ZohoDeskTool) MakeFromJson(ctx context.Context, rj *json.Raw
 
 func (zohoDeskTool *ZohoDeskTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("ZohoDeskTool Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case GetTickets:
-		return zohoDeskTool.GetTickets(ctx, params)
+		toolResult, toolRequest, persistStore, err = zohoDeskTool.GetTickets(ctx, params)
 	case GetOrganizations:
-		return zohoDeskTool.GetOrganizations(ctx, params)
+		toolResult, toolRequest, persistStore, err = zohoDeskTool.GetOrganizations(ctx, params)
 	case GetTicketThread:
-		return zohoDeskTool.GetTicketThread(ctx, params)
+		toolResult, toolRequest, persistStore, err = zohoDeskTool.GetTicketThread(ctx, params)
 	case GetTicketContent:
-		return zohoDeskTool.GetTicketContent(ctx, params)
+		toolResult, toolRequest, persistStore, err = zohoDeskTool.GetTicketContent(ctx, params)
 	case GetTicketAttachment:
-		return zohoDeskTool.GetTicketAttachment(ctx, params)
+		toolResult, toolRequest, persistStore, err = zohoDeskTool.GetTicketAttachment(ctx, params)
 	case Login:
-		return zohoDeskTool.Login(ctx, projectId, tenantId, params, "")
+		toolResult, toolRequest, persistStore, err = zohoDeskTool.Login(ctx, projectId, tenantId, params, "")
 	case RenewToken:
-		return zohoDeskTool.RenewToken(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = zohoDeskTool.RenewToken(ctx, projectId, tenantId, params)
 	case GetSsoUrl:
-		return zohoDeskTool.GetSsoUrl(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = zohoDeskTool.GetSsoUrl(ctx, projectId, tenantId, params)
 	case StopAutoRenew:
-		return zohoDeskTool.StopAutoRenew(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = zohoDeskTool.StopAutoRenew(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := zohoDeskTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
-func (zohoDeskTool *ZohoDeskTool) GetTickets(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (zohoDeskTool *ZohoDeskTool) GetTickets(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetTickets Execute - Start")
 
 	url := fmt.Sprint(DeskBaseUrl, "/tickets")
@@ -126,7 +173,7 @@ func (zohoDeskTool *ZohoDeskTool) GetTickets(ctx context.Context, params map[str
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -136,10 +183,10 @@ func (zohoDeskTool *ZohoDeskTool) GetTickets(ctx context.Context, params map[str
 		toolResult["data"] = res
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
-func (zohoDeskTool *ZohoDeskTool) GetOrganizations(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (zohoDeskTool *ZohoDeskTool) GetOrganizations(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetOrganizations Execute - Start")
 
 	url := fmt.Sprint(DeskBaseUrl, "/organizations")
@@ -156,7 +203,7 @@ func (zohoDeskTool *ZohoDeskTool) GetOrganizations(ctx context.Context, params m
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -166,17 +213,17 @@ func (zohoDeskTool *ZohoDeskTool) GetOrganizations(ctx context.Context, params m
 		toolResult["data"] = res
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
-func (zohoDeskTool *ZohoDeskTool) GetTicketThread(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (zohoDeskTool *ZohoDeskTool) GetTicketThread(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetTicketThread Execute - Start")
 
 	ticketId, ok := params["ticket_id"].(string)
 	if !ok {
 		err = errors.New("ticket_id is required")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprint(DeskBaseUrl, "/tickets/", ticketId, "/threads")
@@ -195,7 +242,7 @@ func (zohoDeskTool *ZohoDeskTool) GetTicketThread(ctx context.Context, params ma
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	var threads []interface{}
@@ -208,14 +255,14 @@ func (zohoDeskTool *ZohoDeskTool) GetTicketThread(ctx context.Context, params ma
 			}
 		} else {
 			toolResult = resMap
-			return toolResult, false, nil
+			return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 		}
 	} else if threadsArray, ok := res.([]interface{}); ok {
 		threads = threadsArray
 	} else {
 		toolResult = make(map[string]interface{})
 		toolResult["data"] = res
-		return toolResult, false, nil
+		return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 	}
 
 	enrichedThreads := make([]interface{}, 0, len(threads))
@@ -241,7 +288,7 @@ func (zohoDeskTool *ZohoDeskTool) GetTicketThread(ctx context.Context, params ma
 			}
 		}
 
-		contentResult, _, err := zohoDeskTool.GetTicketContent(ctx, contentParams)
+		contentResult, _, _, err := zohoDeskTool.GetTicketContent(ctx, contentParams)
 		if err != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("Error getting content for thread ", threadId, ": ", err.Error()))
 			enrichedThreads = append(enrichedThreads, thread)
@@ -275,24 +322,24 @@ func (zohoDeskTool *ZohoDeskTool) GetTicketThread(ctx context.Context, params ma
 		toolResult["data"] = enrichedThreads
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
-func (zohoDeskTool *ZohoDeskTool) GetTicketContent(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (zohoDeskTool *ZohoDeskTool) GetTicketContent(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetTicketContent Execute - Start")
 
 	ticketId, ok := params["ticket_id"].(string)
 	if !ok {
 		err = errors.New("ticket_id is required")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	threadId, ok := params["thread_id"].(string)
 	if !ok {
 		err = errors.New("thread_id is required")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprint(DeskBaseUrl, "/tickets/", ticketId, "/threads/", threadId)
@@ -311,7 +358,7 @@ func (zohoDeskTool *ZohoDeskTool) GetTicketContent(ctx context.Context, params m
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -321,31 +368,31 @@ func (zohoDeskTool *ZohoDeskTool) GetTicketContent(ctx context.Context, params m
 		toolResult["data"] = res
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
-func (zohoDeskTool *ZohoDeskTool) GetTicketAttachment(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (zohoDeskTool *ZohoDeskTool) GetTicketAttachment(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetTicketAttachment Execute - Start")
 
 	ticketId, ok := params["ticket_id"].(string)
 	if !ok {
 		err = errors.New("ticket_id is required")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	threadId, ok := params["thread_id"].(string)
 	if !ok {
 		err = errors.New("thread_id is required")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	attachmentId, ok := params["attachment_id"].(string)
 	if !ok {
 		err = errors.New("attachment_id is required")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprint(DeskBaseUrl, "/tickets/", ticketId, "/threads/", threadId, "/attachments/", attachmentId, "/content")
@@ -364,7 +411,7 @@ func (zohoDeskTool *ZohoDeskTool) GetTicketAttachment(ctx context.Context, param
 	res, respHeaders, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	var fileContent []byte
@@ -374,12 +421,12 @@ func (zohoDeskTool *ZohoDeskTool) GetTicketAttachment(ctx context.Context, param
 		} else {
 			err = errors.New("response body not found")
 			logs.Err(ctx, err, "")
-			return nil, false, err
+			return nil, nil, false, err
 		}
 	} else {
 		err = errors.New("unexpected response format")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	mimeType := respHeaders.Get("Content-Type")
@@ -393,10 +440,10 @@ func (zohoDeskTool *ZohoDeskTool) GetTicketAttachment(ctx context.Context, param
 	toolResult["file"] = base64Content
 	toolResult["mime_type"] = mimeType
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
-func (zohoDeskTool *ZohoDeskTool) GetSsoUrl(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (zohoDeskTool *ZohoDeskTool) GetSsoUrl(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetSsoUrl Execute - Start")
 
 	eruauthUrl := ctx.Value("eruauthbaseurl").(string)
@@ -411,30 +458,30 @@ func (zohoDeskTool *ZohoDeskTool) GetSsoUrl(ctx context.Context, projectId strin
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, qParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	toolResultOk := false
 	toolResult, toolResultOk = res.(map[string]interface{})
 	if !toolResultOk {
 		err = errors.New("toolResult is not a map")
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("toolResult: ", toolResult))
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": qParams}, false, nil
 }
 
-func (zohoDeskTool *ZohoDeskTool) RenewToken(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (zohoDeskTool *ZohoDeskTool) RenewToken(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	params["refresh_token"] = zohoDeskTool.ZohoAccount.RefreshToken
 	return zohoDeskTool.Login(ctx, projectId, tenantId, params, "/renew")
 }
 
-func (zohoDeskTool *ZohoDeskTool) Login(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, renewStr string) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (zohoDeskTool *ZohoDeskTool) Login(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, renewStr string) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("Login Execute - Start")
 	if zohoDeskTool.AuthName == "" {
 		err = errors.New("auth name is required")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	eruauthUrl := ctx.Value("eruauthbaseurl").(string)
 	url := fmt.Sprint(eruauthUrl, "/", projectId, "/", zohoDeskTool.AuthName, "/idptoken", renewStr)
@@ -444,7 +491,7 @@ func (zohoDeskTool *ZohoDeskTool) Login(ctx context.Context, projectId string, t
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, params)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	var zohoTokens ZohoTokens
@@ -452,12 +499,12 @@ func (zohoDeskTool *ZohoDeskTool) Login(ctx context.Context, projectId string, t
 	err = json.Unmarshal(resBytes, &zohoTokens)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	err = json.Unmarshal(resBytes, &zohoTokens)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if zohoTokens.RefreshToken == "" {
 		zohoTokens.RefreshToken = params["refresh_token"].(string)
@@ -465,12 +512,12 @@ func (zohoDeskTool *ZohoDeskTool) Login(ctx context.Context, projectId string, t
 	err = zohoDeskTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(zohoDeskTool.ToolName, "_access_token"), zohoTokens.AccessToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	err = zohoDeskTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(zohoDeskTool.ToolName, "_refresh_token"), zohoTokens.RefreshToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	zohoDeskTool.ZohoAccount.TokenExpirationDateTime = time.Now().UTC().Add(time.Duration(zohoTokens.ExpiresIn) * time.Second).Format(time.RFC3339)
@@ -494,7 +541,7 @@ func (zohoDeskTool *ZohoDeskTool) Login(ctx context.Context, projectId string, t
 		hookBodyBytes, err := json.Marshal(hookBody)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
-			return nil, persistStore, err
+			return nil, nil, persistStore, err
 		}
 		jobName := fmt.Sprint(zohoDeskTool.ToolName, "_", zohoDeskTool.Tool.Hooks.ARRT, "_", tenantId)
 		err = zohoDeskTool.Scheduler.Unschedule(ctx, "", jobName)
@@ -507,13 +554,13 @@ func (zohoDeskTool *ZohoDeskTool) Login(ctx context.Context, projectId string, t
 		cronStr := utils.GetCronStr(ctx, time.Now().UTC().Add(1*time.Hour))
 		jobId, err := zohoDeskTool.Scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
 		if err != nil {
-			return nil, persistStore, err
+			return nil, nil, persistStore, err
 		}
 		logs.WithContext(ctx).Info(fmt.Sprint("jobId: ", jobId))
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["login_status"] = "success"
-	return toolResult, persistStore, nil
+	return toolResult, map[string]interface{}{"body": params}, persistStore, nil
 }
 
 func (zohoDeskTool *ZohoDeskTool) SetPrivateAttributes(ctx context.Context, realTool tools.Tooling) (err error) {
@@ -563,16 +610,16 @@ func (zohoDeskTool *ZohoDeskTool) BytesToTool(ctx context.Context, toolObjJson [
 	return zohoDeskTool, nil
 }
 
-func (zohoDeskTool *ZohoDeskTool) StopAutoRenew(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (zohoDeskTool *ZohoDeskTool) StopAutoRenew(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	if zohoDeskTool.Scheduler == nil {
 		err = errors.New("scheduler not defined")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	zohoDeskTool.Scheduler.Unschedule(ctx, "", fmt.Sprint(zohoDeskTool.ToolName, "_", zohoDeskTool.Tool.Hooks.ARRT, "_", tenantId))
 	toolResult = make(map[string]interface{})
 	toolResult["stop_auto_renew_status"] = "success"
 	zohoDeskTool.ZohoAccount.TokenExpirationDateTime = ""
 	persistStore = true
-	return toolResult, persistStore, nil
+	return toolResult, nil, persistStore, nil
 }
