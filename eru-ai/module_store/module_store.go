@@ -358,10 +358,11 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 		}
 	}
 	if actionName != "" {
-		err = toolObjClone.ValidateAction(ctx, actionName, toolObjClone)
+		err = toolObj.ValidateAction(ctx, actionName, toolObj)
 		if err != nil {
 			return
 		}
+	}
 	err = toolObj.SetPrivateAttributes(ctx, toolObj)
 	if err != nil {
 		return
