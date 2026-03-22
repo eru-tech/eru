@@ -21,6 +21,7 @@ import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -235,16 +236,62 @@ func (ndmlTool *NdmlTool) MakeFromJson(ctx context.Context, rj *json.RawMessage)
 
 func (ndmlTool *NdmlTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("NdmlTool Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case InquiryAction:
-		return ndmlTool.ExecuteInquiry(ctx, params)
+		toolResult, toolRequest, persistStore, err = ndmlTool.ExecuteInquiry(ctx, params)
 	case DocumentDownloadAction:
-		return ndmlTool.ExecuteDocumentDownload(ctx, params)
+		toolResult, toolRequest, persistStore, err = ndmlTool.ExecuteDocumentDownload(ctx, params)
 	case GetPasscodeAction:
-		return ndmlTool.ExecuteGetPasscode(ctx, params)
+		toolResult, toolRequest, persistStore, err = ndmlTool.ExecuteGetPasscode(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := ndmlTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
 func (ndmlTool *NdmlTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
@@ -258,7 +305,7 @@ func (ndmlTool *NdmlTool) BytesToTool(ctx context.Context, toolObjJson []byte) (
 	return &ndmlToolWithToken, nil
 }
 
-func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("NdmlTool ExecuteInquiry - Start")
 
 	url := "https://echo-http-requests.appspot.com/echo"
@@ -272,19 +319,19 @@ func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]
 
 	passcode, passkey, err := ndmlTool.getPasscode(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	ndmlParams := NdmlInquiryParams{}
 	ndmlParamsBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling ndml params: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling ndml params: %w", err)
 	}
 
 	err = json.Unmarshal(ndmlParamsBytes, &ndmlParams)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// Create XML request structure
@@ -299,7 +346,7 @@ func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]
 	// Convert to XML string (without XML declaration)
 	xmlData, err := xml.Marshal(soapRequest)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling XML: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling XML: %w", err)
 	}
 	xmlString := string(xmlData)
 
@@ -326,7 +373,7 @@ func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]
 
 	responseStr, err := ndmlTool.postSoap(ctx, ndmlTool.SoapEndpoint, headers, soapEnvelope)
 	if err != nil {
-		return nil, false, fmt.Errorf("error calling SOAP service: %w", err)
+		return nil, nil, false, fmt.Errorf("error calling SOAP service: %w", err)
 	}
 
 	// Extract content from <return> tag in SOAP response
@@ -334,11 +381,11 @@ func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]
 	returnEndTag := "</return>"
 	returnStartIndex := strings.Index(responseStr, returnStartTag)
 	if returnStartIndex == -1 {
-		return nil, false, errors.New("invalid SOAP response: <return> tag not found")
+		return nil, nil, false, errors.New("invalid SOAP response: <return> tag not found")
 	}
 	returnEndIndex := strings.Index(responseStr, returnEndTag)
 	if returnEndIndex == -1 {
-		return nil, false, errors.New("invalid SOAP response: closing </return> tag not found")
+		return nil, nil, false, errors.New("invalid SOAP response: closing </return> tag not found")
 	}
 
 	// Extract the encoded XML content from <return> tag
@@ -354,7 +401,7 @@ func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]
 	var inquiryResponse InquiryResponse
 	err = xml.Unmarshal([]byte(decodedXML), &inquiryResponse)
 	if err != nil {
-		return nil, false, fmt.Errorf("error unmarshalling XML response: %w", err)
+		return nil, nil, false, fmt.Errorf("error unmarshalling XML response: %w", err)
 	}
 
 	// Convert to JSON response
@@ -374,27 +421,27 @@ func (ndmlTool *NdmlTool) ExecuteInquiry(ctx context.Context, params map[string]
 		"error":                 inquiryResponse.PanInq.Error,
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": soapEnvelope}, false, nil
 }
 
-func (ndmlTool *NdmlTool) ExecuteDocumentDownload(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (ndmlTool *NdmlTool) ExecuteDocumentDownload(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("NdmlTool ExecuteDocumentDownload - Start")
 
 	passcode, passkey, err := ndmlTool.getPasscodeWithPasskey(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	ndmlParams := NdmlDownloadParams{}
 	ndmlParamsBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling ndml params: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling ndml params: %w", err)
 	}
 
 	err = json.Unmarshal(ndmlParamsBytes, &ndmlParams)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// Create XML request structure
@@ -410,7 +457,7 @@ func (ndmlTool *NdmlTool) ExecuteDocumentDownload(ctx context.Context, params ma
 	// Convert to XML string (without XML declaration)
 	xmlData, err := xml.Marshal(soapRequest)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling XML: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling XML: %w", err)
 	}
 	xmlString := string(xmlData)
 
@@ -437,7 +484,7 @@ func (ndmlTool *NdmlTool) ExecuteDocumentDownload(ctx context.Context, params ma
 
 	responseStr, err := ndmlTool.postSoap(ctx, ndmlTool.SoapEndpoint, headers, soapEnvelope)
 	if err != nil {
-		return nil, false, fmt.Errorf("error calling SOAP service: %w", err)
+		return nil, nil, false, fmt.Errorf("error calling SOAP service: %w", err)
 	}
 
 	// Extract content from <return> tag in SOAP response
@@ -445,11 +492,11 @@ func (ndmlTool *NdmlTool) ExecuteDocumentDownload(ctx context.Context, params ma
 	returnEndTag := "</return>"
 	returnStartIndex := strings.Index(responseStr, returnStartTag)
 	if returnStartIndex == -1 {
-		return nil, false, errors.New("invalid SOAP response: <return> tag not found")
+		return nil, nil, false, errors.New("invalid SOAP response: <return> tag not found")
 	}
 	returnEndIndex := strings.Index(responseStr, returnEndTag)
 	if returnEndIndex == -1 {
-		return nil, false, errors.New("invalid SOAP response: closing </return> tag not found")
+		return nil, nil, false, errors.New("invalid SOAP response: closing </return> tag not found")
 	}
 
 	// Extract the encoded XML content from <return> tag
@@ -465,7 +512,7 @@ func (ndmlTool *NdmlTool) ExecuteDocumentDownload(ctx context.Context, params ma
 	var downloadResponse DownloadResponse
 	err = xml.Unmarshal([]byte(decodedXML), &downloadResponse)
 	if err != nil {
-		return nil, false, fmt.Errorf("error unmarshalling XML response: %w", err)
+		return nil, nil, false, fmt.Errorf("error unmarshalling XML response: %w", err)
 	}
 
 	// Successful download response - use DownloadResponse with all fields
@@ -550,7 +597,7 @@ func (ndmlTool *NdmlTool) ExecuteDocumentDownload(ctx context.Context, params ma
 		"error":            downloadResponse.PanDown.Error,
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": soapEnvelope}, false, nil
 }
 
 func (ndmlTool *NdmlTool) callSoapService(ctx context.Context, xmlData []byte, passcode string) ([]byte, error) {
@@ -604,7 +651,7 @@ func (ndmlTool *NdmlTool) callSoapService(ctx context.Context, xmlData []byte, p
 }
 
 // ExecuteGetPasscode executes the get_passcode action
-func (ndmlTool *NdmlTool) ExecuteGetPasscode(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (ndmlTool *NdmlTool) ExecuteGetPasscode(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("NdmlTool ExecuteGetPasscode - Start")
 
 	var password, passkey string
@@ -626,19 +673,19 @@ func (ndmlTool *NdmlTool) ExecuteGetPasscode(ctx context.Context, params map[str
 		var genErr error
 		passkey, genErr = generateRandomBase64(16)
 		if genErr != nil {
-			return nil, false, fmt.Errorf("error generating passkey: %w", genErr)
+			return nil, nil, false, fmt.Errorf("error generating passkey: %w", genErr)
 		}
 	}
 
 	passcode, err := ndmlTool.getPasscodeWithParams(ctx, password, passkey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["passcode"] = passcode
 	toolResult["passkey"] = passkey
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": params}, false, nil
 }
 
 // getPasscode requests a dynamic passcode from NDML service using Password and generated PassKey

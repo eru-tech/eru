@@ -13,6 +13,7 @@ import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -221,18 +222,64 @@ func (yesBankTool *YesBankTool) MakeFromJson(ctx context.Context, rj *json.RawMe
 
 func (yesBankTool *YesBankTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("YesBankTool Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case FundConfirmationAction:
-		return yesBankTool.ExecuteFundConfirmation(ctx, params)
+		toolResult, toolRequest, persistStore, err = yesBankTool.ExecuteFundConfirmation(ctx, params)
 	case InitiatePaymentsAction:
-		return yesBankTool.ExecuteInitiatePayments(ctx, params)
+		toolResult, toolRequest, persistStore, err = yesBankTool.ExecuteInitiatePayments(ctx, params)
 	case PaymentStatusAction:
-		return yesBankTool.ExecutePaymentStatus(ctx, params)
+		toolResult, toolRequest, persistStore, err = yesBankTool.ExecutePaymentStatus(ctx, params)
 	case InstrumentStatusAction:
-		return yesBankTool.ExecuteInstrumentStatus(ctx, params)
+		toolResult, toolRequest, persistStore, err = yesBankTool.ExecuteInstrumentStatus(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := yesBankTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
 func (yesBankTool *YesBankTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
@@ -244,23 +291,23 @@ func (yesBankTool *YesBankTool) BytesToTool(ctx context.Context, toolObjJson []b
 	return yesBankTool, nil
 }
 
-func (yesBankTool *YesBankTool) ExecuteFundConfirmation(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (yesBankTool *YesBankTool) ExecuteFundConfirmation(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("YesBankTool ExecuteFundConfirmation - Start")
 
 	if yesBankTool.BaseUrl == "" {
-		return nil, false, errors.New("base_url not configured")
+		return nil, nil, false, errors.New("base_url not configured")
 	}
 
 	yesBankParams := FundConfirmationParams{}
 	yesBankParamsBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling yesbank params: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling yesbank params: %w", err)
 	}
 
 	err = json.Unmarshal(yesBankParamsBytes, &yesBankParams)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprintf("%s/api-banking/v2.0/domestic-payments/fund-confirmation", yesBankTool.BaseUrl)
@@ -293,32 +340,32 @@ func (yesBankTool *YesBankTool) ExecuteFundConfirmation(ctx context.Context, par
 	res, _, _, _, err := utils.CallHttpWithTLS(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, requestBody, yesBankTool.ClientCert, yesBankTool.ClientKey, 30*time.Second)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["fund_confirmation"] = res
 
-	return toolResult, true, nil
+	return toolResult, map[string]interface{}{"body": requestBody}, true, nil
 }
 
-func (yesBankTool *YesBankTool) ExecuteInitiatePayments(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (yesBankTool *YesBankTool) ExecuteInitiatePayments(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("YesBankTool ExecuteInitiatePayments - Start")
 
 	if yesBankTool.BaseUrl == "" {
-		return nil, false, errors.New("base_url not configured")
+		return nil, nil, false, errors.New("base_url not configured")
 	}
 
 	initiateParams := InitiatePaymentsParams{}
 	initiateParamsBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling yesbank params: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling yesbank params: %w", err)
 	}
 
 	err = json.Unmarshal(initiateParamsBytes, &initiateParams)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprintf("%s/api-banking/v2.0/file-payments", yesBankTool.BaseUrl)
@@ -349,32 +396,32 @@ func (yesBankTool *YesBankTool) ExecuteInitiatePayments(ctx context.Context, par
 	res, _, _, _, err := utils.CallHttpWithTLS(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, requestBody, yesBankTool.ClientCert, yesBankTool.ClientKey, 30*time.Second)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["initiate_payments"] = res
 
-	return toolResult, true, nil
+	return toolResult, map[string]interface{}{"body": requestBody}, true, nil
 }
 
-func (yesBankTool *YesBankTool) ExecutePaymentStatus(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (yesBankTool *YesBankTool) ExecutePaymentStatus(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("YesBankTool ExecutePaymentStatus - Start")
 
 	if yesBankTool.BaseUrl == "" {
-		return nil, false, errors.New("base_url not configured")
+		return nil, nil, false, errors.New("base_url not configured")
 	}
 
 	paymentStatusParams := PaymentStatusParams{}
 	paymentStatusParamsBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling yesbank params: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling yesbank params: %w", err)
 	}
 
 	err = json.Unmarshal(paymentStatusParamsBytes, &paymentStatusParams)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprintf("%s/api-banking/v2.0/file-payments/payment-details", yesBankTool.BaseUrl)
@@ -402,32 +449,32 @@ func (yesBankTool *YesBankTool) ExecutePaymentStatus(ctx context.Context, params
 	res, _, _, _, err := utils.CallHttpWithTLS(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, requestBody, yesBankTool.ClientCert, yesBankTool.ClientKey, 30*time.Second)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["payment_status"] = res
 
-	return toolResult, true, nil
+	return toolResult, map[string]interface{}{"body": requestBody}, true, nil
 }
 
-func (yesBankTool *YesBankTool) ExecuteInstrumentStatus(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (yesBankTool *YesBankTool) ExecuteInstrumentStatus(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("YesBankTool ExecuteInstrumentStatus - Start")
 
 	if yesBankTool.BaseUrl == "" {
-		return nil, false, errors.New("base_url not configured")
+		return nil, nil, false, errors.New("base_url not configured")
 	}
 
 	instrumentStatusParams := InstrumentStatusParams{}
 	instrumentStatusParamsBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling yesbank params: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling yesbank params: %w", err)
 	}
 
 	err = json.Unmarshal(instrumentStatusParamsBytes, &instrumentStatusParams)
 	if err != nil {
 		err = logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprintf("%s/api-banking/v2.0/domestic-payments/payment-details", yesBankTool.BaseUrl)
@@ -455,13 +502,13 @@ func (yesBankTool *YesBankTool) ExecuteInstrumentStatus(ctx context.Context, par
 	res, _, _, _, err := utils.CallHttpWithTLS(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, requestBody, yesBankTool.ClientCert, yesBankTool.ClientKey, 30*time.Second)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["instrument_status"] = res
 
-	return toolResult, true, nil
+	return toolResult, map[string]interface{}{"body": requestBody}, true, nil
 }
 
 func (yesBankTool *YesBankTool) GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error) {

@@ -125,35 +125,81 @@ func (msEmailTool *MsEmailTool) MakeFromJson(ctx context.Context, rj *json.RawMe
 
 func (msEmailTool *MsEmailTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("MsEmailTool Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case ReadEmail:
-		return msEmailTool.ReadEmail(ctx, params)
+		toolResult, toolRequest, persistStore, err = msEmailTool.ReadEmail(ctx, params)
 	case SendEmail:
-		return msEmailTool.SendEmail(ctx, params)
+		toolResult, toolRequest, persistStore, err = msEmailTool.SendEmail(ctx, params)
 	case SubscribeEmail:
-		return msEmailTool.SubscribeEmail(ctx, projectId, tenantId, params, "", false)
+		toolResult, toolRequest, persistStore, err = msEmailTool.SubscribeEmail(ctx, projectId, tenantId, params, "", false)
 	case ReadMessage:
-		return msEmailTool.ReadMessage(ctx, params)
+		toolResult, toolRequest, persistStore, err = msEmailTool.ReadMessage(ctx, params)
 	case GetSsoUrl:
-		return msEmailTool.GetSsoUrl(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = msEmailTool.GetSsoUrl(ctx, projectId, tenantId, params)
 	case Login:
-		return msEmailTool.Login(ctx, projectId, tenantId, params, "")
+		toolResult, toolRequest, persistStore, err = msEmailTool.Login(ctx, projectId, tenantId, params, "")
 	case RenewToken:
-		return msEmailTool.RenewToken(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = msEmailTool.RenewToken(ctx, projectId, tenantId, params)
 	case RenewSubscription:
-		return msEmailTool.RenewSubscription(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = msEmailTool.RenewSubscription(ctx, projectId, tenantId, params)
 	case StopAutoRenew:
-		return msEmailTool.StopAutoRenew(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = msEmailTool.StopAutoRenew(ctx, projectId, tenantId, params)
 	case StopSubscription:
-		return msEmailTool.StopSubscription(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = msEmailTool.StopSubscription(ctx, projectId, tenantId, params)
 	case ReadConversation:
-		return msEmailTool.ReadConversation(ctx, params)
+		toolResult, toolRequest, persistStore, err = msEmailTool.ReadConversation(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := msEmailTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
-func (msEmailTool *MsEmailTool) ReadEmail(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (msEmailTool *MsEmailTool) ReadEmail(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("ReadEmail Execute - Start")
 	url := fmt.Sprint(BaseUrl, "/v1.0/me/messages")
 	headers := http.Header{}
@@ -167,16 +213,16 @@ func (msEmailTool *MsEmailTool) ReadEmail(ctx context.Context, params map[string
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, strParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	_ = url
 	toolResult = make(map[string]interface{})
 	toolResult["emails"] = res
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": strParams}, false, nil
 }
 
-func (msEmailTool *MsEmailTool) ReadMessage(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (msEmailTool *MsEmailTool) ReadMessage(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("ReadMessage Execute - Start")
 	messageId := params["message_id"].(string)
 	url := fmt.Sprint(BaseUrl, "/v1.0/me/messages/", messageId, "?$expand=attachments")
@@ -186,19 +232,19 @@ func (msEmailTool *MsEmailTool) ReadMessage(ctx context.Context, params map[stri
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	toolResultOk := false
 	toolResult, toolResultOk = res.(map[string]interface{})
 	if !toolResultOk {
 		err = errors.New("toolResult is not a map")
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": map[string]string{"message_id": messageId}}, false, nil
 }
 
-func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, subscriptionId string, unsubscribe bool) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, subscriptionId string, unsubscribe bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("SubscribeEmail Execute - Start")
 	url := fmt.Sprint(BaseUrl, "/v1.0/subscriptions", subscriptionId)
 	headers := http.Header{}
@@ -231,7 +277,7 @@ func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, projectId st
 	res, _, _, _, err := utils.CallHttp(ctx, httpMethod, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, subPost)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint(res))
 
@@ -247,7 +293,7 @@ func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, projectId st
 		msEmailTool.EmailAccount.SubscriptionExpirationDateTime = ""
 		persistStore = true
 		toolResult["unsubscription_status"] = "success"
-		return toolResult, persistStore, nil
+		return toolResult, map[string]interface{}{"body": subPost}, persistStore, nil
 	}
 
 	subResultOk := false
@@ -255,13 +301,13 @@ func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, projectId st
 	if !subResultOk {
 		err = errors.New("subResult is not a map")
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	subcriptionId, subcriptionIdOk := subResult["id"]
 	if !subcriptionIdOk {
 		err = errors.New("subcription id not found")
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	msEmailTool.EmailAccount.SubscriptionId = subcriptionId.(string)
 	msEmailTool.EmailAccount.SubscriptionExpirationDateTime = expirationTime
@@ -285,7 +331,7 @@ func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, projectId st
 		hookBodyBytes, err := json.Marshal(hookBody)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
-			return nil, persistStore, err
+			return nil, nil, persistStore, err
 		}
 		jobName := fmt.Sprint(msEmailTool.ToolName, "_", msEmailTool.Tool.Hooks.ARSU, "_", tenantId)
 		err = msEmailTool.Scheduler.Unschedule(ctx, "", jobName)
@@ -297,7 +343,7 @@ func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, projectId st
 		schedulerCommand := fmt.Sprint("CALL schedule_procedure('", msEmailTool.Tool.Hooks.ARSU, "','", string(hookBodyBytes), "','", msEmailTool.Scheduler.GetSchedulerName(), "')")
 		jobId, err := msEmailTool.Scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
 		if err != nil {
-			return nil, persistStore, err
+			return nil, nil, persistStore, err
 		}
 		logs.WithContext(ctx).Info(fmt.Sprint("jobId: ", jobId))
 	}
@@ -305,14 +351,14 @@ func (msEmailTool *MsEmailTool) SubscribeEmail(ctx context.Context, projectId st
 	toolResult["subscription_status"] = "success"
 	toolResult["subscription_id"] = msEmailTool.EmailAccount.SubscriptionId
 	_ = url
-	return toolResult, persistStore, nil
+	return toolResult, map[string]interface{}{"body": subPost}, persistStore, nil
 }
 
-func (msEmailTool *MsEmailTool) SendEmail(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (msEmailTool *MsEmailTool) SendEmail(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("SendEmail Execute - Start")
 	url := "/v1.0/me/sendMail"
 	_ = url
-	return nil, false, nil
+	return nil, map[string]interface{}{"body": params}, false, nil
 }
 
 func (msEmailTool *MsEmailTool) GetToolCallback() tools.ToolCallback {
@@ -397,7 +443,7 @@ func (msEmailTool *MsEmailTool) Callback(ctx context.Context, projectId string, 
 			readMsg := make(map[string]interface{})
 			if notification.ResourceData.ODataType != "microsoft.graph.message" && notification.ChangeType == "created" {
 				messageId := notification.ResourceData.Id
-				readMsg, _, err = msEmailTool.ReadMessage(bgCtx, map[string]interface{}{"message_id": messageId})
+				readMsg, _, _, err = msEmailTool.ReadMessage(bgCtx, map[string]interface{}{"message_id": messageId})
 				if err != nil {
 					logs.WithContext(bgCtx).Error(err.Error())
 					return
@@ -426,12 +472,12 @@ func (msEmailTool *MsEmailTool) GetToolCbUrl(projectId string, tenantId string) 
 	return fmt.Sprint(msEmailTool.CallbackBaseUrl, "/", projectId, "/callback/", tenantId, "/tool/", msEmailTool.ToolName)
 }
 
-func (msEmailTool *MsEmailTool) GetSsoUrl(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (msEmailTool *MsEmailTool) GetSsoUrl(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetSsoUrl Execute - Start")
 	if msEmailTool.AuthName == "" {
 		err = errors.New("auth name is required")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	eruauthUrl := ctx.Value("eruauthbaseurl").(string)
 	url := fmt.Sprint(eruauthUrl, "/", projectId, "/", msEmailTool.AuthName, "/getssourl")
@@ -445,38 +491,38 @@ func (msEmailTool *MsEmailTool) GetSsoUrl(ctx context.Context, projectId string,
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, qParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	toolResultOk := false
 	toolResult, toolResultOk = res.(map[string]interface{})
 	if !toolResultOk {
 		err = errors.New("toolResult is not a map")
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("toolResult: ", toolResult))
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": qParams}, false, nil
 }
-func (msEmailTool *MsEmailTool) RenewToken(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (msEmailTool *MsEmailTool) RenewToken(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	params["refresh_token"] = msEmailTool.EmailAccount.RefreshToken
 	return msEmailTool.Login(ctx, projectId, tenantId, params, "/renew")
 }
-func (msEmailTool *MsEmailTool) RenewSubscription(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (msEmailTool *MsEmailTool) RenewSubscription(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("RenewSubscription Execute - Start")
 	subscriptionId := msEmailTool.EmailAccount.SubscriptionId
 	if subscriptionId == "" {
 		err = errors.New("subscription id is required")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	return msEmailTool.SubscribeEmail(ctx, projectId, tenantId, params, fmt.Sprint("/", subscriptionId), false)
 }
-func (msEmailTool *MsEmailTool) Login(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, renewStr string) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (msEmailTool *MsEmailTool) Login(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, renewStr string) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("Login Execute - Start")
 	if msEmailTool.AuthName == "" {
 		err = errors.New("auth name is required")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	eruauthUrl := ctx.Value("eruauthbaseurl").(string)
 	url := fmt.Sprint(eruauthUrl, "/", projectId, "/", msEmailTool.AuthName, "/idptoken", renewStr)
@@ -486,7 +532,7 @@ func (msEmailTool *MsEmailTool) Login(ctx context.Context, projectId string, ten
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, params)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	var msTokens MsTokens
@@ -494,27 +540,27 @@ func (msEmailTool *MsEmailTool) Login(ctx context.Context, projectId string, ten
 	err = json.Unmarshal(resBytes, &msTokens)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	err = json.Unmarshal(resBytes, &msTokens)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	err = msEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.AuthName, "_access_token"), msTokens.AccessToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	err = msEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.AuthName, "_refresh_token"), msTokens.RefreshToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	err = msEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.AuthName, "_id_token"), msTokens.IdToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	msEmailTool.EmailAccount.TokenExpirationDateTime = time.Now().UTC().Add(time.Duration(msTokens.ExpiresIn) * time.Second).Format(time.RFC3339)
@@ -538,7 +584,7 @@ func (msEmailTool *MsEmailTool) Login(ctx context.Context, projectId string, ten
 		hookBodyBytes, err := json.Marshal(hookBody)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
-			return nil, persistStore, err
+			return nil, nil, persistStore, err
 		}
 		jobName := fmt.Sprint(msEmailTool.ToolName, "_", msEmailTool.Tool.Hooks.ARRT, "_", tenantId)
 		err = msEmailTool.Scheduler.Unschedule(ctx, "", jobName)
@@ -552,13 +598,13 @@ func (msEmailTool *MsEmailTool) Login(ctx context.Context, projectId string, ten
 		cronStr := utils.GetCronStr(ctx, time.Now().UTC().Add(1*time.Hour))
 		jobId, err := msEmailTool.Scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
 		if err != nil {
-			return nil, persistStore, err
+			return nil, nil, persistStore, err
 		}
 		logs.WithContext(ctx).Info(fmt.Sprint("jobId: ", jobId))
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["login_status"] = "success"
-	return toolResult, persistStore, nil
+	return toolResult, map[string]interface{}{"body": params}, persistStore, nil
 }
 
 func (msEmailTool *MsEmailTool) SetPrivateAttributes(ctx context.Context, realTool tools.Tooling) (err error) {
@@ -610,30 +656,30 @@ func (msEmailTool *MsEmailTool) BytesToTool(ctx context.Context, toolObjJson []b
 	}
 	return msEmailTool, nil
 }
-func (msEmailTool *MsEmailTool) StopAutoRenew(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (msEmailTool *MsEmailTool) StopAutoRenew(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	if msEmailTool.Scheduler == nil {
 		err = errors.New("scheduler not defined")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	msEmailTool.Scheduler.Unschedule(ctx, "", fmt.Sprint(msEmailTool.ToolName, "_", msEmailTool.Tool.Hooks.ARRT, "_", tenantId))
 	toolResult = make(map[string]interface{})
 	toolResult["stop_auto_renew_status"] = "success"
 	msEmailTool.EmailAccount.TokenExpirationDateTime = ""
 	persistStore = true
-	return toolResult, persistStore, nil
+	return toolResult, map[string]interface{}{"body": params}, persistStore, nil
 }
-func (msEmailTool *MsEmailTool) StopSubscription(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (msEmailTool *MsEmailTool) StopSubscription(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("StopSubscription Execute - Start")
 	subscriptionId := msEmailTool.EmailAccount.SubscriptionId
 	if subscriptionId == "" {
 		err = errors.New("subscription id is required")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	return msEmailTool.SubscribeEmail(ctx, projectId, tenantId, params, fmt.Sprint("/", subscriptionId), true)
 }
-func (msEmailTool *MsEmailTool) ReadConversation(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (msEmailTool *MsEmailTool) ReadConversation(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("ReadConversation Execute - Start")
 
 	type rcParams struct {
@@ -645,19 +691,19 @@ func (msEmailTool *MsEmailTool) ReadConversation(ctx context.Context, params map
 	paramsBytes, err := json.Marshal(params)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	var rcParamsObj rcParams
 	err = json.Unmarshal(paramsBytes, &rcParamsObj)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	err = utils.ValidateStruct(ctx, rcParamsObj, "")
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	attachedStr := ""
 	if rcParamsObj.HasAttachments {
@@ -677,10 +723,10 @@ func (msEmailTool *MsEmailTool) ReadConversation(ctx context.Context, params map
 	}
 
 	// Call ReadEmail to get messages in the conversation
-	emailResult, _, err := msEmailTool.ReadEmail(ctx, readEmailParams)
+	emailResult, _, _, err := msEmailTool.ReadEmail(ctx, readEmailParams)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// Extract emails array from result
@@ -688,14 +734,14 @@ func (msEmailTool *MsEmailTool) ReadConversation(ctx context.Context, params map
 	if !ok {
 		err = errors.New("emails result is not a map")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	value, ok := emails["value"].([]interface{})
 	if !ok {
 		err = errors.New("emails value is not an array")
 		logs.Err(ctx, err, "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// Array to accumulate message responses
@@ -721,7 +767,7 @@ func (msEmailTool *MsEmailTool) ReadConversation(ctx context.Context, params map
 		}
 
 		// Call ReadMessage for this specific message
-		messageResult, _, err := msEmailTool.ReadMessage(ctx, readMessageParams)
+		messageResult, _, _, err := msEmailTool.ReadMessage(ctx, readMessageParams)
 		if err != nil {
 			logs.WithContext(ctx).Error(fmt.Sprintf("Error reading message %s: %s", messageId, err.Error()))
 			continue // Continue with other messages even if one fails
@@ -736,5 +782,5 @@ func (msEmailTool *MsEmailTool) ReadConversation(ctx context.Context, params map
 	toolResult["conversation_messages"] = messageResponses
 	toolResult["total_messages"] = len(messageResponses)
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": params}, false, nil
 }

@@ -167,23 +167,69 @@ func (ozoneTool *OzoneTool) MakeFromJson(ctx context.Context, rj *json.RawMessag
 
 func (ozoneTool *OzoneTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("OzoneTool Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case Call:
-		return ozoneTool.Call(ctx, params)
+		toolResult, toolRequest, persistStore, err = ozoneTool.Call(ctx, params)
 	case FetchCDR:
-		return ozoneTool.FetchCDR(ctx, params)
+		toolResult, toolRequest, persistStore, err = ozoneTool.FetchCDR(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := ozoneTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
-func (ozoneTool *OzoneTool) Call(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (ozoneTool *OzoneTool) Call(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("Call Execute - Start")
 
 	paramsBytes, err := json.Marshal(params)
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("failed to marshal params: %s", err.Error()), "failed to marshal params")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	callParams := CallParams{
@@ -192,13 +238,13 @@ func (ozoneTool *OzoneTool) Call(ctx context.Context, params map[string]interfac
 	err = json.Unmarshal(paramsBytes, &callParams)
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("failed to unmarshal call params: %s", err.Error()), "failed to unmarshal call params")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	err = utils.ValidateStruct(ctx, callParams, "")
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("invalid call params: %s", err.Error()), fmt.Sprintf("invalid call params: %s", err.Error()))
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprintf("%s/ca_apis/PhoneManualDial", OzoneBaseUrl)
@@ -222,7 +268,7 @@ func (ozoneTool *OzoneTool) Call(ctx context.Context, params map[string]interfac
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("failed to make phone call: %s", err.Error()), "failed to make phone call")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -232,29 +278,29 @@ func (ozoneTool *OzoneTool) Call(ctx context.Context, params map[string]interfac
 		toolResult["response"] = res
 	}
 
-	return toolResult, false, nil
+	return toolResult, payload, false, nil
 }
 
-func (ozoneTool *OzoneTool) FetchCDR(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (ozoneTool *OzoneTool) FetchCDR(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("FetchCDR Execute - Start")
 
 	paramsBytes, err := json.Marshal(params)
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("failed to marshal params: %s", err.Error()), "failed to marshal params")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	fetchCDRParams := FetchCDRParams{}
 	err = json.Unmarshal(paramsBytes, &fetchCDRParams)
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("failed to unmarshal fetch CDR params: %s", err.Error()), "failed to unmarshal fetch CDR params")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	err = utils.ValidateStruct(ctx, fetchCDRParams, "")
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("invalid fetch CDR params: %s", err.Error()), fmt.Sprintf("invalid fetch CDR params: %s", err.Error()))
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprintf("%s/ca_reports/fetchCDRDetails", OzoneBaseUrl)
@@ -272,7 +318,7 @@ func (ozoneTool *OzoneTool) FetchCDR(ctx context.Context, params map[string]inte
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return toolResult, false, err
+		return toolResult, nil, false, err
 	}
 
 	if resMap, ok := res.(map[string]interface{}); ok {
@@ -281,7 +327,7 @@ func (ozoneTool *OzoneTool) FetchCDR(ctx context.Context, params map[string]inte
 		toolResult["response"] = res
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
 }
 
 func (ozoneTool *OzoneTool) GetBytes(ctx context.Context) ([]byte, error) {

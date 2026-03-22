@@ -4,15 +4,17 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
-	tools "github.com/eru-tech/eru/eru-ai/tools"
+	"github.com/eru-tech/eru/eru-ai/tools"
 	aes "github.com/eru-tech/eru/eru-crypto/aes"
 	rsa "github.com/eru-tech/eru/eru-crypto/rsa"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -354,11 +356,11 @@ func (cygnetTool *CygnetTool) MakeFromJson(ctx context.Context, rj *json.RawMess
 
 func (cygnetTool *CygnetTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool Execute - Start")
-
+	var toolRequest interface{}
 	if actionName != Login {
 		if cygnetTool.AuthToken == "" || cygnetTool.expiryTime.IsZero() || time.Now().After(cygnetTool.expiryTime) {
 			logs.WithContext(ctx).Info("Token empty or expired, triggering auto-login")
-			_, _, loginErr := cygnetTool.Login(ctx, projectId, tenantId, params)
+			_, _, _, loginErr := cygnetTool.Login(ctx, projectId, tenantId, params)
 			if loginErr != nil {
 				return nil, false, fmt.Errorf("auto-login failed: %v", loginErr)
 			}
@@ -367,47 +369,92 @@ func (cygnetTool *CygnetTool) Execute(ctx context.Context, projectId string, ten
 
 	switch actionName {
 	case Login:
-		return cygnetTool.Login(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.Login(ctx, projectId, tenantId, params)
 	case B2BSales:
-		return cygnetTool.gstDataAction(ctx, B2BSales, "/v0.1/customer/sales/b2binvoices/", params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.gstDataAction(ctx, B2BSales, "/v0.1/customer/sales/b2binvoices/", params)
 	case B2CSales:
-		return cygnetTool.gstDataAction(ctx, B2CSales, "/v0.1/customer/sales/b2csinvoices/", params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.gstDataAction(ctx, B2CSales, "/v0.1/customer/sales/b2csinvoices/", params)
 	case CDNRSales:
-		return cygnetTool.gstDataAction(ctx, CDNRSales, "/v0.1/customer/sales/cdnotes/", params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.gstDataAction(ctx, CDNRSales, "/v0.1/customer/sales/cdnotes/", params)
 	case B2BPurchase:
-		return cygnetTool.gstDataAction(ctx, B2BPurchase, "/v0.1/customer/purchase/b2binvoices/", params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.gstDataAction(ctx, B2BPurchase, "/v0.1/customer/purchase/b2binvoices/", params)
 	case CDNRPurchase:
-		return cygnetTool.gstDataAction(ctx, CDNRPurchase, "/v0.1/customer/purchase/cdnotes/", params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.gstDataAction(ctx, CDNRPurchase, "/v0.1/customer/purchase/cdnotes/", params)
 	case HSNSales:
-		return cygnetTool.gstDataAction(ctx, HSNSales, "/v0.1/customer/sales/hsnsummary/", params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.gstDataAction(ctx, HSNSales, "/v0.1/customer/sales/hsnsummary/", params)
 	case NILSales:
-		return cygnetTool.gstDataAction(ctx, NILSales, "/v0.1/customer/sales/nilexemptnongst/", params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.gstDataAction(ctx, NILSales, "/v0.1/customer/sales/nilexemptnongst/", params)
 	case GenerateOTP:
-		return cygnetTool.GenerateOTP(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.GenerateOTP(ctx, projectId, tenantId, params)
 	case GenerateSession:
-		return cygnetTool.GenerateSession(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.GenerateSession(ctx, projectId, tenantId, params)
 	case DownloadDataRequest:
-		return cygnetTool.DownloadDataRequest(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.DownloadDataRequest(ctx, projectId, tenantId, params)
 	case CreateCustomer:
-		return cygnetTool.CreateCustomer(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.CreateCustomer(ctx, projectId, tenantId, params)
 	case GSTINSearch:
-		return cygnetTool.GSTINSearch(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.GSTINSearch(ctx, projectId, tenantId, params)
 	case VerifySession:
-		return cygnetTool.VerifySession(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.VerifySession(ctx, projectId, tenantId, params)
 	case VerifyConsent:
-		return cygnetTool.VerifyConsent(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.VerifyConsent(ctx, projectId, tenantId, params)
 	case VerifyDownloadRequestStatus:
-		return cygnetTool.VerifyDownloadRequestStatus(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.VerifyDownloadRequestStatus(ctx, projectId, tenantId, params)
 	case BankStatementUpload:
-		return cygnetTool.BankStatementUpload(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.BankStatementUpload(ctx, projectId, tenantId, params)
 	case BankStatementUploadStatus:
-		return cygnetTool.BankStatementUploadStatus(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = cygnetTool.BankStatementUploadStatus(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := cygnetTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
-func (cygnetTool *CygnetTool) Login(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (cygnetTool *CygnetTool) Login(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool Login - Start")
 
 	// Prepare login data
@@ -419,7 +466,7 @@ func (cygnetTool *CygnetTool) Login(ctx context.Context, projectId string, tenan
 	// Encrypt request
 	encryptedData, rawKey, encryptedAppKey, err := cygnetTool.encryptRequest(ctx, loginData)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// Prepare final payload
@@ -440,13 +487,13 @@ func (cygnetTool *CygnetTool) Login(ctx context.Context, projectId string, tenan
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// Decrypt response
 	decryptedResponse, err := cygnetTool.decryptResponse(ctx, res, rawKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	type CygnetLoginResponse struct {
@@ -456,7 +503,7 @@ func (cygnetTool *CygnetTool) Login(ctx context.Context, projectId string, tenan
 
 	decryptedResponseBytes, err := json.Marshal(decryptedResponse)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	var cygnetLoginResponse CygnetLoginResponse
@@ -464,7 +511,7 @@ func (cygnetTool *CygnetTool) Login(ctx context.Context, projectId string, tenan
 	if err != nil {
 		toolResult = make(map[string]interface{})
 		toolResult["login_result"] = decryptedResponse
-		return toolResult, false, err
+		return toolResult, payload, false, err
 	}
 	cygnetTool.AuthToken = cygnetLoginResponse.AuthToken
 	cygnetTool.Expiry = cygnetLoginResponse.Expiry
@@ -473,20 +520,20 @@ func (cygnetTool *CygnetTool) Login(ctx context.Context, projectId string, tenan
 
 	toolResult = make(map[string]interface{})
 	toolResult["login_result"] = cygnetLoginResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
 }
 
-func (cygnetTool *CygnetTool) GenerateOTP(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (cygnetTool *CygnetTool) GenerateOTP(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool GenerateOTP - Start")
 
 	// 1. Validate and prepare data
 	username, ok := params["username"].(string)
 	if !ok || username == "" {
-		return nil, false, fmt.Errorf("username is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("username is required and must be a non-empty string")
 	}
 	gstin, ok := params["gstin"].(string)
 	if !ok || gstin == "" {
-		return nil, false, fmt.Errorf("gstin is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("gstin is required and must be a non-empty string")
 	}
 	otpData := map[string]interface{}{
 		"username": username,
@@ -496,7 +543,7 @@ func (cygnetTool *CygnetTool) GenerateOTP(ctx context.Context, projectId string,
 	// 2. Encrypt request (similar to Login)
 	encryptedData, rawKey, _, err := cygnetTool.encryptRequest(ctx, otpData)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 3. Prepare final payload
@@ -519,35 +566,35 @@ func (cygnetTool *CygnetTool) GenerateOTP(ctx context.Context, projectId string,
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 5. Decrypt response using the NEW rawKey generated for this request
 	decryptedResponse, err := cygnetTool.decryptResponse(ctx, res, rawKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["generateotp_result"] = decryptedResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
 }
 
-func (cygnetTool *CygnetTool) GenerateSession(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (cygnetTool *CygnetTool) GenerateSession(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool GenerateSession - Start")
 
 	// 1. Validate and prepare data
 	username, ok := params["username"].(string)
 	if !ok || username == "" {
-		return nil, false, fmt.Errorf("username is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("username is required and must be a non-empty string")
 	}
 	gstin, ok := params["gstin"].(string)
 	if !ok || gstin == "" {
-		return nil, false, fmt.Errorf("gstin is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("gstin is required and must be a non-empty string")
 	}
 	otp, ok := params["otp"].(string)
 	if !ok || otp == "" {
-		return nil, false, fmt.Errorf("otp is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("otp is required and must be a non-empty string")
 	}
 	sessionData := map[string]interface{}{
 		"username": username,
@@ -558,7 +605,7 @@ func (cygnetTool *CygnetTool) GenerateSession(ctx context.Context, projectId str
 	// 2. Encrypt request
 	encryptedData, rawKey, _, err := cygnetTool.encryptRequest(ctx, sessionData)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 3. Prepare final payload
@@ -581,13 +628,13 @@ func (cygnetTool *CygnetTool) GenerateSession(ctx context.Context, projectId str
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 5. Decrypt response
 	decryptedResponse, err := cygnetTool.decryptResponse(ctx, res, rawKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -597,7 +644,7 @@ func (cygnetTool *CygnetTool) GenerateSession(ctx context.Context, projectId str
 	if responseMap, ok := decryptedResponse.(map[string]interface{}); ok {
 		if statusCd, ok := responseMap["status_cd"]; ok {
 			if statusCd.(float64) == 1 {
-				downloadResult, _, downloadErr := cygnetTool.DownloadDataRequest(ctx, projectId, tenantId, map[string]interface{}{
+				downloadResult, _, _, downloadErr := cygnetTool.DownloadDataRequest(ctx, projectId, tenantId, map[string]interface{}{
 					"gstin": gstin,
 				})
 				if downloadErr != nil {
@@ -610,16 +657,16 @@ func (cygnetTool *CygnetTool) GenerateSession(ctx context.Context, projectId str
 			}
 		}
 	}
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
 }
 
-func (cygnetTool *CygnetTool) DownloadDataRequest(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (cygnetTool *CygnetTool) DownloadDataRequest(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool DownloadDataRequest - Start")
 
 	// 1. Validate required fields
 	gstin, ok := params["gstin"].(string)
 	if !ok || gstin == "" {
-		return nil, false, fmt.Errorf("gstin is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("gstin is required and must be a non-empty string")
 	}
 
 	// 2. Apply defaults using current date
@@ -677,7 +724,7 @@ func (cygnetTool *CygnetTool) DownloadDataRequest(ctx context.Context, projectId
 
 	encryptedData, rawKey, _, err := cygnetTool.encryptRequest(ctx, downloadData)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 4. Prepare final payload
@@ -700,31 +747,31 @@ func (cygnetTool *CygnetTool) DownloadDataRequest(ctx context.Context, projectId
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 6. Decrypt response
 	decryptedResponse, err := cygnetTool.decryptResponse(ctx, res, rawKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["downloaddatarequest_result"] = decryptedResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
 }
 
-func (cygnetTool *CygnetTool) CreateCustomer(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (cygnetTool *CygnetTool) CreateCustomer(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool CreateCustomer - Start")
 
 	// 1. Validate and prepare data
 	lgnm, ok := params["lgnm"].(string)
 	if !ok || lgnm == "" {
-		return nil, false, fmt.Errorf("lgnm is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("lgnm is required and must be a non-empty string")
 	}
 	pan, ok := params["pan"].(string)
 	if !ok || pan == "" {
-		return nil, false, fmt.Errorf("pan is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("pan is required and must be a non-empty string")
 	}
 	customerData := map[string]interface{}{
 		"lgnm": lgnm,
@@ -735,7 +782,7 @@ func (cygnetTool *CygnetTool) CreateCustomer(ctx context.Context, projectId stri
 	// 2. Encrypt request
 	encryptedData, rawKey, encryptedAppKey, err := cygnetTool.encryptRequest(ctx, customerData)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 3. Prepare final payload
@@ -759,21 +806,21 @@ func (cygnetTool *CygnetTool) CreateCustomer(ctx context.Context, projectId stri
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 5. Decrypt response
 	decryptedResponse, err := cygnetTool.decryptResponse(ctx, res, rawKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["createcustomer_result"] = decryptedResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
 }
 
-func (cygnetTool *CygnetTool) GSTINSearch(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (cygnetTool *CygnetTool) GSTINSearch(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool GSTINSearch - Start")
 
 	// 1. Validate required fields
@@ -782,7 +829,7 @@ func (cygnetTool *CygnetTool) GSTINSearch(ctx context.Context, projectId string,
 	if !ok || pan == "" {
 		gstin, ok = params["gstin"].(string)
 		if !ok || gstin == "" {
-			return nil, false, fmt.Errorf("pan or gstin is required and must be a non-empty string")
+			return nil, nil, false, fmt.Errorf("pan or gstin is required and must be a non-empty string")
 		}
 	}
 
@@ -808,26 +855,26 @@ func (cygnetTool *CygnetTool) GSTINSearch(ctx context.Context, projectId string,
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 3. Decrypt response using stored AesKey
 	decryptedResponse, err := cygnetTool.decryptResponse(ctx, res, cygnetTool.AesKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["gstinsearch_result"] = decryptedResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
-func (cygnetTool *CygnetTool) VerifySession(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (cygnetTool *CygnetTool) VerifySession(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool VerifySession - Start")
 
 	gstin, ok := params["gstin"].(string)
 	if !ok || gstin == "" {
-		return nil, false, fmt.Errorf("gstin is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("gstin is required and must be a non-empty string")
 	}
 
 	url := fmt.Sprintf("%s/v0.1/customer/verifysession/", cygnetTool.BaseUrl)
@@ -841,28 +888,29 @@ func (cygnetTool *CygnetTool) VerifySession(ctx context.Context, projectId strin
 	headers.Set("ip-usr", IpUse)
 	headers.Set("auth-token", cygnetTool.AuthToken)
 
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{"gstin": gstin}, nil)
+	queryParams := map[string]string{"gstin": gstin}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	decryptedResponse, err := cygnetTool.decryptResponse(ctx, res, cygnetTool.AesKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["verifysession_result"] = decryptedResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
-func (cygnetTool *CygnetTool) VerifyConsent(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (cygnetTool *CygnetTool) VerifyConsent(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool VerifyConsent - Start")
 
 	gstin, ok := params["gstin"].(string)
 	if !ok || gstin == "" {
-		return nil, false, fmt.Errorf("gstin is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("gstin is required and must be a non-empty string")
 	}
 
 	url := fmt.Sprintf("%s/v0.1/customer/consentstatus/", cygnetTool.BaseUrl)
@@ -876,28 +924,29 @@ func (cygnetTool *CygnetTool) VerifyConsent(ctx context.Context, projectId strin
 	headers.Set("ip-usr", IpUse)
 	headers.Set("auth-token", cygnetTool.AuthToken)
 
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{"gstin": gstin}, nil)
+	queryParams := map[string]string{"gstin": gstin}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	decryptedResponse, err := cygnetTool.decryptResponse(ctx, res, cygnetTool.AesKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["verifyconsent_result"] = decryptedResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
-func (cygnetTool *CygnetTool) VerifyDownloadRequestStatus(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (cygnetTool *CygnetTool) VerifyDownloadRequestStatus(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool VerifyDownloadRequestStatus - Start")
 
 	refId, ok := params["ref_id"].(string)
 	if !ok || refId == "" {
-		return nil, false, fmt.Errorf("ref_id is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("ref_id is required and must be a non-empty string")
 	}
 
 	url := fmt.Sprintf("%s/v0.1/customer/downloadstatus/", cygnetTool.BaseUrl)
@@ -911,22 +960,23 @@ func (cygnetTool *CygnetTool) VerifyDownloadRequestStatus(ctx context.Context, p
 	headers.Set("ip-usr", IpUse)
 	headers.Set("auth-token", cygnetTool.AuthToken)
 
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{"ref_id": refId}, nil)
+	queryParams := map[string]string{"ref_id": refId}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	decryptedResponse, err := cygnetTool.decryptResponse(ctx, res, cygnetTool.AesKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["verifydownloadrequeststatus_result"] = decryptedResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
-func (cygnetTool *CygnetTool) BankStatementUpload(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (cygnetTool *CygnetTool) BankStatementUpload(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool BankStatementUpload - Start")
 
 	// 1. Prepare data with defaults
@@ -942,7 +992,7 @@ func (cygnetTool *CygnetTool) BankStatementUpload(ctx context.Context, projectId
 
 	bnkStmt, ok := params["bnk_stmt"].(string)
 	if !ok || bnkStmt == "" {
-		return nil, false, fmt.Errorf("bnk_stmt is required and must be a non-empty base64 string")
+		return nil, nil, false, fmt.Errorf("bnk_stmt is required and must be a non-empty base64 string")
 	}
 
 	bankData := map[string]interface{}{
@@ -958,7 +1008,7 @@ func (cygnetTool *CygnetTool) BankStatementUpload(ctx context.Context, projectId
 	// 2. Encrypt request
 	encryptedData, rawKey, _, err := cygnetTool.encryptRequest(ctx, bankData)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 3. Prepare final payload
@@ -981,27 +1031,27 @@ func (cygnetTool *CygnetTool) BankStatementUpload(ctx context.Context, projectId
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 5. Decrypt response
 	decryptedResponse, err := cygnetTool.decryptResponse(ctx, res, rawKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["bankstatementupload_result"] = decryptedResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
 }
 
-func (cygnetTool *CygnetTool) BankStatementUploadStatus(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (cygnetTool *CygnetTool) BankStatementUploadStatus(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CygnetTool BankStatementUploadStatus - Start")
 
 	// 1. Prepare data
 	processId, ok := params["process_id"].(string)
 	if !ok || processId == "" {
-		return nil, false, fmt.Errorf("process_id is required and must be a non-empty string")
+		return nil, nil, false, fmt.Errorf("process_id is required and must be a non-empty string")
 	}
 
 	statusData := map[string]interface{}{
@@ -1011,7 +1061,7 @@ func (cygnetTool *CygnetTool) BankStatementUploadStatus(ctx context.Context, pro
 	// 2. Encrypt request
 	encryptedData, rawKey, _, err := cygnetTool.encryptRequest(ctx, statusData)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 3. Prepare final payload
@@ -1034,18 +1084,18 @@ func (cygnetTool *CygnetTool) BankStatementUploadStatus(ctx context.Context, pro
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 5. Decrypt response
 	decryptedResponse, err := cygnetTool.decryptResponse(ctx, res, rawKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["bankstatementuploadstatus_result"] = decryptedResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
 }
 
 // toInt is a helper to coerce interface{} param values to int (handles float64 from JSON unmarshaling).
@@ -1155,22 +1205,22 @@ func (cygnetTool *CygnetTool) decryptResponse(ctx context.Context, res interface
 	return result, nil
 }
 
-func (cygnetTool *CygnetTool) gstDataAction(ctx context.Context, actionName string, endpoint string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (cygnetTool *CygnetTool) gstDataAction(ctx context.Context, actionName string, endpoint string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug(fmt.Sprintf("CygnetTool %s - Start", actionName))
 
 	// 1. Map params to CygnetGstDataPayload
 	var payload CygnetGstDataPayload
 	paramBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if err := json.Unmarshal(paramBytes, &payload); err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 2. Validate payload
 	if err := utils.ValidateStruct(ctx, payload, ""); err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 3. Prepare query params
@@ -1196,18 +1246,18 @@ func (cygnetTool *CygnetTool) gstDataAction(ctx context.Context, actionName stri
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	// 6. Decrypt response
 	decryptedResponse, err := cygnetTool.decryptResponse(ctx, res, cygnetTool.AesKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult[fmt.Sprintf("%s_result", actionName)] = decryptedResponse
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
 func (cygnetTool *CygnetTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {

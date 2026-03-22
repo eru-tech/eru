@@ -3,11 +3,13 @@ package web_scraping
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"net/url"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	server "github.com/eru-tech/eru/eru-server/server"
 
 	//"errors"
 	"fmt"
@@ -33,6 +35,8 @@ func (pwTool *PlaywrightTool) MakeFromJson(ctx context.Context, rj *json.RawMess
 
 func (pwTool *PlaywrightTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("PlaywrightTool Execute - Start")
+	var toolRequest interface{}
+	toolRequest = map[string]interface{}{"body": params}
 	httpVersion := params["http_version"].(string)
 	extarctedData := ""
 	if httpVersion == "1.1" {
@@ -41,7 +45,52 @@ func (pwTool *PlaywrightTool) Execute(ctx context.Context, projectId string, ten
 	if httpVersion == "2.0" {
 		extarctedData, err = extractBodyContentPlaywright_v2(ctx, params["url"].(string), params["selectors"].(string))
 	}
-	return map[string]interface{}{"content": extarctedData}, false, nil
+	toolResult = map[string]interface{}{"content": extarctedData}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := pwTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, false, err
 }
 
 func (pwTool *PlaywrightTool) GetSpec() tools.Tooling {

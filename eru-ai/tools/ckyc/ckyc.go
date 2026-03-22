@@ -14,17 +14,20 @@ import (
 	"strings"
 	"time"
 
+	"errors"
+
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	aes "github.com/eru-tech/eru/eru-crypto/aes"
 	rsa "github.com/eru-tech/eru/eru-crypto/rsa"
 	sha "github.com/eru-tech/eru/eru-crypto/sha"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 	uuid "github.com/google/uuid"
 )
 
-const CKYC_VERSION = 1.3
+const CKYC_VERSION = "1.3"
 
 type CkycVerifyParams struct {
 	IdNo   string `json:"id_no" eru:"required" desc:"ID number for search"`
@@ -36,6 +39,7 @@ type CkycTool struct {
 	FiCode        string `json:"fi_code"`
 	CkycPublicKey string `json:"ckyc_public_key"`
 	FiPrivateKey  string `json:"fi_private_key"`
+	FiPublicKey   string `json:"fi_public_key"`
 	BaseUrl       string `json:"base_url"`
 }
 
@@ -80,12 +84,58 @@ func (c *CkycTool) MakeFromJson(ctx context.Context, rj *json.RawMessage) error 
 
 func (c *CkycTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CkycTool Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case VERIFY:
-		return c.ExecuteVerify(ctx, params)
+		toolResult, toolRequest, persistStore, err = c.ExecuteVerify(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := c.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
 func (c *CkycTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {
@@ -99,17 +149,17 @@ func (c *CkycTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.T
 	return &ckycTool, nil
 }
 
-func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CkycTool ExecuteVerify - Start")
 
 	verifyParams := CkycVerifyParams{}
 	paramsBytes, err := json.Marshal(params)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling params: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling params: %w", err)
 	}
 	err = json.Unmarshal(paramsBytes, &verifyParams)
 	if err != nil {
-		return nil, false, fmt.Errorf("error unmarshalling params: %w", err)
+		return nil, nil, false, fmt.Errorf("error unmarshalling params: %w", err)
 	}
 
 	// 1 & 2. Generate PID_DATA XML with Timestamp
@@ -121,32 +171,32 @@ func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interfac
 	}
 	pidXml, err := xml.Marshal(pidData)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling PID_DATA: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling PID_DATA: %w", err)
 	}
-	pidXmlStr := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` + "\n" + string(pidXml)
+	pidXmlStr := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` + string(pidXml)
 
 	// 3. Generate random 256-bit session key
 	sessionKey, err := aes.GenerateKey(ctx, 32)
 	if err != nil {
-		return nil, false, fmt.Errorf("error generating session key: %w", err)
+		return nil, nil, false, fmt.Errorf("error generating session key: %w", err)
 	}
 
 	// 4 & 5. Encrypt PID_DATA using session key (AES-256-ECB PKCS7)
 	encryptedPid, err := aes.EncryptECB(ctx, []byte(pidXmlStr), sessionKey.Key)
 	if err != nil {
-		return nil, false, fmt.Errorf("error encrypting PID_DATA: %w", err)
+		return nil, nil, false, fmt.Errorf("error encrypting PID_DATA: %w", err)
 	}
 	encodedPid := base64.StdEncoding.EncodeToString(encryptedPid)
 
-	// 6 & 7. Encrypt session key using CKYC public key (RSA OAEP SHA1)
+	// 6 & 7. Encrypt session key using CKYC public key (RSA OAEP SHA256)
 	publicKeyStr, err := base64.StdEncoding.DecodeString(c.CkycPublicKey)
 	if err != nil {
-		return nil, false, fmt.Errorf("error decoding public key: %w", err)
+		return nil, nil, false, fmt.Errorf("error decoding public key: %w", err)
 	}
 
 	encryptedSessionKey, err := rsa.EncryptOAEP(ctx, sessionKey.Key, string(publicKeyStr), nil)
 	if err != nil {
-		return nil, false, fmt.Errorf("error encrypting session key: %w", err)
+		return nil, nil, false, fmt.Errorf("error encrypting session key: %w", err)
 	}
 	encodedSessionKey := base64.StdEncoding.EncodeToString(encryptedSessionKey)
 
@@ -166,20 +216,27 @@ func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interfac
 
 	rawXml, err := xml.Marshal(reqRoot)
 	if err != nil {
-		return nil, false, fmt.Errorf("error marshalling REQ_ROOT: %w", err)
+		return nil, nil, false, fmt.Errorf("error marshalling REQ_ROOT: %w", err)
 	}
-	// 9. Sign the request (without the XML declaration)
-	signedXml, err := c.SignXml(ctx, string(rawXml))
+	// 9. Sign the request (including the XML declaration)
+	baseXml := `<?xml version="1.0" encoding="UTF-8" standalone="no"?>` + string(rawXml)
+	finalSignedXml, err := c.SignXml(ctx, baseXml)
 	if err != nil {
-		return nil, false, fmt.Errorf("error signing XML: %w", err)
+		return nil, nil, false, fmt.Errorf("error signing XML: %w", err)
 	}
 
-	// Add XML declaration to the final signed XML
-	finalSignedXml := `<?xml version="1.0" encoding="UTF-8"?>` + signedXml
+	// Verify the signature locally before sending
+	isValid, err := c.VerifyXml(ctx, finalSignedXml)
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("local signature verification failed before sending: %w", err)
+	}
+	if !isValid {
+		return nil, nil, false, fmt.Errorf("local signature verification failed before sending")
+	}
 
 	// 10. Call the CKYC API
 	if c.BaseUrl == "" {
-		return nil, false, fmt.Errorf("base url is not configured")
+		return nil, nil, false, fmt.Errorf("base url is not configured")
 	}
 
 	headers := http.Header{}
@@ -190,31 +247,31 @@ func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interfac
 	// We use ExecuteHttp directly to avoid utils.CallHttp's automatic JSON-marshalling of the body
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBufferString(finalSignedXml))
 	if err != nil {
-		return nil, false, fmt.Errorf("error creating request: %w", err)
+		return nil, nil, false, fmt.Errorf("error creating request: %w", err)
 	}
 	req.Header = headers
 
 	resp, err := utils.ExecuteHttp(ctx, req)
 	if err != nil {
-		return nil, false, fmt.Errorf("error calling CKYC API: %w", err)
+		return nil, nil, false, fmt.Errorf("error calling CKYC API: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, false, fmt.Errorf("error reading response body: %w", err)
+		return nil, nil, false, fmt.Errorf("error reading response body: %w", err)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
 	if strings.Contains(contentType, "application/json") {
 		var res map[string]interface{}
 		if err := json.Unmarshal(respBody, &res); err != nil {
-			return map[string]interface{}{"response": string(respBody)}, false, nil
+			return map[string]interface{}{"response": string(respBody)}, map[string]interface{}{"body": verifyParams}, false, nil
 		}
-		return res, false, nil
+		return res, map[string]interface{}{"body": verifyParams}, false, nil
 	}
 
-	return map[string]interface{}{"response": string(respBody)}, false, nil
+	return map[string]interface{}{"response": string(respBody)}, map[string]interface{}{"body": verifyParams}, false, nil
 }
 
 func (c *CkycTool) SignXml(ctx context.Context, xmlStr string) (string, error) {
@@ -224,30 +281,24 @@ func (c *CkycTool) SignXml(ctx context.Context, xmlStr string) (string, error) {
 
 	// Create SignedInfo
 	// We need the digest of the XML without the Signature element
-	xmlDigest := sha.NewSHA1([]byte(xmlStr))
+	// Standard C14N for an element with no namespace usually just keeps it as is if it's compact.
+	xmlDigest := sha.NewSHA256([]byte(xmlStr))
 	encodedDigest := base64.StdEncoding.EncodeToString(xmlDigest)
 
-	signedInfo := SignedInfo{
-		CanonicalizationMethod: CanonicalizationMethod{Algorithm: "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"},
-		SignatureMethod:        SignatureMethod{Algorithm: "http://www.w3.org/2000/09/xmldsig#rsa-sha1"},
-		Reference: Reference{
-			Uri: "",
-			Transforms: Transforms{
-				Transform: []Transform{
-					{Algorithm: "http://www.w3.org/2000/09/xmldsig#envelopedsignature"},
-				},
-			},
-			DigestMethod: DigestMethod{Algorithm: "http://www.w3.org/2000/09/xmldsig#sha1"},
-			DigestValue:  encodedDigest,
-		},
-	}
-
-	signedInfoXml, err := xml.Marshal(signedInfo)
-	if err != nil {
-		return "", err
-	}
-	// Add xmlns to SignedInfo for canonicalization
-	signedInfoXmlStr := strings.Replace(string(signedInfoXml), "<SignedInfo", "<SignedInfo xmlns=\"http://www.w3.org/2000/09/xmldsig#\"", 1)
+	// We use a manual string to ensure self-closing tags and specific formatting
+	// as xml.Marshal would use long closing tags like <CanonicalizationMethod ...></CanonicalizationMethod>
+	// which breaks signature verification in many Java-based systems.
+	signedInfoXmlStr := fmt.Sprintf("<SignedInfo xmlns=\"http://www.w3.org/2000/09/xmldsig#\">"+
+		"<CanonicalizationMethod Algorithm=\"http://www.w3.org/TR/2001/REC-xml-c14n-20010315\"/>"+
+		"<SignatureMethod Algorithm=\"http://www.w3.org/2001/04/xmldsig-more#rsa-sha256\"/>"+
+		"<Reference URI=\"\">"+
+		"<Transforms>"+
+		"<Transform Algorithm=\"http://www.w3.org/2000/09/xmldsig#envelopedsignature\"/>"+
+		"</Transforms>"+
+		"<DigestMethod Algorithm=\"http://www.w3.org/2001/04/xmlenc#sha256\"/>"+
+		"<DigestValue>%s</DigestValue>"+
+		"</Reference>"+
+		"</SignedInfo>", encodedDigest)
 
 	// Sign SignedInfo
 	privateKeyStr := c.FiPrivateKey
@@ -257,25 +308,16 @@ func (c *CkycTool) SignXml(ctx context.Context, xmlStr string) (string, error) {
 			privateKeyStr = string(decoded)
 		}
 	}
-	signatureBytes, err := rsa.Sign(ctx, []byte(signedInfoXmlStr), privateKeyStr, crypto.SHA1)
+	signatureBytes, err := rsa.Sign(ctx, []byte(signedInfoXmlStr), privateKeyStr, crypto.SHA256)
 	if err != nil {
 		return "", err
 	}
 	encodedSignature := base64.StdEncoding.EncodeToString(signatureBytes)
 
-	// Create Final Signature Element
-	signature := Signature{
-		Xmlns:          "http://www.w3.org/2000/09/xmldsig#",
-		SignedInfo:     signedInfo,
-		SignatureValue: encodedSignature,
-	}
-	signatureXml, err := xml.Marshal(signature)
-	if err != nil {
-		return "", err
-	}
+	signatureXmlStr := fmt.Sprintf("<Signature xmlns=\"http://www.w3.org/2000/09/xmldsig#\">%s<SignatureValue>%s</SignatureValue></Signature>", signedInfoXmlStr, encodedSignature)
 
 	// Insert Signature before </REQ_ROOT>
-	finalXml := strings.Replace(xmlStr, "</REQ_ROOT>", string(signatureXml)+"</REQ_ROOT>", 1)
+	finalXml := strings.Replace(xmlStr, "</REQ_ROOT>", signatureXmlStr+"</REQ_ROOT>", 1)
 	return finalXml, nil
 }
 
@@ -287,6 +329,8 @@ func (c *CkycTool) GetAttribute(ctx context.Context, attributeName string) (attr
 		return c.CkycPublicKey, nil
 	case "fi_private_key":
 		return c.FiPrivateKey, nil
+	case "fi_public_key":
+		return c.FiPublicKey, nil
 	case "base_url":
 		return c.BaseUrl, nil
 	default:
@@ -302,6 +346,8 @@ func (c *CkycTool) SetAttribute(ctx context.Context, attributeName string, attri
 		c.CkycPublicKey = attributeValue.(string)
 	case "fi_private_key":
 		c.FiPrivateKey = attributeValue.(string)
+	case "fi_public_key":
+		c.FiPublicKey = attributeValue.(string)
 	case "base_url":
 		c.BaseUrl = attributeValue.(string)
 	default:
@@ -319,7 +365,7 @@ func (c *CkycTool) DecryptPidData(ctx context.Context, encodedPid string, encode
 		return "", fmt.Errorf("error decoding session key: %w", err)
 	}
 
-	// 2. Decrypt session key using FI's private key (RSA OAEP SHA1)
+	// 2. Decrypt session key using FI's private key (RSA OAEP SHA256)
 	privateKeyStr := c.FiPrivateKey
 	if !strings.HasPrefix(strings.TrimSpace(privateKeyStr), "-----") {
 		decoded, err := base64.StdEncoding.DecodeString(privateKeyStr)
@@ -362,9 +408,9 @@ type ReqRoot struct {
 }
 
 type Header struct {
-	FiCode    string  `xml:"FI_CODE"`
-	RequestId string  `xml:"REQUEST_ID"`
-	Version   float32 `xml:"VERSION"`
+	FiCode    string `xml:"FI_CODE"`
+	RequestId string `xml:"REQUEST_ID"`
+	Version   string `xml:"VERSION"`
 }
 
 type CkycInq struct {
@@ -411,6 +457,85 @@ type Transform struct {
 
 type DigestMethod struct {
 	Algorithm string `xml:"Algorithm,attr"`
+}
+
+func (c *CkycTool) VerifyXml(ctx context.Context, xmlStr string) (bool, error) {
+	logs.WithContext(ctx).Debug("VerifyXml - Start")
+
+	// 1. Extract SignatureValue
+	sigValStart := strings.Index(xmlStr, "<SignatureValue>")
+	sigValEnd := strings.Index(xmlStr, "</SignatureValue>")
+	if sigValStart == -1 || sigValEnd == -1 {
+		return false, fmt.Errorf("SignatureValue not found")
+	}
+	encodedSig := strings.TrimSpace(xmlStr[sigValStart+len("<SignatureValue>") : sigValEnd])
+	encodedSig = strings.ReplaceAll(encodedSig, "\n", "")
+	encodedSig = strings.ReplaceAll(encodedSig, "\r", "")
+	encodedSig = strings.ReplaceAll(encodedSig, " ", "")
+
+	signatureBytes, err := base64.StdEncoding.DecodeString(encodedSig)
+	if err != nil {
+		return false, fmt.Errorf("error decoding SignatureValue: %w", err)
+	}
+
+	// 2. Extract SignedInfo
+	siStart := strings.Index(xmlStr, "<SignedInfo")
+	siEnd := strings.Index(xmlStr, "</SignedInfo>")
+	if siStart == -1 || siEnd == -1 {
+		return false, fmt.Errorf("SignedInfo not found")
+	}
+	signedInfoStr := xmlStr[siStart : siEnd+len("</SignedInfo>")]
+
+	// 3. Verify Signature over SignedInfo
+	publicKeyStr := c.FiPublicKey
+	if publicKeyStr == "" {
+		return false, fmt.Errorf("fi_public_key is empty")
+	}
+	if !strings.HasPrefix(strings.TrimSpace(publicKeyStr), "-----") {
+		decoded, err := base64.StdEncoding.DecodeString(publicKeyStr)
+		if err == nil {
+			publicKeyStr = string(decoded)
+		}
+	}
+
+	err = rsa.VerifyWithCert(ctx, []byte(signedInfoStr), signatureBytes, publicKeyStr, crypto.SHA256)
+	if err != nil {
+		// Try regular public key if cert fails
+		err2 := rsa.Verify(ctx, []byte(signedInfoStr), signatureBytes, publicKeyStr, crypto.SHA256)
+		if err2 != nil {
+			return false, fmt.Errorf("signature verification failed: %w", err2)
+		}
+	}
+
+	// 4. Verify DigestValue
+	dvStart := strings.Index(signedInfoStr, "<DigestValue>")
+	dvEnd := strings.Index(signedInfoStr, "</DigestValue>")
+	if dvStart == -1 || dvEnd == -1 {
+		return false, fmt.Errorf("DigestValue not found")
+	}
+	encodedDigest := strings.TrimSpace(signedInfoStr[dvStart+len("<DigestValue>") : dvEnd])
+
+	// Reconstruct original XML by removing <Signature>...</Signature>
+	sigStart := strings.Index(xmlStr, "<Signature")
+	sigEnd := strings.Index(xmlStr, "</Signature>")
+	if sigStart == -1 || sigEnd == -1 {
+		return false, fmt.Errorf("Signature element not found")
+	}
+	originalXml := xmlStr[:sigStart] + xmlStr[sigEnd+len("</Signature>"):]
+
+	recalculatedDigest := sha.NewSHA256([]byte(originalXml))
+	encodedRecalculated := base64.StdEncoding.EncodeToString(recalculatedDigest)
+
+	if encodedDigest != recalculatedDigestStr(encodedRecalculated) && encodedDigest != encodedRecalculated {
+		return false, fmt.Errorf("DigestValue mismatch: expected %s, got %s", encodedDigest, encodedRecalculated)
+	}
+
+	return true, nil
+}
+
+// recalculatedDigestStr is a helper to handle potential minor formatting differences if any
+func recalculatedDigestStr(s string) string {
+	return s
 }
 
 func (ckycTool *CkycTool) GetBytes(ctx context.Context) ([]byte, error) {

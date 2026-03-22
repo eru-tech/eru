@@ -5,7 +5,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -304,7 +304,7 @@ func EncryptOAEP(ctx context.Context, plainBytes []byte, publicKeyStr string, la
 			}
 		}
 	}
-	return rsa.EncryptOAEP(sha1.New(), rand.Reader, rsaPublicKey, plainBytes, label)
+	return rsa.EncryptOAEP(sha256.New(), rand.Reader, rsaPublicKey, plainBytes, label)
 }
 
 func Sign(ctx context.Context, data []byte, privateKeyStr string, hash crypto.Hash) (signature []byte, err error) {
@@ -360,5 +360,39 @@ func DecryptOAEP(ctx context.Context, encryptedBytes []byte, privateKeyStr strin
 		}
 	}
 
-	return rsa.DecryptOAEP(sha1.New(), rand.Reader, privateKey, encryptedBytes, label)
+	return rsa.DecryptOAEP(sha256.New(), rand.Reader, privateKey, encryptedBytes, label)
+}
+
+func Verify(ctx context.Context, data []byte, signature []byte, publicKeyStr string, hash crypto.Hash) (err error) {
+	logs.WithContext(ctx).Debug("Verify - Start")
+	rsaPublicKey, err := StringToKey(ctx, publicKeyStr)
+	if err != nil {
+		return
+	}
+	h := hash.New()
+	h.Write(data)
+	digest := h.Sum(nil)
+	return rsa.VerifyPKCS1v15(rsaPublicKey, hash, digest, signature)
+}
+
+func VerifyWithCert(ctx context.Context, data []byte, signature []byte, publicCert string, hash crypto.Hash) (err error) {
+	logs.WithContext(ctx).Debug("VerifyWithCert - Start")
+	block, _ := pem.Decode([]byte(publicCert))
+	if block == nil {
+		return errors.New("failed to parse PEM block containing the key")
+	}
+	var cert *x509.Certificate
+	cert, err = x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	rsaPublicKey, ok := cert.PublicKey.(*rsa.PublicKey)
+	if !ok {
+		return errors.New("certificate does not contain an RSA public key")
+	}
+	h := hash.New()
+	h.Write(data)
+	digest := h.Sum(nil)
+	return rsa.VerifyPKCS1v15(rsaPublicKey, hash, digest, signature)
 }
