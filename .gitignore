@@ -44,3 +44,5 @@ eru-functions/app
 launch.json
 tasks.json
 .gitignore
+eru-ai/localhost-key.pem
+eru-ai/localhost.pem

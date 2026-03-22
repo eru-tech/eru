@@ -62,14 +62,3 @@ func GetTool(toolType string) tools.Tooling {
 	}
 }
 
-func GetMcpToolNames() []string {
-	tools := []string{
-		"PLAYWRIGHT",
-		"STRUCTURED_OUTPUT",
-		"MS_EMAIL",
-		"WHATSAPP",
-		"SLACK",
-		"ZOHODESK",
-	}
-	return tools
-}

@@ -8,35 +8,12 @@ import (
 	model "github.com/eru-tech/eru/eru-ai/models"
 	"github.com/eru-tech/eru/eru-ai/module_store"
 	"github.com/eru-tech/eru/eru-ai/tools"
-	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
 )
 
-func McpToolListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-
-		logs.WithContext(r.Context()).Debug("McpToolListHandler - Start")
-		toolName := "MS_EMAIL" //get it from env variable
-		tool := tools_factory.GetTool(toolName)
-		mcpTools := tool.GetMcpTools()
-		server_handlers.FormatResponse(w, 200)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"tools": mcpTools})
-	}
-}
-func ToolListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-
-		logs.WithContext(r.Context()).Debug("ToolListHandler - Start")
-		toolName := "MS_EMAIL" //get it from env variable
-		tool := tools_factory.GetTool(toolName)
-		mcpTools := tool.GetMcpTools()
-		server_handlers.FormatResponse(w, 200)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"tools": mcpTools})
-	}
-}
 func ModelEmbeddingsHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 

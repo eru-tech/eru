@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/google/uuid"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/google/uuid"
 )
 
 type MCPMessage struct {
@@ -105,8 +105,8 @@ type MCPContent struct {
 
 type MCPServer interface {
 	Initialize(ctx context.Context, params MCPInitializeParams) (MCPInitializeResult, error)
-	ListTools(ctx context.Context) (MCPListToolsResult, error)
-	CallTool(ctx context.Context, conversationId string, params MCPCallToolParams) (MCPCallToolResult, error)
+	ListTools(ctx context.Context, projectId string, tenantId string) (MCPListToolsResult, error)
+	CallTool(ctx context.Context, conversationId string, params MCPCallToolParams, projectId string, tenantId string) (MCPCallToolResult, error)
 	GetCapabilities() MCPCapabilities
 	GetServerInfo() MCPServerInfo
 }
@@ -124,7 +124,7 @@ func NewMCPMessageHandler(server MCPServer, sessionId string) *MCPMessageHandler
 	}
 }
 
-func (h *MCPMessageHandler) HandleMessage(ctx context.Context, data []byte) ([]byte, error) {
+func (h *MCPMessageHandler) HandleMessage(ctx context.Context, data []byte, projectId string, tenantId string) ([]byte, error) {
 	var request MCPMessage
 	if err := json.Unmarshal(data, &request); err != nil {
 		return h.createErrorResponse(nil, -32700, "Parse error", nil)
@@ -137,11 +137,20 @@ func (h *MCPMessageHandler) HandleMessage(ctx context.Context, data []byte) ([]b
 		return h.handleInitialize(ctx, request)
 	case "initialized":
 		return h.handleInitialized(ctx, request)
+	case "ping":
+		return h.handlePing(ctx, request)
 	case "tools/list":
-		return h.handleListTools(ctx, request)
+		return h.handleListTools(ctx, request, projectId, tenantId)
 	case "tools/call":
-		return h.handleCallTool(ctx, request)
+		return h.handleCallTool(ctx, request, projectId, tenantId)
+	case "resources/list":
+		return h.handleResourcesList(ctx, request)
+	case "prompts/list":
+		return h.handlePromptsList(ctx, request)
 	default:
+		if request.ID == nil {
+			return nil, nil
+		}
 		return h.createErrorResponse(request.ID, -32601, "Method not found", nil)
 	}
 }
@@ -183,12 +192,12 @@ func (h *MCPMessageHandler) handleInitialized(ctx context.Context, request MCPMe
 	return nil, nil
 }
 
-func (h *MCPMessageHandler) handleListTools(ctx context.Context, request MCPMessage) ([]byte, error) {
+func (h *MCPMessageHandler) handleListTools(ctx context.Context, request MCPMessage, projectId string, tenantId string) ([]byte, error) {
 	if !h.initialized {
 		return h.createErrorResponse(request.ID, -32002, "Server not initialized", nil)
 	}
 	logs.WithContext(ctx).Info(fmt.Sprintf("request: %v", request))
-	result, err := h.server.ListTools(ctx)
+	result, err := h.server.ListTools(ctx, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Error listing tools: %v", err))
 		return h.createErrorResponse(request.ID, -32603, "Internal error", nil)
@@ -208,7 +217,7 @@ func (h *MCPMessageHandler) handleListTools(ctx context.Context, request MCPMess
 	return json.Marshal(response)
 }
 
-func (h *MCPMessageHandler) handleCallTool(ctx context.Context, request MCPMessage) ([]byte, error) {
+func (h *MCPMessageHandler) handleCallTool(ctx context.Context, request MCPMessage, projectId string, tenantId string) ([]byte, error) {
 	if !h.initialized {
 		return h.createErrorResponse(request.ID, -32002, "Server not initialized", nil)
 	}
@@ -219,7 +228,7 @@ func (h *MCPMessageHandler) handleCallTool(ctx context.Context, request MCPMessa
 	}
 
 	logs.WithContext(ctx).Info(fmt.Sprintf("Calling tool: %s", params.Name))
-	result, err := h.server.CallTool(ctx, h.sessionId, params)
+	result, err := h.server.CallTool(ctx, h.sessionId, params, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Tool execution error: %v", err))
 		return h.createErrorResponse(request.ID, -32603, fmt.Sprintf("Tool execution failed: %v", err), nil)
@@ -236,6 +245,35 @@ func (h *MCPMessageHandler) handleCallTool(ctx context.Context, request MCPMessa
 		Result:         resultBytes,
 	}
 
+	return json.Marshal(response)
+}
+
+func (h *MCPMessageHandler) handlePing(ctx context.Context, request MCPMessage) ([]byte, error) {
+	response := MCPMessage{
+		JSONRPCVersion: "2.0",
+		ID:             request.ID,
+		Result:         json.RawMessage("{}"),
+	}
+	return json.Marshal(response)
+}
+
+func (h *MCPMessageHandler) handleResourcesList(ctx context.Context, request MCPMessage) ([]byte, error) {
+	resultBytes, _ := json.Marshal(map[string]interface{}{"resources": []interface{}{}})
+	response := MCPMessage{
+		JSONRPCVersion: "2.0",
+		ID:             request.ID,
+		Result:         resultBytes,
+	}
+	return json.Marshal(response)
+}
+
+func (h *MCPMessageHandler) handlePromptsList(ctx context.Context, request MCPMessage) ([]byte, error) {
+	resultBytes, _ := json.Marshal(map[string]interface{}{"prompts": []interface{}{}})
+	response := MCPMessage{
+		JSONRPCVersion: "2.0",
+		ID:             request.ID,
+		Result:         resultBytes,
+	}
 	return json.Marshal(response)
 }
 
@@ -303,9 +341,10 @@ func CreateMCPHttpHandler(server MCPServer) http.HandlerFunc {
 				http.Error(w, "Bad request", http.StatusBadRequest)
 				return
 			}
-
+			projectId := r.Header.Get("project_id")
+			tenantId := r.Header.Get("tenant_id")
 			handler := manager.GetOrCreate(sessionId)
-			response, err := handler.HandleMessage(ctx, body)
+			response, err := handler.HandleMessage(ctx, body, projectId, tenantId)
 			if err != nil {
 				logs.WithContext(ctx).Error("MCP HTTP handler error: " + err.Error())
 				http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -369,9 +408,13 @@ func CreateMCPWebSocketHandler(server MCPServer, config ...WebSocketConfig) http
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
+		projectId := r.Header.Get("project_id")
+		tenantId := r.Header.Get("tenant_id")
 		sessionId := uuid.New().String()
 		messageHandler := NewMCPMessageHandler(server, sessionId)
-		wsHandler := NewWebSocketHandler(messageHandler.HandleMessage, wsConfig)
+		wsHandler := NewWebSocketHandler(func(ctx context.Context, data []byte) ([]byte, error) {
+			return messageHandler.HandleMessage(ctx, data, projectId, tenantId)
+		}, wsConfig)
 		wsHandler.ServeHTTP(w, r)
 	}
 }

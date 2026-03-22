@@ -326,18 +326,6 @@ func (cygnetTool *CygnetTool) GetActionsList() []string {
 	return actions
 }
 
-func (cygnetTool *CygnetTool) GetMcpTools() []tools.McpToolList {
-	mcpTools := []tools.McpToolList{}
-	for _, action := range cygnetToolActions {
-		mcpTools = append(mcpTools, tools.McpToolList{
-			ToolName:        action.ActionName,
-			ToolDescription: action.Description,
-			ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", action.ActionName),
-		})
-	}
-	return mcpTools
-}
-
 func (cygnetTool *CygnetTool) GetSpec() tools.Tooling {
 	return cygnetTool
 }

@@ -18,11 +18,6 @@ import (
 	gojsonschema "github.com/xeipuuv/gojsonschema"
 )
 
-type McpToolList struct {
-	ToolName        string `json:"name"`
-	ToolDescription string `json:"description"`
-	ComponentUrl    string `json:"component_url"`
-}
 type ToolHooks struct {
 	CLBK string            `json:"clbk,omitempty"` //callback
 	POEX map[string]string `json:"poex,omitempty"` //post execute
@@ -84,7 +79,6 @@ type Tooling interface {
 	GetBytes(ctx context.Context) ([]byte, error)
 	BytesToTool(ctx context.Context, toolObjJson []byte) (Tooling, error)
 	GetActionsList() []string
-	GetMcpTools() []McpToolList
 	ValidateAction(ctx context.Context, actionName string, realTool Tooling) (err error)
 	SetPrivateAttributes(ctx context.Context, realTool Tooling) (err error)
 	GetInputFields() []ToolInputFields
@@ -172,10 +166,6 @@ func (tool *Tool) GetActionsList() []string {
 func (tool *Tool) GetInputFields() []ToolInputFields {
 	fields := []ToolInputFields{}
 	return fields
-}
-
-func (tool *Tool) GetMcpTools() []McpToolList {
-	return []McpToolList{}
 }
 
 func (tool *Tool) ValidateOutput(ctx context.Context, output json.RawMessage) error {
