@@ -4,19 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/eru-tech/eru/eru-ai/agents"
 	"github.com/eru-tech/eru/eru-ai/models"
 	"github.com/eru-tech/eru/eru-ai/module_store"
-	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-server/server"
 )
 
 const (
-	MCPProtocolVersion = "2025-06-18"
+	MCPProtocolVersion = "2025-03-26"
 	ServerName         = "eru-ai-mcp-server"
 	ServerVersion      = "1.0.1"
+	mcpNameSep         = "__"
 )
 
 type EruAIMCPServer struct {
@@ -31,16 +33,6 @@ func NewEruAIMCPServer(store *module_store.StoreHolder) *EruAIMCPServer {
 			Tools: &server.MCPToolsCapability{
 				ListChanged: true,
 			},
-			/* Resources: &server.MCPResourcesCapability{
-				Subscribe:   true,
-				ListChanged: true,
-			},
-			Prompts: &server.MCPPromptsCapability{
-				ListChanged: true,
-			},
-			Logging: &server.MCPLoggingCapability{
-				Level: "info",
-			}, */
 		},
 	}
 }
@@ -58,26 +50,8 @@ func (s *EruAIMCPServer) Initialize(ctx context.Context, params server.MCPInitia
 	}, nil
 }
 
-func (s *EruAIMCPServer) ListTools(ctx context.Context) (server.MCPListToolsResult, error) {
+func (s *EruAIMCPServer) ListTools(ctx context.Context, projectId string, tenantId string) (server.MCPListToolsResult, error) {
 	var mcpTools []server.MCPTool
-
-	// Add global tools using tools factory (same as /tools endpoint)
-	toolName := "MS_EMAIL" // get it from env variable
-	tool := tools_factory.GetTool(toolName)
-	globalTools := tool.GetMcpTools()
-
-	// Convert to MCP format
-	for _, globalTool := range globalTools {
-		mcpTool := server.MCPTool{
-			Name:        globalTool.ToolName,
-			Description: globalTool.ToolDescription,
-			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": make(map[string]interface{}),
-			},
-		}
-		mcpTools = append(mcpTools, mcpTool)
-	}
 
 	projectList := s.store.Store.GetProjectList(ctx)
 
@@ -86,82 +60,96 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context) (server.MCPListToolsResu
 		if !ok {
 			continue
 		}
-
-		project, err := s.store.Store.GetProjectConfig(ctx, projectName)
-		if err != nil {
-			continue
-		}
-
-		for _, tenant := range project.Tenants {
-			toolNames, err := s.store.Store.GetToolNames(ctx, projectName, tenant.TenantId)
+		if projectId == "" || projectName == projectId {
+			project, err := s.store.Store.GetProjectConfig(ctx, projectName)
 			if err != nil {
 				continue
 			}
 
-			for _, toolName := range toolNames {
-				tool, err := s.store.Store.GetTool(ctx, projectName, tenant.TenantId, toolName, "", s.store.Store)
-				if err != nil {
-					continue
-				}
+			for _, tenant := range project.Tenants {
+				if tenantId == "" || tenant.TenantId == tenantId || tenant.TenantId == projectId {
+					toolNames, err := s.store.Store.GetToolNames(ctx, projectName, tenant.TenantId)
+					if err != nil {
+						continue
+					}
 
-				description := ""
-				if desc, err := tool.GetAttribute(ctx, "description"); err == nil {
-					if descStr, ok := desc.(string); ok {
-						description = descStr
+					for _, toolName := range toolNames {
+						tool, err := s.store.Store.GetTool(ctx, projectName, tenant.TenantId, toolName, "", s.store.Store)
+						if err != nil {
+							continue
+						}
+
+						description := ""
+						if desc, err := tool.GetAttribute(ctx, "description"); err == nil {
+							if descStr, ok := desc.(string); ok {
+								description = descStr
+							}
+						}
+
+						toolPrefix := "tool"
+						if projectId == tenantId && projectId != "" {
+							toolPrefix = strings.Join([]string{"tool", projectId}, mcpNameSep)
+						}
+						mcpTool := server.MCPTool{
+							Name:        strings.Join([]string{toolPrefix, toolName}, mcpNameSep),
+							Description: description,
+							InputSchema: s.convertSchemaToInputSchema(tool.GetParameters()),
+						}
+						mcpTools = append(mcpTools, mcpTool)
+					}
+
+					agentNames, err := s.store.Store.GetAgentNames(ctx, projectName, tenant.TenantId)
+					if err != nil {
+						continue
+					}
+
+					for _, agentName := range agentNames {
+						agent, err := s.store.Store.GetAgent(ctx, projectName, tenant.TenantId, "", agentName, s.store.Store)
+						if err != nil {
+							continue
+						}
+
+						description := ""
+						if desc, err := agent.GetAttribute(ctx, "description"); err == nil {
+							if descStr, ok := desc.(string); ok {
+								description = descStr
+							}
+						}
+
+						if description == "" {
+							description = fmt.Sprintf("AI Agent: %s", agentName)
+						}
+						agentPrefix := "agent"
+						if projectId == tenantId && projectId != "" {
+							agentPrefix = strings.Join([]string{"agent", projectId}, mcpNameSep)
+						}
+						mcpTool := server.MCPTool{
+							Name:        strings.Join([]string{agentPrefix, agentName}, mcpNameSep),
+							Description: description,
+							InputSchema: map[string]interface{}{
+								"type": "object",
+								"properties": map[string]interface{}{
+									"content": map[string]interface{}{
+										"type":        "string",
+										"description": "Input message for the agent",
+									},
+									"params": map[string]interface{}{
+										"type":        "object",
+										"description": "Additional parameters for the agent",
+									},
+								},
+								"required": []string{"content"},
+							},
+						}
+						mcpTools = append(mcpTools, mcpTool)
 					}
 				}
-
-				mcpTool := server.MCPTool{
-					Name:        fmt.Sprintf("%s_%s_%s", projectName, tenant.TenantId, toolName),
-					Description: description,
-					InputSchema: s.convertSchemaToInputSchema(tool.GetParameters()),
-				}
-				mcpTools = append(mcpTools, mcpTool)
-			}
-
-			agentNames, err := s.store.Store.GetAgentNames(ctx, projectName, tenant.TenantId)
-			if err != nil {
-				continue
-			}
-
-			for _, agentName := range agentNames {
-				agent, err := s.store.Store.GetAgent(ctx, projectName, tenant.TenantId, "", agentName, s.store.Store)
-				if err != nil {
-					continue
-				}
-
-				description := ""
-				if desc, err := agent.GetAttribute(ctx, "description"); err == nil {
-					if descStr, ok := desc.(string); ok {
-						description = descStr
-					}
-				}
-
-				if description == "" {
-					description = fmt.Sprintf("AI Agent: %s", agentName)
-				}
-
-				mcpTool := server.MCPTool{
-					Name:        fmt.Sprintf("%s_%s_agent_%s", projectName, tenant.TenantId, agentName),
-					Description: description,
-					InputSchema: map[string]interface{}{
-						"type": "object",
-						"properties": map[string]interface{}{
-							"content": map[string]interface{}{
-								"type":        "string",
-								"description": "Input message for the agent",
-							},
-							"params": map[string]interface{}{
-								"type":        "object",
-								"description": "Additional parameters for the agent",
-							},
-						},
-						"required": []string{"content"},
-					},
-				}
-				mcpTools = append(mcpTools, mcpTool)
 			}
 		}
+	}
+
+	if mcpTools == nil {
+		mcpTools = []server.MCPTool{}
 	}
 
 	return server.MCPListToolsResult{
@@ -169,20 +157,19 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context) (server.MCPListToolsResu
 	}, nil
 }
 
-func (s *EruAIMCPServer) CallTool(ctx context.Context, conversationId string, params server.MCPCallToolParams) (server.MCPCallToolResult, error) {
+func (s *EruAIMCPServer) CallTool(ctx context.Context, conversationId string, params server.MCPCallToolParams, projectId string, tenantId string) (server.MCPCallToolResult, error) {
 	parts := s.parseToolName(params.Name)
-	if len(parts) < 3 {
-		return server.MCPCallToolResult{}, fmt.Errorf("invalid tool name format")
+	if len(parts) < 2 {
+		return server.MCPCallToolResult{}, fmt.Errorf("invalid tool name format: %s", params.Name)
 	}
-
-	project := parts[0]
-	tenant := parts[1]
-
-	if len(parts) == 4 && parts[2] == "agent" {
-		return s.executeAgent(ctx, conversationId, project, tenant, parts[3], params.Arguments)
-	} else {
-		return s.executeToolAction(ctx, conversationId, project, tenant, parts[2], params.Arguments)
+	toolAgentName := parts[1]
+	if len(parts) == 3 {
+		toolAgentName = parts[2]
 	}
+	if parts[0] == "agent" {
+		return s.executeAgent(ctx, conversationId, projectId, tenantId, toolAgentName, params.Arguments)
+	}
+	return s.executeToolAction(ctx, conversationId, projectId, tenantId, toolAgentName, params.Arguments)
 }
 
 func (s *EruAIMCPServer) executeAgent(ctx context.Context, conversationId, project, tenant, agentName string, arguments map[string]interface{}) (server.MCPCallToolResult, error) {
@@ -295,33 +282,55 @@ func (s *EruAIMCPServer) GetServerInfo() server.MCPServerInfo {
 	}
 }
 
+// parseToolName splits an MCP tool name on the __ separator.
+// Tool names use the format: project__tenant__toolname
+// Agent names use the format: project__tenant__agent__agentname
 func (s *EruAIMCPServer) parseToolName(toolName string) []string {
-	var parts []string
-	current := ""
-
-	for _, char := range toolName {
-		if char == '_' {
-			if current != "" {
-				parts = append(parts, current)
-				current = ""
-			}
-		} else {
-			current += string(char)
-		}
-	}
-
-	if current != "" {
-		parts = append(parts, current)
-	}
-
-	return parts
+	return strings.Split(toolName, mcpNameSep)
 }
 
 func (s *EruAIMCPServer) convertSchemaToInputSchema(schema interface{}) map[string]interface{} {
 	inputSchema := map[string]interface{}{
 		"type":       "object",
-		"properties": make(map[string]interface{}),
+		"properties": map[string]interface{}{},
 	}
+
+	jsonSchema, ok := schema.(eru_models.JSONSchema)
+	if !ok {
+		return inputSchema
+	}
+
+	if jsonSchema.Type != "" {
+		inputSchema["type"] = jsonSchema.Type
+	}
+
+	if len(jsonSchema.Properties) > 0 {
+		properties := map[string]interface{}{}
+		for name, prop := range jsonSchema.Properties {
+			propMap := map[string]interface{}{
+				"type": prop.Type,
+			}
+			if prop.Description != "" {
+				propMap["description"] = prop.Description
+			}
+			if prop.Format != "" {
+				propMap["format"] = prop.Format
+			}
+			if len(prop.Enum) > 0 {
+				propMap["enum"] = prop.Enum
+			}
+			if prop.Items != nil {
+				propMap["items"] = s.convertSchemaToInputSchema(*prop.Items)
+			}
+			properties[name] = propMap
+		}
+		inputSchema["properties"] = properties
+	}
+
+	if len(jsonSchema.Required) > 0 {
+		inputSchema["required"] = jsonSchema.Required
+	}
+
 	return inputSchema
 }
 

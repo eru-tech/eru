@@ -104,6 +104,7 @@ func LaunchWithContext(ctx context.Context, serverRouter *mux.Router, port strin
 	gm.SafeGoWithRestartBehavior("http-server", func(ctx context.Context) {
 		logs.Logger.Info(fmt.Sprint("Starting server ", handlers.ServerName, " on ", port))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			//if err := server.ListenAndServeTLS("localhost.pem", "localhost-key.pem"); err != nil && err != http.ErrServerClosed {
 			logs.Logger.Error(fmt.Sprintf("HTTP server error: %v", err))
 		}
 	}, ShutdownOnMaxRetries)

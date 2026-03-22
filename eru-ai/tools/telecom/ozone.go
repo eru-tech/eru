@@ -136,21 +136,6 @@ func (ozoneTool *OzoneTool) Callback(ctx context.Context, projectId string, tena
 	return callbackResultMap, false, nil
 }
 
-func (ozoneTool *OzoneTool) GetMcpTools() []tools.McpToolList {
-	mcpTools := []tools.McpToolList{}
-	mcpTools = append(mcpTools, tools.McpToolList{
-		ToolName:        Call,
-		ToolDescription: "Make a manual phone dial using Ozone API",
-		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", Call),
-	})
-	mcpTools = append(mcpTools, tools.McpToolList{
-		ToolName:        FetchCDR,
-		ToolDescription: "Fetch CDR (Call Detail Record) details from Ozone API",
-		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", FetchCDR),
-	})
-	return mcpTools
-}
-
 func (ozoneTool *OzoneTool) GetSpec() tools.Tooling {
 	return ozoneTool
 }

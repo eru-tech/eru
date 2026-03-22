@@ -106,18 +106,6 @@ func (perfiosTool *PerfiosTool) GetActionsList() []string {
 	return actions
 }
 
-func (perfiosTool *PerfiosTool) GetMcpTools() []tools.McpToolList {
-	mcpTools := []tools.McpToolList{}
-	for _, action := range perfiosToolActions {
-		mcpTools = append(mcpTools, tools.McpToolList{
-			ToolName:        action.ActionName,
-			ToolDescription: action.Description,
-			ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", action.ActionName),
-		})
-	}
-	return mcpTools
-}
-
 func (perfiosTool *PerfiosTool) GetSpec() tools.Tooling {
 	return perfiosTool
 }

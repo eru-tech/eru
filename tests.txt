@@ -1,0 +1,8 @@
+ # All tests at once
+  go test ./eru-server/server/ ./eru-ai/agents/a2a/ ./eru-ai/module_server/
+   -v 2>&1 | grep -v "^{"
+
+  # Or individual packages
+  go test ./eru-server/server/ -v          # 17 MCP protocol tests
+  go test ./eru-ai/agents/a2a/ -v          # 11 TaskStore tests
+  go test ./eru-ai/module_server/ -v       # 29 MCP server + A2A server tests

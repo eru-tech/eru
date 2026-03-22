@@ -39,31 +39,6 @@ func (slackTool *SlackTool) GetActionsList() []string {
 	return actions
 }
 
-func (slackTool *SlackTool) GetMcpTools() []tools.McpToolList {
-	mcpTools := []tools.McpToolList{}
-	mcpTools = append(mcpTools, tools.McpToolList{
-		ToolName:        SendMessage,
-		ToolDescription: "Send messages to Slack channels via Web API",
-		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", SendMessage),
-	})
-	mcpTools = append(mcpTools, tools.McpToolList{
-		ToolName:        ReadMessages,
-		ToolDescription: "Read message history from Slack channels",
-		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", ReadMessages),
-	})
-	mcpTools = append(mcpTools, tools.McpToolList{
-		ToolName:        ListChannels,
-		ToolDescription: "List all channels in Slack workspace",
-		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", ListChannels),
-	})
-	mcpTools = append(mcpTools, tools.McpToolList{
-		ToolName:        ListUsers,
-		ToolDescription: "List all users in Slack workspace",
-		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", ListUsers),
-	})
-	return mcpTools
-}
-
 func (slackTool *SlackTool) GetSpec() tools.Tooling {
 	return slackTool
 }
