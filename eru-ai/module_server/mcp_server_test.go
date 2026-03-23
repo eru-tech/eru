@@ -25,8 +25,8 @@ func TestEruAIMCPServerInitialize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.ProtocolVersion != MCPProtocolVersion {
-		t.Errorf("expected %s, got %s", MCPProtocolVersion, result.ProtocolVersion)
+	if result.ProtocolVersion != "2025-03-26" {
+		t.Errorf("expected 2025-03-26, got %s", result.ProtocolVersion)
 	}
 	if result.ServerInfo.Name != ServerName {
 		t.Errorf("expected server name %s, got %s", ServerName, result.ServerInfo.Name)
@@ -36,6 +36,34 @@ func TestEruAIMCPServerInitialize(t *testing.T) {
 	}
 	if result.Capabilities.Tools == nil {
 		t.Error("expected tools capability to be set")
+	}
+}
+
+func TestEruAIMCPServerInitializeVersionNegotiation(t *testing.T) {
+	sh := newTestStoreHolder()
+	s := NewEruAIMCPServer(sh)
+	ctx := context.Background()
+
+	tests := []struct {
+		clientVersion   string
+		expectedVersion string
+	}{
+		{"2025-06-18", "2025-06-18"},
+		{"2025-03-26", "2025-03-26"},
+		{"2024-01-01", "2025-06-18"},
+		{"", "2025-06-18"},
+	}
+	for _, tt := range tests {
+		result, err := s.Initialize(ctx, server.MCPInitializeParams{
+			ProtocolVersion: tt.clientVersion,
+			ClientInfo:      server.MCPClientInfo{Name: "test-client", Version: "1.0"},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result.ProtocolVersion != tt.expectedVersion {
+			t.Errorf("client %q: expected %s, got %s", tt.clientVersion, tt.expectedVersion, result.ProtocolVersion)
+		}
 	}
 }
 
