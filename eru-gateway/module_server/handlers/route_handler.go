@@ -219,15 +219,29 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 		}
 		//defer response.Body.Close()
 
-		//remove CORS headers from w else it is getting passed even if rsponse is not sedning any header
-		w.Header().Del("Access-Control-Allow-Credentials")
-		w.Header().Del("Access-Control-Allow-Origin")
-		w.Header().Del("Access-Control-Allow-Headers")
-		w.Header().Del("Access-Control-Allow-Methods")
-
+		corsHeaders := []string{
+			"Access-Control-Allow-Credentials",
+			"Access-Control-Allow-Origin",
+			"Access-Control-Allow-Headers",
+			"Access-Control-Allow-Methods",
+		}
+		savedCors := make(map[string][]string)
+		for _, h := range corsHeaders {
+			if v := w.Header()[h]; len(v) > 0 {
+				savedCors[h] = v
+			}
+			w.Header().Del(h)
+		}
 		for k, v := range response.Header {
 			//logs.WithContext(r.Context()).Info(fmt.Sprint(k, " - ", v))
 			w.Header()[k] = v
+		}
+		for _, h := range corsHeaders {
+			if len(w.Header()[h]) == 0 {
+				if v, ok := savedCors[h]; ok {
+					w.Header()[h] = v
+				}
+			}
 		}
 		w.WriteHeader(response.StatusCode)
 		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
