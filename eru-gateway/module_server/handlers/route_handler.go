@@ -230,12 +230,32 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 			w.Header()[k] = v
 		}
 		w.WriteHeader(response.StatusCode)
-		_, err = io.Copy(w, response.Body)
-		if err != nil {
-			logs.WithContext(r.Context()).Error(err.Error())
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-			return
+		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
+			flusher, canFlush := w.(http.Flusher)
+			buf := make([]byte, 4096)
+			for {
+				n, readErr := response.Body.Read(buf)
+				if n > 0 {
+					if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+						logs.WithContext(r.Context()).Error(writeErr.Error())
+						break
+					}
+					if canFlush {
+						flusher.Flush()
+					}
+				}
+				if readErr != nil {
+					break
+				}
+			}
+		} else {
+			_, err = io.Copy(w, response.Body)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
 		}
 		//logs.WithContext(r.Context()).Info(fmt.Sprint("---------------------------"))
 		//logs.WithContext(r.Context()).Info(fmt.Sprint(w.Header()))
