@@ -21,6 +21,17 @@ const (
 	mcpNameSep         = "__"
 )
 
+var supportedMCPVersions = []string{"2025-06-18", "2025-03-26"}
+
+func negotiateMCPVersion(clientVersion string) string {
+	for _, v := range supportedMCPVersions {
+		if v == clientVersion {
+			return v
+		}
+	}
+	return supportedMCPVersions[0]
+}
+
 type EruAIMCPServer struct {
 	store        *module_store.StoreHolder
 	capabilities server.MCPCapabilities
@@ -41,7 +52,7 @@ func (s *EruAIMCPServer) Initialize(ctx context.Context, params server.MCPInitia
 	logs.WithContext(ctx).Info(fmt.Sprintf("MCP client initializing: %s v%s", params.ClientInfo.Name, params.ClientInfo.Version))
 
 	return server.MCPInitializeResult{
-		ProtocolVersion: MCPProtocolVersion,
+		ProtocolVersion: negotiateMCPVersion(params.ProtocolVersion),
 		Capabilities:    s.capabilities,
 		ServerInfo: server.MCPServerInfo{
 			Name:    ServerName,
