@@ -560,6 +560,10 @@ func (zohoDeskTool *ZohoDeskTool) Login(ctx context.Context, projectId string, t
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["login_status"] = "success"
+	toolResult["access_token"] = zohoTokens.AccessToken
+	toolResult["refresh_token"] = zohoTokens.RefreshToken
+	toolResult["expires_in"] = zohoTokens.ExpiresIn
+	toolResult["token_type"] = zohoTokens.TokenType
 	return toolResult, map[string]interface{}{"body": params}, persistStore, nil
 }
 
