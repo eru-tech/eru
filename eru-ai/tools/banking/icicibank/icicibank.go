@@ -17,6 +17,7 @@ import (
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -207,22 +208,68 @@ func (iciciBankTool *IciciBankTool) MakeFromJson(ctx context.Context, rj *json.R
 
 func (iciciBankTool *IciciBankTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("IciciBankTool Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case RegistrationStatusAction:
-		return iciciBankTool.ExecuteRegistrationStatus(ctx, params)
+		toolResult, toolRequest, persistStore, err = iciciBankTool.ExecuteRegistrationStatus(ctx, params)
 	case BalanceInquiryAction:
-		return iciciBankTool.ExecuteBalanceInquiry(ctx, params)
+		toolResult, toolRequest, persistStore, err = iciciBankTool.ExecuteBalanceInquiry(ctx, params)
 	case AccountStatementAction:
-		return iciciBankTool.ExecuteAccountStatement(ctx, params)
+		toolResult, toolRequest, persistStore, err = iciciBankTool.ExecuteAccountStatement(ctx, params)
 	case TransactionAction:
-		return iciciBankTool.ExecuteTransaction(ctx, params)
+		toolResult, toolRequest, persistStore, err = iciciBankTool.ExecuteTransaction(ctx, params)
 	case TransactionInquiryAction:
-		return iciciBankTool.ExecuteTransactionInquiry(ctx, params)
+		toolResult, toolRequest, persistStore, err = iciciBankTool.ExecuteTransactionInquiry(ctx, params)
 	case NeftStatusAction:
-		return iciciBankTool.ExecuteNeftStatus(ctx, params)
+		toolResult, toolRequest, persistStore, err = iciciBankTool.ExecuteNeftStatus(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := iciciBankTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
 func (iciciBankTool *IciciBankTool) generateFingerprint(ctx context.Context, payload string, apiKey string, publicKey string) (string, error) {
@@ -354,7 +401,7 @@ func (iciciBankTool *IciciBankTool) decryptResponsePayload(ctx context.Context, 
 	return decryptedResponseDataBytesUnpadded, nil
 }
 
-func (iciciBankTool *IciciBankTool) ExecuteRegistrationStatus(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (iciciBankTool *IciciBankTool) ExecuteRegistrationStatus(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("IciciBankTool ExecuteRegistrationStatus - Start")
 
 	regStatusParams := RegistrationStatusParams{
@@ -367,7 +414,7 @@ func (iciciBankTool *IciciBankTool) ExecuteRegistrationStatus(ctx context.Contex
 
 	requestPayload, encryptedFingerprintB64, err := iciciBankTool.encryptRequestPayload(ctx, regStatusParams)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprintf("%s/v1/RegistrationStatus", iciciBankTool.BaseUrl)
@@ -385,12 +432,12 @@ func (iciciBankTool *IciciBankTool) ExecuteRegistrationStatus(ctx context.Contex
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, requestPayload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	decryptedResponseDataBytesUnpadded, err := iciciBankTool.decryptResponsePayload(ctx, res)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -400,17 +447,17 @@ func (iciciBankTool *IciciBankTool) ExecuteRegistrationStatus(ctx context.Contex
 	} else {
 		toolResult["registration_status"] = decryptedResponse
 	}
-	return toolResult, true, nil
+	return toolResult, map[string]interface{}{"body": regStatusParams}, true, nil
 }
 
-func (iciciBankTool *IciciBankTool) ExecuteBalanceInquiry(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (iciciBankTool *IciciBankTool) ExecuteBalanceInquiry(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("IciciBankTool ExecuteBalanceInquiry - Start")
 
 	accountNo := ""
 	ok := false
 	if accountNo, ok = params["account_no"].(string); !ok {
 		err = logs.Err(ctx, errors.New("account_no is required"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	balanceInquiryParams := BalanceInquiryParams{
@@ -424,7 +471,7 @@ func (iciciBankTool *IciciBankTool) ExecuteBalanceInquiry(ctx context.Context, p
 	logs.WithContext(ctx).Info(fmt.Sprintf("IciciBankTool ExecuteBalanceInquiry - balanceInquiryParams: %s", string(x)))
 	requestPayload, encryptedFingerprintB64, err := iciciBankTool.encryptRequestPayload(ctx, balanceInquiryParams)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	y, _ := json.Marshal(requestPayload)
 	logs.WithContext(ctx).Info(fmt.Sprintf("IciciBankTool ExecuteBalanceInquiry - requestPayload: %s", string(y)))
@@ -445,12 +492,12 @@ func (iciciBankTool *IciciBankTool) ExecuteBalanceInquiry(ctx context.Context, p
 	res, _, _, sc, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, requestPayload)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf(err.Error(), " :status code = %d", sc))
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	decryptedResponseDataBytesUnpadded, err := iciciBankTool.decryptResponsePayload(ctx, res)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -460,10 +507,10 @@ func (iciciBankTool *IciciBankTool) ExecuteBalanceInquiry(ctx context.Context, p
 	} else {
 		toolResult["balance_inquiry"] = decryptedResponse
 	}
-	return toolResult, true, nil
+	return toolResult, map[string]interface{}{"body": balanceInquiryParams}, true, nil
 }
 
-func (iciciBankTool *IciciBankTool) ExecuteAccountStatement(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (iciciBankTool *IciciBankTool) ExecuteAccountStatement(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("IciciBankTool ExecuteAccountStatement - Start")
 
 	var accountNo, fromDate, toDate string
@@ -471,15 +518,15 @@ func (iciciBankTool *IciciBankTool) ExecuteAccountStatement(ctx context.Context,
 
 	if accountNo, ok = params["account_no"].(string); !ok || accountNo == "" {
 		err = logs.Err(ctx, errors.New("account_no is required"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if fromDate, ok = params["from_date"].(string); !ok || fromDate == "" {
 		err = logs.Err(ctx, errors.New("from_date is required (DD-MM-YYYY)"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if toDate, ok = params["to_date"].(string); !ok || toDate == "" {
 		err = logs.Err(ctx, errors.New("to_date is required (DD-MM-YYYY)"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	accountStatementParams := AccountStatementParams{
@@ -494,7 +541,7 @@ func (iciciBankTool *IciciBankTool) ExecuteAccountStatement(ctx context.Context,
 
 	requestPayload, encryptedFingerprintB64, err := iciciBankTool.encryptRequestPayload(ctx, accountStatementParams)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprintf("%s/v1/AccountStatement", iciciBankTool.BaseUrl)
@@ -512,12 +559,12 @@ func (iciciBankTool *IciciBankTool) ExecuteAccountStatement(ctx context.Context,
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, requestPayload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	decryptedResponseDataBytesUnpadded, err := iciciBankTool.decryptResponsePayload(ctx, res)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -527,10 +574,10 @@ func (iciciBankTool *IciciBankTool) ExecuteAccountStatement(ctx context.Context,
 	} else {
 		toolResult["account_statement"] = decryptedResponse
 	}
-	return toolResult, true, nil
+	return toolResult, map[string]interface{}{"body": accountStatementParams}, true, nil
 }
 
-func (iciciBankTool *IciciBankTool) ExecuteTransaction(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (iciciBankTool *IciciBankTool) ExecuteTransaction(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("IciciBankTool ExecuteTransaction - Start")
 
 	var uniqueId, amount, debitAcc, creditAcc, ifsc, currency, txnType, payeeName, remarks, workflowReq string
@@ -538,34 +585,34 @@ func (iciciBankTool *IciciBankTool) ExecuteTransaction(ctx context.Context, para
 
 	if uniqueId, ok = params["unique_id"].(string); !ok || uniqueId == "" {
 		err = logs.Err(ctx, errors.New("unique_id is required"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if amount, ok = params["amount"].(string); !ok || amount == "" {
 		err = logs.Err(ctx, errors.New("amount is required"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if debitAcc, ok = params["debit_acc"].(string); !ok || debitAcc == "" {
 		err = logs.Err(ctx, errors.New("debit_acc is required"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if creditAcc, ok = params["credit_acc"].(string); !ok || creditAcc == "" {
 		err = logs.Err(ctx, errors.New("credit_acc is required"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if ifsc, ok = params["ifsc"].(string); !ok || ifsc == "" {
 		err = logs.Err(ctx, errors.New("ifsc is required"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if currency, ok = params["currency"].(string); !ok || currency == "" {
 		currency = "INR"
 	}
 	if txnType, ok = params["txn_type"].(string); !ok || txnType == "" {
 		err = logs.Err(ctx, errors.New("txn_type is required"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if payeeName, ok = params["payee_name"].(string); !ok || payeeName == "" {
 		err = logs.Err(ctx, errors.New("payee_name is required"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if remarks, ok = params["remarks"].(string); !ok {
 		remarks = ""
@@ -594,7 +641,7 @@ func (iciciBankTool *IciciBankTool) ExecuteTransaction(ctx context.Context, para
 
 	requestPayload, encryptedFingerprintB64, err := iciciBankTool.encryptRequestPayload(ctx, transactionParams)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprintf("%s/v1/Transaction", iciciBankTool.BaseUrl)
@@ -612,12 +659,12 @@ func (iciciBankTool *IciciBankTool) ExecuteTransaction(ctx context.Context, para
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, requestPayload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	decryptedResponseDataBytesUnpadded, err := iciciBankTool.decryptResponsePayload(ctx, res)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -627,17 +674,17 @@ func (iciciBankTool *IciciBankTool) ExecuteTransaction(ctx context.Context, para
 	} else {
 		toolResult["transaction"] = decryptedResponse
 	}
-	return toolResult, true, nil
+	return toolResult, map[string]interface{}{"body": transactionParams}, true, nil
 }
 
-func (iciciBankTool *IciciBankTool) ExecuteTransactionInquiry(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (iciciBankTool *IciciBankTool) ExecuteTransactionInquiry(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("IciciBankTool ExecuteTransactionInquiry - Start")
 
 	var uniqueId string
 	var ok bool
 	if uniqueId, ok = params["unique_id"].(string); !ok || uniqueId == "" {
 		err = logs.Err(ctx, errors.New("unique_id is required"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	transactionInquiryParams := TransactionInquiryParams{
@@ -650,7 +697,7 @@ func (iciciBankTool *IciciBankTool) ExecuteTransactionInquiry(ctx context.Contex
 
 	requestPayload, encryptedFingerprintB64, err := iciciBankTool.encryptRequestPayload(ctx, transactionInquiryParams)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprintf("%s/v1/TransactionInquiry", iciciBankTool.BaseUrl)
@@ -668,12 +715,12 @@ func (iciciBankTool *IciciBankTool) ExecuteTransactionInquiry(ctx context.Contex
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, requestPayload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	decryptedResponseDataBytesUnpadded, err := iciciBankTool.decryptResponsePayload(ctx, res)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -683,17 +730,17 @@ func (iciciBankTool *IciciBankTool) ExecuteTransactionInquiry(ctx context.Contex
 	} else {
 		toolResult["transaction_inquiry"] = decryptedResponse
 	}
-	return toolResult, true, nil
+	return toolResult, map[string]interface{}{"body": transactionInquiryParams}, true, nil
 }
 
-func (iciciBankTool *IciciBankTool) ExecuteNeftStatus(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (iciciBankTool *IciciBankTool) ExecuteNeftStatus(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("IciciBankTool ExecuteNeftStatus - Start")
 
 	var utrNumber string
 	var ok bool
 	if utrNumber, ok = params["utr_number"].(string); !ok || utrNumber == "" {
 		err = logs.Err(ctx, errors.New("utr_number is required"), "")
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	neftStatusParams := NeftStatusParams{
@@ -706,10 +753,10 @@ func (iciciBankTool *IciciBankTool) ExecuteNeftStatus(ctx context.Context, param
 
 	requestPayload, encryptedFingerprintB64, err := iciciBankTool.encryptRequestPayload(ctx, neftStatusParams)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
-	url := fmt.Sprintf("%s/VPA/v1/CIBNEFTStatus", iciciBankTool.BaseUrl)
+	url := strings.Replace(iciciBankTool.BaseUrl, "/Corporate/CIB", "/v1/CIBNEFTStatus", -1)
 
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json; charset=utf-8")
@@ -724,12 +771,12 @@ func (iciciBankTool *IciciBankTool) ExecuteNeftStatus(ctx context.Context, param
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, requestPayload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	decryptedResponseDataBytesUnpadded, err := iciciBankTool.decryptResponsePayload(ctx, res)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -739,7 +786,7 @@ func (iciciBankTool *IciciBankTool) ExecuteNeftStatus(ctx context.Context, param
 	} else {
 		toolResult["neft_status"] = decryptedResponse
 	}
-	return toolResult, true, nil
+	return toolResult, map[string]interface{}{"body": neftStatusParams}, true, nil
 }
 
 func (iciciBankTool *IciciBankTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.Tooling, error) {

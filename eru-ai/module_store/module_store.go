@@ -357,7 +357,7 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 			return
 		}
 	}
-	toolObjClone, err = ms.GetToolCloneObject(ctx, projectId, tenantId, toolObj, s)
+	err = toolObj.ValidateAction(ctx, actionName, toolObj)
 	if err != nil {
 		return
 	}
@@ -366,8 +366,12 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 		if err != nil {
 			return
 		}
+	err = toolObj.SetPrivateAttributes(ctx, toolObj)
+	if err != nil {
+		return
 	}
-	err = toolObjClone.SetPrivateAttributes(ctx, toolObjClone)
+
+	toolObjClone, err = ms.GetToolCloneObject(ctx, projectId, tenantId, toolObj, s)
 	if err != nil {
 		return
 	}

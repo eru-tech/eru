@@ -10,6 +10,7 @@ import (
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
@@ -57,25 +58,71 @@ func (massiveTool *MassiveTool) MakeFromJson(ctx context.Context, rj *json.RawMe
 
 func (massiveTool *MassiveTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("MassiveTool Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case GetStocks:
-		return massiveTool.GetStocks(ctx, params)
+		toolResult, toolRequest, persistStore, err = massiveTool.GetStocks(ctx, params)
 	case GetStockPrices:
-		return massiveTool.GetStockPrices(ctx, params)
+		toolResult, toolRequest, persistStore, err = massiveTool.GetStockPrices(ctx, params)
 	case MarketHolidays:
-		return massiveTool.GetMarketHolidays(ctx, params)
+		toolResult, toolRequest, persistStore, err = massiveTool.GetMarketHolidays(ctx, params)
 	case StockSplits:
-		return massiveTool.GetStockSplits(ctx, params)
+		toolResult, toolRequest, persistStore, err = massiveTool.GetStockSplits(ctx, params)
 	case StockDividends:
-		return massiveTool.GetStockDividends(ctx, params)
+		toolResult, toolRequest, persistStore, err = massiveTool.GetStockDividends(ctx, params)
 	case GetIndiceValue:
-		return massiveTool.GetIndiceValue(ctx, params)
+		toolResult, toolRequest, persistStore, err = massiveTool.GetIndiceValue(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := massiveTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
 }
 
-func (massiveTool *MassiveTool) GetStocks(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (massiveTool *MassiveTool) GetStocks(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetStocks Execute - Start")
 
 	nextUrl := ""
@@ -87,12 +134,12 @@ func (massiveTool *MassiveTool) GetStocks(ctx context.Context, params map[string
 
 	allTickers, err := massiveTool.getStocksRecursive(ctx, queryParams, nextUrl)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["tickers"] = allTickers
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
 func (massiveTool *MassiveTool) getStocksRecursive(ctx context.Context, queryParams map[string]string, nextUrl string) ([]interface{}, error) {
@@ -149,16 +196,16 @@ func (massiveTool *MassiveTool) getStocksRecursive(ctx context.Context, queryPar
 	return allTickers, nil
 }
 
-func (massiveTool *MassiveTool) GetStockPrices(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (massiveTool *MassiveTool) GetStockPrices(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetStockPrices Execute - Start")
 
 	date, exists := params["date"]
 	if !exists {
-		return nil, false, errors.New("date parameter is required")
+		return nil, nil, false, errors.New("date parameter is required")
 	}
 	dateStr := fmt.Sprintf("%v", date)
 	if dateStr == "" {
-		return nil, false, errors.New("date parameter cannot be empty")
+		return nil, nil, false, errors.New("date parameter cannot be empty")
 	}
 
 	url := fmt.Sprint(MassiveBaseUrl, "/v2/aggs/grouped/locale/us/market/stocks/", dateStr)
@@ -176,15 +223,15 @@ func (massiveTool *MassiveTool) GetStockPrices(ctx context.Context, params map[s
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["data"] = res
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
-func (massiveTool *MassiveTool) GetMarketHolidays(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (massiveTool *MassiveTool) GetMarketHolidays(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetMarketHolidays Execute - Start")
 
 	url := fmt.Sprint(MassiveBaseUrl, "/v1/marketstatus/upcoming")
@@ -200,15 +247,15 @@ func (massiveTool *MassiveTool) GetMarketHolidays(ctx context.Context, params ma
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["data"] = res
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
-func (massiveTool *MassiveTool) GetStockSplits(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (massiveTool *MassiveTool) GetStockSplits(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetStockSplits Execute - Start")
 
 	nextUrl := ""
@@ -220,12 +267,12 @@ func (massiveTool *MassiveTool) GetStockSplits(ctx context.Context, params map[s
 
 	allSplits, err := massiveTool.getStockSplitsRecursive(ctx, queryParams, nextUrl)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["splits"] = allSplits
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
 func (massiveTool *MassiveTool) getStockSplitsRecursive(ctx context.Context, queryParams map[string]string, nextUrl string) ([]interface{}, error) {
@@ -283,7 +330,7 @@ func (massiveTool *MassiveTool) getStockSplitsRecursive(ctx context.Context, que
 	return allSplits, nil
 }
 
-func (massiveTool *MassiveTool) GetStockDividends(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (massiveTool *MassiveTool) GetStockDividends(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetStockDividends Execute - Start")
 
 	nextUrl := ""
@@ -295,12 +342,12 @@ func (massiveTool *MassiveTool) GetStockDividends(ctx context.Context, params ma
 
 	allDividends, err := massiveTool.getStockDividendsRecursive(ctx, queryParams, nextUrl)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["dividends"] = allDividends
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
 func (massiveTool *MassiveTool) getStockDividendsRecursive(ctx context.Context, queryParams map[string]string, nextUrl string) ([]interface{}, error) {
@@ -358,25 +405,25 @@ func (massiveTool *MassiveTool) getStockDividendsRecursive(ctx context.Context, 
 	return allDividends, nil
 }
 
-func (massiveTool *MassiveTool) GetIndiceValue(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (massiveTool *MassiveTool) GetIndiceValue(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("GetIndiceValue Execute - Start")
 
 	ticker, exists := params["ticker"]
 	if !exists {
-		return nil, false, errors.New("ticker parameter is required")
+		return nil, nil, false, errors.New("ticker parameter is required")
 	}
 	tickerStr := fmt.Sprintf("%v", ticker)
 	if tickerStr == "" {
-		return nil, false, errors.New("ticker parameter cannot be empty")
+		return nil, nil, false, errors.New("ticker parameter cannot be empty")
 	}
 
 	date, exists := params["date"]
 	if !exists {
-		return nil, false, errors.New("date parameter is required")
+		return nil, nil, false, errors.New("date parameter is required")
 	}
 	dateStr := fmt.Sprintf("%v", date)
 	if dateStr == "" {
-		return nil, false, errors.New("date parameter cannot be empty")
+		return nil, nil, false, errors.New("date parameter cannot be empty")
 	}
 
 	url := fmt.Sprint(MassiveBaseUrl, "/v1/open-close/", tickerStr, "/", dateStr)
@@ -394,12 +441,12 @@ func (massiveTool *MassiveTool) GetIndiceValue(ctx context.Context, params map[s
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["data"] = res
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
 func (massiveTool *MassiveTool) GetBytes(ctx context.Context) ([]byte, error) {
