@@ -363,6 +363,7 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 			return
 		}
 	}
+
 	err = toolObj.SetPrivateAttributes(ctx, toolObj)
 	if err != nil {
 		return
