@@ -149,6 +149,9 @@ func PrintResponseBody(ctx context.Context, response *http.Response, msg string)
 	logs.WithContext(ctx).Debug("PrintResponseBody - Start")
 	logs.WithContext(ctx).Info(msg)
 	if response != nil {
+		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
+			return
+		}
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
