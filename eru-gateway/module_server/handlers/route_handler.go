@@ -232,6 +232,9 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 		w.WriteHeader(response.StatusCode)
 		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
 			flusher, canFlush := w.(http.Flusher)
+			if canFlush {
+				flusher.Flush()
+			}
 			buf := make([]byte, 4096)
 			for {
 				n, readErr := response.Body.Read(buf)
