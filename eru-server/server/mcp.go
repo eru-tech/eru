@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/google/uuid"
@@ -373,15 +374,30 @@ func CreateMCPHttpHandler(server MCPServer) http.HandlerFunc {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.Header().Set("Cache-Control", "no-cache")
 			w.Header().Set("Connection", "keep-alive")
+			w.Header().Set("X-Accel-Buffering", "no")
 			w.Header().Set("Mcp-Session-Id", sessionId)
 			w.WriteHeader(http.StatusOK)
 
-			if flusher, ok := w.(http.Flusher); ok {
+			flusher, canFlush := w.(http.Flusher)
+			if canFlush {
 				flusher.Flush()
 			}
 
-			// Hold open until client disconnects
-			<-ctx.Done()
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
+						return
+					}
+					if canFlush {
+						flusher.Flush()
+					}
+				}
+			}
 
 		case http.MethodDelete:
 			if sessionId != "" {
