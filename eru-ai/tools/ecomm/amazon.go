@@ -1118,6 +1118,10 @@ func (amazonTool *AmazonTool) Login(ctx context.Context, projectId string, tenan
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["login_status"] = "success"
+	toolResult["access_token"] = amazonTokens.AccessToken
+	toolResult["refresh_token"] = amazonTokens.RefreshToken
+	toolResult["expires_in"] = amazonTokens.ExpiresIn
+	toolResult["token_type"] = amazonTokens.TokenType
 	return toolResult, map[string]interface{}{"body": params}, persistStore, nil
 }
 
