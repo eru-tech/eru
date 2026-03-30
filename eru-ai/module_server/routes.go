@@ -89,6 +89,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodGet).PathPrefix("/{project}/vectorstore/list").HandlerFunc(module_handlers.VectorStoreListNamesHandler(sh))
 	storeRouter.Methods(http.MethodGet).PathPrefix("/{project}/{tenant}/tool/list").HandlerFunc(module_handlers.ToolListNamesHandler(sh))
 	storeRouter.Methods(http.MethodGet).PathPrefix("/{project}/tool/list").HandlerFunc(module_handlers.ToolListNamesHandler(sh))
+	storeRouter.Methods(http.MethodGet).Path("/tool/catalog").HandlerFunc(module_handlers.ToolCatalogHandler())
 	// functions for ai events
 	aiRouter := serverRouter.PathPrefix("/{project}").Subrouter()
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/{model}/query").HandlerFunc(module_handlers.ModelQueryHandler(sh))

@@ -26,13 +26,18 @@ type StructuredOutputTool struct {
 	tools.Tool
 }
 
-func (soTool *StructuredOutputTool) GetActionsList() []string {
-	actions := []string{}
-	for _, action := range structuredOutputToolActions {
-		actions = append(actions, action.ActionName)
+func (soTool *StructuredOutputTool) GetActionsList() []tools.ActionInfo {
+	infos := make([]tools.ActionInfo, len(structuredOutputToolActions))
+	for i, action := range structuredOutputToolActions {
+		infos[i] = tools.ActionInfo{Name: action.ActionName, Description: action.Description}
 	}
-	return actions
+	return infos
 }
+
+func (soTool *StructuredOutputTool) GetActions() []tools.ToolAction {
+	return structuredOutputToolActions
+}
+
 func (soTool *StructuredOutputTool) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
 	logs.WithContext(ctx).Debug("MakeFromJson - Start")
 	err := json.Unmarshal(*rj, &soTool)
@@ -113,4 +118,16 @@ func (soTool *StructuredOutputTool) BytesToTool(ctx context.Context, toolObjJson
 		return nil, err
 	}
 	return newTool, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "StructuredOutputTool",
+		Category:    "Utility",
+		Description: "AI structured output generation with schema-enforced JSON responses",
+		Actions:      []tools.ActionInfo{{Name: "structured_output"}},
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+	})
 }

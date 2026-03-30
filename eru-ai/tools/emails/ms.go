@@ -67,21 +67,21 @@ const (
 	BaseUrl = "https://graph.microsoft.com"
 )
 
-func (msEmailTool *MsEmailTool) GetActionsList() []string {
-	actions := []string{}
-	actions = append(actions, ReadEmail)
-	actions = append(actions, SendEmail)
-	actions = append(actions, SubscribeEmail)
-	actions = append(actions, ReadMessage)
-	actions = append(actions, Callback)
-	actions = append(actions, GetSsoUrl)
-	actions = append(actions, Login)
-	actions = append(actions, RenewToken)
-	actions = append(actions, RenewSubscription)
-	actions = append(actions, StopAutoRenew)
-	actions = append(actions, StopSubscription)
-	actions = append(actions, ReadConversation)
-	return actions
+func (msEmailTool *MsEmailTool) GetActionsList() []tools.ActionInfo {
+	return []tools.ActionInfo{
+		{Name: ReadEmail},
+		{Name: SendEmail},
+		{Name: SubscribeEmail},
+		{Name: ReadMessage},
+		{Name: Callback},
+		{Name: GetSsoUrl},
+		{Name: Login},
+		{Name: RenewToken},
+		{Name: RenewSubscription},
+		{Name: StopAutoRenew},
+		{Name: StopSubscription},
+		{Name: ReadConversation},
+	}
 }
 
 func (msEmailTool *MsEmailTool) GetSpec() tools.Tooling {
@@ -758,4 +758,16 @@ func (msEmailTool *MsEmailTool) ReadConversation(ctx context.Context, params map
 	toolResult["total_messages"] = len(messageResponses)
 
 	return toolResult, map[string]interface{}{"body": params}, false, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "MsEmailTool",
+		Category:    "Communication",
+		Description: "Microsoft email integration for reading, sending, and subscribing to emails via Microsoft Graph API",
+		Actions: []tools.ActionInfo{{Name: ReadEmail}, {Name: SendEmail}, {Name: SubscribeEmail}, {Name: ReadMessage}, {Name: GetSsoUrl}, {Name: Login}, {Name: RenewToken}, {Name: RenewSubscription}},
+		OAuthEnabled: true,
+		Icon:         "",
+		IconType:     "svg",
+	})
 }

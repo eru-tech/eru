@@ -82,12 +82,16 @@ var eruqlToolActions = []tools.ToolAction{
 	},
 }
 
-func (eruqlTool *EruqlTool) GetActionsList() []string {
-	actions := []string{}
-	for _, action := range eruqlToolActions {
-		actions = append(actions, action.ActionName)
+func (eruqlTool *EruqlTool) GetActionsList() []tools.ActionInfo {
+	infos := make([]tools.ActionInfo, len(eruqlToolActions))
+	for i, action := range eruqlToolActions {
+		infos[i] = tools.ActionInfo{Name: action.ActionName, Description: action.Description}
 	}
-	return actions
+	return infos
+}
+
+func (eruqlTool *EruqlTool) GetActions() []tools.ToolAction {
+	return eruqlToolActions
 }
 
 func (eruqlTool *EruqlTool) GetSpec() tools.Tooling {
@@ -459,4 +463,22 @@ func (eruqlTool *EruqlTool) SetToolAction(actionName string) {
 		}
 	}
 	eruqlTool.ToolAction = tools.ToolAction{}
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "EruqlTool",
+		Category:    "Data",
+		Description: "Eru query engine supporting SQL, GraphQL, and custom EruQL for data access",
+		Actions: func() []tools.ActionInfo {
+			infos := make([]tools.ActionInfo, len(eruqlToolActions))
+			for i, a := range eruqlToolActions {
+				infos[i] = tools.ActionInfo{Name: a.ActionName, Description: a.Description}
+			}
+			return infos
+		}(),
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+	})
 }
