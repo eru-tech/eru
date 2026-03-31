@@ -212,12 +212,16 @@ var ndmlToolActions = []tools.ToolAction{
 	},
 }
 
-func (ndmlTool *NdmlTool) GetActionsList() []string {
-	actions := []string{}
-	for _, action := range ndmlToolActions {
-		actions = append(actions, action.ActionName)
+func (ndmlTool *NdmlTool) GetActionsList() []tools.ActionInfo {
+	infos := make([]tools.ActionInfo, len(ndmlToolActions))
+	for i, action := range ndmlToolActions {
+		infos[i] = tools.ActionInfo{Name: action.ActionName, Description: action.Description}
 	}
-	return actions
+	return infos
+}
+
+func (ndmlTool *NdmlTool) GetActions() []tools.ToolAction {
+	return ndmlToolActions
 }
 
 func (ndmlTool *NdmlTool) GetSpec() tools.Tooling {
@@ -892,4 +896,22 @@ func (ndmlTool *NdmlTool) SetToolAction(actionName string) {
 		}
 	}
 	ndmlTool.ToolAction = tools.ToolAction{}
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "NdmlTool",
+		Category:    "KYC/Compliance",
+		Description: "NDML KYC verification and document operations for regulatory compliance",
+		Actions: func() []tools.ActionInfo {
+			infos := make([]tools.ActionInfo, len(ndmlToolActions))
+			for i, a := range ndmlToolActions {
+				infos[i] = tools.ActionInfo{Name: a.ActionName, Description: a.Description}
+			}
+			return infos
+		}(),
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+	})
 }

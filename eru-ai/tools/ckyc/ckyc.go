@@ -60,12 +60,16 @@ var ckycToolActions = []tools.ToolAction{
 	},
 }
 
-func (c *CkycTool) GetActionsList() []string {
-	actions := []string{}
-	for _, action := range ckycToolActions {
-		actions = append(actions, action.ActionName)
+func (c *CkycTool) GetActionsList() []tools.ActionInfo {
+	infos := make([]tools.ActionInfo, len(ckycToolActions))
+	for i, action := range ckycToolActions {
+		infos[i] = tools.ActionInfo{Name: action.ActionName, Description: action.Description}
 	}
-	return actions
+	return infos
+}
+
+func (c *CkycTool) GetActions() []tools.ToolAction {
+	return ckycToolActions
 }
 
 func (c *CkycTool) GetSpec() tools.Tooling {
@@ -545,4 +549,22 @@ func (ckycTool *CkycTool) GetBytes(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 	return toolJson, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "CkycTool",
+		Category:    "KYC/Compliance",
+		Description: "Central KYC registry search and verification for financial compliance",
+		Actions: func() []tools.ActionInfo {
+			infos := make([]tools.ActionInfo, len(ckycToolActions))
+			for i, a := range ckycToolActions {
+				infos[i] = tools.ActionInfo{Name: a.ActionName, Description: a.Description}
+			}
+			return infos
+		}(),
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+	})
 }

@@ -53,7 +53,7 @@ func (m *mockTool) SetToolDb(_ db.DbI)       {}
 func (m *mockTool) GetParameters() eru_models.JSONSchema { return m.Tool.Parameters }
 
 func (m *mockTool) BytesToTool(_ context.Context, _ []byte) (tools.Tooling, error) { return m, nil }
-func (m *mockTool) GetActionsList() []string                                         { return nil }
+func (m *mockTool) GetActionsList() []tools.ActionInfo                               { return nil }
 func (m *mockTool) ValidateAction(_ context.Context, _ string, _ tools.Tooling) error { return nil }
 func (m *mockTool) SetPrivateAttributes(_ context.Context, _ tools.Tooling) error     { return nil }
 func (m *mockTool) GetInputFields() []tools.ToolInputFields                            { return nil }

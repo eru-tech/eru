@@ -64,10 +64,18 @@ type zohoDeskToolWithToken struct {
 	AuthName    string
 }
 
-func (zohoDeskTool *ZohoDeskTool) GetActionsList() []string {
-	actions := []string{}
-	actions = append(actions, GetTickets, GetOrganizations, GetTicketThread, GetTicketContent, GetTicketAttachment, Login, RenewToken, GetSsoUrl, StopAutoRenew)
-	return actions
+func (zohoDeskTool *ZohoDeskTool) GetActionsList() []tools.ActionInfo {
+	return []tools.ActionInfo{
+		{Name: GetTickets},
+		{Name: GetOrganizations},
+		{Name: GetTicketThread},
+		{Name: GetTicketContent},
+		{Name: GetTicketAttachment},
+		{Name: Login},
+		{Name: RenewToken},
+		{Name: GetSsoUrl},
+		{Name: StopAutoRenew},
+	}
 }
 
 func (zohoDeskTool *ZohoDeskTool) GetSpec() tools.Tooling {

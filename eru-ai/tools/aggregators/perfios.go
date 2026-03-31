@@ -98,12 +98,16 @@ var perfiosToolActions = []tools.ToolAction{
 	},
 }
 
-func (perfiosTool *PerfiosTool) GetActionsList() []string {
-	actions := []string{}
-	for _, action := range perfiosToolActions {
-		actions = append(actions, action.ActionName)
+func (perfiosTool *PerfiosTool) GetActionsList() []tools.ActionInfo {
+	infos := make([]tools.ActionInfo, len(perfiosToolActions))
+	for i, action := range perfiosToolActions {
+		infos[i] = tools.ActionInfo{Name: action.ActionName, Description: action.Description}
 	}
-	return actions
+	return infos
+}
+
+func (perfiosTool *PerfiosTool) GetActions() []tools.ToolAction {
+	return perfiosToolActions
 }
 
 func (perfiosTool *PerfiosTool) GetSpec() tools.Tooling {
@@ -422,4 +426,22 @@ func (perfiosTool *PerfiosTool) GetBytes(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 	return toolJson, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "PerfiosTool",
+		Category:    "Aggregator",
+		Description: "Perfios financial data aggregator for bank statements, financials, and customer data",
+		Actions: func() []tools.ActionInfo {
+			infos := make([]tools.ActionInfo, len(perfiosToolActions))
+			for i, a := range perfiosToolActions {
+				infos[i] = tools.ActionInfo{Name: a.ActionName, Description: a.Description}
+			}
+			return infos
+		}(),
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+	})
 }

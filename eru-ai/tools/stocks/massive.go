@@ -36,10 +36,15 @@ const (
 	MassiveBaseUrl = "https://api.massive.com"
 )
 
-func (massiveTool *MassiveTool) GetActionsList() []string {
-	actions := []string{}
-	actions = append(actions, GetStocks, GetStockPrices, MarketHolidays, StockSplits, StockDividends, GetIndiceValue)
-	return actions
+func (massiveTool *MassiveTool) GetActionsList() []tools.ActionInfo {
+	return []tools.ActionInfo{
+		{Name: GetStocks},
+		{Name: GetStockPrices},
+		{Name: MarketHolidays},
+		{Name: StockSplits},
+		{Name: StockDividends},
+		{Name: GetIndiceValue},
+	}
 }
 
 func (massiveTool *MassiveTool) GetSpec() tools.Tooling {
@@ -466,4 +471,16 @@ func (massiveTool *MassiveTool) BytesToTool(ctx context.Context, toolObjJson []b
 		return nil, err
 	}
 	return newTool, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "MassiveTool",
+		Category:    "Finance",
+		Description: "Massive stock market data including prices, indices, dividends, and market holidays",
+		Actions: []tools.ActionInfo{{Name: GetStocks}, {Name: GetStockPrices}, {Name: MarketHolidays}, {Name: StockSplits}, {Name: StockDividends}, {Name: GetIndiceValue}},
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+	})
 }
