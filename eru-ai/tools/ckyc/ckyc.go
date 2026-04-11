@@ -6,6 +6,7 @@ import (
 	"crypto"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -156,6 +157,12 @@ func (c *CkycTool) BytesToTool(ctx context.Context, toolObjJson []byte) (tools.T
 func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CkycTool ExecuteVerify - Start")
 
+	logs.WithContext(ctx).Info(fmt.Sprintf("c.FiPrivateKey: %v", c.FiPrivateKey))
+	logs.WithContext(ctx).Info(fmt.Sprintf("c.FiPublicKey: %v", c.FiPublicKey))
+	logs.WithContext(ctx).Info(fmt.Sprintf("c.CkycPublicKey: %v", c.CkycPublicKey))
+	logs.WithContext(ctx).Info(fmt.Sprintf("c.BaseUrl: %v", c.BaseUrl))
+	logs.WithContext(ctx).Info(fmt.Sprintf("c.FiCode: %v", c.FiCode))
+
 	verifyParams := CkycVerifyParams{}
 	paramsBytes, err := json.Marshal(params)
 	if err != nil {
@@ -185,6 +192,7 @@ func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interfac
 		return nil, nil, false, fmt.Errorf("error generating session key: %w", err)
 	}
 
+	logs.WithContext(ctx).Info(fmt.Sprintf("CKYC PID XML: %s", pidXmlStr))
 	// 4 & 5. Encrypt PID_DATA using session key (AES-256-ECB PKCS7)
 	encryptedPid, err := aes.EncryptECB(ctx, []byte(pidXmlStr), sessionKey.Key)
 	if err != nil {
@@ -192,13 +200,9 @@ func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interfac
 	}
 	encodedPid := base64.StdEncoding.EncodeToString(encryptedPid)
 
-	// 6 & 7. Encrypt session key using CKYC public key (RSA OAEP SHA256)
-	publicKeyStr, err := base64.StdEncoding.DecodeString(c.CkycPublicKey)
-	if err != nil {
-		return nil, nil, false, fmt.Errorf("error decoding public key: %w", err)
-	}
-
-	encryptedSessionKey, err := rsa.EncryptOAEP(ctx, sessionKey.Key, string(publicKeyStr), nil)
+	// 6 & 7. Encrypt session key using CKYC public key (RSA OAEP SHA1)
+	ckycPublicKeyStr := decodePemBundle(c.CkycPublicKey)
+	encryptedSessionKey, err := rsa.EncryptOAEP(ctx, sessionKey.Key, ckycPublicKeyStr, nil)
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("error encrypting session key: %w", err)
 	}
@@ -224,6 +228,7 @@ func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interfac
 	}
 	// 9. Sign the request (including the XML declaration)
 	baseXml := `<?xml version="1.0" encoding="UTF-8" standalone="no"?>` + string(rawXml)
+	logs.WithContext(ctx).Info(fmt.Sprintf("CKYC Base XML: %s", baseXml))
 	finalSignedXml, err := c.SignXml(ctx, baseXml)
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("error signing XML: %w", err)
@@ -249,6 +254,7 @@ func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interfac
 	url := fmt.Sprintf("%s%s", strings.TrimSuffix(c.BaseUrl, "/"), "/Search/ckycverificationservice/verify")
 
 	// We use ExecuteHttp directly to avoid utils.CallHttp's automatic JSON-marshalling of the body
+	logs.WithContext(ctx).Info(fmt.Sprintf("CKYC Final Request: %s", finalSignedXml))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBufferString(finalSignedXml))
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("error creating request: %w", err)
@@ -265,7 +271,7 @@ func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interfac
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("error reading response body: %w", err)
 	}
-
+	logs.WithContext(ctx).Info(fmt.Sprintf("CKYC Final Response: %s", string(respBody)))
 	contentType := resp.Header.Get("Content-Type")
 	if strings.Contains(contentType, "application/json") {
 		var res map[string]interface{}
@@ -278,6 +284,32 @@ func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interfac
 	return map[string]interface{}{"response": string(respBody)}, map[string]interface{}{"body": verifyParams}, false, nil
 }
 
+func decodePemBundle(keyStr string) string {
+	if !strings.HasPrefix(strings.TrimSpace(keyStr), "-----") {
+		decoded, err := base64.StdEncoding.DecodeString(keyStr)
+		if err == nil {
+			return string(decoded)
+		}
+	}
+	return keyStr
+}
+
+func extractPrivateKeyPEM(bundle string) (string, error) {
+	rest := []byte(bundle)
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		switch block.Type {
+		case "RSA PRIVATE KEY", "PRIVATE KEY", "EC PRIVATE KEY", "ENCRYPTED PRIVATE KEY":
+			return string(pem.EncodeToMemory(block)), nil
+		}
+	}
+	return "", fmt.Errorf("no private key block found in PEM bundle")
+}
+
 func (c *CkycTool) SignXml(ctx context.Context, xmlStr string) (string, error) {
 	// Canonicalize (simple version: use the XML string as is since it's compact)
 	// Actually, for enveloped signature, we need to digest the REQ_ROOT content
@@ -286,7 +318,11 @@ func (c *CkycTool) SignXml(ctx context.Context, xmlStr string) (string, error) {
 	// Create SignedInfo
 	// We need the digest of the XML without the Signature element
 	// Standard C14N for an element with no namespace usually just keeps it as is if it's compact.
-	xmlDigest := sha.NewSHA256([]byte(xmlStr))
+	digestInput := xmlStr
+	/* if idx := strings.Index(digestInput, "?>"); idx != -1 {
+		digestInput = strings.TrimSpace(digestInput[idx+2:])
+	} */
+	xmlDigest := sha.NewSHA1([]byte(digestInput))
 	encodedDigest := base64.StdEncoding.EncodeToString(xmlDigest)
 
 	// We use a manual string to ensure self-closing tags and specific formatting
@@ -294,25 +330,23 @@ func (c *CkycTool) SignXml(ctx context.Context, xmlStr string) (string, error) {
 	// which breaks signature verification in many Java-based systems.
 	signedInfoXmlStr := fmt.Sprintf("<SignedInfo xmlns=\"http://www.w3.org/2000/09/xmldsig#\">"+
 		"<CanonicalizationMethod Algorithm=\"http://www.w3.org/TR/2001/REC-xml-c14n-20010315\"/>"+
-		"<SignatureMethod Algorithm=\"http://www.w3.org/2001/04/xmldsig-more#rsa-sha256\"/>"+
+		"<SignatureMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#rsa-sha1\"/>"+
 		"<Reference URI=\"\">"+
 		"<Transforms>"+
-		"<Transform Algorithm=\"http://www.w3.org/2000/09/xmldsig#envelopedsignature\"/>"+
+		"<Transform Algorithm=\"http://www.w3.org/2000/09/xmldsig#enveloped-signature\"/>"+
 		"</Transforms>"+
-		"<DigestMethod Algorithm=\"http://www.w3.org/2001/04/xmlenc#sha256\"/>"+
+		"<DigestMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#sha1\"/>"+
 		"<DigestValue>%s</DigestValue>"+
 		"</Reference>"+
 		"</SignedInfo>", encodedDigest)
 
 	// Sign SignedInfo
-	privateKeyStr := c.FiPrivateKey
-	if !strings.HasPrefix(strings.TrimSpace(privateKeyStr), "-----") {
-		decoded, err := base64.StdEncoding.DecodeString(privateKeyStr)
-		if err == nil {
-			privateKeyStr = string(decoded)
-		}
+	bundle := decodePemBundle(c.FiPrivateKey)
+	privateKeyStr, err := extractPrivateKeyPEM(bundle)
+	if err != nil {
+		return "", fmt.Errorf("error extracting private key: %w", err)
 	}
-	signatureBytes, err := rsa.Sign(ctx, []byte(signedInfoXmlStr), privateKeyStr, crypto.SHA256)
+	signatureBytes, err := rsa.Sign(ctx, []byte(signedInfoXmlStr), privateKeyStr, crypto.SHA1)
 	if err != nil {
 		return "", err
 	}
@@ -370,12 +404,10 @@ func (c *CkycTool) DecryptPidData(ctx context.Context, encodedPid string, encode
 	}
 
 	// 2. Decrypt session key using FI's private key (RSA OAEP SHA256)
-	privateKeyStr := c.FiPrivateKey
-	if !strings.HasPrefix(strings.TrimSpace(privateKeyStr), "-----") {
-		decoded, err := base64.StdEncoding.DecodeString(privateKeyStr)
-		if err == nil {
-			privateKeyStr = string(decoded)
-		}
+	bundle := decodePemBundle(c.FiPrivateKey)
+	privateKeyStr, err := extractPrivateKeyPEM(bundle)
+	if err != nil {
+		return "", fmt.Errorf("error extracting private key: %w", err)
 	}
 	sessionKey, err := rsa.DecryptOAEP(ctx, skEncBytes, privateKeyStr, nil)
 	if err != nil {
@@ -495,17 +527,12 @@ func (c *CkycTool) VerifyXml(ctx context.Context, xmlStr string) (bool, error) {
 	if publicKeyStr == "" {
 		return false, fmt.Errorf("fi_public_key is empty")
 	}
-	if !strings.HasPrefix(strings.TrimSpace(publicKeyStr), "-----") {
-		decoded, err := base64.StdEncoding.DecodeString(publicKeyStr)
-		if err == nil {
-			publicKeyStr = string(decoded)
-		}
-	}
+	publicKeyStr = decodePemBundle(publicKeyStr)
 
-	err = rsa.VerifyWithCert(ctx, []byte(signedInfoStr), signatureBytes, publicKeyStr, crypto.SHA256)
+	err = rsa.VerifyWithCert(ctx, []byte(signedInfoStr), signatureBytes, publicKeyStr, crypto.SHA1)
 	if err != nil {
 		// Try regular public key if cert fails
-		err2 := rsa.Verify(ctx, []byte(signedInfoStr), signatureBytes, publicKeyStr, crypto.SHA256)
+		err2 := rsa.Verify(ctx, []byte(signedInfoStr), signatureBytes, publicKeyStr, crypto.SHA1)
 		if err2 != nil {
 			return false, fmt.Errorf("signature verification failed: %w", err2)
 		}
@@ -526,8 +553,11 @@ func (c *CkycTool) VerifyXml(ctx context.Context, xmlStr string) (bool, error) {
 		return false, fmt.Errorf("Signature element not found")
 	}
 	originalXml := xmlStr[:sigStart] + xmlStr[sigEnd+len("</Signature>"):]
+	/* if idx := strings.Index(originalXml, "?>"); idx != -1 {
+		originalXml = strings.TrimSpace(originalXml[idx+2:])
+	} */
 
-	recalculatedDigest := sha.NewSHA256([]byte(originalXml))
+	recalculatedDigest := sha.NewSHA1([]byte(originalXml))
 	encodedRecalculated := base64.StdEncoding.EncodeToString(recalculatedDigest)
 
 	if encodedDigest != recalculatedDigestStr(encodedRecalculated) && encodedDigest != encodedRecalculated {

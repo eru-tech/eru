@@ -21,6 +21,8 @@ const (
 	FinancialsAction              = "financials"
 	FinancialsLLPAction           = "financials_llp"
 	DocumentDownloadRequestAction = "document_download_request"
+	CallbackAction                = "callback"
+	INSERT_FUNC_ASYNC             = "insert into eruai_cb_perfios (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
 )
 
 type PerfiosTool struct {
