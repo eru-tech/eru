@@ -21,6 +21,8 @@ const (
 	FinancialsAction              = "financials"
 	FinancialsLLPAction           = "financials_llp"
 	DocumentDownloadRequestAction = "document_download_request"
+	CallbackAction                = "callback"
+	INSERT_FUNC_ASYNC             = "insert into eruai_cb_perfios (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
 )
 
 type PerfiosTool struct {
@@ -103,7 +105,86 @@ func (perfiosTool *PerfiosTool) GetActionsList() []string {
 	for _, action := range perfiosToolActions {
 		actions = append(actions, action.ActionName)
 	}
+	actions = append(actions, CallbackAction)
 	return actions
+}
+
+func (perfiosTool *PerfiosTool) GetToolCallback() tools.ToolCallback {
+	return tools.ToolCallback{
+		ResponseContentType: "application/json",
+	}
+}
+
+func (perfiosTool *PerfiosTool) Callback(ctx context.Context, projectId string, tenantId string, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("PerfiosTool Callback - Start")
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("perfios-callback", func(bgCtx context.Context) {
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		if body == nil {
+			body = make(map[string]interface{})
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		bodyBytes, err := json.Marshal(body)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+
+		paramsMap := map[string]string{}
+		for k, v := range params {
+			paramsMap[k] = v[0]
+		}
+		paramBytes, err := json.Marshal(paramsMap)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+
+		var insertQueries []*models.Queries
+		insertQueryFuncAsync := models.Queries{}
+		insertQueryFuncAsync.Query = perfiosTool.ToolDb.GetDbQuery(bgCtx, INSERT_FUNC_ASYNC)
+		insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, projectId, tenantId, string(bodyBytes), string(paramBytes))
+		insertQueryFuncAsync.Rank = 1
+		insertQueries = append(insertQueries, &insertQueryFuncAsync)
+		_, insertOutputErr := utils.ExecuteDbSave(bgCtx, perfiosTool.ToolDb.GetConn(), insertQueries)
+		if insertOutputErr != nil {
+			logs.WithContext(bgCtx).Error(insertOutputErr.Error())
+			return
+		}
+
+		hookResult, err := perfiosTool.ExecuteHook(bgCtx, "clbk", "", projectId, tenantId, body, params)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	callbackResultMap := map[string]string{
+		"Status": "Success",
+	}
+	return callbackResultMap, false, nil
+}
+
+func (perfiosTool *PerfiosTool) GetToolCbUrl(projectId string, tenantId string) string {
+	return fmt.Sprint(perfiosTool.CallbackBaseUrl, "/", projectId, "/", tenantId, "/callback/tool/", perfiosTool.ToolName)
 }
 
 func (perfiosTool *PerfiosTool) GetSpec() tools.Tooling {
