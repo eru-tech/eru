@@ -100,91 +100,16 @@ var perfiosToolActions = []tools.ToolAction{
 	},
 }
 
-func (perfiosTool *PerfiosTool) GetActionsList() []string {
-	actions := []string{}
-	for _, action := range perfiosToolActions {
-		actions = append(actions, action.ActionName)
+func (perfiosTool *PerfiosTool) GetActionsList() []tools.ActionInfo {
+	infos := make([]tools.ActionInfo, len(perfiosToolActions))
+	for i, action := range perfiosToolActions {
+		infos[i] = tools.ActionInfo{Name: action.ActionName, Description: action.Description}
 	}
-	actions = append(actions, CallbackAction)
-	return actions
+	return infos
 }
 
-func (perfiosTool *PerfiosTool) GetToolCallback() tools.ToolCallback {
-	return tools.ToolCallback{
-		ResponseContentType: "application/json",
-	}
-}
-
-func (perfiosTool *PerfiosTool) Callback(ctx context.Context, projectId string, tenantId string, actionName string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, persistStore bool, err error) {
-	logs.WithContext(ctx).Debug("PerfiosTool Callback - Start")
-
-	gm := server.GetGlobalGoroutineManager(ctx)
-	gm.SafeGoWithRestartBehavior("perfios-callback", func(bgCtx context.Context) {
-		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
-		if efurl == nil {
-			err = errors.New("erufuncbaseurl not found in context")
-			logs.WithContext(ctx).Error(err.Error())
-			return
-		}
-		efurlString, ok := efurl.(string)
-		if !ok {
-			err = errors.New("erufuncbaseurl is not a string")
-			logs.WithContext(ctx).Error(err.Error())
-			return
-		} else {
-			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
-		}
-
-		if body == nil {
-			body = make(map[string]interface{})
-		}
-		body["tenant_id"] = tenantId
-		body["project_id"] = projectId
-
-		bodyBytes, err := json.Marshal(body)
-		if err != nil {
-			logs.WithContext(bgCtx).Error(err.Error())
-			return
-		}
-
-		paramsMap := map[string]string{}
-		for k, v := range params {
-			paramsMap[k] = v[0]
-		}
-		paramBytes, err := json.Marshal(paramsMap)
-		if err != nil {
-			logs.WithContext(bgCtx).Error(err.Error())
-			return
-		}
-
-		var insertQueries []*models.Queries
-		insertQueryFuncAsync := models.Queries{}
-		insertQueryFuncAsync.Query = perfiosTool.ToolDb.GetDbQuery(bgCtx, INSERT_FUNC_ASYNC)
-		insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, projectId, tenantId, string(bodyBytes), string(paramBytes))
-		insertQueryFuncAsync.Rank = 1
-		insertQueries = append(insertQueries, &insertQueryFuncAsync)
-		_, insertOutputErr := utils.ExecuteDbSave(bgCtx, perfiosTool.ToolDb.GetConn(), insertQueries)
-		if insertOutputErr != nil {
-			logs.WithContext(bgCtx).Error(insertOutputErr.Error())
-			return
-		}
-
-		hookResult, err := perfiosTool.ExecuteHook(bgCtx, "clbk", "", projectId, tenantId, body, params)
-		if err != nil {
-			logs.WithContext(bgCtx).Error(err.Error())
-			return
-		}
-		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
-	}, server.ContinueOnMaxRetries)
-
-	callbackResultMap := map[string]string{
-		"Status": "Success",
-	}
-	return callbackResultMap, false, nil
-}
-
-func (perfiosTool *PerfiosTool) GetToolCbUrl(projectId string, tenantId string) string {
-	return fmt.Sprint(perfiosTool.CallbackBaseUrl, "/", projectId, "/", tenantId, "/callback/tool/", perfiosTool.ToolName)
+func (perfiosTool *PerfiosTool) GetActions() []tools.ToolAction {
+	return perfiosToolActions
 }
 
 func (perfiosTool *PerfiosTool) GetSpec() tools.Tooling {
@@ -503,4 +428,22 @@ func (perfiosTool *PerfiosTool) GetBytes(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 	return toolJson, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "PerfiosTool",
+		Category:    "Aggregator",
+		Description: "Perfios financial data aggregator for bank statements, financials, and customer data",
+		Actions: func() []tools.ActionInfo {
+			infos := make([]tools.ActionInfo, len(perfiosToolActions))
+			for i, a := range perfiosToolActions {
+				infos[i] = tools.ActionInfo{Name: a.ActionName, Description: a.Description}
+			}
+			return infos
+		}(),
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+	})
 }

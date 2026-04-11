@@ -32,11 +32,21 @@ type slackToolWithToken struct {
 	AuthName     string
 }
 
-func (slackTool *SlackTool) GetActionsList() []string {
-	actions := []string{}
-	actions = append(actions, SendMessage, ReadMessages, Login, GetSsoUrl, SubscribeWebhooks,
-		ListChannels, ListUsers, CreateChannel, InviteToChannel, JoinChannel, UploadMedia, Callback)
-	return actions
+func (slackTool *SlackTool) GetActionsList() []tools.ActionInfo {
+	return []tools.ActionInfo{
+		{Name: SendMessage},
+		{Name: ReadMessages},
+		{Name: Login},
+		{Name: GetSsoUrl},
+		{Name: SubscribeWebhooks},
+		{Name: ListChannels},
+		{Name: ListUsers},
+		{Name: CreateChannel},
+		{Name: InviteToChannel},
+		{Name: JoinChannel},
+		{Name: UploadMedia},
+		{Name: Callback},
+	}
 }
 
 func (slackTool *SlackTool) GetSpec() tools.Tooling {

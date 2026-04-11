@@ -184,12 +184,16 @@ var iciciBankToolActions = []tools.ToolAction{
 	},
 }
 
-func (iciciBankTool *IciciBankTool) GetActionsList() []string {
-	actions := []string{}
-	for _, action := range iciciBankToolActions {
-		actions = append(actions, action.ActionName)
+func (iciciBankTool *IciciBankTool) GetActionsList() []tools.ActionInfo {
+	infos := make([]tools.ActionInfo, len(iciciBankToolActions))
+	for i, action := range iciciBankToolActions {
+		infos[i] = tools.ActionInfo{Name: action.ActionName, Description: action.Description}
 	}
-	return actions
+	return infos
+}
+
+func (iciciBankTool *IciciBankTool) GetActions() []tools.ToolAction {
+	return iciciBankToolActions
 }
 
 func (iciciBankTool *IciciBankTool) GetSpec() tools.Tooling {
@@ -805,4 +809,22 @@ func (iciciBankTool *IciciBankTool) GetBytes(ctx context.Context) ([]byte, error
 		return nil, err
 	}
 	return toolJson, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "IciciBankTool",
+		Category:    "Banking",
+		Description: "ICICI Bank payment and banking operations including fund confirmation, account inquiries, and transactions",
+		Actions: func() []tools.ActionInfo {
+			infos := make([]tools.ActionInfo, len(iciciBankToolActions))
+			for i, a := range iciciBankToolActions {
+				infos[i] = tools.ActionInfo{Name: a.ActionName, Description: a.Description}
+			}
+			return infos
+		}(),
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+	})
 }

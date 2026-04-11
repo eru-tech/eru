@@ -49,12 +49,16 @@ var vectorstoreAccountActions = []tools.ToolAction{
 	},
 }
 
-func (vectorstoreAccount *VectorstoreAccount) GetActionsList() []string {
-	actionNames := []string{}
-	for _, action := range vectorstoreAccountActions {
-		actionNames = append(actionNames, action.ActionName)
+func (vectorstoreAccount *VectorstoreAccount) GetActionsList() []tools.ActionInfo {
+	infos := make([]tools.ActionInfo, len(vectorstoreAccountActions))
+	for i, action := range vectorstoreAccountActions {
+		infos[i] = tools.ActionInfo{Name: action.ActionName, Description: action.Description}
 	}
-	return actionNames
+	return infos
+}
+
+func (vectorstoreAccount *VectorstoreAccount) GetActions() []tools.ToolAction {
+	return vectorstoreAccountActions
 }
 
 func (vectorstoreAccount *VectorstoreAccount) GetSpec() tools.Tooling {
@@ -256,3 +260,21 @@ func (vectorstoreAccount *VectorstoreAccount) SetToolAction(actionName string) {
 /* func (vectorstoreAccount *VectorstoreAccount) GetParameters() eru_models.JSONSchema {
 	return vectorstoreAccount.ToolAction.GetParameters()
 } */
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "VectorstoreAccount",
+		Category:    "AI",
+		Description: "Vector store operations for semantic search and AI embedding storage",
+		Actions: func() []tools.ActionInfo {
+			infos := make([]tools.ActionInfo, len(vectorstoreAccountActions))
+			for i, a := range vectorstoreAccountActions {
+				infos[i] = tools.ActionInfo{Name: a.ActionName, Description: a.Description}
+			}
+			return infos
+		}(),
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+	})
+}

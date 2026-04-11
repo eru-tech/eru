@@ -53,12 +53,12 @@ type FetchCDRParams struct {
 	CampaignName string `json:"campaign_name" eru:"required"`
 }
 
-func (ozoneTool *OzoneTool) GetActionsList() []string {
-	actions := []string{}
-	actions = append(actions, Call)
-	actions = append(actions, FetchCDR)
-	actions = append(actions, Callback)
-	return actions
+func (ozoneTool *OzoneTool) GetActionsList() []tools.ActionInfo {
+	return []tools.ActionInfo{
+		{Name: Call},
+		{Name: FetchCDR},
+		{Name: Callback},
+	}
 }
 
 func (ozoneTool *OzoneTool) GetToolCallback() tools.ToolCallback {
@@ -332,4 +332,16 @@ func (ozoneTool *OzoneTool) BytesToTool(ctx context.Context, toolObjJson []byte)
 		return nil, err
 	}
 	return newTool, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "OzoneTool",
+		Category:    "Telecom",
+		Description: "Ozone telecom integration for voice calls, CDR fetch, and callbacks",
+		Actions: []tools.ActionInfo{{Name: Call}, {Name: FetchCDR}, {Name: Callback}},
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+	})
 }

@@ -320,12 +320,16 @@ var cygnetToolActions = []tools.ToolAction{
 	},
 }
 
-func (cygnetTool *CygnetTool) GetActionsList() []string {
-	actions := []string{}
-	for _, action := range cygnetToolActions {
-		actions = append(actions, action.ActionName)
+func (cygnetTool *CygnetTool) GetActionsList() []tools.ActionInfo {
+	infos := make([]tools.ActionInfo, len(cygnetToolActions))
+	for i, action := range cygnetToolActions {
+		infos[i] = tools.ActionInfo{Name: action.ActionName, Description: action.Description}
 	}
-	return actions
+	return infos
+}
+
+func (cygnetTool *CygnetTool) GetActions() []tools.ToolAction {
+	return cygnetToolActions
 }
 
 func (cygnetTool *CygnetTool) GetSpec() tools.Tooling {
@@ -1265,4 +1269,22 @@ func (cygnetTool *CygnetTool) GetBytes(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 	return toolJson, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "CygnetTool",
+		Category:    "Aggregator",
+		Description: "Cygnet financial aggregator for GST, e-invoicing, and compliance reporting",
+		Actions: func() []tools.ActionInfo {
+			infos := make([]tools.ActionInfo, len(cygnetToolActions))
+			for i, a := range cygnetToolActions {
+				infos[i] = tools.ActionInfo{Name: a.ActionName, Description: a.Description}
+			}
+			return infos
+		}(),
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+	})
 }

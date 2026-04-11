@@ -19,6 +19,7 @@ const (
 	ServerName         = "eru-ai-mcp-server"
 	ServerVersion      = "1.0.1"
 	mcpNameSep         = "__"
+	mcpActionSep       = "##"
 )
 
 var supportedMCPVersions = []string{"2025-06-18", "2025-03-26"}
@@ -90,23 +91,44 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context, projectId string, tenant
 							continue
 						}
 
-						description := ""
+						toolDescription := ""
 						if desc, err := tool.GetAttribute(ctx, "description"); err == nil {
 							if descStr, ok := desc.(string); ok {
-								description = descStr
+								toolDescription = descStr
 							}
 						}
-
 						toolPrefix := "tool"
 						if projectId == tenantId && projectId != "" {
 							toolPrefix = strings.Join([]string{"tool", projectId}, mcpNameSep)
 						}
-						mcpTool := server.MCPTool{
-							Name:        strings.Join([]string{toolPrefix, toolName}, mcpNameSep),
-							Description: description,
-							InputSchema: s.convertSchemaToInputSchema(tool.GetParameters()),
+						toolMCPName := strings.Join([]string{toolPrefix, toolName}, mcpNameSep)
+
+						actions := tool.GetActions()
+						if len(actions) > 0 {
+							for _, action := range actions {
+								actionDescription := toolDescription
+								if action.Description != "" {
+									actionDescription = toolDescription + " - " + action.Description
+								}
+								var actionSchema interface{}
+								if action.GetParameters != nil {
+									actionSchema = action.GetParameters()
+								} else {
+									actionSchema = action.Parameters
+								}
+								mcpTools = append(mcpTools, server.MCPTool{
+									Name:        toolMCPName + mcpActionSep + action.ActionName,
+									Description: actionDescription,
+									InputSchema: s.convertSchemaToInputSchema(actionSchema),
+								})
+							}
+						} else {
+							mcpTools = append(mcpTools, server.MCPTool{
+								Name:        toolMCPName,
+								Description: toolDescription,
+								InputSchema: s.convertSchemaToInputSchema(tool.GetParameters()),
+							})
 						}
-						mcpTools = append(mcpTools, mcpTool)
 					}
 
 					agentNames, err := s.store.Store.GetAgentNames(ctx, projectName, tenant.TenantId)
@@ -169,7 +191,14 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context, projectId string, tenant
 }
 
 func (s *EruAIMCPServer) CallTool(ctx context.Context, conversationId string, params server.MCPCallToolParams, projectId string, tenantId string) (server.MCPCallToolResult, error) {
-	parts := s.parseToolName(params.Name)
+	mcpName := params.Name
+	actionName := ""
+	if idx := strings.Index(mcpName, mcpActionSep); idx != -1 {
+		actionName = mcpName[idx+len(mcpActionSep):]
+		mcpName = mcpName[:idx]
+	}
+
+	parts := s.parseToolName(mcpName)
 	if len(parts) < 2 {
 		return server.MCPCallToolResult{}, fmt.Errorf("invalid tool name format: %s", params.Name)
 	}
@@ -180,7 +209,7 @@ func (s *EruAIMCPServer) CallTool(ctx context.Context, conversationId string, pa
 	if parts[0] == "agent" {
 		return s.executeAgent(ctx, conversationId, projectId, tenantId, toolAgentName, params.Arguments)
 	}
-	return s.executeToolAction(ctx, conversationId, projectId, tenantId, toolAgentName, params.Arguments)
+	return s.executeToolAction(ctx, conversationId, projectId, tenantId, toolAgentName, actionName, params.Arguments)
 }
 
 func (s *EruAIMCPServer) executeAgent(ctx context.Context, conversationId, project, tenant, agentName string, arguments map[string]interface{}) (server.MCPCallToolResult, error) {
@@ -252,13 +281,13 @@ func (s *EruAIMCPServer) executeAgent(ctx context.Context, conversationId, proje
 	}, nil
 }
 
-func (s *EruAIMCPServer) executeToolAction(ctx context.Context, conversationId, project, tenant, toolName string, arguments map[string]interface{}) (server.MCPCallToolResult, error) {
+func (s *EruAIMCPServer) executeToolAction(ctx context.Context, conversationId, project, tenant, toolName, actionName string, arguments map[string]interface{}) (server.MCPCallToolResult, error) {
 	tool, err := s.store.Store.GetTool(ctx, project, tenant, toolName, "", s.store.Store)
 	if err != nil {
 		return server.MCPCallToolResult{}, err
 	}
 
-	result, _, err := tool.Execute(ctx, project, tenant, "", arguments)
+	result, _, err := tool.Execute(ctx, project, tenant, actionName, arguments)
 	if err != nil {
 		return server.MCPCallToolResult{
 			Content: []server.MCPContent{

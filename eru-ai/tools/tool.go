@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"slices"
 	"strings"
 
 	db "github.com/eru-tech/eru/eru-db/db"
@@ -45,6 +44,11 @@ type ToolCallback struct {
 	ResponseContentType string `json:"response_content_type"`
 }
 
+type ActionInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
 type ToolAction struct {
 	ActionName    string                       `json:"action_name" eru:"required"`
 	Description   string                       `json:"description"`
@@ -78,7 +82,8 @@ type Tooling interface {
 	GetSpec() Tooling
 	GetBytes(ctx context.Context) ([]byte, error)
 	BytesToTool(ctx context.Context, toolObjJson []byte) (Tooling, error)
-	GetActionsList() []string
+	GetActionsList() []ActionInfo
+	GetActions() []ToolAction
 	ValidateAction(ctx context.Context, actionName string, realTool Tooling) (err error)
 	SetPrivateAttributes(ctx context.Context, realTool Tooling) (err error)
 	GetInputFields() []ToolInputFields
@@ -159,8 +164,12 @@ func (tool *Tool) SetPrivateAttributes(ctx context.Context, realTool Tooling) (e
 	return nil
 }
 
-func (tool *Tool) GetActionsList() []string {
-	return []string{}
+func (tool *Tool) GetActionsList() []ActionInfo {
+	return []ActionInfo{}
+}
+
+func (tool *Tool) GetActions() []ToolAction {
+	return []ToolAction{}
 }
 
 func (tool *Tool) GetInputFields() []ToolInputFields {
@@ -263,7 +272,14 @@ func (tool *Tool) ValidateAction(ctx context.Context, actionName string, realToo
 		//if no actions are defined, and no action name is provided, return nil
 		return
 	}
-	if !slices.Contains(actions, actionName) {
+	found := false
+	for _, a := range actions {
+		if a.Name == actionName {
+			found = true
+			break
+		}
+	}
+	if !found {
 		err = errors.New("action " + actionName + " not found")
 		logs.WithContext(ctx).Error(err.Error())
 		return

@@ -173,3 +173,55 @@ func ToolListNamesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		}
 	}
 }
+
+func ToolListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ToolListHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+		tenantID := vars["tenant"]
+		names, err := sh.Store.GetToolNames(r.Context(), projectID, tenantID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		toolList := make([]interface{}, 0, len(names))
+		for _, name := range names {
+			tool, err := sh.Store.GetTool(r.Context(), projectID, tenantID, name, "", sh.Store)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(fmt.Sprintf("GetTool %s: %v", name, err))
+				continue
+			}
+			toolList = append(toolList, tool.GetSpec())
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"tools": toolList})
+	}
+}
+
+func AgentListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("AgentListHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+		tenantID := vars["tenant"]
+		names, err := sh.Store.GetAgentNames(r.Context(), projectID, tenantID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		agentList := make([]interface{}, 0, len(names))
+		for _, name := range names {
+			agent, err := sh.Store.GetAgent(r.Context(), projectID, tenantID, "", name, sh.Store)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(fmt.Sprintf("GetAgent %s: %v", name, err))
+				continue
+			}
+			agentList = append(agentList, agent.GetSpec())
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"agents": agentList})
+	}
+}

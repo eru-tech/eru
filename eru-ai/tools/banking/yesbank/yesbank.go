@@ -198,12 +198,16 @@ var yesBankToolActions = []tools.ToolAction{
 	},
 }
 
-func (yesBankTool *YesBankTool) GetActionsList() []string {
-	actions := []string{}
-	for _, action := range yesBankToolActions {
-		actions = append(actions, action.ActionName)
+func (yesBankTool *YesBankTool) GetActionsList() []tools.ActionInfo {
+	infos := make([]tools.ActionInfo, len(yesBankToolActions))
+	for i, action := range yesBankToolActions {
+		infos[i] = tools.ActionInfo{Name: action.ActionName, Description: action.Description}
 	}
-	return actions
+	return infos
+}
+
+func (yesBankTool *YesBankTool) GetActions() []tools.ToolAction {
+	return yesBankToolActions
 }
 
 func (yesBankTool *YesBankTool) GetSpec() tools.Tooling {
@@ -603,4 +607,22 @@ func (yesBankTool *YesBankTool) SetToolAction(actionName string) {
 		}
 	}
 	yesBankTool.ToolAction = tools.ToolAction{}
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:    "YesBankTool",
+		Category:    "Banking",
+		Description: "Yes Bank payment and banking operations including fund confirmation, NEFT, and account inquiries",
+		Actions: func() []tools.ActionInfo {
+			infos := make([]tools.ActionInfo, len(yesBankToolActions))
+			for i, a := range yesBankToolActions {
+				infos[i] = tools.ActionInfo{Name: a.ActionName, Description: a.Description}
+			}
+			return infos
+		}(),
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+	})
 }

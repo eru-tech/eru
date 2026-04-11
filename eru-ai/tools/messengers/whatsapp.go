@@ -100,31 +100,31 @@ type WhatsAppAccount struct {
 	WebhookSubscriptionToken string `json:"webhook_subscription_token"`
 }
 
-func (whatsAppTool *WhatsAppTool) GetActionsList() []string {
-	actions := []string{}
-	actions = append(actions, SendMessage)
-	actions = append(actions, SubscribeWebhooks)
-	actions = append(actions, GetMessageStatus)
-	actions = append(actions, UploadMedia)
-	actions = append(actions, RetrieveMedia)
-	actions = append(actions, DeleteMedia)
-	actions = append(actions, GetMediaUrl)
-	actions = append(actions, GetBusinessProfile)
-	actions = append(actions, GetMessageTemplates)
-	actions = append(actions, MarkMessageAsRead)
-	actions = append(actions, SendTypingIndicator)
-	actions = append(actions, GetThroughput)
-	actions = append(actions, CreateGroup)
-	actions = append(actions, RegisterPublicKey)
-	actions = append(actions, FetchPublicKey)
-	actions = append(actions, FlowEndpoint)
-	actions = append(actions, CreateMessageTemplate)
-	actions = append(actions, DownloadFlowDocument)
-	actions = append(actions, FetchTemplates)
-	actions = append(actions, EditMessageTemplate)
-	actions = append(actions, DeleteMessageTemplate)
-	actions = append(actions, Callback)
-	return actions
+func (whatsAppTool *WhatsAppTool) GetActionsList() []tools.ActionInfo {
+	return []tools.ActionInfo{
+		{Name: SendMessage},
+		{Name: SubscribeWebhooks},
+		{Name: GetMessageStatus},
+		{Name: UploadMedia},
+		{Name: RetrieveMedia},
+		{Name: DeleteMedia},
+		{Name: GetMediaUrl},
+		{Name: GetBusinessProfile},
+		{Name: GetMessageTemplates},
+		{Name: MarkMessageAsRead},
+		{Name: SendTypingIndicator},
+		{Name: GetThroughput},
+		{Name: CreateGroup},
+		{Name: RegisterPublicKey},
+		{Name: FetchPublicKey},
+		{Name: FlowEndpoint},
+		{Name: CreateMessageTemplate},
+		{Name: DownloadFlowDocument},
+		{Name: FetchTemplates},
+		{Name: EditMessageTemplate},
+		{Name: DeleteMessageTemplate},
+		{Name: Callback},
+	}
 }
 
 func (whatsAppTool *WhatsAppTool) GetSpec() tools.Tooling {

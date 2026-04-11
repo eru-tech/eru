@@ -557,10 +557,17 @@ const (
 	SellerBaseUrl = "https://sellingpartnerapi-eu.amazon.com"
 )
 
-func (amazonTool *AmazonTool) GetActionsList() []string {
-	actions := []string{}
-	actions = append(actions, GetOrders, GetOrderItems, GetFinancialEvents, GetFinancialEventGroups, Login, RenewToken, GetSsoUrl, StopAutoRenew)
-	return actions
+func (amazonTool *AmazonTool) GetActionsList() []tools.ActionInfo {
+	return []tools.ActionInfo{
+		{Name: GetOrders},
+		{Name: GetOrderItems},
+		{Name: GetFinancialEvents},
+		{Name: GetFinancialEventGroups},
+		{Name: Login},
+		{Name: RenewToken},
+		{Name: GetSsoUrl},
+		{Name: StopAutoRenew},
+	}
 }
 
 func (amazonTool *AmazonTool) GetSpec() tools.Tooling {
