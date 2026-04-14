@@ -743,41 +743,80 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		tenantId := vars["tenant"]
 		agentName := vars["agentname"]
 		conversationId := vars["conversationid"]
+
+		isStream := strings.HasSuffix(r.URL.Path, "/stream")
+
 		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, conversationId, agentName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-		} else {
-			agentParamsFromReq := json.NewDecoder(r.Body)
-			agentParamsFromReq.DisallowUnknownFields()
+			return
+		}
 
-			var agentMessage agents.AgentMessage
-			if err := agentParamsFromReq.Decode(&agentMessage); err != nil {
-				utils.PrintRequestBody(r.Context(), r, "")
-				logs.WithContext(r.Context()).Error(err.Error())
+		agentParamsFromReq := json.NewDecoder(r.Body)
+		agentParamsFromReq.DisallowUnknownFields()
 
-				server_handlers.FormatResponse(w, 400)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		var agentMessage agents.AgentMessage
+		if err := agentParamsFromReq.Decode(&agentMessage); err != nil {
+			utils.PrintRequestBody(r.Context(), r, "")
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if conversationId == "" {
+			conversationId = uuid.New().String()
+		}
+		if agentMessage.MessageId == "" {
+			agentMessage.MessageId = uuid.New().String()
+		}
+		claims := r.Header.Get("claims")
+		if claims != "" {
+			r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
+		}
+
+		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
+		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+
+		if isStream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Connection", "keep-alive")
+			w.WriteHeader(http.StatusOK)
+
+			flusher, canFlush := w.(http.Flusher)
+
+			sendSSE := func(event agents.StreamEvent) {
+				data, err := json.Marshal(event)
+				if err != nil {
+					return
+				}
+				fmt.Fprintf(w, "data: %s\n\n", string(data))
+				if canFlush {
+					flusher.Flush()
+				}
+			}
+
+			streamCb := agents.StreamCallback(func(event agents.StreamEvent) {
+				sendSSE(event)
+			})
+
+			ctx := agents.WithStreamCallback(r.Context(), streamCb)
+			agentResult, err := agent.Execute(ctx, agentMessage, conversationId, projectId, tenantId)
+			if err != nil {
+				sendSSE(agents.StreamEvent{Event: agents.StreamEventError, Data: err.Error()})
 				return
 			}
-			if conversationId == "" {
-				conversationId = uuid.New().String()
-			}
-			if agentMessage.MessageId == "" {
-				agentMessage.MessageId = uuid.New().String()
-			}
-			claims := r.Header.Get("claims")
-			if claims != "" {
-				r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
-			}
 
-			r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
-			r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+			agentResult.ConversationId = conversationId
+			sendSSE(agents.StreamEvent{Event: agents.StreamEventDone, Data: agentResult})
+		} else {
 			agentResult, err := agent.Execute(r.Context(), agentMessage, conversationId, projectId, tenantId)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			} else {
+				agentResult.ConversationId = conversationId
 				logs.WithContext(r.Context()).Info(fmt.Sprintf("AgentResult: %v", agentResult))
 				server_handlers.FormatResponse(w, 200)
 				_ = json.NewEncoder(w).Encode(agentResult)

@@ -3,10 +3,9 @@ package models
 import (
 	"context"
 	"encoding/json"
-
-	//"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	chunking "github.com/eru-tech/eru/eru-ai/chunking"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
@@ -23,8 +22,9 @@ const (
 
 type OpenAIModel struct {
 	Model
-	ApiType     string `json:"api_type"`
-	ServiceTier string `json:"service_tier"`
+	ApiType         string `json:"api_type"`
+	ServiceTier     string `json:"service_tier"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 type OpenAIRequestMessage struct {
@@ -115,10 +115,10 @@ type OpenAIChatRequest struct {
 	Messages            []OpenAIRequestMessage `json:"messages" eru:"required"`
 	Model               string                 `json:"model" eru:"required"`
 	Store               bool                   `json:"store"`
-	//ReasoningEffort     string                 `json:"reasoning_effort"` //availble in o1 models only
-	Metadata         map[string]interface{} `json:"metadata"`
-	FrequencyPenalty float64                `json:"frequency_penalty"`
-	LogitBias        map[string]interface{} `json:"logit_bias"`
+	ReasoningEffort     string                 `json:"reasoning_effort,omitempty"`
+	Metadata            map[string]interface{} `json:"metadata"`
+	FrequencyPenalty    float64                `json:"frequency_penalty"`
+	LogitBias           map[string]interface{} `json:"logit_bias"`
 
 	N          int      `json:"n"`
 	Modalities []string `json:"modalities,omitempty"`
@@ -127,7 +127,6 @@ type OpenAIChatRequest struct {
 
 	Seed        int    `json:"seed"`
 	ServiceTier string `json:"service_tier"`
-	//Stop        []string `json:"stop"`
 	Temperature float64 `json:"temperature"`
 	TopP        float64 `json:"top_p"`
 	User        string  `json:"user"`
@@ -476,6 +475,12 @@ func (openaiModel *OpenAIModel) MakeFromJson(ctx context.Context, rj *json.RawMe
 	}
 	return nil
 }
+func (openaiModel *OpenAIModel) isReasoningModel() bool {
+	return strings.HasPrefix(openaiModel.LLMName, "o1") ||
+		strings.HasPrefix(openaiModel.LLMName, "o3") ||
+		strings.HasPrefix(openaiModel.LLMName, "o4")
+}
+
 func (openaiModel *OpenAIModel) QueryModel(ctx context.Context, chatRequest ChatRequest) (queryResponse Message, err error) {
 	logs.WithContext(ctx).Debug("QueryModel - Start")
 	if openaiModel.ApiType == "RESPONSES" {
@@ -595,13 +600,21 @@ func (openaiModel *OpenAIModel) makeOpenAIChatRequest(ctx context.Context, chatR
 		serviceTier = "auto"
 	}
 	openAIChatRequest = OpenAIChatRequest{
-		Model:       openaiModel.LLMName,
-		N:           1,
-		Temperature: openaiModel.Temprature,
-		TopP:        1,
-		//Modalities:          []string{"text"},
+		Model:               openaiModel.LLMName,
+		N:                   1,
 		MaxCompletionTokens: 150,
 		ServiceTier:         serviceTier,
+	}
+	if openaiModel.isReasoningModel() {
+		effort := openaiModel.ReasoningEffort
+		if effort == "" {
+			effort = "medium"
+		}
+		openAIChatRequest.ReasoningEffort = effort
+		openAIChatRequest.MaxCompletionTokens = 16000
+	} else {
+		openAIChatRequest.Temperature = openaiModel.Temprature
+		openAIChatRequest.TopP = 1
 	}
 
 	for _, message := range chatRequest.Messages {

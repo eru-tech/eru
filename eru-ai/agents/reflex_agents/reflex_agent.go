@@ -11,6 +11,7 @@ import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	utility "github.com/eru-tech/eru/eru-ai/tools/utility"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_models "github.com/eru-tech/eru/eru-models"
 )
 
 type ReflexAgent struct {
@@ -23,9 +24,13 @@ func (reflex_agent *ReflexAgent) GetSpec() agents.AgentI {
 
 func (reflex_agent *ReflexAgent) GetSystemPrompt() string {
 	const systemPrompt = `
-	
+
 	`
 	return systemPrompt
+}
+
+func (reflex_agent *ReflexAgent) GetOutputSchema(ctx context.Context) eru_models.JSONSchema {
+	return eru_models.JSONSchema{}
 }
 
 func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (agents.AgentMessage, error) {
@@ -54,7 +59,7 @@ func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agent
 			agentOutputAction.Action = response
 			agentOutputActions := []agents.AgentOutputAction{agentOutputAction}
 			agentMessaage = agents.AgentMessage{
-				Role:             "assistant",
+				Role:             "user",
 				Content:          "",
 				Actions:          agentOutputActions,
 				MessageId:        agentMessage.MessageId, //same as the user message
@@ -103,36 +108,44 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 	}
 	sp += "\n" + reflex_agent.SystemPrompt
 
-	chatRequest.Messages = append(chatRequest.Messages, models.Message{
-		Role:    "assistant",
-		Content: sp,
-		Name:    reflex_agent.AgentName,
-	})
+	chatRequest.Messages = append([]models.Message{
+		{Role: "assistant", Content: sp, Name: reflex_agent.AgentName},
+	}, chatRequest.Messages...)
 
-	toolResultsBytes, err := json.Marshal(toolResults)
-	if err != nil {
-		chatRequest.Messages = append(chatRequest.Messages, models.Message{
-			Role:    "assistant",
-			Content: fmt.Sprintf("Tool results: %+v", toolResults),
-			Name:    reflex_agent.AgentName,
-		})
-	} else {
-		contentStr := `Tool results is as given below
+	if len(toolResults) > 0 {
+		toolResultsBytes, err := json.Marshal(toolResults)
+		if err != nil {
+			chatRequest.Messages = append([]models.Message{
+				{Role: "assistant",
+					Content: fmt.Sprintf("Tool results: %+v", toolResults),
+					Name:    reflex_agent.AgentName,
+				}}, chatRequest.Messages...)
+		} else {
+			contentStr := `Tool results is as given below
 		
 		`
-		chatRequest.Messages = append(chatRequest.Messages, models.Message{
-			Role: "assistant",
-			Content: fmt.Sprint(contentStr, string(toolResultsBytes), `
+			chatRequest.Messages = append([]models.Message{{
+				Role: "assistant",
+				Content: fmt.Sprint(contentStr, string(toolResultsBytes), `
 			`),
-			Name: reflex_agent.AgentName,
-		})
+				Name: reflex_agent.AgentName,
+			}}, chatRequest.Messages...)
+		}
 	}
 	agentResponse := make(map[string]interface{})
 	response := models.Message{}
-	if reflex_agent.OutputSchema.Type != "" {
+	outputSchema := reflex_agent.OutputSchema
+	if reflex_agent.GetProvider() != nil {
+		providerSchema := reflex_agent.GetProvider().GetOutputSchema(ctx)
+		logs.WithContext(ctx).Info(fmt.Sprintf("Provider schema: %+v", providerSchema))
+		if providerSchema.Type != "" {
+			outputSchema = providerSchema
+		}
+	}
+	if outputSchema.Type != "" {
 		outputTool := utility.StructuredOutputTool{}
-		outputTool.SetAttribute(ctx, "output_schema", reflex_agent.OutputSchema)
-		outputTool.SetAttribute(ctx, "parameters", reflex_agent.OutputSchema)
+		outputTool.SetAttribute(ctx, "output_schema", outputSchema)
+		outputTool.SetAttribute(ctx, "parameters", outputSchema)
 		outputTool.SetAttribute(ctx, "description", "Output the result")
 		outputTool.SetAttribute(ctx, "tool_name", "structured_output")
 		outputTool.SetAttribute(ctx, "tool_type", "STRUCTURED_OUTPUT")

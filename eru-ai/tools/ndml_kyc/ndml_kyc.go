@@ -190,7 +190,7 @@ var ndmlToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(NdmlInquiryParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(NdmlInquiryParams{}), []string{})
 		},
 	},
 	{
@@ -200,7 +200,7 @@ var ndmlToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(NdmlDownloadParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(NdmlDownloadParams{}), []string{})
 		},
 	},
 	{
@@ -900,7 +900,7 @@ func (ndmlTool *NdmlTool) SetToolAction(actionName string) {
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
-		ToolType:    "NdmlTool",
+		ToolType:    "Ndml",
 		Category:    "KYC/Compliance",
 		Description: "NDML KYC verification and document operations for regulatory compliance",
 		Actions: func() []tools.ActionInfo {

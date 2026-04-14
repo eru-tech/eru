@@ -163,7 +163,7 @@ var yesBankToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(FundConfirmationParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(FundConfirmationParams{}), []string{})
 		},
 	},
 	{
@@ -173,7 +173,7 @@ var yesBankToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(InitiatePaymentsParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(InitiatePaymentsParams{}), []string{})
 		},
 	},
 	{
@@ -183,7 +183,7 @@ var yesBankToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(PaymentStatusParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(PaymentStatusParams{}), []string{})
 		},
 	},
 	{
@@ -193,7 +193,7 @@ var yesBankToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(InstrumentStatusParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(InstrumentStatusParams{}), []string{})
 		},
 	},
 }
@@ -611,7 +611,7 @@ func (yesBankTool *YesBankTool) SetToolAction(actionName string) {
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
-		ToolType:    "YesBankTool",
+		ToolType:    "YesBank",
 		Category:    "Banking",
 		Description: "Yes Bank payment and banking operations including fund confirmation, NEFT, and account inquiries",
 		Actions: func() []tools.ActionInfo {

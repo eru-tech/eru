@@ -475,10 +475,10 @@ func (massiveTool *MassiveTool) BytesToTool(ctx context.Context, toolObjJson []b
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
-		ToolType:    "MassiveTool",
-		Category:    "Finance",
-		Description: "Massive stock market data including prices, indices, dividends, and market holidays",
-		Actions: []tools.ActionInfo{{Name: GetStocks}, {Name: GetStockPrices}, {Name: MarketHolidays}, {Name: StockSplits}, {Name: StockDividends}, {Name: GetIndiceValue}},
+		ToolType:     "Massive",
+		Category:     "Finance",
+		Description:  "Massive stock market data including prices, indices, dividends, and market holidays",
+		Actions:      []tools.ActionInfo{{Name: GetStocks}, {Name: GetStockPrices}, {Name: MarketHolidays}, {Name: StockSplits}, {Name: StockDividends}, {Name: GetIndiceValue}},
 		OAuthEnabled: false,
 		Icon:         "",
 		IconType:     "svg",
