@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
@@ -634,4 +635,17 @@ func (zohoDeskTool *ZohoDeskTool) StopAutoRenew(ctx context.Context, projectId s
 	zohoDeskTool.ZohoAccount.TokenExpirationDateTime = ""
 	persistStore = true
 	return toolResult, nil, persistStore, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:     "ZohoDesk",
+		Category:     "SaaS",
+		Description:  "Zoho Desk integration for ticket management, organizations, and support operations",
+		Actions:      []tools.ActionInfo{{Name: GetTickets}, {Name: GetOrganizations}, {Name: GetTicketThread}, {Name: GetTicketContent}, {Name: GetTicketAttachment}, {Name: Login}, {Name: RenewToken}, {Name: GetSsoUrl}, {Name: StopAutoRenew}},
+		OAuthEnabled: true,
+		Icon:         "",
+		IconType:     "svg",
+		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(ZohoDeskTool{}), []string{}),
+	})
 }

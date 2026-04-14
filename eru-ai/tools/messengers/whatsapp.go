@@ -14,6 +14,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"reflect"
 	"strings"
 
 	aes "github.com/eru-tech/eru/eru-crypto/aes"
@@ -2023,4 +2024,17 @@ func (whatsAppTool *WhatsAppTool) DownloadFlowDocument(ctx context.Context, para
 	toolResult["media_id"] = request.MediaId
 
 	return toolResult, map[string]interface{}{"body": request}, false, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:     "WhatsApp",
+		Category:     "Communication",
+		Description:  "WhatsApp Business API for messaging, media, templates, and webhooks",
+		Actions:      []tools.ActionInfo{{Name: SendMessage}, {Name: SubscribeWebhooks}, {Name: GetMessageStatus}, {Name: UploadMedia}, {Name: RetrieveMedia}, {Name: DeleteMedia}, {Name: GetMediaUrl}, {Name: GetBusinessProfile}, {Name: GetMessageTemplates}, {Name: MarkMessageAsRead}, {Name: SendTypingIndicator}, {Name: GetThroughput}, {Name: CreateGroup}, {Name: RegisterPublicKey}, {Name: FetchPublicKey}, {Name: FlowEndpoint}, {Name: CreateMessageTemplate}, {Name: DownloadFlowDocument}, {Name: FetchTemplates}, {Name: EditMessageTemplate}, {Name: DeleteMessageTemplate}, {Name: Callback}},
+		OAuthEnabled: false,
+		Icon:         "",
+		IconType:     "svg",
+		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(WhatsAppTool{}), []string{}),
+	})
 }

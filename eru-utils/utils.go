@@ -1220,7 +1220,17 @@ func StructToJSONSchema(t reflect.Type, seenFields []string) eru_models.JSONSche
 		}
 
 		jsonTag := field.Tag.Get("json")
-		if jsonTag == "-" || jsonTag == "" {
+		if jsonTag == "-" {
+			continue
+		}
+		if jsonTag == "" {
+			if field.Anonymous && field.Type.Kind() == reflect.Struct {
+				embedded := StructToJSONSchema(field.Type, seenFields)
+				for k, v := range embedded.Properties {
+					schema.Properties[k] = v
+				}
+				requiredFields = append(requiredFields, embedded.Required...)
+			}
 			continue
 		}
 		name := jsonTag

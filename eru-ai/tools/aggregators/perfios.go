@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	"errors"
@@ -445,5 +446,6 @@ func init() {
 		OAuthEnabled: false,
 		Icon:         "",
 		IconType:     "svg",
+		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(PerfiosTool{}), []string{}),
 	})
 }

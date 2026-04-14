@@ -319,5 +319,6 @@ func init() {
 		Category:    "AI",
 		Description: "Semantic memory for cross-agent and cross-session knowledge sharing",
 		Actions:     []tools.ActionInfo{{Name: Remember}, {Name: Recall}, {Name: Forget}},
+		ToolSchema:  eru_utils.StructToJSONSchema(reflect.TypeOf(MemoryTool{}), []string{}),
 	})
 }

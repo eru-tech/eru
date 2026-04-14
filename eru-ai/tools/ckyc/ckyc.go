@@ -596,5 +596,6 @@ func init() {
 		OAuthEnabled: false,
 		Icon:         "",
 		IconType:     "svg",
+		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(CkycTool{}), []string{}),
 	})
 }

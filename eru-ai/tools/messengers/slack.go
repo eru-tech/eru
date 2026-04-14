@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -903,4 +904,17 @@ func (slackTool *SlackTool) BytesToTool(ctx context.Context, toolObjJson []byte)
 		AuthName: slackToolWithToken.AuthName,
 	}
 	return slackTool, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:     "Slack",
+		Category:     "Communication",
+		Description:  "Slack integration for messaging, channels, and webhooks",
+		Actions:      []tools.ActionInfo{{Name: SendMessage}, {Name: ReadMessages}, {Name: Login}, {Name: GetSsoUrl}, {Name: SubscribeWebhooks}, {Name: ListChannels}, {Name: ListUsers}, {Name: CreateChannel}, {Name: InviteToChannel}, {Name: JoinChannel}, {Name: UploadMedia}, {Name: Callback}},
+		OAuthEnabled: true,
+		Icon:         "",
+		IconType:     "svg",
+		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(SlackTool{}), []string{}),
+	})
 }

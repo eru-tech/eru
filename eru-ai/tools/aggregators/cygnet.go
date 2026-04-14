@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/eru-tech/eru/eru-ai/tools"
@@ -1286,5 +1287,6 @@ func init() {
 		OAuthEnabled: false,
 		Icon:         "",
 		IconType:     "svg",
+		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(CygnetTool{}), []string{}),
 	})
 }

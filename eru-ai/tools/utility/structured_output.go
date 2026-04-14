@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
 	server "github.com/eru-tech/eru/eru-server/server"
+	utils "github.com/eru-tech/eru/eru-utils"
 )
 
 var structuredOutputToolActions = []tools.ToolAction{
@@ -129,5 +131,6 @@ func init() {
 		OAuthEnabled: false,
 		Icon:         "",
 		IconType:     "svg",
+		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(StructuredOutputTool{}), []string{}),
 	})
 }
