@@ -14,6 +14,7 @@ import (
 	repositories "github.com/eru-tech/eru/eru-ai/tools/repositories"
 	saas "github.com/eru-tech/eru/eru-ai/tools/saas"
 	stocks "github.com/eru-tech/eru/eru-ai/tools/stocks"
+	esign "github.com/eru-tech/eru/eru-ai/tools/esign"
 	telecom "github.com/eru-tech/eru/eru-ai/tools/telecom"
 	utiltiy "github.com/eru-tech/eru/eru-ai/tools/utility"
 	vectorstore "github.com/eru-tech/eru/eru-ai/tools/vectors"
@@ -60,6 +61,8 @@ func GetTool(toolType string) tools.Tooling {
 		return new(stocks.MassiveTool)
 	case "OZONE":
 		return new(telecom.OzoneTool)
+	case "PICHAIN":
+		return new(esign.PichainTool)
 	default:
 		return new(tools.Tool)
 	}
