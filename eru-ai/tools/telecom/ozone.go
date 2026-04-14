@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -343,5 +344,6 @@ func init() {
 		OAuthEnabled: false,
 		Icon:         "",
 		IconType:     "svg",
+		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(OzoneTool{}), []string{}),
 	})
 }

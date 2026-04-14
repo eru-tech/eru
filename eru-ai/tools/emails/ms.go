@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
@@ -769,5 +770,6 @@ func init() {
 		OAuthEnabled: true,
 		Icon:         "",
 		IconType:     "svg",
+		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(MsEmailTool{}), []string{}),
 	})
 }

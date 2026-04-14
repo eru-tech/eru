@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
@@ -1190,4 +1191,17 @@ func (amazonTool *AmazonTool) StopAutoRenew(ctx context.Context, projectId strin
 	amazonTool.AmazonAccount.TokenExpirationDateTime = ""
 	persistStore = true
 	return toolResult, map[string]interface{}{"body": params}, persistStore, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:     "Amazon",
+		Category:     "Ecommerce",
+		Description:  "Amazon Selling Partner API for orders, financials, and account management",
+		Actions:      []tools.ActionInfo{{Name: GetOrders}, {Name: GetOrderItems}, {Name: GetFinancialEvents}, {Name: GetFinancialEventGroups}, {Name: Login}, {Name: RenewToken}, {Name: GetSsoUrl}, {Name: StopAutoRenew}},
+		OAuthEnabled: true,
+		Icon:         "",
+		IconType:     "svg",
+		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(AmazonTool{}), []string{}),
+	})
 }
