@@ -5,15 +5,18 @@ go 1.24
 toolchain go1.24.5
 
 require (
+	github.com/anthropics/anthropic-sdk-go v1.35.0
 	github.com/aws/aws-sdk-go-v2 v1.38.0
 	github.com/aws/aws-sdk-go-v2/config v1.31.0
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.7.0
 	github.com/eru-tech/eru/eru-cache v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-crypto v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-db v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-events v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-functions v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-models v0.0.0-00010101000000-000000000000
+	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-repos v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-scheduler v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-secret-manager v0.0.0-00010101000000-000000000000
@@ -26,6 +29,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.0
+	github.com/jmoiron/sqlx v1.3.5
 	github.com/playwright-community/playwright-go v0.5001.0
 	github.com/xeipuuv/gojsonschema v1.2.0
 )
@@ -36,7 +40,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.2.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.3 // indirect
 	github.com/amikos-tech/chroma-go v0.1.4 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.1 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.3 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.4 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.3 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.3 // indirect
@@ -60,8 +64,6 @@ require (
 	github.com/deckarep/golang-set/v2 v2.7.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/eru-tech/eru/eru-events v0.0.0-00010101000000-000000000000 // indirect
-	github.com/eru-tech/eru/eru-read-write v0.0.0-00010101000000-000000000000 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -75,7 +77,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
-	github.com/jmoiron/sqlx v1.3.5 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.0 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
@@ -93,9 +94,10 @@ require (
 	github.com/rs/cors v1.7.0 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/spf13/cast v1.3.1 // indirect
-	github.com/tidwall/gjson v1.17.1 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tiendc/go-deepcopy v1.6.0 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
@@ -119,6 +121,7 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
 	golang.org/x/net v0.42.0 // indirect
+	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
 	google.golang.org/genproto v0.0.0-20230331144136-dcfb400f0633 // indirect

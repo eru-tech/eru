@@ -29,7 +29,7 @@ type JSONSchema struct {
 	Enum                 []interface{}         `json:"enum,omitempty"`   // For enums
 	Format               string                `json:"format,omitempty"` // For strings
 	Description          string                `json:"description,omitempty"`
-	AdditionalProperties bool                  `json:"additionalProperties"`
+	AdditionalProperties interface{}           `json:"additionalProperties,omitempty"`
 }
 type SampleRequest struct {
 	RequestId    string                 `json:"request_id" eru:"required"`

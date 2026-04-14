@@ -4,11 +4,44 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	chunking "github.com/eru-tech/eru/eru-ai/chunking"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
+
+type StepTrace struct {
+	Iteration   int                    `json:"iteration"`
+	Thinking    string                 `json:"thinking,omitempty"`
+	ToolName    string                 `json:"tool_name,omitempty"`
+	ToolInput   map[string]interface{} `json:"tool_input,omitempty"`
+	ToolResult  map[string]interface{} `json:"tool_result,omitempty"`
+	Content     string                 `json:"content,omitempty"`
+	Timestamp   time.Time              `json:"timestamp"`
+}
+
+type ToolExecutor func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error)
+
+type StreamEventType string
+
+const (
+	StreamThinking   StreamEventType = "thinking"
+	StreamToolUse    StreamEventType = "tool_use"
+	StreamToolResult StreamEventType = "tool_result"
+	StreamTextDelta  StreamEventType = "text_delta"
+	StreamDone       StreamEventType = "done"
+)
+
+type ModelStreamEvent struct {
+	Type      StreamEventType        `json:"type"`
+	Content   string                 `json:"content,omitempty"`
+	ToolName  string                 `json:"tool_name,omitempty"`
+	ToolInput map[string]interface{} `json:"tool_input,omitempty"`
+	Iteration int                    `json:"iteration,omitempty"`
+}
+
+type StreamEventCallback func(event ModelStreamEvent)
 
 type ModelI interface {
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
@@ -17,7 +50,19 @@ type ModelI interface {
 	PerformPreDeleteTask(ctx context.Context) (err error)
 	QueryModel(ctx context.Context, chatRequest ChatRequest) (response Message, err error)
 	QueryModelWithTool(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (response JsonMessage, err error)
+	RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (response Message, traces []StepTrace, err error)
 	GenerateEmbeddings(ctx context.Context, inputs []EmbeddingInput, config chunking.ChunkingConfig, dimension int) (outputs []EmbeddingOutput, err error)
+}
+
+type StreamingModelI interface {
+	ModelI
+	QueryModelStreaming(ctx context.Context, chatRequest ChatRequest, callback func(chunk string)) (Message, error)
+	RunToolLoopStreaming(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor, streamCb StreamEventCallback) (response Message, traces []StepTrace, err error)
+}
+
+type ReasoningModelI interface {
+	ModelI
+	QueryModelWithReasoning(ctx context.Context, chatRequest ChatRequest, thinkingBudget int) (Message, string, error)
 }
 
 type Model struct {
@@ -30,11 +75,20 @@ type Model struct {
 type ChatRequest struct {
 	Messages []Message `json:"messages"`
 }
+type TokenUsage struct {
+	InputTokens     int64 `json:"input_tokens,omitempty"`
+	OutputTokens    int64 `json:"output_tokens,omitempty"`
+	ReasoningTokens int64 `json:"reasoning_tokens,omitempty"`
+	CachedTokens    int64 `json:"cached_tokens,omitempty"`
+	TotalTokens     int64 `json:"total_tokens,omitempty"`
+}
+
 type Message struct {
 	Role    string        `json:"role"`
 	Content string        `json:"content,omitempty"`
 	Name    string        `json:"name"`
 	Files   []FileMessage `json:"files,omitempty"`
+	Usage   *TokenUsage   `json:"usage,omitempty"`
 }
 type FileMessage struct {
 	FileData  string `json:"file_data,omitempty"`
@@ -127,6 +181,12 @@ func (model *Model) QueryModel(ctx context.Context, chatRequest ChatRequest) (re
 
 func (model *Model) QueryModelWithTool(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (response JsonMessage, err error) {
 	err = errors.New("QueryModelWithTool Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
+func (model *Model) RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (response Message, traces []StepTrace, err error) {
+	err = errors.New("RunToolLoop Method not implemented for provider " + model.Provider)
 	logs.WithContext(ctx).Error(err.Error())
 	return
 }

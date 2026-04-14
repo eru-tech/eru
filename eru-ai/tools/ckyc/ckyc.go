@@ -56,7 +56,7 @@ var ckycToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(CkycVerifyParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(CkycVerifyParams{}), []string{})
 		},
 	},
 }
@@ -583,7 +583,7 @@ func (ckycTool *CkycTool) GetBytes(ctx context.Context) ([]byte, error) {
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
-		ToolType:    "CkycTool",
+		ToolType:    "Ckyc",
 		Category:    "KYC/Compliance",
 		Description: "Central KYC registry search and verification for financial compliance",
 		Actions: func() []tools.ActionInfo {

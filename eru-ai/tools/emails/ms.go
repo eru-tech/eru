@@ -762,10 +762,10 @@ func (msEmailTool *MsEmailTool) ReadConversation(ctx context.Context, params map
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
-		ToolType:    "MsEmailTool",
-		Category:    "Communication",
-		Description: "Microsoft email integration for reading, sending, and subscribing to emails via Microsoft Graph API",
-		Actions: []tools.ActionInfo{{Name: ReadEmail}, {Name: SendEmail}, {Name: SubscribeEmail}, {Name: ReadMessage}, {Name: GetSsoUrl}, {Name: Login}, {Name: RenewToken}, {Name: RenewSubscription}},
+		ToolType:     "MsEmail",
+		Category:     "Communication",
+		Description:  "Microsoft email integration for reading, sending, and subscribing to emails via Microsoft Graph API",
+		Actions:      []tools.ActionInfo{{Name: ReadEmail}, {Name: SendEmail}, {Name: SubscribeEmail}, {Name: ReadMessage}, {Name: GetSsoUrl}, {Name: Login}, {Name: RenewToken}, {Name: RenewSubscription}},
 		OAuthEnabled: true,
 		Icon:         "",
 		IconType:     "svg",

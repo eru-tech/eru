@@ -1188,7 +1188,7 @@ func getLocalIP() (string, error) {
 	return "localhost", nil
 }
 
-func StructToJSONSchema(t reflect.Type) eru_models.JSONSchema {
+func StructToJSONSchema(t reflect.Type, seenFields []string) eru_models.JSONSchema {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
@@ -1202,6 +1202,17 @@ func StructToJSONSchema(t reflect.Type) eru_models.JSONSchema {
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
+		isSeen := false
+		for _, seenField := range seenFields {
+			if seenField == field.Name {
+				isSeen = true
+				break
+			}
+		}
+		if isSeen {
+			continue
+		}
+		seenFields = append(seenFields, field.Name)
 
 		// Skip unexported fields
 		if field.PkgPath != "" {
@@ -1217,7 +1228,7 @@ func StructToJSONSchema(t reflect.Type) eru_models.JSONSchema {
 			name = jsonTag[:commaIdx]
 		}
 
-		fieldSchema := goTypeToSchema(field.Type)
+		fieldSchema := goTypeToSchema(field.Type, seenFields)
 
 		// Handle required
 		if field.Tag.Get("eru") == "required" {
@@ -1247,7 +1258,7 @@ func StructToJSONSchema(t reflect.Type) eru_models.JSONSchema {
 	return schema
 }
 
-func goTypeToSchema(t reflect.Type) eru_models.JSONSchema {
+func goTypeToSchema(t reflect.Type, seenFields []string) eru_models.JSONSchema {
 	kind := t.Kind()
 
 	switch kind {
@@ -1262,14 +1273,18 @@ func goTypeToSchema(t reflect.Type) eru_models.JSONSchema {
 	case reflect.Slice, reflect.Array:
 		return eru_models.JSONSchema{
 			Type:  "array",
-			Items: ptr(goTypeToSchema(t.Elem())),
+			Items: ptr(goTypeToSchema(t.Elem(), seenFields)),
 		}
 	case reflect.Map, reflect.Struct:
-		// Assume map[string]interface{} or nested struct
 		if t.Kind() == reflect.Map {
-			return eru_models.JSONSchema{Type: "object"}
+			valueSchema := goTypeToSchema(t.Elem(), seenFields)
+			return eru_models.JSONSchema{
+				Type:                 "object",
+				AdditionalProperties: valueSchema,
+				Description:          "A map where each key is a unique identifier derived from the step type or system and user instructions",
+			}
 		}
-		return StructToJSONSchema(t)
+		return StructToJSONSchema(t, seenFields)
 	default:
 		return eru_models.JSONSchema{Type: "string"} // Fallback
 	}

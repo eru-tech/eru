@@ -57,7 +57,7 @@ var eruqlToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(EruqlToolParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(EruqlToolParams{}), []string{})
 		},
 	},
 	{
@@ -67,7 +67,7 @@ var eruqlToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(EruqSQLParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(EruqSQLParams{}), []string{})
 		},
 	},
 	{
@@ -77,7 +77,7 @@ var eruqlToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(EruqlGraphQLParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(EruqlGraphQLParams{}), []string{})
 		},
 	},
 }
@@ -467,7 +467,7 @@ func (eruqlTool *EruqlTool) SetToolAction(actionName string) {
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
-		ToolType:    "EruqlTool",
+		ToolType:    "Eruql",
 		Category:    "Data",
 		Description: "Eru query engine supporting SQL, GraphQL, and custom EruQL for data access",
 		Actions: func() []tools.ActionInfo {

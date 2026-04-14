@@ -432,7 +432,7 @@ func (perfiosTool *PerfiosTool) GetBytes(ctx context.Context) ([]byte, error) {
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
-		ToolType:    "PerfiosTool",
+		ToolType:    "Perfios",
 		Category:    "Aggregator",
 		Description: "Perfios financial data aggregator for bank statements, financials, and customer data",
 		Actions: func() []tools.ActionInfo {

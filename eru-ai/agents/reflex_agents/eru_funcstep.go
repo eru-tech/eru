@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
+	eru_models "github.com/eru-tech/eru/eru-models"
 )
 
 type EruFuncStepAgent struct {
@@ -29,4 +30,8 @@ func (eruFuncStepAgent *EruFuncStepAgent) GetSystemPrompt() string {
 	this is from eru_funcstep agent
 	`
 	return systemPrompt
+}
+
+func (eruFuncStepAgent *EruFuncStepAgent) GetOutputSchema(ctx context.Context) eru_models.JSONSchema {
+	return eru_models.JSONSchema{}
 }

@@ -34,7 +34,7 @@ var vectorstoreAccountActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(vectorstore.VectorRecords{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(vectorstore.VectorRecords{}), []string{})
 		},
 	},
 	{
@@ -44,7 +44,7 @@ var vectorstoreAccountActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(vectorstore.VectorRecordsSearch{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(vectorstore.VectorRecordsSearch{}), []string{})
 		},
 	},
 }
@@ -263,7 +263,7 @@ func (vectorstoreAccount *VectorstoreAccount) SetToolAction(actionName string) {
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
-		ToolType:    "VectorstoreAccount",
+		ToolType:    "Vectorstore",
 		Category:    "AI",
 		Description: "Vector store operations for semantic search and AI embedding storage",
 		Actions: func() []tools.ActionInfo {

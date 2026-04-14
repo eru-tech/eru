@@ -129,7 +129,7 @@ var iciciBankToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(RegistrationStatusParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(RegistrationStatusParams{}), []string{})
 		},
 	},
 	{
@@ -139,7 +139,7 @@ var iciciBankToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(BalanceInquiryParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(BalanceInquiryParams{}), []string{})
 		},
 	},
 	{
@@ -149,7 +149,7 @@ var iciciBankToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(AccountStatementParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(AccountStatementParams{}), []string{})
 		},
 	},
 	{
@@ -159,7 +159,7 @@ var iciciBankToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(TransactionParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(TransactionParams{}), []string{})
 		},
 	},
 	{
@@ -169,7 +169,7 @@ var iciciBankToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(TransactionInquiryParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(TransactionInquiryParams{}), []string{})
 		},
 	},
 	{
@@ -179,7 +179,7 @@ var iciciBankToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(NeftStatusParams{}))
+			return utils.StructToJSONSchema(reflect.TypeOf(NeftStatusParams{}), []string{})
 		},
 	},
 }
@@ -813,7 +813,7 @@ func (iciciBankTool *IciciBankTool) GetBytes(ctx context.Context) ([]byte, error
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
-		ToolType:    "IciciBankTool",
+		ToolType:    "IciciBank",
 		Category:    "Banking",
 		Description: "ICICI Bank payment and banking operations including fund confirmation, account inquiries, and transactions",
 		Actions: func() []tools.ActionInfo {

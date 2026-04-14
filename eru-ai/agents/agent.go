@@ -19,13 +19,29 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-server/server"
+	vectorstore "github.com/eru-tech/eru/eru-vectorstore/vectorstore"
 )
+
+type ExecutionMetrics struct {
+	TotalIterations int                `json:"total_iterations"`
+	ToolCalls       []ToolCallMetric   `json:"tool_calls,omitempty"`
+	Usage           *models.TokenUsage `json:"usage,omitempty"`
+	DurationMs      int64              `json:"duration_ms"`
+}
+
+type ToolCallMetric struct {
+	ToolName  string `json:"tool_name"`
+	CallCount int    `json:"call_count"`
+}
 
 type AgentMessage struct {
 	Content          string                 `json:"content,omitempty"`
 	Params           map[string]interface{} `json:"params,omitempty"`
 	Files            []models.FileMessage   `json:"files,omitempty"`
 	Actions          []AgentOutputAction    `json:"actions,omitempty"`
+	Traces           []models.StepTrace     `json:"traces,omitempty"`
+	Metrics          *ExecutionMetrics      `json:"metrics,omitempty"`
+	ConversationId   string                 `json:"conversation_id,omitempty"`
 	MessageId        string                 `json:"message_id,omitempty"`
 	Feedback         bool                   `json:"feedback,omitempty"`
 	Role             string                 `json:"role,omitempty"`
@@ -39,10 +55,11 @@ type AgentOutputAction struct {
 }
 
 type Conversation struct {
-	ConversationId string               `json:"conversation_id"`
-	Messages       []AgentMessage       `json:"messages"`
-	NewMessages    []AgentMessage       `json:"-"`
-	ChatRequest    []models.ChatRequest `json:"-"`
+	ConversationId       string               `json:"conversation_id"`
+	ParentConversationId string               `json:"parent_conversation_id,omitempty"`
+	Messages             []AgentMessage       `json:"messages"`
+	NewMessages          []AgentMessage       `json:"-"`
+	ChatRequest          []models.ChatRequest `json:"-"`
 }
 
 type AgentTools struct {
@@ -56,6 +73,7 @@ type AgentTools struct {
 }
 type SystemPromptProvider interface {
 	GetSystemPrompt() string
+	GetOutputSchema(ctx context.Context) eru_models.JSONSchema
 }
 type Agent struct {
 	AgentType           string                `json:"agent_type" eru:"required"`
@@ -72,6 +90,8 @@ type Agent struct {
 	ConversationConfig  *ConversationConfig   `json:"conversation_config"`
 	ConversationManager *ConversationManager  `json:"-"`
 	Provider            SystemPromptProvider  `json:"-"`
+	SemanticMemory      vectorstore.VectorStoreI `json:"-"`
+	MemoryNamespace     string                `json:"memory_namespace,omitempty"`
 }
 
 type AgentI interface {
@@ -665,4 +685,110 @@ func (agent *Agent) InitializeConversationManager(ctx context.Context) {
 		SummaryModel: model,
 	}
 	agent.ConversationManager = &cm
+}
+
+func BuildMetrics(traces []models.StepTrace, startTime time.Time, usage *models.TokenUsage) *ExecutionMetrics {
+	toolCounts := make(map[string]int)
+	maxIteration := 0
+
+	for _, trace := range traces {
+		if trace.Iteration > maxIteration {
+			maxIteration = trace.Iteration
+		}
+		if trace.ToolName != "" {
+			toolCounts[trace.ToolName]++
+		}
+	}
+
+	var toolCalls []ToolCallMetric
+	for name, count := range toolCounts {
+		toolCalls = append(toolCalls, ToolCallMetric{ToolName: name, CallCount: count})
+	}
+
+	return &ExecutionMetrics{
+		TotalIterations: maxIteration,
+		ToolCalls:       toolCalls,
+		Usage:           usage,
+		DurationMs:      time.Since(startTime).Milliseconds(),
+	}
+}
+
+func (agent *Agent) SetSemanticMemory(vs vectorstore.VectorStoreI) {
+	agent.SemanticMemory = vs
+}
+
+func (agent *Agent) RecallMemory(ctx context.Context, query string, topK int) ([]map[string]interface{}, error) {
+	if agent.SemanticMemory == nil {
+		return nil, nil
+	}
+
+	namespace := agent.MemoryNamespace
+	if namespace == "" {
+		namespace = agent.AgentName
+	}
+	if topK <= 0 {
+		topK = 5
+	}
+
+	searchRequest := vectorstore.VectorRecordsSearch{
+		Namespace:      namespace,
+		TopK:           topK,
+		ReturnMetadata: true,
+		Inputs:         map[string]string{"text": query},
+	}
+
+	results, err := agent.SemanticMemory.SearchVectors(ctx, searchRequest)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to recall memory: %v", err))
+		return nil, err
+	}
+
+	memories := make([]map[string]interface{}, 0, len(results.Records))
+	for _, record := range results.Records {
+		memory := map[string]interface{}{
+			"id":       record.Id,
+			"metadata": record.Metadata,
+		}
+		if content, ok := record.Metadata["content"]; ok {
+			memory["content"] = content
+		}
+		memories = append(memories, memory)
+	}
+	return memories, nil
+}
+
+func (agent *Agent) SaveToMemory(ctx context.Context, content string, metadata map[string]interface{}) error {
+	if agent.SemanticMemory == nil {
+		return nil
+	}
+
+	namespace := agent.MemoryNamespace
+	if namespace == "" {
+		namespace = agent.AgentName
+	}
+
+	if metadata == nil {
+		metadata = make(map[string]interface{})
+	}
+	metadata["content"] = content
+	metadata["agent_name"] = agent.AgentName
+	metadata["created_at"] = time.Now().UTC().Format(time.RFC3339)
+
+	vectorId := fmt.Sprintf("mem_%s_%d", agent.AgentName, time.Now().UnixNano())
+
+	vectorRecords := vectorstore.VectorRecords{
+		Namespace: namespace,
+		Vectors: []vectorstore.Vector{
+			{
+				Id:       vectorId,
+				Metadata: metadata,
+			},
+		},
+	}
+
+	if err := agent.SemanticMemory.SaveVectors(ctx, vectorRecords); err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save to memory: %v", err))
+		return err
+	}
+	return nil
 }
