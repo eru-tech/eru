@@ -2,6 +2,7 @@ package esign
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +22,6 @@ const (
 )
 
 const (
-	PichainBaseUrl    = "https://api.pichainlabs.com/v1/onboard"
 	INSERT_FUNC_ASYNC = "insert into eruai_cb_pichain (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
 )
 
@@ -31,33 +31,31 @@ type PichainTool struct {
 }
 
 type PichainAccount struct {
-	OrgId  string `json:"org_id" eru:"required"`
-	ApiKey string `json:"api_key" eru:"required"`
+	BaseUrl string `json:"base_url" eru:"required"`
+	OrgId   string `json:"org_id" eru:"required"`
+	ApiKey  string `json:"api_key" eru:"required"`
 }
 
 type Signee struct {
 	Name          string `json:"name" eru:"required"`
 	Email         string `json:"email" eru:"required"`
-	PhoneNumber   string `json:"phoneNumber" eru:"required"`
+	PhoneNumber   string `json:"phone_number" eru:"required"`
 	SignatureType string `json:"signature_type" eru:"required"`
-	DueDate       string `json:"duedate" eru:"required"`
 	Observer      bool   `json:"observer"`
-	PageNo        string `json:"pageNo" eru:"required"`
+	PageNo        string `json:"page_no" eru:"required"`
 	Reason        string `json:"reason" eru:"required"`
 	Location      string `json:"location" eru:"required"`
 	Rectangle     string `json:"rectangle" eru:"required"`
 }
 
 type InitiateParams struct {
-	Id              string   `json:"id" eru:"required"`
-	Data            string   `json:"data" eru:"required"`
 	Signees         []Signee `json:"signees" eru:"required"`
 	ReturnUrl       string   `json:"return_url"`
 	CustomReference string   `json:"custom_reference"`
 	OtpRequired     string   `json:"otp_required"`
 	FaceCapture     string   `json:"face_capture"`
 	LocationCapture string   `json:"location_capture"`
-	EStampRequired  string   `json:"e_stamp_required"`
+	EStampRequired  string   `json:"estamp_required"`
 	SignatureExpiry string   `json:"signature_expiry"`
 	File            string   `json:"file"`
 	FileName        string   `json:"file_name"`
@@ -234,13 +232,33 @@ func (pichainTool *PichainTool) Initiate(ctx context.Context, params map[string]
 		return nil, nil, false, err
 	}
 
-	url := fmt.Sprintf("%s/initiate_contract", PichainBaseUrl)
+	url := fmt.Sprintf("%s/v1/onboard/initiate_contract", pichainTool.PichainAccount.BaseUrl)
 	headers := http.Header{}
-	headers.Set("Content-Type", "multipart/form-data")
-	headers.Set("apikey", pichainTool.PichainAccount.ApiKey)
+	headers["apikey"] = []string{pichainTool.PichainAccount.ApiKey}
+
+	dataMap := make(map[string]interface{})
+	for i, signee := range initiateParams.Signees {
+		key := fmt.Sprintf("recipient%d", i+1)
+		dataMap[key] = map[string]interface{}{
+			"name":           signee.Name,
+			"email":          signee.Email,
+			"phoneNumber":    signee.PhoneNumber,
+			"observer":       fmt.Sprintf("%t", signee.Observer),
+			"signature_type": signee.SignatureType,
+			"pageNo":         signee.PageNo,
+			"reason":         signee.Reason,
+			"location":       signee.Location,
+			"rectangle":      signee.Rectangle,
+		}
+	}
+	dataBytes, err := json.Marshal(dataMap)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to marshal data: %s", err.Error()), "failed to marshal data")
+		return nil, nil, false, err
+	}
 
 	formData := map[string]string{
-		"data":  initiateParams.Data,
+		"data":  string(dataBytes),
 		"orgId": pichainTool.PichainAccount.OrgId,
 	}
 
@@ -250,29 +268,57 @@ func (pichainTool *PichainTool) Initiate(ctx context.Context, params map[string]
 	if initiateParams.CustomReference != "" {
 		formData["custom_reference"] = initiateParams.CustomReference
 	}
+
 	if initiateParams.OtpRequired != "" {
 		formData["otpRequired"] = initiateParams.OtpRequired
+	} else {
+		formData["otpRequired"] = "false"
 	}
+
 	if initiateParams.FaceCapture != "" {
 		formData["face_capture"] = initiateParams.FaceCapture
+	} else {
+		formData["face_capture"] = "false"
 	}
+
 	if initiateParams.LocationCapture != "" {
 		formData["location_capture"] = initiateParams.LocationCapture
+	} else {
+		formData["location_capture"] = "false"
 	}
+
 	if initiateParams.EStampRequired != "" {
 		formData["eStampRequired"] = initiateParams.EStampRequired
+	} else {
+		formData["eStampRequired"] = "false"
 	}
+
 	if initiateParams.SignatureExpiry != "" {
 		formData["signature_expiry"] = initiateParams.SignatureExpiry
-	}
-	if initiateParams.File != "" {
-		formData["file"] = initiateParams.File
 	}
 	if initiateParams.FileName != "" {
 		formData["file_name"] = initiateParams.FileName
 	}
 
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, formData, []*http.Cookie{}, map[string]string{}, nil)
+	var files []utils.FileData
+	if initiateParams.File != "" {
+		fileBytes, decErr := base64.StdEncoding.DecodeString(initiateParams.File)
+		if decErr != nil {
+			err = logs.Err(ctx, fmt.Errorf("failed to decode base64 file: %s", decErr.Error()), "failed to decode base64 file")
+			return nil, nil, false, err
+		}
+		fileName := initiateParams.FileName
+		if fileName == "" {
+			fileName = "document.pdf"
+		}
+		files = append(files, utils.FileData{
+			FieldName: "file",
+			FileName:  fileName,
+			Content:   fileBytes,
+		})
+	}
+
+	res, _, _, _, err := utils.CallHttpWithFiles(ctx, http.MethodPost, url, headers, formData, files, []*http.Cookie{}, map[string]string{})
 	if err != nil {
 		err = logs.Err(ctx, fmt.Errorf("failed to initiate contract: %s", err.Error()), "failed to initiate contract")
 		return nil, nil, false, err

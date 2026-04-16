@@ -3,6 +3,7 @@ package tools_factory
 import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	aggregators "github.com/eru-tech/eru/eru-ai/tools/aggregators"
+	analytics "github.com/eru-tech/eru/eru-ai/tools/analytics"
 	icicibank "github.com/eru-tech/eru/eru-ai/tools/banking/icicibank"
 	yesbank "github.com/eru-tech/eru/eru-ai/tools/banking/yesbank"
 	ckyc "github.com/eru-tech/eru/eru-ai/tools/ckyc"
@@ -63,6 +64,8 @@ func GetTool(toolType string) tools.Tooling {
 		return new(telecom.OzoneTool)
 	case "PICHAIN":
 		return new(esign.PichainTool)
+	case "CLEVERTAP":
+		return new(analytics.ClevertapTool)
 	default:
 		return new(tools.Tool)
 	}

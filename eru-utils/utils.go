@@ -526,6 +526,105 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 	return
 }
 
+type FileData struct {
+	FieldName string
+	FileName  string
+	Content   []byte
+}
+
+func CallHttpWithFiles(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, files []FileData, reqCookies []*http.Cookie, params map[string]string) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
+	logs.WithContext(ctx).Debug("CallHttpWithFiles - Start")
+
+	var reqBody bytes.Buffer
+	multipartWriter := multipart.NewWriter(&reqBody)
+
+	for fk, fd := range formData {
+		fieldWriter, fErr := multipartWriter.CreateFormField(fk)
+		if fErr != nil {
+			err = logs.Err(ctx, fErr, "failed to create form field")
+			return nil, nil, nil, 0, err
+		}
+		_, fErr = fieldWriter.Write([]byte(fd))
+		if fErr != nil {
+			err = logs.Err(ctx, fErr, "failed to write form field")
+			return nil, nil, nil, 0, err
+		}
+	}
+
+	for _, f := range files {
+		fileWriter, fErr := multipartWriter.CreateFormFile(f.FieldName, f.FileName)
+		if fErr != nil {
+			err = logs.Err(ctx, fErr, "failed to create form file")
+			return nil, nil, nil, 0, err
+		}
+		_, fErr = fileWriter.Write(f.Content)
+		if fErr != nil {
+			err = logs.Err(ctx, fErr, "failed to write form file")
+			return nil, nil, nil, 0, err
+		}
+	}
+
+	multipartWriter.Close()
+
+	req, err := http.NewRequest(method, url, &reqBody)
+	if err != nil {
+		err = logs.Err(ctx, err, "failed to create request")
+		return nil, nil, nil, 0, err
+	}
+
+	for _, v := range reqCookies {
+		req.AddCookie(v)
+	}
+	for k, v := range headers {
+		req.Header[k] = v
+	}
+	req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+	req.Header.Set("Content-Length", strconv.Itoa(reqBody.Len()))
+	req.ContentLength = int64(reqBody.Len())
+
+	reqParams := req.URL.Query()
+	for k, v := range params {
+		reqParams.Add(k, v)
+	}
+	req.URL.RawQuery = reqParams.Encode()
+	PrintRequestBody(ctx, req, "request from CallHttpWithFiles")
+	resp, err := ExecuteHttp(ctx, req)
+	if err != nil {
+		return nil, nil, nil, 0, err
+	}
+	statusCode = resp.StatusCode
+	respHeaders = resp.Header
+	respCookies = resp.Cookies()
+	defer resp.Body.Close()
+
+	respContentType := strings.Split(resp.Header.Get("Content-Type"), ";")[0]
+	if respContentType == applicationJson {
+		if decErr := json.NewDecoder(resp.Body).Decode(&res); decErr != nil {
+			err = logs.Err(ctx, decErr, "failed to decode response")
+			return nil, nil, nil, resp.StatusCode, err
+		}
+	} else {
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			logs.WithContext(ctx).Error(readErr.Error())
+		}
+		resBody := make(map[string]interface{})
+		resBody["body"] = string(body)
+		res = resBody
+	}
+
+	if resp.StatusCode >= 400 {
+		statusCode = resp.StatusCode
+		resBytes, bytesErr := json.Marshal(res)
+		if bytesErr != nil {
+			return nil, nil, nil, statusCode, bytesErr
+		}
+		err = errors.New(string(resBytes))
+		return nil, resp.Header, resp.Cookies(), statusCode, err
+	}
+	return
+}
+
 func callHttpWithTLS(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}, clientCertB64 string, clientKeyB64 string, timeout time.Duration) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("callHttpWithTLS - Start")
 	req := &http.Request{}
