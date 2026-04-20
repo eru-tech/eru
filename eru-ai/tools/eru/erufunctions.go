@@ -30,14 +30,23 @@ type ErufuncRemoveFuncParams struct {
 	FuncName  string `json:"func_name" eru:"required" desc:"name of the function to remove"`
 }
 
+type ErufuncFetchFuncParams struct {
+	ProjectId string `json:"project_id" eru:"required" desc:"project id from which to fetch the function"`
+	FuncName  string `json:"func_name" eru:"required" desc:"name of the function to fetch"`
+}
+
 type ErufuncRunFuncParams struct {
 	ProjectId       string                 `json:"project_id" eru:"required" desc:"project id for the function run"`
-	Func            map[string]interface{} `json:"func" eru:"required" desc:"inline function group to execute"`
+	FuncName        string                 `json:"func_name" desc:"stored function name to run (either func_name or func must be provided)"`
+	Func            map[string]interface{} `json:"func" desc:"inline function group to execute (either func_name or func must be provided)"`
 	Body            interface{}            `json:"body" desc:"request body passed to the function"`
-	ReqVars         map[string]interface{} `json:"req_vars" desc:"request template vars keyed by step name" default:"{}"`
-	ResVars         map[string]interface{} `json:"res_vars" desc:"response template vars keyed by step name" default:"{}"`
 	FuncStepName    string                 `json:"func_step_name" desc:"optional starting step name"`
 	EndFuncStepName string                 `json:"end_func_step_name" desc:"optional ending step name (requires func_step_name)"`
+}
+
+type ErufuncExecuteFuncParams struct {
+	FuncName string      `json:"func_name" eru:"required" desc:"name of the stored function to execute"`
+	Body     interface{} `json:"body" desc:"request body passed to the function"`
 }
 
 type ErufuncExecuteTemplateParams struct {
@@ -84,7 +93,9 @@ const (
 	SaveFunc        = "save_func"
 	ValidateFunc    = "validate_func"
 	RemoveFunc      = "remove_func"
+	FetchFunc       = "fetch_func"
 	RunFunc         = "run_func"
+	ExecuteFunc     = "execute_func"
 	ExecuteTemplate = "execute_template"
 	ListMyQueries   = "list_myqueries"
 	ListFuncs       = "list_funcs"
@@ -126,13 +137,33 @@ var erufunctionsToolActions = []tools.ToolAction{
 		},
 	},
 	{
+		ActionName:   FetchFunc,
+		Description:  "Fetch a function group by name from a project",
+		SystemPrompt: "Fetch a function group by name from a project",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ErufuncFetchFuncParams{ProjectId: "sample", FuncName: "sample"}), []string{})
+		},
+	},
+	{
 		ActionName:   RunFunc,
-		Description:  "Run an inline function group, optionally starting and ending at specific steps",
-		SystemPrompt: "Run an inline function group, optionally starting and ending at specific steps",
+		Description:  "Run a function group (inline or by stored name), optionally starting and ending at specific steps",
+		SystemPrompt: "Run a function group (inline or by stored name), optionally starting and ending at specific steps",
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
 			return utils.StructToJSONSchema(reflect.TypeOf(ErufuncRunFuncParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ExecuteFunc,
+		Description:  "Execute a stored function by name with a request body",
+		SystemPrompt: "Execute a stored function by name with a request body",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ErufuncExecuteFuncParams{}), []string{})
 		},
 	},
 	{
@@ -341,8 +372,12 @@ func (erufuncTool *ErufunctionsTool) Execute(ctx context.Context, projectId stri
 		toolResult, toolRequest, persistStore, err = erufuncTool.ValidateFunc(ctx, projectId, tenantId, params)
 	case RemoveFunc:
 		toolResult, toolRequest, persistStore, err = erufuncTool.RemoveFunc(ctx, projectId, tenantId, params)
+	case FetchFunc:
+		toolResult, toolRequest, persistStore, err = erufuncTool.FetchFunc(ctx, projectId, tenantId, params)
 	case RunFunc:
 		toolResult, toolRequest, persistStore, err = erufuncTool.RunFunc(ctx, projectId, tenantId, params)
+	case ExecuteFunc:
+		toolResult, toolRequest, persistStore, err = erufuncTool.ExecuteFunc(ctx, projectId, tenantId, params)
 	case ExecuteTemplate:
 		toolResult, toolRequest, persistStore, err = erufuncTool.ExecuteTemplate(ctx, projectId, tenantId, params)
 	case ListMyQueries:
@@ -476,11 +511,35 @@ func (erufuncTool *ErufunctionsTool) RemoveFunc(ctx context.Context, projectId s
 	return toolResult, reqBody, true, nil
 }
 
+func (erufuncTool *ErufunctionsTool) FetchFunc(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("erufuncTool FetchFunc - Start")
+	p := ErufuncFetchFuncParams{}
+	if err = erufuncTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	baseUrl, err := erufuncTool.getEruFuncBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/store/", p.ProjectId, "/func/fetch/", p.FuncName)
+	reqBody := map[string]interface{}{"project_id": p.ProjectId, "func_name": p.FuncName}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, reqBody, true, nil
+}
+
 func (erufuncTool *ErufunctionsTool) RunFunc(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("erufuncTool RunFunc - Start")
 	p := ErufuncRunFuncParams{}
 	if err = erufuncTool.unmarshalParams(ctx, params, &p); err != nil {
 		return nil, nil, false, err
+	}
+	if p.FuncName == "" && p.Func == nil {
+		return nil, nil, false, errors.New("either func_name or func must be provided")
 	}
 	if p.EndFuncStepName != "" && p.FuncStepName == "" {
 		return nil, nil, false, errors.New("func_step_name is required when end_func_step_name is provided")
@@ -499,17 +558,15 @@ func (erufuncTool *ErufunctionsTool) RunFunc(ctx context.Context, projectId stri
 	}
 	url := strings.Join(pathParts, "")
 
-	body := map[string]interface{}{
-		"func": p.Func,
+	body := map[string]interface{}{}
+	if p.FuncName != "" {
+		body["func_name"] = p.FuncName
+	}
+	if p.Func != nil {
+		body["func"] = p.Func
 	}
 	if p.Body != nil {
 		body["body"] = p.Body
-	}
-	if p.ReqVars != nil {
-		body["req_vars"] = p.ReqVars
-	}
-	if p.ResVars != nil {
-		body["res_vars"] = p.ResVars
 	}
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
@@ -519,6 +576,26 @@ func (erufuncTool *ErufunctionsTool) RunFunc(ctx context.Context, projectId stri
 	}
 	toolResult = map[string]interface{}{"result": res}
 	return toolResult, body, true, nil
+}
+
+func (erufuncTool *ErufunctionsTool) ExecuteFunc(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("erufuncTool ExecuteFunc - Start")
+	p := ErufuncExecuteFuncParams{}
+	if err = erufuncTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	baseUrl, err := erufuncTool.getEruFuncBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/", projectId, "/func/", p.FuncName)
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, p.Body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, p.Body, true, nil
 }
 
 func (erufuncTool *ErufunctionsTool) ExecuteTemplate(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -688,7 +765,7 @@ func (erufuncTool *ErufunctionsTool) UnScheduleFunc(ctx context.Context, project
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
-		ToolType:    "Erufunctions",
+		ToolType:    "ERUFUNCTIONS",
 		Category:    "Data",
 		Description: "Eru functions service for saving, validating, running, scheduling functions, executing templates, and listing project entities",
 		Actions: func() []tools.ActionInfo {

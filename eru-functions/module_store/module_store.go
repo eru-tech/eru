@@ -104,6 +104,7 @@ type ModuleStoreI interface {
 	RemoveRoute(ctx context.Context, routeName string, projectId string, realStore ModuleStoreI) error
 	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route functions.Route, err error)
 	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
+	GetFunc(ctx context.Context, funcName string, projectId string, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
 	ScheduleFunc(ctx context.Context, funcSchedule scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) error
 	UnScheduleFunc(ctx context.Context, projectId string, jobId string, realStore ModuleStoreI) error
 	GetWf(ctx context.Context, wfName string, projectId string, s ModuleStoreI) (wfObj functions.Workflow, err error)
@@ -386,6 +387,17 @@ func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string
 	return cloneRoute, nil
 }
 
+func (ms *ModuleStore) GetFunc(ctx context.Context, funcName string, projectId string, s ModuleStoreI) (cloneFunc functions.FuncGroup, err error) {
+	logs.WithContext(ctx).Debug("GetFunc - Start")
+	funcGroup := functions.FuncGroup{}
+	if prg, ok := ms.Projects[projectId]; ok {
+		if funcGroup, ok = prg.FuncGroups[funcName]; !ok {
+			return funcGroup, errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
+		}
+		return funcGroup, nil
+	}
+	return
+}
 func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (cloneFunc functions.FuncGroup, err error) {
 	logs.WithContext(ctx).Debug("GetAndValidateFunc - Start")
 	funcGroup := functions.FuncGroup{}

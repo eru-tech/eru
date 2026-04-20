@@ -462,6 +462,28 @@ func FuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	}
 }
 
+func FuncFetchHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FuncFetchHandler - Start")
+		// Close the body of the request
+		//TODO to add request body close in all handlers across projects
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		funcName := vars["funcname"]
+
+		funcGroup, err := sh.Store.GetFunc(r.Context(), funcName, projectId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(funcGroup)
+	}
+}
+
 func SFuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("FuncHandler - Start")

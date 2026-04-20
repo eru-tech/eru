@@ -36,6 +36,7 @@ type ToolCallMetric struct {
 
 type AgentMessage struct {
 	Content          string                 `json:"content,omitempty"`
+	Code             string                 `json:"code,omitempty"`
 	Params           map[string]interface{} `json:"params,omitempty"`
 	Files            []models.FileMessage   `json:"files,omitempty"`
 	Actions          []AgentOutputAction    `json:"actions,omitempty"`
@@ -279,6 +280,20 @@ func (agent *Agent) LoadConversations(ctx context.Context, conversationId string
 		// Fallback to simple request if no conversation manager is configured
 		chatRequest = models.ChatRequest{
 			Messages: []models.Message{msg},
+		}
+	}
+
+	if agentMessage.Code != "" {
+		codeMsg := models.Message{
+			Role:    "user",
+			Content: fmt.Sprintf("Use the following existing structured output as the baseline. Build your next output on top of it — modify or extend it as required by the instruction that follows. Do not discard fields that are still relevant.\n\n%s", agentMessage.Code),
+			Name:    agent.AgentName,
+		}
+		n := len(chatRequest.Messages)
+		if n > 0 {
+			chatRequest.Messages = append(chatRequest.Messages[:n-1], codeMsg, chatRequest.Messages[n-1])
+		} else {
+			chatRequest.Messages = append(chatRequest.Messages, codeMsg)
 		}
 	}
 	return

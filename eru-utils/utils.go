@@ -12,6 +12,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/textproto"
 	httpurl "net/url"
 	"os"
 	"reflect"
@@ -229,7 +230,8 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 		req.Header.Set("request_id", requestId.(string))
 	}
 	logs.WithContext(ctx).Info(fmt.Sprintf("req.URL.Host: %+v, req.Host: %+v", req.URL.Host, req.Host))
-	req.Header.Add("Host", req.URL.Host)
+	req.Host = req.URL.Host
+	//req.Header.Add("Host", req.URL.Host)
 
 	/*
 			host := req.URL.Host
@@ -527,9 +529,20 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 }
 
 type FileData struct {
-	FieldName string
-	FileName  string
-	Content   []byte
+	FieldName   string
+	FileName    string
+	Content     []byte
+	ContentType string
+}
+
+func createFormFilePart(w *multipart.Writer, fieldName string, fileName string, contentType string) (io.Writer, error) {
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldName, fileName))
+	h.Set("Content-Type", contentType)
+	return w.CreatePart(h)
 }
 
 func CallHttpWithFiles(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, files []FileData, reqCookies []*http.Cookie, params map[string]string) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
@@ -552,7 +565,7 @@ func CallHttpWithFiles(ctx context.Context, method string, url string, headers h
 	}
 
 	for _, f := range files {
-		fileWriter, fErr := multipartWriter.CreateFormFile(f.FieldName, f.FileName)
+		fileWriter, fErr := createFormFilePart(multipartWriter, f.FieldName, f.FileName, f.ContentType)
 		if fErr != nil {
 			err = logs.Err(ctx, fErr, "failed to create form file")
 			return nil, nil, nil, 0, err

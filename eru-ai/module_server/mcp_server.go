@@ -9,9 +9,11 @@ import (
 	"github.com/eru-tech/eru/eru-ai/agents"
 	"github.com/eru-tech/eru/eru-ai/models"
 	"github.com/eru-tech/eru/eru-ai/module_store"
+	"github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-server/server"
+	"github.com/google/uuid"
 )
 
 const (
@@ -19,7 +21,7 @@ const (
 	ServerName         = "eru-ai-mcp-server"
 	ServerVersion      = "1.0.1"
 	mcpNameSep         = "__"
-	mcpActionSep       = "##"
+	mcpActionSep       = "___"
 )
 
 var supportedMCPVersions = []string{"2025-06-18", "2025-03-26"}
@@ -97,11 +99,10 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context, projectId string, tenant
 								toolDescription = descStr
 							}
 						}
-						toolPrefix := "tool"
+						toolMCPName := toolName
 						if projectId == tenantId && projectId != "" {
-							toolPrefix = strings.Join([]string{"tool", projectId}, mcpNameSep)
+							toolMCPName = strings.Join([]string{projectId, toolName}, mcpNameSep)
 						}
-						toolMCPName := strings.Join([]string{toolPrefix, toolName}, mcpNameSep)
 
 						actions := tool.GetActions()
 						if len(actions) > 0 {
@@ -112,7 +113,7 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context, projectId string, tenant
 								}
 								var actionSchema interface{}
 								if action.GetParameters != nil {
-									actionSchema = action.GetParameters()
+									actionSchema = map[string]interface{}{"params": action.GetParameters()}
 								} else {
 									actionSchema = action.Parameters
 								}
@@ -156,22 +157,57 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context, projectId string, tenant
 						if projectId == tenantId && projectId != "" {
 							agentPrefix = strings.Join([]string{"agent", projectId}, mcpNameSep)
 						}
+
+						properties := map[string]interface{}{
+							"content": map[string]interface{}{
+								"type":        "string",
+								"description": "Input message for the agent",
+							},
+							"params": map[string]interface{}{
+								"type":        "object",
+								"description": "Additional parameters for the agent",
+							},
+							"conversation_id": map[string]interface{}{
+								"type":        "string",
+								"description": "Optional conversation id to continue an existing conversation. When provided, the agent loads the prior conversation history for this id and appends the new message to it. Omit (or leave empty) to start a fresh conversation — the agent will generate a new id and return it in the response.",
+							},
+							"files": map[string]interface{}{
+								"type":        "array",
+								"description": "Optional list of files to attach to the agent message (images, documents, etc.).",
+								"items": map[string]interface{}{
+									"type": "object",
+									"properties": map[string]interface{}{
+										"name": map[string]interface{}{
+											"type":        "string",
+											"description": "File name including extension (e.g. invoice.pdf).",
+										},
+										"content": map[string]interface{}{
+											"type":        "string",
+											"description": "Base64-encoded file contents.",
+										},
+										"mime_type": map[string]interface{}{
+											"type":        "string",
+											"description": "MIME type of the file (e.g. application/pdf, image/png).",
+										},
+									},
+									"required": []string{"name", "content"},
+								},
+							},
+						}
+						if s.agentHasStructuredOutput(ctx, agent) {
+							properties["code"] = map[string]interface{}{
+								"type":        "string",
+								"description": "Existing structured output (as a JSON string) that the agent should build on top of. Provide this when modifying or extending an output produced earlier — especially when the prior conversation history is not available to the caller. The agent will treat this as the baseline and apply the new instruction on top of it.",
+							}
+						}
+
 						mcpTool := server.MCPTool{
 							Name:        strings.Join([]string{agentPrefix, agentName}, mcpNameSep),
 							Description: description,
 							InputSchema: map[string]interface{}{
-								"type": "object",
-								"properties": map[string]interface{}{
-									"content": map[string]interface{}{
-										"type":        "string",
-										"description": "Input message for the agent",
-									},
-									"params": map[string]interface{}{
-										"type":        "object",
-										"description": "Additional parameters for the agent",
-									},
-								},
-								"required": []string{"content"},
+								"type":       "object",
+								"properties": properties,
+								"required":   []string{"content"},
 							},
 						}
 						mcpTools = append(mcpTools, mcpTool)
@@ -199,14 +235,23 @@ func (s *EruAIMCPServer) CallTool(ctx context.Context, conversationId string, pa
 	}
 
 	parts := s.parseToolName(mcpName)
-	if len(parts) < 2 {
+	isAgent := false
+	toolAgentName := ""
+	switch {
+	case len(parts) == 1:
+		toolAgentName = parts[0]
+	case len(parts) == 2 && parts[0] == "agent":
+		isAgent = true
+		toolAgentName = parts[1]
+	case len(parts) == 2:
+		toolAgentName = parts[1]
+	case len(parts) == 3 && parts[0] == "agent":
+		isAgent = true
+		toolAgentName = parts[2]
+	default:
 		return server.MCPCallToolResult{}, fmt.Errorf("invalid tool name format: %s", params.Name)
 	}
-	toolAgentName := parts[1]
-	if len(parts) == 3 {
-		toolAgentName = parts[2]
-	}
-	if parts[0] == "agent" {
+	if isAgent {
 		return s.executeAgent(ctx, conversationId, projectId, tenantId, toolAgentName, params.Arguments)
 	}
 	return s.executeToolAction(ctx, conversationId, projectId, tenantId, toolAgentName, actionName, params.Arguments)
@@ -251,13 +296,24 @@ func (s *EruAIMCPServer) executeAgent(ctx context.Context, conversationId, proje
 		}
 	}
 
+	code, _ := arguments["code"].(string)
+
+	if argConvId, ok := arguments["conversation_id"].(string); ok && argConvId != "" {
+		conversationId = argConvId
+	}
+	if conversationId == "" {
+		conversationId = uuid.New().String()
+	}
+
 	agentMessage := agents.AgentMessage{
 		Content: content,
+		Code:    code,
 		Params:  params,
 		Files:   files,
 	}
 
 	result, err := agent.Execute(ctx, agentMessage, conversationId, project, tenant)
+	result.ConversationId = conversationId
 	if err != nil {
 		return server.MCPCallToolResult{
 			Content: []server.MCPContent{
@@ -287,7 +343,17 @@ func (s *EruAIMCPServer) executeToolAction(ctx context.Context, conversationId, 
 		return server.MCPCallToolResult{}, err
 	}
 
-	result, _, err := tool.Execute(ctx, project, tenant, actionName, arguments)
+	ctx = context.WithValue(ctx, "eruauthbaseurl", module_store.Eruauthbaseurl)
+	ctx = context.WithValue(ctx, "eruaiport", module_store.Eruaiport)
+	ctx = context.WithValue(ctx, "eruqlbaseurl", module_store.Eruqlbaseurl)
+	ctx = context.WithValue(ctx, tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
+
+	toolParams := map[string]interface{}{}
+	if wrapped, ok := arguments["params"].(map[string]interface{}); ok {
+		toolParams = wrapped
+	}
+
+	result, _, err := tool.Execute(ctx, project, tenant, actionName, toolParams)
 	if err != nil {
 		return server.MCPCallToolResult{
 			Content: []server.MCPContent{
@@ -329,49 +395,97 @@ func (s *EruAIMCPServer) parseToolName(toolName string) []string {
 	return strings.Split(toolName, mcpNameSep)
 }
 
+func (s *EruAIMCPServer) agentHasStructuredOutput(ctx context.Context, agent agents.AgentI) bool {
+	if schemaI, err := agent.GetAttribute(ctx, "output_schema"); err == nil {
+		if js, ok := schemaI.(eru_models.JSONSchema); ok && js.Type != "" {
+			return true
+		}
+	}
+	if provider := agent.GetProvider(); provider != nil {
+		if js := provider.GetOutputSchema(ctx); js.Type != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *EruAIMCPServer) convertSchemaToInputSchema(schema interface{}) map[string]interface{} {
-	inputSchema := map[string]interface{}{
+	defaultSchema := map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
 	}
 
-	jsonSchema, ok := schema.(eru_models.JSONSchema)
-	if !ok {
-		return inputSchema
+	switch v := schema.(type) {
+	case eru_models.JSONSchema:
+		return s.jsonSchemaToMap(v)
+	case map[string]interface{}:
+		properties := map[string]interface{}{}
+		required := []string{}
+		for name, val := range v {
+			if js, ok := val.(eru_models.JSONSchema); ok {
+				properties[name] = s.jsonSchemaToMap(js)
+				required = append(required, name)
+			}
+		}
+		out := map[string]interface{}{
+			"type":       "object",
+			"properties": properties,
+		}
+		if len(required) > 0 {
+			out["required"] = required
+		}
+		return out
+	default:
+		return defaultSchema
 	}
+}
+
+func (s *EruAIMCPServer) jsonSchemaToMap(jsonSchema eru_models.JSONSchema) map[string]interface{} {
+	out := map[string]interface{}{}
 
 	if jsonSchema.Type != "" {
-		inputSchema["type"] = jsonSchema.Type
+		out["type"] = jsonSchema.Type
+	} else {
+		out["type"] = "object"
+	}
+
+	if jsonSchema.Description != "" {
+		out["description"] = jsonSchema.Description
+	}
+	if jsonSchema.Format != "" {
+		out["format"] = jsonSchema.Format
+	}
+	if len(jsonSchema.Enum) > 0 {
+		out["enum"] = jsonSchema.Enum
 	}
 
 	if len(jsonSchema.Properties) > 0 {
 		properties := map[string]interface{}{}
 		for name, prop := range jsonSchema.Properties {
-			propMap := map[string]interface{}{
-				"type": prop.Type,
-			}
-			if prop.Description != "" {
-				propMap["description"] = prop.Description
-			}
-			if prop.Format != "" {
-				propMap["format"] = prop.Format
-			}
-			if len(prop.Enum) > 0 {
-				propMap["enum"] = prop.Enum
-			}
-			if prop.Items != nil {
-				propMap["items"] = s.convertSchemaToInputSchema(*prop.Items)
-			}
-			properties[name] = propMap
+			properties[name] = s.jsonSchemaToMap(prop)
 		}
-		inputSchema["properties"] = properties
+		out["properties"] = properties
+	} else if jsonSchema.Type == "object" || jsonSchema.Type == "" {
+		out["properties"] = map[string]interface{}{}
 	}
 
 	if len(jsonSchema.Required) > 0 {
-		inputSchema["required"] = jsonSchema.Required
+		out["required"] = jsonSchema.Required
 	}
 
-	return inputSchema
+	if jsonSchema.Items != nil {
+		out["items"] = s.jsonSchemaToMap(*jsonSchema.Items)
+	}
+
+	if jsonSchema.AdditionalProperties != nil {
+		if apSchema, ok := jsonSchema.AdditionalProperties.(eru_models.JSONSchema); ok {
+			out["additionalProperties"] = s.jsonSchemaToMap(apSchema)
+		} else {
+			out["additionalProperties"] = jsonSchema.AdditionalProperties
+		}
+	}
+
+	return out
 }
 
 func (s *EruAIMCPServer) formatResult(result interface{}) string {

@@ -234,7 +234,10 @@ func (pichainTool *PichainTool) Initiate(ctx context.Context, params map[string]
 
 	url := fmt.Sprintf("%s/v1/onboard/initiate_contract", pichainTool.PichainAccount.BaseUrl)
 	headers := http.Header{}
-	headers["apikey"] = []string{pichainTool.PichainAccount.ApiKey}
+	headers.Set("apikey", pichainTool.PichainAccount.ApiKey)
+	headers.Set("Accept", "*/*")
+	headers.Set("Accept-Encoding", "identity")
+	headers.Set("User-Agent", "eru-ai/1.0")
 
 	dataMap := make(map[string]interface{})
 	for i, signee := range initiateParams.Signees {
@@ -312,9 +315,10 @@ func (pichainTool *PichainTool) Initiate(ctx context.Context, params map[string]
 			fileName = "document.pdf"
 		}
 		files = append(files, utils.FileData{
-			FieldName: "file",
-			FileName:  fileName,
-			Content:   fileBytes,
+			FieldName:   "file",
+			FileName:    fileName,
+			Content:     fileBytes,
+			ContentType: "application/pdf",
 		})
 	}
 
