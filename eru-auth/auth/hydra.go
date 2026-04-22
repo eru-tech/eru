@@ -65,6 +65,17 @@ type HydraClient struct {
 	GrantTypes              []string `json:"grant_types"`
 	ResponseTypes           []string `json:"response_types"`
 	Scope                   string   `json:"scope"`
+
+	AuthorizationCodeGrantAccessTokenLifespan  string `json:"authorization_code_grant_access_token_lifespan,omitempty"`
+	AuthorizationCodeGrantIdTokenLifespan      string `json:"authorization_code_grant_id_token_lifespan,omitempty"`
+	AuthorizationCodeGrantRefreshTokenLifespan string `json:"authorization_code_grant_refresh_token_lifespan,omitempty"`
+	ClientCredentialsGrantAccessTokenLifespan  string `json:"client_credentials_grant_access_token_lifespan,omitempty"`
+	ImplicitGrantAccessTokenLifespan           string `json:"implicit_grant_access_token_lifespan,omitempty"`
+	ImplicitGrantIdTokenLifespan               string `json:"implicit_grant_id_token_lifespan,omitempty"`
+	JwtBearerGrantAccessTokenLifespan          string `json:"jwt_bearer_grant_access_token_lifespan,omitempty"`
+	RefreshTokenGrantAccessTokenLifespan       string `json:"refresh_token_grant_access_token_lifespan,omitempty"`
+	RefreshTokenGrantIdTokenLifespan           string `json:"refresh_token_grant_id_token_lifespan,omitempty"`
+	RefreshTokenGrantRefreshTokenLifespan      string `json:"refresh_token_grant_refresh_token_lifespan,omitempty"`
 }
 
 func (kratosHydraAuth *KratosHydraAuth) getLoginChallenge(ctx context.Context) (loginChallenge string, cookies []*http.Cookie, err error) {

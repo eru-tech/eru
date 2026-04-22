@@ -36,6 +36,32 @@ type EruqlGraphQLParams struct {
 	Vars      map[string]interface{} `json:"vars" desc:"variables to execute the query with" default:"{}"`
 }
 
+type EruqlSaveQueryParams struct {
+	ProjectId    string                 `json:"project_id" eru:"required" desc:"project id in which to save the query"`
+	QueryName    string                 `json:"query_name" eru:"required" desc:"name of the query to save"`
+	QueryType    string                 `json:"query_type" eru:"required" desc:"type of the query: sql or graphql"`
+	Query        string                 `json:"query" eru:"required" desc:"query content to save"`
+	Variables    map[string]interface{} `json:"variables" desc:"variables for the query" default:"{}"`
+	DbAlias      string                 `json:"db_alias" desc:"database alias (used for sql queries)"`
+	Cols         string                 `json:"cols" desc:"column specifications (used for sql queries)"`
+	Operation    string                 `json:"operation" desc:"GraphQL operation name (used for graphql queries)"`
+	SecurityRule map[string]interface{} `json:"security_rule" desc:"security rule for the query" default:"{}"`
+}
+
+type EruqlRemoveQueryParams struct {
+	ProjectId string `json:"project_id" eru:"required" desc:"project id from which to remove the query"`
+	QueryName string `json:"query_name" eru:"required" desc:"name of the query to remove"`
+}
+
+type EruqlListQueriesParams struct {
+	ProjectId string `json:"project_id" eru:"required" desc:"project id to list queries for"`
+	QueryType string `json:"query_type" eru:"required" desc:"type of queries to list: sql or graphql"`
+}
+
+type EruqlListQueryNamesParams struct {
+	ProjectId string `json:"project_id" eru:"required" desc:"project id to list query names for"`
+}
+
 type EruqlTool struct {
 	tools.Tool
 	DbAlias                string `json:"db_alias" eru:"required" desc:"eruql database alias to execute the query against"`
@@ -47,6 +73,10 @@ const (
 	ExecuteQuery   = "execute_query"
 	ExecuteSQL     = "execute_sql"
 	ExecuteGraphQL = "execute_graphql"
+	SaveQuery      = "save_query"
+	RemoveQuery    = "remove_query"
+	ListQueries    = "list_queries"
+	ListQueryNames = "list_query_names"
 )
 
 var eruqlToolActions = []tools.ToolAction{
@@ -78,6 +108,46 @@ var eruqlToolActions = []tools.ToolAction{
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
 			return utils.StructToJSONSchema(reflect.TypeOf(EruqlGraphQLParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   SaveQuery,
+		Description:  "Save a stored query (sql or graphql) under a given name in a project",
+		SystemPrompt: "Save a stored query (sql or graphql) under a given name in a project",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(EruqlSaveQueryParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   RemoveQuery,
+		Description:  "Remove a stored query by name from a project",
+		SystemPrompt: "Remove a stored query by name from a project",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(EruqlRemoveQueryParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ListQueries,
+		Description:  "List stored queries of a given type (sql or graphql) in a project",
+		SystemPrompt: "List stored queries of a given type (sql or graphql) in a project",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(EruqlListQueriesParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ListQueryNames,
+		Description:  "List names of all stored queries in a project",
+		SystemPrompt: "List names of all stored queries in a project",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(EruqlListQueryNamesParams{}), []string{})
 		},
 	},
 }
@@ -122,6 +192,14 @@ func (eruqlTool *EruqlTool) Execute(ctx context.Context, projectId string, tenan
 		toolResult, toolRequest, persistStore, err = eruqlTool.ExecuteSQL(ctx, projectId, tenantId, params, mandatoryVarsCheck)
 	case ExecuteGraphQL:
 		toolResult, toolRequest, persistStore, err = eruqlTool.ExecuteGraphQL(ctx, projectId, tenantId, params, mandatoryVarsCheck)
+	case SaveQuery:
+		toolResult, toolRequest, persistStore, err = eruqlTool.SaveQuery(ctx, projectId, tenantId, params)
+	case RemoveQuery:
+		toolResult, toolRequest, persistStore, err = eruqlTool.RemoveQuery(ctx, projectId, tenantId, params)
+	case ListQueries:
+		toolResult, toolRequest, persistStore, err = eruqlTool.ListQueries(ctx, projectId, tenantId, params)
+	case ListQueryNames:
+		toolResult, toolRequest, persistStore, err = eruqlTool.ListQueryNames(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -403,6 +481,165 @@ func (eruqlTool *EruqlTool) ExecuteGraphQL(ctx context.Context, projectId string
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
 	return toolResult, body, true, nil
+}
+
+func (eruqlTool *EruqlTool) getEruqlBaseUrl(ctx context.Context) (string, error) {
+	eruqlBaseUrlAny := ctx.Value("eruqlbaseurl")
+	eruqlBaseUrl, ok := eruqlBaseUrlAny.(string)
+	if !ok {
+		return "", errors.New("eruqlbaseurl is not a string")
+	}
+	if eruqlBaseUrl == "" {
+		return "", errors.New("eruqlbaseurl is not set")
+	}
+	return eruqlBaseUrl, nil
+}
+
+func (eruqlTool *EruqlTool) buildHeaders(ctx context.Context) http.Header {
+	headers := http.Header{}
+	claims := ctx.Value("claims")
+	if claims != nil {
+		headers.Add("claims", fmt.Sprint(claims))
+	}
+	headers.Add("Content-Type", "application/json")
+	headers.Add("Accept", "application/json")
+	return headers
+}
+
+func (eruqlTool *EruqlTool) SaveQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("eruqlTool SaveQuery - Start")
+	saveParams := EruqlSaveQueryParams{}
+	paramsBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("error marshalling save query params: %w", err)
+	}
+	if err = json.Unmarshal(paramsBytes, &saveParams); err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, nil, false, err
+	}
+	if saveParams.QueryType != "sql" && saveParams.QueryType != "graphql" {
+		return nil, nil, false, fmt.Errorf("invalid query_type %q, expected 'sql' or 'graphql'", saveParams.QueryType)
+	}
+
+	body := map[string]interface{}{
+		"query":     saveParams.Query,
+		"variables": saveParams.Variables,
+	}
+	if saveParams.SecurityRule != nil {
+		body["security_rule"] = saveParams.SecurityRule
+	}
+	if saveParams.QueryType == "sql" {
+		body["db_alias"] = saveParams.DbAlias
+		body["cols"] = saveParams.Cols
+	} else {
+		body["operation"] = saveParams.Operation
+	}
+
+	eruqlBaseUrl, err := eruqlTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(eruqlBaseUrl, "/store/", saveParams.ProjectId, "/myquery/save/", saveParams.QueryName, "/", saveParams.QueryType)
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, eruqlTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = make(map[string]interface{})
+	toolResult["result"] = res
+	return toolResult, body, true, nil
+}
+
+func (eruqlTool *EruqlTool) RemoveQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("eruqlTool RemoveQuery - Start")
+	removeParams := EruqlRemoveQueryParams{}
+	paramsBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("error marshalling remove query params: %w", err)
+	}
+	if err = json.Unmarshal(paramsBytes, &removeParams); err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, nil, false, err
+	}
+
+	eruqlBaseUrl, err := eruqlTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(eruqlBaseUrl, "/store/", removeParams.ProjectId, "/myquery/remove/", removeParams.QueryName)
+	reqBody := map[string]interface{}{
+		"project_id": removeParams.ProjectId,
+		"query_name": removeParams.QueryName,
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodDelete, url, eruqlTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = make(map[string]interface{})
+	toolResult["result"] = res
+	return toolResult, reqBody, true, nil
+}
+
+func (eruqlTool *EruqlTool) ListQueries(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("eruqlTool ListQueries - Start")
+	listParams := EruqlListQueriesParams{}
+	paramsBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("error marshalling list queries params: %w", err)
+	}
+	if err = json.Unmarshal(paramsBytes, &listParams); err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, nil, false, err
+	}
+
+	eruqlBaseUrl, err := eruqlTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(eruqlBaseUrl, "/store/", listParams.ProjectId, "/myquery/list/", listParams.QueryType)
+	reqBody := map[string]interface{}{
+		"project_id": listParams.ProjectId,
+		"query_type": listParams.QueryType,
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, eruqlTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = make(map[string]interface{})
+	toolResult["result"] = res
+	return toolResult, reqBody, true, nil
+}
+
+func (eruqlTool *EruqlTool) ListQueryNames(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("eruqlTool ListQueryNames - Start")
+	listParams := EruqlListQueryNamesParams{}
+	paramsBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("error marshalling list query names params: %w", err)
+	}
+	if err = json.Unmarshal(paramsBytes, &listParams); err != nil {
+		err = logs.Err(ctx, err, "")
+		return nil, nil, false, err
+	}
+
+	eruqlBaseUrl, err := eruqlTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(eruqlBaseUrl, "/store/", listParams.ProjectId, "/myquery/list")
+	reqBody := map[string]interface{}{
+		"project_id": listParams.ProjectId,
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, eruqlTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = make(map[string]interface{})
+	toolResult["result"] = res
+	return toolResult, reqBody, true, nil
 }
 
 func (eruqlTool *EruqlTool) GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error) {
