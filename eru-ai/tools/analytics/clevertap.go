@@ -34,6 +34,7 @@ type FetchEventsParams struct {
 	From      int    `json:"from" eru:"required"`
 	To        int    `json:"to" eru:"required"`
 	BatchSize int    `json:"batch_size"`
+	AllEvents bool   `json:"all_events"`
 }
 
 func (clevertapTool *ClevertapTool) GetActionsList() []tools.ActionInfo {
@@ -166,6 +167,11 @@ func (clevertapTool *ClevertapTool) ExecuteFetchEvents(ctx context.Context, para
 
 	cursor, _ := resMap["cursor"].(string)
 	if cursor == "" {
+		if !fetchEventsParams.AllEvents {
+			if records, rOk := resMap["records"].([]interface{}); rOk {
+				resMap["records"] = filterRecordEvents(records, fetchEventsParams.EventName)
+			}
+		}
 		return resMap, payload, false, nil
 	}
 
@@ -201,12 +207,42 @@ func (clevertapTool *ClevertapTool) ExecuteFetchEvents(ctx context.Context, para
 		cursor = nextCursor
 	}
 
+	if !fetchEventsParams.AllEvents {
+		allRecords = filterRecordEvents(allRecords, fetchEventsParams.EventName)
+	}
+
 	toolResult = map[string]interface{}{
 		"records": allRecords,
 		"status":  resMap["status"],
 	}
 
 	return toolResult, payload, false, nil
+}
+
+func filterRecordEvents(records []interface{}, eventName string) []interface{} {
+	if eventName == "" {
+		return records
+	}
+	for _, r := range records {
+		rec, ok := r.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		prof, ok := rec["profile"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		events, ok := prof["events"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		filtered := map[string]interface{}{}
+		if ev, exists := events[eventName]; exists {
+			filtered[eventName] = ev
+		}
+		prof["events"] = filtered
+	}
+	return records
 }
 
 func (clevertapTool *ClevertapTool) GetBytes(ctx context.Context) ([]byte, error) {
