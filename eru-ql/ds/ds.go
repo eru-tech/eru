@@ -122,6 +122,7 @@ type SqlMakerI interface {
 	getErutoDBDataTypeMapping(ctx context.Context, dataType string) string
 	GetSqlResult(ctx context.Context) map[string]interface{}
 	GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string
+	MakeUpsertQuery(ctx context.Context, tableName string, insertCols []string, colsPlaceholder string, conflictCols []string, updateCols []string, action string, returningStr string) (string, error)
 	GetBlockedWords() []string
 	GetBlockedRegex() []string
 	VerifyForBlockedWords(ctx context.Context, key string, val interface{}, realSqr SqlMakerI) (err error)
@@ -193,6 +194,42 @@ func (sqr *SqlMaker) GetReturnAlias(ctx context.Context) string {
 
 func (sqr *SqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string {
 	return strings.Repeat(" ? ", colCount*rowCount)
+}
+
+func (sqr *SqlMaker) MakeUpsertQuery(ctx context.Context, tableName string, insertCols []string, colsPlaceholder string, conflictCols []string, updateCols []string, action string, returningStr string) (string, error) {
+	logs.WithContext(ctx).Debug("MakeUpsertQuery - Start")
+	return "", errors.New("upsert not supported for this database dialect")
+}
+
+func buildUpsertSets(insertCols []string, conflictSet map[string]bool, updateCols []string, formatSet func(col string) string) []string {
+	insertSet := make(map[string]bool)
+	for _, c := range insertCols {
+		cc := strings.TrimSpace(c)
+		if cc != "" {
+			insertSet[cc] = true
+		}
+	}
+	var sets []string
+	if len(updateCols) > 0 {
+		seen := make(map[string]bool)
+		for _, c := range updateCols {
+			cc := strings.TrimSpace(c)
+			if cc == "" || conflictSet[cc] || !insertSet[cc] || seen[cc] {
+				continue
+			}
+			seen[cc] = true
+			sets = append(sets, formatSet(cc))
+		}
+		return sets
+	}
+	for _, c := range insertCols {
+		cc := strings.TrimSpace(c)
+		if cc == "" || conflictSet[cc] {
+			continue
+		}
+		sets = append(sets, formatSet(cc))
+	}
+	return sets
 }
 
 func (sqr *SqlMaker) GetBaseSqlMaker(ctx context.Context) *SqlMaker {

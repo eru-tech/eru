@@ -288,7 +288,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				sqlObj.openTxn = openTxn
 				sqlObj.closeTxn = closeTxn
 				sqlObj.QueryObject = gqd.QueryObject
-				err = sqlObj.ProcessMutationGraphQL(ctx, v, gqd.FinalVariables, datasource)
+				err = sqlObj.ProcessMutationGraphQL(ctx, v, gqd.FinalVariables, datasource, graphQLs[i])
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 				}

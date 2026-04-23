@@ -126,6 +126,29 @@ func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, row
 	return strings.Join(rowArray, " , ")
 }
 
+func (pr *PostgresSqlMaker) MakeUpsertQuery(ctx context.Context, tableName string, insertCols []string, colsPlaceholder string, conflictCols []string, updateCols []string, action string, returningStr string) (string, error) {
+	logs.WithContext(ctx).Debug("MakeUpsertQuery - Start (postgres)")
+	if len(conflictCols) == 0 {
+		return "", errors.New("upsertOn must include at least one column")
+	}
+	conflictSet := make(map[string]bool)
+	for _, c := range conflictCols {
+		conflictSet[strings.TrimSpace(c)] = true
+	}
+	base := fmt.Sprint("insert into ", tableName, " (", strings.Join(insertCols, ","), ") values ", colsPlaceholder)
+	conflictClause := fmt.Sprint(" on conflict (", strings.Join(conflictCols, ","), ")")
+	if action == "nothing" {
+		return fmt.Sprint(base, conflictClause, " do nothing", returningStr), nil
+	}
+	sets := buildUpsertSets(insertCols, conflictSet, updateCols, func(col string) string {
+		return fmt.Sprint(col, " = excluded.", col)
+	})
+	if len(sets) == 0 {
+		return fmt.Sprint(base, conflictClause, " do nothing", returningStr), nil
+	}
+	return fmt.Sprint(base, conflictClause, " do update set ", strings.Join(sets, ","), returningStr), nil
+}
+
 func (pr *PostgresSqlMaker) GetTableMetaDataSQL(ctx context.Context, tableName string) string {
 	logs.WithContext(ctx).Debug("GetTableMetaDataSQL - Start")
 	stringToReplace := ""

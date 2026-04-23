@@ -2,6 +2,7 @@ package ds
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,6 +14,33 @@ import (
 
 type MysqlSqlMaker struct {
 	SqlMaker
+}
+
+func (mr *MysqlSqlMaker) MakeUpsertQuery(ctx context.Context, tableName string, insertCols []string, colsPlaceholder string, conflictCols []string, updateCols []string, action string, returningStr string) (string, error) {
+	logs.WithContext(ctx).Debug("MakeUpsertQuery - Start (mysql)")
+	if len(conflictCols) == 0 {
+		return "", errors.New("upsertOn must include at least one column")
+	}
+	if returningStr != "" {
+		logs.WithContext(ctx).Warn("mysql upsert does not support RETURNING - clause will be dropped")
+	}
+	conflictSet := make(map[string]bool)
+	for _, c := range conflictCols {
+		conflictSet[strings.TrimSpace(c)] = true
+	}
+	base := fmt.Sprint("insert into ", tableName, " (", strings.Join(insertCols, ","), ") values ", colsPlaceholder)
+	if action == "nothing" {
+		firstCol := strings.TrimSpace(conflictCols[0])
+		return fmt.Sprint(base, " on duplicate key update ", firstCol, " = ", firstCol), nil
+	}
+	sets := buildUpsertSets(insertCols, conflictSet, updateCols, func(col string) string {
+		return fmt.Sprint(col, " = values(", col, ")")
+	})
+	if len(sets) == 0 {
+		firstCol := strings.TrimSpace(conflictCols[0])
+		return fmt.Sprint(base, " on duplicate key update ", firstCol, " = ", firstCol), nil
+	}
+	return fmt.Sprint(base, " on duplicate key update ", strings.Join(sets, ",")), nil
 }
 
 func (mr *MysqlSqlMaker) GetTableMetaDataSQL(ctx context.Context, tableName string) string {
