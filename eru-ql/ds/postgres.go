@@ -108,6 +108,52 @@ func (pr *PostgresSqlMaker) DefaultSchemaName() string {
 	return "public."
 }
 
+// ExtractDMLTargetTables returns ONLY the table being mutated by an
+// INSERT/UPDATE/DELETE — never the tables in subqueries or FROM clauses.
+// Used for cache invalidation, where we only want to invalidate entries
+// that actually depend on the row(s) that changed.
+func (pr *PostgresSqlMaker) ExtractDMLTargetTables(ctx context.Context, query string) []string {
+	logs.WithContext(ctx).Debug("ExtractDMLTargetTables - Start")
+	is := antlr.NewInputStream(query)
+	lexer := parser.NewPostgreSQLLexer(is)
+	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	p := parser.NewPostgreSQLParser(stream)
+	tree := p.Root()
+
+	seen := map[string]struct{}{}
+	var out []string
+	collectDMLTargets(tree, seen, &out)
+	return out
+}
+
+func collectDMLTargets(tree antlr.Tree, seen map[string]struct{}, out *[]string) {
+	switch tree.(type) {
+	case *parser.Insert_targetContext, *parser.Relation_expr_opt_aliasContext:
+		if name := firstQualifiedName(tree); name != "" {
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				*out = append(*out, name)
+			}
+		}
+		return
+	}
+	for i := 0; i < tree.GetChildCount(); i++ {
+		collectDMLTargets(tree.GetChild(i), seen, out)
+	}
+}
+
+func firstQualifiedName(tree antlr.Tree) string {
+	if q, ok := tree.(*parser.Qualified_nameContext); ok {
+		return q.GetText()
+	}
+	for i := 0; i < tree.GetChildCount(); i++ {
+		if name := firstQualifiedName(tree.GetChild(i)); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
 func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string {
 	logs.WithContext(ctx).Debug("GetPreparedQueryPlaceholder - Start")
 	var rowArray []string

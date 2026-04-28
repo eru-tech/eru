@@ -11,6 +11,7 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	common_types "github.com/eru-tech/eru/eru-ql/common_types"
 	"github.com/eru-tech/eru/eru-ql/module_model"
+	"github.com/eru-tech/eru/eru-ql/qlcache"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/kinds"
@@ -84,6 +85,7 @@ type SqlMaker struct {
 	IsNested            bool
 	DBQuery             string
 	PreparedQuery       bool
+	executedSQLs        []string
 }
 
 type GraphqlResult struct {
@@ -129,6 +131,7 @@ type SqlMakerI interface {
 	GetMakeJsonArrayFnStr() (string, error)
 	MakeJsonColumn(jsonField string, jsonKey string) string
 	ExtractTableNames(ctx context.Context, query string) module_model.TablesInQuery
+	ExtractDMLTargetTables(ctx context.Context, query string) []string
 	DefaultSchemaName() string
 	GetResultDataTypes(ctx context.Context) []ResultDataTypes
 }
@@ -244,6 +247,31 @@ func (sqr *SqlMaker) CheckMe(ctx context.Context) {
 func (sqr *SqlMaker) ExtractTableNames(ctx context.Context, query string) module_model.TablesInQuery {
 	logs.WithContext(ctx).Error("ExtractTableNames Not Implemented")
 	return module_model.TablesInQuery{}
+}
+
+func (sqr *SqlMaker) ExtractDMLTargetTables(ctx context.Context, query string) []string {
+	return nil
+}
+
+// extractTargetsFromSQLs parses each executed SQL via the dialect's
+// ExtractDMLTargetTables and returns the deduplicated union. Used by
+// mutation paths so cache invalidation matches what the SQL DML path does.
+func extractTargetsFromSQLs(ctx context.Context, myself SqlMakerI, sqls []string) []string {
+	if len(sqls) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var out []string
+	for _, q := range sqls {
+		for _, t := range myself.ExtractDMLTargetTables(ctx, q) {
+			if _, ok := seen[t]; ok {
+				continue
+			}
+			seen[t] = struct{}{}
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 /*
@@ -779,6 +807,8 @@ func (sqr *SqlMaker) ExecuteMutationQuery(ctx context.Context, datasource *modul
 			err = logs.Err(ctx, err, "")
 			errMsgs = append(errMsgs, fmt.Sprint("DB error :", err.Error()))
 			sqr.tx.Rollback()
+		} else {
+			qlcache.EnqueueInvalidate(ctx, datasource, qlcache.QualifyTables(extractTargetsFromSQLs(ctx, myself, sqr.executedSQLs), myself.DefaultSchemaName()))
 		}
 	}
 	if len(errMsgs) > 0 {
@@ -830,6 +860,7 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 			errMsgs = append(errMsgs, err.Error())
 			return res, errors.New(strings.Join(errMsgs, " , "))
 		}
+		sqr.executedSQLs = append(sqr.executedSQLs, query)
 	} else {
 
 		for i, v := range docs {
@@ -840,6 +871,7 @@ func (sqr *SqlMaker) iterateDocsForMutation(ctx context.Context, docs []module_m
 				errMsgs = append(errMsgs, err.Error())
 				return res, errors.New(strings.Join(errMsgs, " , "))
 			}
+			sqr.executedSQLs = append(sqr.executedSQLs, query)
 			if sqr.QueryType == "insert" && len(resDocs) > 0 {
 				resDoc := resDocs[0]
 				var childError bool
@@ -1018,6 +1050,9 @@ func (sqr *SqlMaker) executeMutationQueriesinDB(ctx context.Context, query strin
 			err = logs.Err(ctx, err, "")
 			errMsgs = append(errMsgs, fmt.Sprint("DB error for Document No ", docNo, " : ", err.Error()))
 			sqr.tx.Rollback()
+		} else {
+			qlcache.EnqueueInvalidate(ctx, datasource, qlcache.QualifyTables(extractTargetsFromSQLs(ctx, myself, sqr.executedSQLs), myself.DefaultSchemaName()))
+			sqr.executedSQLs = nil
 		}
 	}
 	return res, nil

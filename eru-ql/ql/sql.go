@@ -12,13 +12,17 @@ import (
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
+	"github.com/eru-tech/eru/eru-ql/qlcache"
 	"github.com/eru-tech/eru/eru-read-write/eru_writes"
 )
 
 type SQLData struct {
 	QLData
-	DBAlias string `json:"db_alias"`
-	Cols    string `json:"cols"`
+	DBAlias   string `json:"db_alias"`
+	Cols      string `json:"cols"`
+	CacheTTL  int    `json:"cache_ttl,omitempty"`
+	CacheSkip bool   `json:"cache_skip,omitempty"`
+	CacheLock bool   `json:"cache_lock,omitempty"`
 }
 
 func (sqd *SQLData) SetQLData(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) {
@@ -28,6 +32,32 @@ func (sqd *SQLData) SetQLData(ctx context.Context, mq module_model.MyQuery, vars
 	//sqd.Variables=mq.Vars
 	sqd.DBAlias = mq.DBAlias
 	sqd.Cols = mq.Cols
+	sqd.CacheTTL = mq.CacheTTL
+	sqd.CacheSkip = mq.CacheSkip
+	sqd.CacheLock = mq.CacheLock
+	if vars != nil {
+		if v, ok := vars["cache_ttl"]; ok {
+			switch n := v.(type) {
+			case float64:
+				sqd.CacheTTL = int(n)
+			case int:
+				sqd.CacheTTL = n
+			}
+			delete(vars, "cache_ttl")
+		}
+		if v, ok := vars["cache_skip"]; ok {
+			if b, bok := v.(bool); bok {
+				sqd.CacheSkip = b
+			}
+			delete(vars, "cache_skip")
+		}
+		if v, ok := vars["cache_lock"]; ok {
+			if b, bok := v.(bool); bok {
+				sqd.CacheLock = b
+			}
+			delete(vars, "cache_lock")
+		}
+	}
 	//sqd.SetFinalVars(vars)
 }
 func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error) {
@@ -138,9 +168,43 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			queryObj.DataTypes = sr.GetResultDataTypes(ctx)
 			res = append(res, result)
 		} else {
-			result, err = sr.ExecutePreparedQuery(ctx, sqd.Query, datasource)
-			if err != nil {
-				err = logs.Err(ctx, err, "")
+			if qlcache.IsDML(sqd.Query) {
+				result, err = sr.ExecutePreparedQuery(ctx, sqd.Query, datasource)
+				if err != nil {
+					err = logs.Err(ctx, err, "")
+				} else {
+					targets := sr.ExtractDMLTargetTables(ctx, sqd.Query)
+					qlcache.EnqueueInvalidate(ctx, datasource, qlcache.QualifyTables(targets, sr.DefaultSchemaName()))
+				}
+			} else {
+				queryDesc := sqd.QueryName
+				if queryDesc == "" {
+					queryDesc = sqd.Query
+				}
+				loader := func(ctx context.Context) (map[string]interface{}, []string, error) {
+					logs.WithContext(ctx).Info(fmt.Sprintf("cache not found, executing query %s", queryDesc))
+					r, lerr := sr.ExecutePreparedQuery(ctx, sqd.Query, datasource)
+					if lerr != nil {
+						return nil, nil, lerr
+					}
+					tbls := sr.ExtractTableNames(ctx, sqd.Query)
+					names := make([]string, 0, len(tbls.Tables))
+					for _, t := range tbls.Tables {
+						if t.TableName != "" {
+							names = append(names, t.TableName)
+						}
+					}
+					return r, names, nil
+				}
+				result, err = qlcache.ServeOrLoad(ctx, datasource, sqd.Query, sr.DefaultSchemaName(), loader, qlcache.Options{
+					TTLSec:    sqd.CacheTTL,
+					SkipCache: sqd.CacheSkip,
+					LockHot:   sqd.CacheLock,
+					QueryName: sqd.QueryName,
+				})
+				if err != nil {
+					err = logs.Err(ctx, err, "")
+				}
 			}
 			res = append(res, result)
 		}

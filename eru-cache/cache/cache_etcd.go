@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +11,11 @@ import (
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	clientv3 "go.etcd.io/etcd/client/v3"
+)
+
+const (
+	etcdTagPrefix  = "__tag__/"
+	etcdLockPrefix = "__lock__/"
 )
 
 // EtcdCache is an etcd-backed cache implementation.
@@ -111,5 +117,110 @@ func (ec *EtcdCache) GetKeys(ctx context.Context, pattern string) ([]string, err
 
 func (ec *EtcdCache) Delete(ctx context.Context, key string) error {
 	_, err := ec.Client.Delete(ctx, key)
+	return err
+}
+
+func (ec *EtcdCache) SetWithTagsTTL(ctx context.Context, key string, value interface{}, ttl time.Duration, tags []string) error {
+	p, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	valStr := string(p)
+
+	var leaseID clientv3.LeaseID
+	if ttl > 0 {
+		lease, lErr := ec.Client.Grant(ctx, int64(ttl.Seconds()))
+		if lErr != nil {
+			return lErr
+		}
+		leaseID = lease.ID
+	}
+
+	ops := []clientv3.Op{}
+	if leaseID != 0 {
+		ops = append(ops, clientv3.OpPut(key, valStr, clientv3.WithLease(leaseID)))
+	} else {
+		ops = append(ops, clientv3.OpPut(key, valStr))
+	}
+	for _, t := range tags {
+		if t == "" {
+			continue
+		}
+		tagKey := etcdTagPrefix + t + "/" + key
+		if leaseID != 0 {
+			ops = append(ops, clientv3.OpPut(tagKey, "", clientv3.WithLease(leaseID)))
+		} else {
+			ops = append(ops, clientv3.OpPut(tagKey, ""))
+		}
+	}
+	_, err = ec.Client.Txn(ctx).Then(ops...).Commit()
+	return err
+}
+
+func (ec *EtcdCache) InvalidateByTags(ctx context.Context, tags []string) (int, error) {
+	deleted := 0
+	for _, t := range tags {
+		if t == "" {
+			continue
+		}
+		prefix := etcdTagPrefix + t + "/"
+		resp, err := ec.Client.Get(ctx, prefix, clientv3.WithPrefix(), clientv3.WithKeysOnly())
+		if err != nil {
+			return deleted, err
+		}
+		for _, kv := range resp.Kvs {
+			member := strings.TrimPrefix(string(kv.Key), prefix)
+			if member == "" {
+				continue
+			}
+			dResp, dErr := ec.Client.Delete(ctx, member)
+			if dErr != nil {
+				return deleted, dErr
+			}
+			deleted += int(dResp.Deleted)
+		}
+		if _, err := ec.Client.Delete(ctx, prefix, clientv3.WithPrefix()); err != nil {
+			return deleted, err
+		}
+	}
+	return deleted, nil
+}
+
+func (ec *EtcdCache) AcquireLock(ctx context.Context, key string, ttl time.Duration, owner string) (bool, error) {
+	if owner == "" {
+		return false, errors.New("lock owner must not be empty")
+	}
+	if ttl <= 0 {
+		ttl = 5 * time.Second
+	}
+	lease, err := ec.Client.Grant(ctx, int64(ttl.Seconds()))
+	if err != nil {
+		return false, err
+	}
+	lockKey := etcdLockPrefix + key
+	resp, err := ec.Client.Txn(ctx).
+		If(clientv3.Compare(clientv3.CreateRevision(lockKey), "=", 0)).
+		Then(clientv3.OpPut(lockKey, owner, clientv3.WithLease(lease.ID))).
+		Commit()
+	if err != nil {
+		_, _ = ec.Client.Revoke(ctx, lease.ID)
+		return false, err
+	}
+	if !resp.Succeeded {
+		_, _ = ec.Client.Revoke(ctx, lease.ID)
+		return false, nil
+	}
+	return true, nil
+}
+
+func (ec *EtcdCache) ReleaseLock(ctx context.Context, key string, owner string) error {
+	if owner == "" {
+		return errors.New("lock owner must not be empty")
+	}
+	lockKey := etcdLockPrefix + key
+	_, err := ec.Client.Txn(ctx).
+		If(clientv3.Compare(clientv3.Value(lockKey), "=", owner)).
+		Then(clientv3.OpDelete(lockKey)).
+		Commit()
 	return err
 }

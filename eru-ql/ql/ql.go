@@ -19,6 +19,7 @@ import (
 
 type QLData struct {
 	Query          string                     `json:"query"`
+	QueryName      string                     `json:"-"`
 	Variables      map[string]interface{}     `json:"variables"`
 	FinalVariables map[string]interface{}     `json:"-"`
 	ExecuteFlag    bool                       `json:"-"`
@@ -59,6 +60,7 @@ func (qld *QLData) SetQLDataCommon(ctx context.Context, mq module_model.MyQuery,
 	}
 	//mq.Vars[module_model.RULEPREFIX_TOKEN] = tokenObj
 	qld.Query = mq.Query
+	qld.QueryName = mq.QueryName
 	qld.Variables = mq.Vars
 	qld.ExecuteFlag = executeFlag
 	qld.IsPublic = isPublic

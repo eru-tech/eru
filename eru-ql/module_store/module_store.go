@@ -57,7 +57,7 @@ type ModuleStoreI interface {
 	GetTableTransformation(ctx context.Context, projectId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error)
 	DropSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error)
 	RemoveSchemaTable(ctx context.Context, projectId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
-	SaveMyQuery(ctx context.Context, projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule) error
+	SaveMyQuery(ctx context.Context, projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule, cacheTTL int, cacheSkip bool, cacheLock bool) error
 	RemoveMyQuery(ctx context.Context, projectId string, queryName string, realStore ModuleStoreI) error
 	GetMyQuery(ctx context.Context, projectId string, queryName string) (myquery module_model.MyQuery, err error)
 	GetMyQueries(ctx context.Context, projectId string, queryType string) (myqueries map[string]module_model.MyQuery, err error)
@@ -186,6 +186,7 @@ func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore M
 	defer realStore.GetMutex().Unlock()
 	for _, prj := range ms.Projects {
 		for _, datasource := range prj.DataSources {
+			datasource.ProjectId = prj.ProjectId
 			i := ds.GetSqlMaker(datasource.DbName)
 			if i != nil {
 				// making clone to replace variables with actual values to create DB connection
@@ -193,6 +194,7 @@ func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore M
 				if err != nil {
 					return err
 				}
+				initQueryCacheFromClone(ctx, datasource, datasourceClone)
 				err = i.CreateConn(ctx, datasourceClone)
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
@@ -239,6 +241,19 @@ func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string
 	return realStore.SaveStore(ctx, projectId, "", realStore)
 }
 
+func initQueryCacheFromClone(ctx context.Context, datasource *module_model.DataSource, datasourceClone *module_model.DataSource) {
+	if datasourceClone == nil || datasourceClone.QueryCache == nil {
+		datasource.QueryCacheClone = nil
+		return
+	}
+	if err := datasourceClone.QueryCache.Init(ctx); err != nil {
+		logs.WithContext(ctx).Warn("query_cache Init failed; caching disabled for this datasource: " + err.Error())
+		datasource.QueryCacheClone = nil
+		return
+	}
+	datasource.QueryCacheClone = datasourceClone.QueryCache
+}
+
 func (ms *ModuleStore) GetDatasourceCloneObject(ctx context.Context, projectId string, datasource *module_model.DataSource, s ModuleStoreI) (datasourceClone *module_model.DataSource, err error) {
 	logs.WithContext(ctx).Debug("GetDatasourceCloneObject - Start")
 	datasourceObjJson, datasourceObjJsonErr := json.Marshal(datasource)
@@ -280,23 +295,38 @@ func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, dat
 		ms.Projects[projectId].DataSources = make(map[string]*module_model.DataSource)
 	}
 
+	datasource.ProjectId = projectId
+
+	// clone with variables replaced so cache Init / DB conn use resolved values
+	datasourceClone, err := ms.GetDatasourceCloneObject(ctx, projectId, datasource, realStore)
+	if err != nil {
+		return err
+	}
+	initQueryCacheFromClone(ctx, datasource, datasourceClone)
+
 	if ms.Projects[projectId].DataSources[datasource.DbAlias] != nil {
 		datasource.SchemaTables = ms.Projects[projectId].DataSources[datasource.DbAlias].SchemaTables
 		datasource.SchemaTablesSecurity = ms.Projects[projectId].DataSources[datasource.DbAlias].SchemaTablesSecurity
 		datasource.TableJoins = ms.Projects[projectId].DataSources[datasource.DbAlias].TableJoins
 		datasource.DbSecurityRules = ms.Projects[projectId].DataSources[datasource.DbAlias].DbSecurityRules
 		datasource.SchemaTablesTransformation = ms.Projects[projectId].DataSources[datasource.DbAlias].SchemaTablesTransformation
+		oldCache := ms.Projects[projectId].DataSources[datasource.DbAlias].GetQueryCache()
+		if oldCache != nil && datasource.GetQueryCache() != nil {
+			if err := datasource.GetQueryCache().SyncPersistence(ctx, oldCache); err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+		}
+	}
+	if err := datasource.ValidateQueryCache(ctx, projectId); err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 	ms.Projects[projectId].DataSources[datasource.DbAlias] = datasource
 
 	sqlMaker := ds.GetSqlMaker(datasource.DbName)
 	datasource.DbType = ds.GetDbType(datasource.DbName)
 
-	// making clone to replace variables with actual values to create DB connection
-	datasourceClone, err := ms.GetDatasourceCloneObject(ctx, projectId, datasource, realStore)
-	if err != nil {
-		return err
-	}
 	if sqlMaker != nil {
 		err = sqlMaker.CreateConn(ctx, datasourceClone)
 		if err != nil {
@@ -564,7 +594,7 @@ func (ms *ModuleStore) RemoveSchemaJoin(ctx context.Context, projectId string, d
 	}
 }
 
-func (ms *ModuleStore) SaveMyQuery(ctx context.Context, projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule) error {
+func (ms *ModuleStore) SaveMyQuery(ctx context.Context, projectId string, queryName string, queryType string, dbAlias string, query string, vars map[string]interface{}, realStore ModuleStoreI, cols string, securityRule security_rule.SecurityRule, cacheTTL int, cacheSkip bool, cacheLock bool) error {
 	logs.WithContext(ctx).Debug("SaveMyQuery - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
@@ -634,6 +664,9 @@ func (ms *ModuleStore) SaveMyQuery(ctx context.Context, projectId string, queryN
 			ExcelStyles:  excelStyles,
 			Columns:      columns,
 			PivotConfig:  pivotConfig,
+			CacheTTL:     cacheTTL,
+			CacheSkip:    cacheSkip,
+			CacheLock:    cacheLock,
 		}
 		if ms.Projects[projectId].MyQueries == nil {
 			ms.Projects[projectId].MyQueries = make(map[string]*module_model.MyQuery)

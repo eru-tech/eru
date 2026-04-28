@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3tables"
+	"github.com/eru-tech/eru/eru-cache/cache"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	common_types "github.com/eru-tech/eru/eru-ql/common_types"
 	sqlengine "github.com/eru-tech/eru/eru-ql/sql_engine"
@@ -121,9 +122,21 @@ type MyQuery struct {
 	ExcelStyles  map[string]eru_writes.CellFormatter    `json:"excel_styles"`
 	Columns      map[string]eru_writes.ColumnarSettings `json:"columns"`
 	PivotConfig  map[string]eru_writes.PivotTableConfig `json:"pivot_config"`
+	CacheTTL     int                                    `json:"cache_ttl,omitempty"`
+	CacheSkip    bool                                   `json:"cache_skip,omitempty"`
+	CacheLock    bool                                   `json:"cache_lock,omitempty"`
+}
+
+type QueryCacheConfig struct {
+	Enabled        bool     `json:"enabled"`
+	DefaultTTLSec  int      `json:"default_ttl_sec"`
+	MaxValueBytes  int      `json:"max_value_bytes"`
+	VolatileTables []string `json:"volatile_tables"`
+	LockHotQueries bool     `json:"lock_hot_queries"`
 }
 
 type DataSource struct {
+	ProjectId                  string                                               `json:"-"`
 	DbAlias                    string                                               `json:"db_alias" eru:"required"`
 	DbType                     string                                               `json:"db_type" eru:"required"`
 	DbName                     string                                               `json:"db_name" eru:"required"`
@@ -138,6 +151,9 @@ type DataSource struct {
 	Con                        *sqlx.DB                                             `json:"-"`
 	ConStatus                  bool                                                 `json:"con_status"`
 	DbSecurityRules            SecurityRules                                        `json:"db_security_rules"`
+	QueryCache                 cache.CacheStoreI                                    `json:"query_cache"`
+	QueryCacheClone            cache.CacheStoreI                                    `json:"-"`
+	QueryCacheConfig           QueryCacheConfig                                     `json:"query_cache_config"`
 }
 
 type TableJoins struct {
@@ -739,6 +755,7 @@ func (ds *DataSource) UnmarshalJSON(b []byte) error {
 		TableJoins                 map[string]*TableJoins                               `json:"table_joins"`
 		ConStatus                  bool                                                 `json:"con_status"`
 		DbSecurityRules            SecurityRules                                        `json:"db_security_rules"`
+		QueryCacheConfig           QueryCacheConfig                                     `json:"query_cache_config"`
 	}
 	var tempDs TempDataSource
 	if err := json.Unmarshal(b, &tempDs); err != nil {
@@ -757,6 +774,7 @@ func (ds *DataSource) UnmarshalJSON(b []byte) error {
 	ds.TableJoins = tempDs.TableJoins
 	ds.ConStatus = tempDs.ConStatus
 	ds.DbSecurityRules = tempDs.DbSecurityRules
+	ds.QueryCacheConfig = tempDs.QueryCacheConfig
 
 	var dsMap map[string]*json.RawMessage
 	err := json.Unmarshal(b, &dsMap)
@@ -798,5 +816,56 @@ func (ds *DataSource) UnmarshalJSON(b []byte) error {
 			}
 		}
 	}
+
+	var cacheStoreObj map[string]*json.RawMessage
+	var cacheStoreJson *json.RawMessage
+	if _, ok := dsMap["query_cache"]; ok {
+		if dsMap["query_cache"] != nil {
+			if err = json.Unmarshal(*dsMap["query_cache"], &cacheStoreObj); err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			if err = json.Unmarshal(*dsMap["query_cache"], &cacheStoreJson); err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			if _, seOk := cacheStoreObj["cache_store_type"]; seOk {
+				var cacheStoreType string
+				if err = json.Unmarshal(*cacheStoreObj["cache_store_type"], &cacheStoreType); err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return err
+				}
+				if cacheStoreType != "" {
+					cacheStoreI := cache.GetCacheStore(cacheStoreType, "")
+					if cacheStoreI != nil {
+						if mfjErr := cacheStoreI.MakeFromJson(ctx, cacheStoreJson); mfjErr != nil {
+							logs.WithContext(ctx).Warn("query_cache MakeFromJson failed; caching disabled for this datasource: " + mfjErr.Error())
+						} else {
+							ds.QueryCache = cacheStoreI
+						}
+					}
+				}
+			}
+		}
+	}
 	return nil
+}
+
+func (ds *DataSource) SetQueryCache(ctx context.Context, cacheStoreI cache.CacheStoreI) error {
+	logs.WithContext(ctx).Debug("SetQueryCache - Start")
+	ds.QueryCache = cacheStoreI
+	return nil
+}
+
+func (ds *DataSource) GetQueryCache() cache.CacheStoreI {
+	return ds.QueryCacheClone
+}
+
+func (ds *DataSource) ValidateQueryCache(ctx context.Context, projectId string) error {
+	logs.WithContext(ctx).Debug("ValidateQueryCache - Start")
+	store := ds.GetQueryCache()
+	if store == nil {
+		return nil
+	}
+	return store.ValidatePersistence(ctx, projectId)
 }

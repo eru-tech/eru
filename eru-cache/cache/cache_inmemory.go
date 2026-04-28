@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
+	"sync"
 	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -13,12 +15,22 @@ import (
 type InMemoryCache struct {
 	CacheStore
 	CacheValues map[string]CacheValue `json:"cache_values"`
+	mu          sync.Mutex
+	tags        map[string]map[string]struct{} // tag -> set of keys
+	keyTags     map[string]map[string]struct{} // key -> set of tags
+	locks       map[string]inMemLock
 }
 
 // CacheValue holds the data for an in-memory cache item.
 type CacheValue struct {
-	Key   string      `json:"key"`
-	Value interface{} `json:"value"`
+	Key      string      `json:"key"`
+	Value    interface{} `json:"value"`
+	ExpireAt time.Time   `json:"expire_at,omitempty"`
+}
+
+type inMemLock struct {
+	owner    string
+	expireAt time.Time
 }
 
 // NewInMemoryCache creates a new in-memory cache.
@@ -26,61 +38,215 @@ func NewInMemoryCache() *InMemoryCache {
 	return &InMemoryCache{
 		CacheStore:  CacheStore{CacheStoreType: "INMEMORY"},
 		CacheValues: make(map[string]CacheValue),
+		tags:        make(map[string]map[string]struct{}),
+		keyTags:     make(map[string]map[string]struct{}),
+		locks:       make(map[string]inMemLock),
+	}
+}
+
+func (imc *InMemoryCache) ensureInit() {
+	if imc.CacheValues == nil {
+		imc.CacheValues = make(map[string]CacheValue)
+	}
+	if imc.tags == nil {
+		imc.tags = make(map[string]map[string]struct{})
+	}
+	if imc.keyTags == nil {
+		imc.keyTags = make(map[string]map[string]struct{})
+	}
+	if imc.locks == nil {
+		imc.locks = make(map[string]inMemLock)
 	}
 }
 
 func (imc *InMemoryCache) Get(ctx context.Context, key string) (string, error) {
-	if imc.CacheValues != nil {
-		if cv, cvOk := imc.CacheValues[key]; cvOk {
-			logs.WithContext(ctx).Info(fmt.Sprintf("cache key %s found", key))
-			// If value is already a string, return it directly
-			if str, ok := cv.Value.(string); ok {
-				return str, nil
-			}
-			// Otherwise marshal to string to match the interface
-			res, err := json.Marshal(cv.Value)
-			if err != nil {
-				return "", err
-			}
-			return string(res), nil
-		}
+	imc.mu.Lock()
+	defer imc.mu.Unlock()
+	imc.ensureInit()
+
+	cv, ok := imc.CacheValues[key]
+	if !ok {
+		return "", fmt.Errorf("cache key %s not found", key)
 	}
-	return "", fmt.Errorf("cache key %s not found", key)
+	if !cv.ExpireAt.IsZero() && time.Now().After(cv.ExpireAt) {
+		imc.deleteLocked(key)
+		return "", fmt.Errorf("cache key %s not found", key)
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("cache key %s found", key))
+	if str, ok := cv.Value.(string); ok {
+		return str, nil
+	}
+	res, err := json.Marshal(cv.Value)
+	if err != nil {
+		return "", err
+	}
+	return string(res), nil
 }
 
 func (imc *InMemoryCache) Set(ctx context.Context, key string, value interface{}) error {
-	if imc.CacheValues == nil {
-		imc.CacheValues = make(map[string]CacheValue)
-	}
-	imc.CacheValues[key] = CacheValue{Key: key, Value: value}
-	return nil
+	return imc.SetWithTTL(ctx, key, value, 0)
 }
 
 func (imc *InMemoryCache) SetWithTTL(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
-	// In-memory TTL is not implemented, so we just call Set
+	imc.mu.Lock()
+	defer imc.mu.Unlock()
+	imc.ensureInit()
+	imc.setLocked(key, value, ttl, nil)
+	return nil
+}
+
+func (imc *InMemoryCache) SetWithTagsTTL(ctx context.Context, key string, value interface{}, ttl time.Duration, tags []string) error {
+	imc.mu.Lock()
+	defer imc.mu.Unlock()
+	imc.ensureInit()
+	imc.setLocked(key, value, ttl, tags)
+	return nil
+}
+
+func (imc *InMemoryCache) setLocked(key string, value interface{}, ttl time.Duration, tags []string) {
+	cv := CacheValue{Key: key, Value: value}
 	if ttl > 0 {
-		logs.WithContext(ctx).Warn("InMemoryCache does not support TTL. Setting value without expiration.")
+		cv.ExpireAt = time.Now().Add(ttl)
 	}
-	return imc.Set(ctx, key, value)
+	imc.CacheValues[key] = cv
+
+	// clear old tag associations for this key
+	if oldTags, ok := imc.keyTags[key]; ok {
+		for t := range oldTags {
+			if set, sOk := imc.tags[t]; sOk {
+				delete(set, key)
+				if len(set) == 0 {
+					delete(imc.tags, t)
+				}
+			}
+		}
+		delete(imc.keyTags, key)
+	}
+
+	if len(tags) == 0 {
+		return
+	}
+	kt := make(map[string]struct{}, len(tags))
+	for _, t := range tags {
+		if t == "" {
+			continue
+		}
+		if _, ok := imc.tags[t]; !ok {
+			imc.tags[t] = make(map[string]struct{})
+		}
+		imc.tags[t][key] = struct{}{}
+		kt[t] = struct{}{}
+	}
+	imc.keyTags[key] = kt
+}
+
+func (imc *InMemoryCache) InvalidateByTags(ctx context.Context, tags []string) (int, error) {
+	imc.mu.Lock()
+	defer imc.mu.Unlock()
+	imc.ensureInit()
+
+	seen := make(map[string]struct{})
+	for _, t := range tags {
+		if t == "" {
+			continue
+		}
+		set, ok := imc.tags[t]
+		if !ok {
+			continue
+		}
+		for k := range set {
+			seen[k] = struct{}{}
+		}
+	}
+	count := 0
+	for k := range seen {
+		if _, ok := imc.CacheValues[k]; ok {
+			count++
+		}
+		imc.deleteLocked(k)
+	}
+	return count, nil
+}
+
+func (imc *InMemoryCache) AcquireLock(ctx context.Context, key string, ttl time.Duration, owner string) (bool, error) {
+	if owner == "" {
+		return false, fmt.Errorf("lock owner must not be empty")
+	}
+	if ttl <= 0 {
+		ttl = 5 * time.Second
+	}
+	imc.mu.Lock()
+	defer imc.mu.Unlock()
+	imc.ensureInit()
+
+	now := time.Now()
+	if existing, ok := imc.locks[key]; ok && now.Before(existing.expireAt) {
+		return false, nil
+	}
+	imc.locks[key] = inMemLock{owner: owner, expireAt: now.Add(ttl)}
+	return true, nil
+}
+
+func (imc *InMemoryCache) ReleaseLock(ctx context.Context, key string, owner string) error {
+	if owner == "" {
+		return fmt.Errorf("lock owner must not be empty")
+	}
+	imc.mu.Lock()
+	defer imc.mu.Unlock()
+	imc.ensureInit()
+
+	if existing, ok := imc.locks[key]; ok && existing.owner == owner {
+		delete(imc.locks, key)
+	}
+	return nil
 }
 
 func (imc *InMemoryCache) GetKeys(ctx context.Context, pattern string) ([]string, error) {
-	// This is inefficient for in-memory but fine for this example.
-	// A real implementation might use a more complex pattern matcher.
-	logs.WithContext(ctx).Warn("InMemoryCache GetKeys pattern matching is not fully implemented and returns all keys.")
+	imc.mu.Lock()
+	defer imc.mu.Unlock()
+	imc.ensureInit()
+
+	now := time.Now()
 	var keys []string
-	for k := range imc.CacheValues {
-		keys = append(keys, k)
+	for k, cv := range imc.CacheValues {
+		if !cv.ExpireAt.IsZero() && now.After(cv.ExpireAt) {
+			continue
+		}
+		if pattern == "" || pattern == "*" {
+			keys = append(keys, k)
+			continue
+		}
+		ok, err := path.Match(pattern, k)
+		if err == nil && ok {
+			keys = append(keys, k)
+		}
 	}
 	return keys, nil
 }
 
 func (imc *InMemoryCache) Delete(ctx context.Context, key string) error {
-	if imc.CacheValues != nil {
-		delete(imc.CacheValues, key)
-	}
+	imc.mu.Lock()
+	defer imc.mu.Unlock()
+	imc.ensureInit()
+	imc.deleteLocked(key)
 	return nil
 }
+
+func (imc *InMemoryCache) deleteLocked(key string) {
+	delete(imc.CacheValues, key)
+	if ts, ok := imc.keyTags[key]; ok {
+		for t := range ts {
+			if set, sOk := imc.tags[t]; sOk {
+				delete(set, key)
+				if len(set) == 0 {
+					delete(imc.tags, t)
+				}
+			}
+		}
+		delete(imc.keyTags, key)
+	}
+}
+
 func (imc *InMemoryCache) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
 	logs.WithContext(ctx).Debug("MakeFromJson - Start")
 	err := json.Unmarshal(*rj, &imc)
@@ -88,5 +254,6 @@ func (imc *InMemoryCache) MakeFromJson(ctx context.Context, rj *json.RawMessage)
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
+	imc.ensureInit()
 	return nil
 }
