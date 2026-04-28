@@ -205,10 +205,12 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 
 	var traces []StepTrace
 
+	maxTokens := resolveMaxTokens(m.MaxTokens, thinkingBudget)
+
 	for iteration := 1; iteration <= maxIterations; iteration++ {
 		params := anthropic.MessageNewParams{
 			Model:     m.LLMName,
-			MaxTokens: int64(16000),
+			MaxTokens: maxTokens,
 			Messages:  messages,
 			Tools:     sdkTools,
 			System: []anthropic.TextBlockParam{
@@ -274,6 +276,10 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 			Content: assistantBlocks,
 		})
 
+		if string(msg.StopReason) == "max_tokens" {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Anthropic response truncated: stop_reason=max_tokens, max_tokens=%d. Increase model.max_tokens or reduce thinking_budget.", maxTokens))
+		}
+
 		if len(toolUseBlocks) == 0 {
 			trace.Content = finalContent
 			traces = append(traces, trace)
@@ -282,12 +288,17 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 
 		for _, tu := range toolUseBlocks {
 			inputMap := make(map[string]interface{})
-			json.Unmarshal(tu.Input, &inputMap)
+			if uerr := json.Unmarshal(tu.Input, &inputMap); uerr != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("tool_use %s input parse failed (likely truncated by max_tokens=%d): %v; raw=%s", tu.Name, maxTokens, uerr, string(tu.Input)))
+			}
 
 			if tu.Name == "structured_output" {
 				trace.ToolName = tu.Name
 				trace.ToolInput = inputMap
 				traces = append(traces, trace)
+				if len(inputMap) == 0 {
+					return Message{}, traces, fmt.Errorf("structured_output tool input was empty or truncated; raise model.max_tokens (current=%d) or lower thinking_budget", maxTokens)
+				}
 				resultBytes, _ := json.Marshal(inputMap)
 				return Message{Content: string(resultBytes), Role: "assistant"}, traces, nil
 			}
@@ -336,10 +347,12 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 	messages := convertMessages(ctx, chatRequest.Messages)
 	var traces []StepTrace
 
+	maxTokens := resolveMaxTokens(m.MaxTokens, thinkingBudget)
+
 	for iteration := 1; iteration <= maxIterations; iteration++ {
 		params := anthropic.MessageNewParams{
 			Model:     m.LLMName,
-			MaxTokens: int64(16000),
+			MaxTokens: maxTokens,
 			Messages:  messages,
 			Tools:     sdkTools,
 			System: []anthropic.TextBlockParam{
@@ -440,6 +453,10 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 			Content: assistantBlocks,
 		})
 
+		if string(msg.StopReason) == "max_tokens" {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Anthropic streaming response truncated: stop_reason=max_tokens, max_tokens=%d. Increase model.max_tokens or reduce thinking_budget.", maxTokens))
+		}
+
 		if len(toolUseBlocks) == 0 {
 			trace.Content = finalContent
 			traces = append(traces, trace)
@@ -448,12 +465,17 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 
 		for _, tu := range toolUseBlocks {
 			inputMap := make(map[string]interface{})
-			json.Unmarshal(tu.Input, &inputMap)
+			if uerr := json.Unmarshal(tu.Input, &inputMap); uerr != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("tool_use %s input parse failed (likely truncated by max_tokens=%d): %v; raw=%s", tu.Name, maxTokens, uerr, string(tu.Input)))
+			}
 
 			if tu.Name == "structured_output" {
 				trace.ToolName = tu.Name
 				trace.ToolInput = inputMap
 				traces = append(traces, trace)
+				if len(inputMap) == 0 {
+					return Message{}, traces, fmt.Errorf("structured_output tool input was empty or truncated; raise model.max_tokens (current=%d) or lower thinking_budget", maxTokens)
+				}
 				resultBytes, _ := json.Marshal(inputMap)
 				return Message{Content: string(resultBytes), Role: "assistant"}, traces, nil
 			}
@@ -588,15 +610,22 @@ func jsonSchemaToSDK(schema eru_models.JSONSchema) anthropic.ToolInputSchemaPara
 	for name, prop := range schema.Properties {
 		properties[name] = jsonSchemaPropertyToMap(prop)
 	}
-	return anthropic.ToolInputSchemaParam{
+	param := anthropic.ToolInputSchemaParam{
 		Type:       "object",
 		Properties: properties,
 		Required:   schema.Required,
 	}
+	if schema.AdditionalProperties != nil {
+		param.ExtraFields = map[string]any{"additionalProperties": schema.AdditionalProperties}
+	}
+	return param
 }
 
 func jsonSchemaPropertyToMap(schema eru_models.JSONSchema) map[string]any {
-	m := map[string]any{"type": schema.Type}
+	m := map[string]any{}
+	if schema.Type != "" {
+		m["type"] = schema.Type
+	}
 	if schema.Description != "" {
 		m["description"] = schema.Description
 	}
@@ -623,4 +652,28 @@ func jsonSchemaPropertyToMap(schema eru_models.JSONSchema) map[string]any {
 		m["additionalProperties"] = schema.AdditionalProperties
 	}
 	return m
+}
+
+// resolveMaxTokens picks a sensible MaxTokens for a Messages request.
+//
+// Anthropic counts thinking tokens against MaxTokens, so a small MaxTokens
+// combined with a non-trivial thinking_budget can leave too few tokens for
+// the actual response — typically observed as a truncated tool_use input
+// that fails to parse. We give the user-configured value priority and add
+// a generous default that always reserves at least 16k of headroom over
+// the thinking budget.
+func resolveMaxTokens(configured int64, thinkingBudget int) int64 {
+	const defaultBase int64 = 32000
+	const headroom int64 = 16000
+
+	if configured > 0 {
+		return configured
+	}
+	if thinkingBudget <= 0 {
+		return defaultBase
+	}
+	if int64(thinkingBudget)+headroom > defaultBase {
+		return int64(thinkingBudget) + headroom
+	}
+	return defaultBase
 }

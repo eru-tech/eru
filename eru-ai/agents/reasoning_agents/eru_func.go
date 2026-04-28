@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	functions "github.com/eru-tech/eru/eru-functions/functions"
@@ -123,6 +124,63 @@ STEP TYPES (exactly ONE per step)
 
 Never use "route_name" — it is deprecated.
 
+if func step is of type API, then do not add attributes related to query, function, agent, tool and same for other steps too.
+api.port is a string
+
+API STEP DEFAULTS:
+  - api.scheme MUST always be "$VAR_http_scheme" unless the user explicitly specifies a scheme (e.g. "https", "http"). Do NOT hardcode "https"/"http" by default.
+
+============================================================
+ERU-FILES SERVICE (file upload / download)
+============================================================
+
+Whenever the user request involves uploading a file, downloading a file, saving a file to
+storage, or fetching a previously stored file, AUTOMATICALLY use the Eru Files service via
+an API func step. Do NOT invent a custom function/tool for this — always use the API step
+shape below.
+
+Defaults (use these unless the user provides other values):
+  - api.host   = "$VAR_erufiles_url"
+  - api.scheme = "$VAR_http_scheme"
+  - api.port   = "" (omit unless user specifies one)
+  - api.method = "POST"
+  - {project} and {storagename} in api_path are taken from the user's request; if absent,
+    leave them as template placeholders the user can fill in.
+
+UPLOAD (file → storage):
+  api_path: "/files/{project}/{storagename}/uploadb64"
+  Request payload (transform_request must produce this JSON):
+    {
+      "file":        "<base64-encoded file bytes>",
+      "doc_type":    "<mime/document type>",
+      "file_name":   "<file name with extension>",
+      "folder_path": "<destination folder path>"
+    }
+  Response: { "file_name": "<stored file name>" }
+
+DOWNLOAD (storage → file):
+  api_path: "/files/{project}/{storagename}/downloadb64"
+  Request payload:
+    {
+      "file_name":   "<file name to fetch>",
+      "folder_path": "<source folder path>"
+    }
+  Response: { "file": "<base64-encoded file bytes>", "file_type": "<mime/document type>" }
+
+Example — upload step:
+{
+  "upload_invoice": {
+    "api": {
+      "host":   "$VAR_erufiles_url",
+      "port":   "",
+      "method": "POST",
+      "scheme": "$VAR_http_scheme"
+    },
+    "api_path": "/files/{project}/{storagename}/uploadb64",
+    "transform_request": "{{dict \"file\" .Vars.Body.file_b64 \"doc_type\" .Vars.Body.doc_type \"file_name\" .Vars.Body.file_name \"folder_path\" .Vars.Body.folder_path | marshalJSON | bytesToString}}"
+  }
+}
+
 ============================================================
 EXECUTION MODEL
 ============================================================
@@ -198,6 +256,19 @@ Syntax: {{.Vars.Body.field}}, {{index .Vars.Body "field-with-dash"}}, {{json .Va
 Conditions: {{if eq .Vars.Body.status "active"}}true{{else}}false{{end}}
 
 ============================================================
+GO TEMPLATE GUIDELINES & CUSTOM FUNCTIONS
+============================================================
+
+Whenever you write any Go template (in transform_request, transform_response, condition,
+condition_fail_message, request_headers/query_params with is_template=true, loop_variable,
+async_message, etc.), follow the guidelines below. The same context-variable model and
+custom function library applies to both Eru Functions and the GoTemplate agent.
+{{GOTEMPLATE_CONTEXT_PROMPT}}
+
+TemplateVars JSON schema:
+{{TEMPLATE_VARS_SCHEMA}}
+
+============================================================
 CHECKLIST (verify before outputting)
 ============================================================
 
@@ -207,6 +278,8 @@ CHECKLIST (verify before outputting)
 [ ] tool steps have tool_action + tenant_id
 [ ] agent steps have tenant_id
 [ ] api steps have all 5 fields: host, port, method, scheme, api_path
+[ ] api.scheme is "$VAR_http_scheme" unless user explicitly specified a scheme
+[ ] File upload/download requests use the Eru Files service (host="$VAR_erufiles_url", api_path /files/{project}/{storagename}/uploadb64 or /downloadb64)
 [ ] Sequential steps are NESTED, parallel steps are SIBLINGS
 [ ] Conditions use Go template syntax: {{if ...}}true{{else}}false{{end}}
 [ ] Only fields that are needed are included
@@ -217,5 +290,7 @@ CHECKLIST (verify before outputting)
 --- EXAMPLES ---
 {{EXAMPLES_PLACEHOLDER}}
 `
+	systemPrompt = strings.ReplaceAll(systemPrompt, "{{GOTEMPLATE_CONTEXT_PROMPT}}", agents.GoTemplateContextVariablePrompt)
+	systemPrompt = strings.ReplaceAll(systemPrompt, "{{TEMPLATE_VARS_SCHEMA}}", agents.TemplateVarsSchemaString)
 	return systemPrompt
 }

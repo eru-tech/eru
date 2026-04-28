@@ -25,10 +25,10 @@ type EruStudioFetchPageParams struct {
 	PageId    string `json:"page_id" eru:"required" desc:"page id to fetch"`
 }
 
-type EruStudioEditPageParams struct {
+type EruStudioSavePageParams struct {
 	OrgId     string `json:"org_id" eru:"required" desc:"organization id"`
 	ProcessId string `json:"process_id" eru:"required" desc:"process id"`
-	PageId    string `json:"page_id" eru:"required" desc:"page id to edit"`
+	PageId    string `json:"page_id" eru:"required" desc:"page id to save"`
 	PageName  string `json:"page_name" eru:"required" desc:"page name"`
 	PageDef   string `json:"page_def" eru:"required" desc:"page definition as JSON string"`
 }
@@ -41,7 +41,7 @@ type EruStudioTool struct {
 const (
 	FetchPages = "fetch_pages"
 	FetchPage  = "fetch_page"
-	EditPage   = "edit_page"
+	SavePage   = "save_page"
 )
 
 var eruStudioToolActions = []tools.ToolAction{
@@ -66,13 +66,13 @@ var eruStudioToolActions = []tools.ToolAction{
 		},
 	},
 	{
-		ActionName:   EditPage,
-		Description:  "Edit a page definition",
-		SystemPrompt: "Edit a page definition",
+		ActionName:   SavePage,
+		Description:  "Save a page definition",
+		SystemPrompt: "Save a page definition",
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(EruStudioEditPageParams{}), []string{})
+			return utils.StructToJSONSchema(reflect.TypeOf(EruStudioSavePageParams{}), []string{})
 		},
 	},
 }
@@ -240,8 +240,8 @@ func (t *EruStudioTool) Execute(ctx context.Context, projectId string, tenantId 
 		toolResult, _, persistStore, err = t.FetchPages(ctx, projectId, tenantId, params)
 	case FetchPage:
 		toolResult, _, persistStore, err = t.FetchPage(ctx, projectId, tenantId, params)
-	case EditPage:
-		toolResult, _, persistStore, err = t.EditPage(ctx, projectId, tenantId, params)
+	case SavePage:
+		toolResult, _, persistStore, err = t.SavePage(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -283,23 +283,24 @@ func (t *EruStudioTool) FetchPage(ctx context.Context, projectId string, tenantI
 	return res, body, true, nil
 }
 
-func (t *EruStudioTool) EditPage(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (map[string]interface{}, interface{}, bool, error) {
-	logs.WithContext(ctx).Debug("EruStudioTool EditPage - Start")
-	p := EruStudioEditPageParams{}
+func (t *EruStudioTool) SavePage(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (map[string]interface{}, interface{}, bool, error) {
+	logs.WithContext(ctx).Debug("EruStudioTool SavePage - Start")
+	p := EruStudioSavePageParams{}
 	if err := t.unmarshalParams(ctx, params, &p); err != nil {
 		return nil, nil, false, err
 	}
 	body := map[string]interface{}{
-		"docs": map[string]interface{}{
-			"page_id":    p.PageId,
-			"page_def":   p.PageDef,
-			"org_id":     p.OrgId,
-			"process_id": p.ProcessId,
-			"page_name":  p.PageName,
+		"docs": []map[string]interface{}{
+			{
+				"page_id":    p.PageId,
+				"page_def":   p.PageDef,
+				"org_id":     p.OrgId,
+				"process_id": p.ProcessId,
+				"page_name":  p.PageName,
+			},
 		},
-		"page_id": p.PageId,
 	}
-	res, err := t.callMyQuery(ctx, EditPage, body)
+	res, err := t.callMyQuery(ctx, SavePage, body)
 	if err != nil {
 		return nil, nil, false, err
 	}

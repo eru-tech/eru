@@ -312,6 +312,16 @@ func (s *EruAIMCPServer) executeAgent(ctx context.Context, conversationId, proje
 		Files:   files,
 	}
 
+	streamCb := agents.StreamCallback(func(event agents.StreamEvent) {
+		eventBytes, mErr := json.Marshal(event)
+		if mErr != nil {
+			logs.WithContext(ctx).Debug(fmt.Sprintf("mcp agent stream event: %s (iter %d)", event.Event, event.Iteration))
+			return
+		}
+		logs.WithContext(ctx).Debug(fmt.Sprintf("mcp agent stream event: %s", string(eventBytes)))
+	})
+	ctx = agents.WithStreamCallback(ctx, streamCb)
+
 	result, err := agent.Execute(ctx, agentMessage, conversationId, project, tenant)
 	result.ConversationId = conversationId
 	if err != nil {

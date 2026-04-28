@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
@@ -144,13 +145,7 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		return agents.AgentMessage{}, err
 	}
 
-	agentResponse := make(map[string]interface{})
-	responseMap := map[string]interface{}{}
-	if jsonErr := json.Unmarshal([]byte(response.Content), &responseMap); jsonErr != nil {
-		agentResponse["output"] = response.Content
-	} else {
-		agentResponse = responseMap
-	}
+	agentResponse := parseAgentResponse(response.Content)
 
 	metrics := agents.BuildMetrics(traces, startTime, response.Usage)
 
@@ -222,4 +217,104 @@ func (ra *ReasoningAgent) executeWithFunction(ctx context.Context, agentMessage 
 		return agents.AgentMessage{}, err
 	}
 	return agentMsg, nil
+}
+
+// parseAgentResponse turns the model's final Message.Content into a structured
+// map suitable for AgentOutputAction.Action. It handles three cases:
+//  1. Content is already valid JSON object → return parsed map.
+//  2. Content is a JSON object wrapped in markdown fences (```json … ``` or
+//     ``` … ```) → strip fences, parse, return parsed map. This is what
+//     happens when the model returns its answer as plain text instead of
+//     calling structured_output.
+//  3. Anything else → return {"output": <raw content>}.
+func parseAgentResponse(content string) map[string]interface{} {
+	trimmed := strings.TrimSpace(content)
+
+	if parsed, ok := tryUnmarshalObject(trimmed); ok {
+		return parsed
+	}
+
+	if stripped, ok := stripMarkdownFences(trimmed); ok {
+		if parsed, ok := tryUnmarshalObject(stripped); ok {
+			return parsed
+		}
+	}
+
+	if start, end, ok := findOuterJSONObject(trimmed); ok {
+		if parsed, parsedOk := tryUnmarshalObject(trimmed[start : end+1]); parsedOk {
+			return parsed
+		}
+	}
+
+	return map[string]interface{}{"output": content}
+}
+
+func tryUnmarshalObject(s string) (map[string]interface{}, bool) {
+	if s == "" {
+		return nil, false
+	}
+	out := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil, false
+	}
+	return out, true
+}
+
+// stripMarkdownFences removes a single ```lang … ``` wrapper if present.
+// Returns (stripped, true) when fences were found and removed.
+func stripMarkdownFences(s string) (string, bool) {
+	if !strings.HasPrefix(s, "```") {
+		return s, false
+	}
+	rest := strings.TrimPrefix(s, "```")
+	if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
+		rest = rest[nl+1:]
+	}
+	rest = strings.TrimSpace(rest)
+	if idx := strings.LastIndex(rest, "```"); idx >= 0 {
+		rest = strings.TrimSpace(rest[:idx])
+	}
+	return rest, true
+}
+
+// findOuterJSONObject locates the first balanced { … } object in the string,
+// ignoring braces that appear inside JSON strings. This recovers JSON when
+// the model precedes/follows it with prose.
+func findOuterJSONObject(s string) (int, int, bool) {
+	start := -1
+	depth := 0
+	inString := false
+	escaped := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '"':
+			inString = true
+		case '{':
+			if depth == 0 {
+				start = i
+			}
+			depth++
+		case '}':
+			depth--
+			if depth == 0 && start >= 0 {
+				return start, i, true
+			}
+		}
+	}
+	return 0, 0, false
 }

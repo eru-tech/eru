@@ -20,6 +20,8 @@ func GetAgent(agentType string) agents.AgentI {
 		return new(reflex_agents.EruFuncStepAgent)
 	case "ERU_FUNC":
 		return new(reasoning_agents.EruFuncAgent)
+	case "ERU_STUDIO":
+		return new(reasoning_agents.EruStudioAgent)
 	case "REASONING":
 		return new(reasoning_agents.ReasoningAgent)
 	case "ORCHESTRATOR":

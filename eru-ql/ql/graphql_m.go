@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/graphql-go/graphql/language/ast"
 )
@@ -43,9 +44,12 @@ type SQLObjectM struct {
 	//querySubLevel   []int
 	PreparedQuery bool
 	OverwriteDoc  map[string]map[string]interface{} `json:"-"`
+	UpsertOnCols  map[string][]string
+	UpsertCols    map[string][]string
+	UpsertAction  string
 }
 
-func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Selection, vars map[string]interface{}, datasource *module_model.DataSource) (err error) {
+func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Selection, vars map[string]interface{}, datasource *module_model.DataSource, sqlMaker ds.SqlMakerI) (err error) {
 	//myself.CheckMe()
 	logs.WithContext(ctx).Debug("ProcessMutationGraphQL - Start")
 	field := sel.(*ast.Field)
@@ -124,7 +128,7 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Se
 			sqlObj.MutationSelectQuery = sqlObj.QueryObject[varValue.(string)].Query
 			sqlObj.MutationSelectCols = sqlObj.QueryObject[varValue.(string)].Cols
 			sqlObj.QueryType = "insertselect"
-			sqlObj.MakeMutationQuery(ctx, nil, sqlObj.MainTableName)
+			sqlObj.MakeMutationQuery(ctx, nil, sqlObj.MainTableName, sqlMaker)
 			logs.WithContext(ctx).Info(sqlObj.DBQuery)
 			logs.WithContext(ctx).Info(fmt.Sprint("sqlObj.PreparedQuery = ", sqlObj.PreparedQuery))
 
@@ -151,12 +155,69 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Se
 			//wc, _ := sqlObj.processWhereClause(v, "", false)
 			//sqlObj.WhereClause = fmt.Sprint(" where ", wc)
 			sqlObj.WhereClause = v
+		case "upsertOn":
+			v, e := ParseAstValue(ctx, ff.Value, vars)
+			if e != nil {
+				return e
+			}
+			s, ok := v.(string)
+			if !ok {
+				return errors.New("upsertOn must be a comma-separated string of columns (optionally prefixed with tablename.)")
+			}
+			sqlObj.UpsertOnCols = map[string][]string{}
+			for _, tok := range strings.Split(s, ",") {
+				tok = strings.TrimSpace(tok)
+				if tok == "" {
+					continue
+				}
+				tbl := sqlObj.MainTableName
+				col := tok
+				if dotIdx := strings.Index(tok, "."); dotIdx > 0 && dotIdx < len(tok)-1 {
+					tbl = strings.TrimSpace(tok[:dotIdx])
+					col = strings.TrimSpace(tok[dotIdx+1:])
+				}
+				sqlObj.UpsertOnCols[tbl] = append(sqlObj.UpsertOnCols[tbl], col)
+			}
+		case "upsertCols":
+			v, e := ParseAstValue(ctx, ff.Value, vars)
+			if e != nil {
+				return e
+			}
+			s, ok := v.(string)
+			if !ok {
+				return errors.New("upsertCols must be a comma-separated string of columns (optionally prefixed with tablename.)")
+			}
+			sqlObj.UpsertCols = map[string][]string{}
+			for _, tok := range strings.Split(s, ",") {
+				tok = strings.TrimSpace(tok)
+				if tok == "" {
+					continue
+				}
+				tbl := sqlObj.MainTableName
+				col := tok
+				if dotIdx := strings.Index(tok, "."); dotIdx > 0 && dotIdx < len(tok)-1 {
+					tbl = strings.TrimSpace(tok[:dotIdx])
+					col = strings.TrimSpace(tok[dotIdx+1:])
+				}
+				sqlObj.UpsertCols[tbl] = append(sqlObj.UpsertCols[tbl], col)
+			}
+		case "upsertAction":
+			v, e := ParseAstValue(ctx, ff.Value, vars)
+			if e != nil {
+				return e
+			}
+			a, _ := v.(string)
+			a = strings.ToLower(strings.TrimSpace(a))
+			if a != "" && a != "update" && a != "nothing" {
+				return errors.New("upsertAction must be 'update' or 'nothing'")
+			}
+			sqlObj.UpsertAction = a
 		default:
 			//do nothing
 		}
 	}
 	if docsFound {
-		sqlObj.MutationRecords, err = sqlObj.processMutationDoc(ctx, docs, datasource, sqlObj.MainTableName, sqlObj.NestedDoc, nil, sqlObj.OverwriteDoc[sqlObj.MainTableName])
+		sqlObj.MutationRecords, err = sqlObj.processMutationDoc(ctx, docs, datasource, sqlObj.MainTableName, sqlObj.NestedDoc, nil, sqlObj.OverwriteDoc[sqlObj.MainTableName], sqlMaker)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			//TODO to pass this error as query result
@@ -166,7 +227,7 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Se
 	}
 	if sqlObj.QueryType == "delete" || sqlObj.PreparedQuery {
 		sqlObj.MutationRecords = make([]module_model.MutationRecord, 1) // dummy record added so that it enters for loop in ExecuteMutationQuery function
-		sqlObj.MakeMutationQuery(ctx, &sqlObj.MutationRecords[0], sqlObj.MainTableName)
+		sqlObj.MakeMutationQuery(ctx, &sqlObj.MutationRecords[0], sqlObj.MainTableName, sqlMaker)
 	} else if !docsFound {
 		logs.WithContext(ctx).Warn("docs not found")
 		return errors.New("missing 'docs' keyword - document to mutate not found") //TODO this error is not returned in graphql error
@@ -174,7 +235,7 @@ func (sqlObj *SQLObjectM) ProcessMutationGraphQL(ctx context.Context, sel ast.Se
 	return nil
 }
 
-func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{}, datasource *module_model.DataSource, parentTableName string, nested bool, jc []string, owDoc map[string]interface{}) (mr []module_model.MutationRecord, e error) {
+func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{}, datasource *module_model.DataSource, parentTableName string, nested bool, jc []string, owDoc map[string]interface{}, sqlMaker ds.SqlMakerI) (mr []module_model.MutationRecord, e error) {
 	logs.WithContext(ctx).Debug(fmt.Sprint("ProcessMutationGraphQL - Start : ", parentTableName, " ", nested))
 
 	sqlObj.NestedDoc = nested // updating if recursive call is made
@@ -257,7 +318,7 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 				}
 				logs.WithContext(ctx).Info(fmt.Sprint("childTableName = ", childTableName))
 				logs.WithContext(ctx).Info(fmt.Sprint(cowDocFinal))
-				childRecords, e = sqlObj.processMutationDoc(ctx, a1, datasource, childTableName, true, joinCols, cowDocFinal)
+				childRecords, e = sqlObj.processMutationDoc(ctx, a1, datasource, childTableName, true, joinCols, cowDocFinal, sqlMaker)
 				if e != nil {
 					logs.WithContext(ctx).Error(e.Error())
 					return nil, e
@@ -329,16 +390,16 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 			valuesIfNotNested = append(valuesIfNotNested, nonNestedValue)
 		}
 		mr[i].NonNestedValues = valuesIfNotNested
-		sqlObj.MakeMutationQuery(ctx, &mr[i], parentTableName)
+		sqlObj.MakeMutationQuery(ctx, &mr[i], parentTableName, sqlMaker)
 	}
 	if !sqlObj.NestedDoc && len(docs) > 0 {
 		mr[0].Cols = mr[0].NonNestedCols
-		sqlObj.MakeMutationQuery(ctx, &mr[0], parentTableName)
+		sqlObj.MakeMutationQuery(ctx, &mr[0], parentTableName, sqlMaker)
 	}
 	return mr, nil
 }
 
-func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_model.MutationRecord, tableName string) {
+func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_model.MutationRecord, tableName string, sqlMaker ds.SqlMakerI) {
 	logs.WithContext(ctx).Debug("MakeMutationQuery - Start")
 	returningStr := ""
 	strWhereClause, e := processWhereClause(ctx, sqlObj.WhereClause, "", sqlObj.MainTableName, false, false)
@@ -386,6 +447,18 @@ func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_mod
 		sqlObj.DBQuery = query
 		return
 	}
+	upsertCols := []string(nil)
+	upsertRequested := false
+	if sqlObj.UpsertOnCols != nil {
+		if cols, ok := sqlObj.UpsertOnCols[tableName]; ok && len(cols) > 0 {
+			upsertCols = cols
+			upsertRequested = true
+		}
+	}
+	upsertAction := sqlObj.UpsertAction
+	if upsertAction == "" {
+		upsertAction = "update"
+	}
 	switch sqlObj.QueryType {
 	case "insertselect":
 		query = fmt.Sprint("insert into ", tableName, " ( ", sqlObj.MutationSelectCols, ") ", sqlObj.MutationSelectQuery, returningStr)
@@ -411,8 +484,24 @@ func (sqlObj *SQLObjectM) MakeMutationQuery(ctx context.Context, doc *module_mod
 		}
 		*/
 
-		query = fmt.Sprint("insert into ", tableName, " (", doc.Cols,
-			") values ", doc.ColsPlaceholder, returningStr)
+		if upsertRequested && sqlMaker != nil {
+			insertCols := strings.Split(doc.Cols, ",")
+			var updateColsForTable []string
+			if sqlObj.UpsertCols != nil {
+				updateColsForTable = sqlObj.UpsertCols[tableName]
+			}
+			upsertQuery, upsertErr := sqlMaker.MakeUpsertQuery(ctx, tableName, insertCols, doc.ColsPlaceholder, upsertCols, updateColsForTable, upsertAction, returningStr)
+			if upsertErr != nil {
+				logs.WithContext(ctx).Error(upsertErr.Error())
+				query = fmt.Sprint("insert into ", tableName, " (", doc.Cols,
+					") values ", doc.ColsPlaceholder, returningStr)
+			} else {
+				query = upsertQuery
+			}
+		} else {
+			query = fmt.Sprint("insert into ", tableName, " (", doc.Cols,
+				") values ", doc.ColsPlaceholder, returningStr)
+		}
 		doc.DBQuery = query
 	case "update":
 		query = fmt.Sprint("update ", tableName, " set ", doc.UpdatedCols,
