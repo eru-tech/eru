@@ -71,6 +71,7 @@ type Model struct {
 	ModelName  string  `json:"model_name" eru:"required"`
 	LLMSecret  string  `json:"llm_secret" eru:"required"`
 	Temprature float64 `json:"temprature"`
+	MaxTokens  int64   `json:"max_tokens,omitempty"`
 }
 type ChatRequest struct {
 	Messages []Message `json:"messages"`
