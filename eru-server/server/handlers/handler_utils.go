@@ -20,13 +20,18 @@ func MakeCorsObject() *cors.Cors {
 	return cors.New(cors.Options{
 		AllowCredentials: true,
 		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Original-Endpoint", "Id_token"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Original-Endpoint", "Id_token", "Claims", "Mcp-Session-Id", "Mcp-Protocol-Version"},
+		ExposedHeaders:   []string{"Mcp-Session-Id", "Mcp-Protocol-Version"},
 		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
-			dn := strings.Split(s, "//")[1]
-			logs.Logger.Info(fmt.Sprint("dn = ", dn))
 			if AllowedOrigins == "" {
 				return true
 			}
+			parts := strings.SplitN(s, "//", 2)
+			if len(parts) < 2 {
+				return true
+			}
+			dn := parts[1]
+			logs.Logger.Info(fmt.Sprint("dn = ", dn))
 			envOrigin := strings.Split(AllowedOrigins, ",")
 			for _, o := range envOrigin {
 				oo := strings.Replace(o, "*.", "", -1)
@@ -36,9 +41,7 @@ func MakeCorsObject() *cors.Cors {
 			}
 			return false
 		},
-		//AllowedOrigins: origins,
 		Debug: false,
-		//ExposedHeaders: []string{"Authorization", "Content-Type"},
 	})
 }
 
@@ -46,7 +49,7 @@ func AllowCorsObject() *cors.Cors {
 	return cors.New(cors.Options{
 		AllowCredentials: true,
 		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Original-Endpoint","Id_token"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Original-Endpoint", "Id_token", "Claims"},
 		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
 			return true
 		},

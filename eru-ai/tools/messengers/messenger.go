@@ -1,53 +1,54 @@
 package messengers
 
 const (
-	SendMessage        = "send_message"
-	SubscribeWebhooks  = "subscribe_webhooks"
-	GetMessageStatus   = "get_message_status"
-	UploadMedia        = "upload_media"
-	GetBusinessProfile = "get_business_profile"
+	SendMessage         = "send_message"
+	SubscribeWebhooks   = "subscribe_webhooks"
+	GetMessageStatus    = "get_message_status"
+	UploadMedia         = "upload_media"
+	RetrieveMedia       = "retrieve_media"
+	DeleteMedia         = "delete_media"
+	GetMediaUrl         = "get_media_url"
+	GetBusinessProfile  = "get_business_profile"
 	GetMessageTemplates = "get_message_templates"
-	Callback           = "callback"
-	
+	MarkMessageAsRead   = "mark_message_as_read"
+	SendTypingIndicator = "send_typing_indicator"
+	GetThroughput       = "get_throughput"
+	CreateGroup         = "create_group"
+	Callback            = "callback"
+	ReadMessages        = "read_messages"
 	// Slack-specific actions
-	ListChannels = "list_channels"
-	ListUsers    = "list_users"
-	CreateChannel = "create_channel"
+	ListChannels    = "list_channels"
+	ListUsers       = "list_users"
+	CreateChannel   = "create_channel"
 	InviteToChannel = "invite_to_channel"
+
+	Login     = "login"
+	GetSsoUrl = "get_sso_url"
+
+	RegisterPublicKey     = "register_public_key"
+	FetchPublicKey        = "fetch_public_key"
+	FlowEndpoint          = "flow_endpoint"
+	CreateMessageTemplate = "create_message_template"
+	DownloadFlowDocument  = "download_flow_document"
+	FetchTemplates        = "fetch_templates"
+	EditMessageTemplate   = "edit_message_template"
+	DeleteMessageTemplate = "delete_message_template"
 )
 
 type MessengerAccount struct {
-	PhoneNumberId       string `json:"phone_number_id"`
-	BusinessAccountId   string `json:"business_account_id"`
-	AccessToken         string `json:"-"`
-	WebhookVerifyToken  string `json:"-"`
-	WebhookUrl          string `json:"webhook_url"`
-	ApiVersion          string `json:"api_version"`
-}
-
-type messengerAccountWithToken struct {
-	PhoneNumberId       string `json:"phone_number_id"`
-	BusinessAccountId   string `json:"business_account_id"`
-	AccessToken         string `json:"access_token"`
-	WebhookVerifyToken  string `json:"webhook_verify_token"`
-	WebhookUrl          string `json:"webhook_url"`
-	ApiVersion          string `json:"api_version"`
-}
-
-type SlackAccount struct {
-	TeamId             string `json:"team_id"`
-	BotUserId          string `json:"bot_user_id"`
+	PhoneNumberId      string `json:"phone_number_id"`
+	BusinessAccountId  string `json:"business_account_id"`
 	AccessToken        string `json:"-"`
 	WebhookVerifyToken string `json:"-"`
 	WebhookUrl         string `json:"webhook_url"`
-	AppId              string `json:"app_id"`
+	ApiVersion         string `json:"api_version"`
 }
 
-type slackAccountWithToken struct {
-	TeamId             string `json:"team_id"`
-	BotUserId          string `json:"bot_user_id"`
+type messengerAccountWithToken struct {
+	PhoneNumberId      string `json:"phone_number_id"`
+	BusinessAccountId  string `json:"business_account_id"`
 	AccessToken        string `json:"access_token"`
 	WebhookVerifyToken string `json:"webhook_verify_token"`
 	WebhookUrl         string `json:"webhook_url"`
-	AppId              string `json:"app_id"`
+	ApiVersion         string `json:"api_version"`
 }

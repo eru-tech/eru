@@ -12,7 +12,7 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Methods(http.MethodGet).Path("/hello").HandlerFunc(handlers.HelloHandler)
 	router.Methods(http.MethodGet).Path("/state").HandlerFunc(handlers.StateHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/env/{env}").HandlerFunc(handlers.EnvHandler(s.Store))
-	router.Methods(http.MethodGet).Path("/echo").HandlerFunc(handlers.EchoHandler)
+	router.Methods(http.MethodGet).Path("/echo").HandlerFunc(handlers.EchoHandler(s.Store))
 
 	router.Name("variables_list").Methods(http.MethodGet).Path("/store/{project}/variables/list").HandlerFunc(handlers.FetchVarsHandler(s.Store))
 	router.Name("variables_savevar").Methods(http.MethodPost).Path("/store/{project}/variables/savevar").HandlerFunc(handlers.SaveVarHandler(s.Store))
@@ -64,6 +64,9 @@ func (s *Server) GetRouter() *mux.Router {
 	router.Name("event_remove_cd").Methods(http.MethodDelete).Path("/store/{project}/event/remove/{eventname}/{clouddelete}").HandlerFunc(handlers.RemoveEventHandler(s.Store))
 	router.Name("event_pub").Methods(http.MethodPost).Path("/store/{project}/event/publish/{eventname}").HandlerFunc(handlers.PublishEventHandler(s.Store))
 	router.Name("event_poll").Methods(http.MethodPost).Path("/store/{project}/event/poll/{eventname}").HandlerFunc(handlers.PollEventHandler(s.Store))
+	router.Name("event_subscribe").Methods(http.MethodPost).Path("/store/{project}/event/subscribe/{eventname}").HandlerFunc(handlers.SubscribeEventHandler(s.Store))
+	router.Name("event_unsubscribe").Methods(http.MethodDelete).Path("/store/{project}/event/unsubscribe/{eventname}/{subscriptionid}").HandlerFunc(handlers.UnsubscribeEventHandler(s.Store))
+	router.Name("event_list_subscriptions").Methods(http.MethodGet).Path("/store/{project}/event/list_subscriptions/{eventname}").HandlerFunc(handlers.ListSubscriptionsEventHandler(s.Store))
 
 	router.Name("sr_list").Methods(http.MethodGet).Path("/store/{project}/{resource}/request/list").HandlerFunc(handlers.RequestListHandler(s.Store))
 	router.Name("sr_save").Methods(http.MethodPost).Path("/store/{project}/request/save").HandlerFunc(handlers.RequestSaveHandler(s.Store))

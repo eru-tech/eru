@@ -33,6 +33,11 @@ const (
 	DELETE_REQUEST = "delete from eru_requests where request_id=??? returning request_id"
 )
 
+var InstanceId = "unknown"
+var ServiceName = "unknown"
+var BaseUrl = "unknown"
+var ConfigSyncEvent = "unknown"
+
 type StoreI interface {
 	LoadStore(fp string, ms StoreI) (err error)
 	GetStoreByteArray(fp string) (b []byte, err error)
@@ -60,7 +65,7 @@ type StoreI interface {
 	FetchVars(ctx context.Context, projectId string) (variables Variables, err error)
 	FetchTenantVars(ctx context.Context, projectId string) (variables map[string]Variables, err error)
 	ReplaceVariables(ctx context.Context, projectId string, text []byte, varMap map[string]interface{}) (returnText []byte)
-	ReplaceTenantVariables(ctx context.Context, projectId string, tenantId string, text []byte) (returnText []byte)
+	ReplaceTenantVariables(ctx context.Context, projectId string, tenantId string, conversationId string, text []byte) (returnText []byte)
 	SaveTenantSecret(ctx context.Context, projectId string, tenantId string, newSecret Secrets, s StoreI) (err error)
 	RemoveTenantSecret(ctx context.Context, projectId string, tenantId string, key string, s StoreI) (err error)
 	SaveRepo(ctx context.Context, projectId string, repo repos.RepoI, s StoreI, persist bool) (err error)
@@ -95,6 +100,11 @@ type StoreI interface {
 	SaveRequest(ctx context.Context, request models.SampleRequest, projectId string, tenantId string, s StoreI) (err error)
 	GetRequests(ctx context.Context, projectId string, tenantId string, resourceName string, s StoreI) (requests []models.SampleRequest, err error)
 	RemoveRequest(ctx context.Context, requestId string, s StoreI) (err error)
+	SetServiceName(serviceName string)
+	SetInstanceId(instanceId string)
+	SetBaseUrl(baseUrl string)
+	SetConfigSyncEvent(configSyncEvent string)
+	GetUpdateTime() time.Time
 }
 
 type Store struct {
@@ -122,6 +132,9 @@ type StoreCompare struct {
 	MismatchSecretManager map[string]interface{} `json:"mismatch_secret_manager"`
 }
 
+func (store *Store) GetUpdateTime() time.Time {
+	return time.Time{}
+}
 func (storeCompare *StoreCompare) CompareSecretManager(ctx context.Context, orgSm sm.SmStoreI, compareSm sm.SmStoreI) {
 	var diffR utils.DiffReporter
 	if !cmp.Equal(orgSm, compareSm, cmpopts.IgnoreUnexported(sm.AwsSmStore{}), cmp.Reporter(&diffR)) {
@@ -573,6 +586,7 @@ func (store *Store) ExecuteDbSave(ctx context.Context, queries []Queries) (outpu
 func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text []byte, varMap map[string]interface{}) (returnText []byte) {
 	logs.WithContext(ctx).Debug("ReplaceVariables - Start")
 	textStr := string(text)
+	textStr = strings.Replace(textStr, "$VAR_project_id", projectId, -1)
 	if _, prjVarsOk := store.Variables[projectId]; prjVarsOk {
 		for k, v := range store.Variables[projectId].Vars {
 			textStr = strings.Replace(textStr, fmt.Sprint("$VAR_", k), v.Value, -1)
@@ -594,9 +608,11 @@ func (store *Store) ReplaceVariables(ctx context.Context, projectId string, text
 	}
 	return []byte(textStr)
 }
-func (store *Store) ReplaceTenantVariables(ctx context.Context, projectId string, tenantId string, text []byte) (returnText []byte) {
+func (store *Store) ReplaceTenantVariables(ctx context.Context, projectId string, tenantId string, conversationId string, text []byte) (returnText []byte) {
 	logs.WithContext(ctx).Debug("ReplaceTenantVariables - Start")
 	textStr := string(text)
+	textStr = strings.Replace(textStr, "$VAR_tenant_id", tenantId, -1)
+	textStr = strings.Replace(textStr, "$VAR_conversation_id", conversationId, -1)
 	if _, prjVarsOk := store.TenantVariables[projectId]; prjVarsOk {
 		if _, tenantVarsOk := store.TenantVariables[projectId][tenantId]; tenantVarsOk {
 			for k, v := range store.TenantVariables[projectId][tenantId].Secrets {
@@ -923,7 +939,7 @@ func (store *Store) GetSmValue(ctx context.Context, projectId string, secretName
 			//}
 			//smObjClone.(sm.SmStoreI).SetCacheStore(smCacheObjClone.(cache.CacheStoreI))
 			//logs.WithContext(ctx).Info(fmt.Sprint(smObjClone.(sm.SmStoreI).GetCacheStore()))
-			secret_value, err = smObj.(sm.SmStoreI).GetSmValue(ctx, secretName, secretKey, force_delete)
+			secret_value, err = smObj.GetSmValue(ctx, projectId, secretName, secretKey, force_delete)
 			if err != nil {
 				return
 			}
@@ -1160,6 +1176,49 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 		logs.WithContext(ctx).Info("kms attribute not found in store")
 	}
 
+	var prjScheduler map[string]*json.RawMessage
+	if _, ok := storeMap["scheduler"]; ok {
+		if storeMap["scheduler"] != nil {
+			err = json.Unmarshal(*storeMap["scheduler"], &prjScheduler)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			for prj, schedulerJson := range prjScheduler {
+				var schedulerObj map[string]*json.RawMessage
+				err = json.Unmarshal(*schedulerJson, &schedulerObj)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return err
+				}
+				var schedulerType string
+				if _, stOk := schedulerObj["scheduler_type"]; stOk {
+					err = json.Unmarshal(*schedulerObj["scheduler_type"], &schedulerType)
+					if err != nil {
+						logs.WithContext(ctx).Error(err.Error())
+						return err
+					}
+					schedulerI := scheduler.GetScheduler(schedulerType)
+					err = schedulerI.MakeFromJson(ctx, schedulerJson)
+					if err == nil {
+						err = msi.SaveScheduler(ctx, prj, schedulerI, msi, false)
+						if err != nil {
+							return err
+						}
+					} else {
+						return err
+					}
+				} else {
+					logs.WithContext(ctx).Info("ignoring scheduler as scheduler_type attribute not found")
+				}
+			}
+		} else {
+			logs.WithContext(ctx).Info("scheduler attribute is nil")
+		}
+	} else {
+		logs.WithContext(ctx).Info("scheduler attribute not found in store")
+	}
+
 	var prjSm map[string]*json.RawMessage
 	if _, ok := storeMap["secret_manager"]; ok {
 		if storeMap["secret_manager"] != nil {
@@ -1188,7 +1247,7 @@ func (store *Store) SetStoreFromBytes(ctx context.Context, storeBytes []byte, ms
 							err = smI.MakeFromJson(ctx, smJson)
 							if err == nil {
 								logs.WithContext(ctx).Info(fmt.Sprint("________________________ inii cache called while lodaing for ", prj))
-								err = smI.InitCache(ctx)
+								err = smI.InitCache(ctx, prj)
 								err = msi.SaveSm(ctx, prj, smI, msi, false)
 								if err != nil {
 									return err
@@ -1538,6 +1597,11 @@ func (store *Store) SaveScheduler(ctx context.Context, projectId string, schedul
 	}
 	store.Scheduler[projectId] = schedulerObj
 	if persist {
+		/* err = store.InitScheduler(ctx, s)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		} */
 		err = s.SaveStore(ctx, projectId, "", s)
 	}
 	return
@@ -1637,4 +1701,16 @@ func (store *Store) GetRequests(ctx context.Context, projectId string, tenantId 
 		})
 	}
 	return
+}
+func (store *Store) SetServiceName(serviceName string) {
+	ServiceName = serviceName
+}
+func (store *Store) SetInstanceId(instanceId string) {
+	InstanceId = instanceId
+}
+func (store *Store) SetBaseUrl(baseUrl string) {
+	BaseUrl = baseUrl
+}
+func (store *Store) SetConfigSyncEvent(configSyncEvent string) {
+	ConfigSyncEvent = configSyncEvent
 }

@@ -17,8 +17,9 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func UserInfoHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func UserInfoHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("UserInfoHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -51,14 +52,14 @@ func UserInfoHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -77,8 +78,9 @@ func UserInfoHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func LoginApiHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func LoginApiHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("LoginApiHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -106,7 +108,7 @@ func LoginApiHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 		}
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -114,7 +116,7 @@ func LoginApiHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -134,8 +136,9 @@ func LoginApiHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func GetUserTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func GetUserTokensHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("GetUserTokensHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -162,7 +165,7 @@ func GetUserTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 		}
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -170,7 +173,7 @@ func GetUserTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -190,8 +193,66 @@ func GetUserTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func GetTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func GetIdTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("GetUserTokensHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		fetchTokenFromReq := json.NewDecoder(r.Body)
+
+		fetchTokenFromReq.DisallowUnknownFields()
+		type fetchToken struct {
+			Id string `json:"id" eru:"required"`
+		}
+		var fetchTokenObj fetchToken
+
+		if err := fetchTokenFromReq.Decode(&fetchTokenObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err := utils.ValidateStruct(r.Context(), fetchTokenObj, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+		}
+
+		idToken, err := authObjI.GetIdToken(r.Context(), projectId, fetchTokenObj.Id)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"id_token": idToken})
+		return
+	}
+}
+
+func GetTokensHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("GetTokensHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -218,7 +279,7 @@ func GetTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 		}
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -226,7 +287,7 @@ func GetTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -246,8 +307,9 @@ func GetTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func GenerateTempCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func GenerateTempCodeHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("GenerateTempCodeHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -275,7 +337,7 @@ func GenerateTempCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 		}
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -283,7 +345,7 @@ func GenerateTempCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -303,8 +365,9 @@ func GenerateTempCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func FetchTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func FetchTokensHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("FetchTokensHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -332,7 +395,7 @@ func FetchTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 		}
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -340,7 +403,7 @@ func FetchTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -360,15 +423,16 @@ func FetchTokensHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func VerifyTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func VerifyTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("VerifyTokenHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tokenType := vars["tokentype"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -393,8 +457,9 @@ func VerifyTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		return
 	}
 }
-func IdpTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func IdpTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Info("IdpTokenHandler - Start")
 		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
@@ -405,15 +470,15 @@ func IdpTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		if renew == "renew" {
 			renewFlag = true
 		}
-		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(ctx, projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		
+
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(ctx).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -448,7 +513,7 @@ func IdpTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		if pkceRequired {
-			msParams, err = s.GetPkceEvent(ctx, loginPostBody.IdpRequestId, s)
+			msParams, err = sh.Store.GetPkceEvent(ctx, loginPostBody.IdpRequestId, sh.Store)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -458,7 +523,7 @@ func IdpTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		loginPostBody.CodeVerifier = msParams.CodeVerifier
 		loginPostBody.Nonce = msParams.Nonce
-		
+
 		res, err := authObjI.IdpToken(ctx, loginPostBody, projectId, true, renewFlag)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
@@ -472,8 +537,9 @@ func IdpTokenHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func LoginHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Info("LoginHandler - Start")
 		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
@@ -481,7 +547,7 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		authName := vars["authname"]
 		logs.WithContext(r.Context()).Info(projectId)
 		logs.WithContext(r.Context()).Info(authName)
-		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(ctx, projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -490,7 +556,7 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		logs.WithContext(r.Context()).Info(fmt.Sprint(authObjI))
 
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(ctx).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -529,7 +595,7 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 		if pkceRequired {
-			msParams, err = s.GetPkceEvent(ctx, loginPostBody.IdpRequestId, s)
+			msParams, err = sh.Store.GetPkceEvent(ctx, loginPostBody.IdpRequestId, sh.Store)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -558,8 +624,9 @@ func LoginHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func GetRecoveryCodeHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("GetRecoveryCodeHandler - Start")
 		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
@@ -571,14 +638,14 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		silentFlag := false
 		silentFlag, _ = strconv.ParseBool(isSilentStr)
 
-		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(ctx, projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(ctx).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -614,8 +681,9 @@ func GetRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func GetVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func GetVerifyCodeHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("GetVerifyCodeHandler - Start")
 		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
@@ -643,14 +711,14 @@ func GetVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(ctx, projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(ctx).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -672,14 +740,15 @@ func GetVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func CheckVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func CheckVerifyCodeHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("CheckVerifyCodeHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -687,7 +756,7 @@ func CheckVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -746,21 +815,22 @@ func CheckVerifyCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func VerifyRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func VerifyRecoveryCodeHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("VerifyRecoveryCodeHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -795,14 +865,15 @@ func VerifyRecoveryCodeHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
-func CompleteRecoveryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func CompleteRecoveryHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("CompleteRecoveryHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -836,14 +907,15 @@ func CompleteRecoveryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func LogoutHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func LogoutHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("LogoutHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -863,15 +935,16 @@ func LogoutHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func GenerateOtpHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func GenerateOtpHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("GenerateOtpHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		gatewayType := vars["gatewaytype"]
 		messageType := vars["messagetype"]
 		channel := vars["channel"]
-		gatewayI, err := s.GetGatewayFromType(r.Context(), gatewayType, channel, projectId)
+		gatewayI, err := sh.Store.GetGatewayFromType(r.Context(), gatewayType, channel, projectId)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -883,7 +956,7 @@ func GenerateOtpHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": gnerr.Error()})
 				return
 			}
-			mt, mterr := s.GetMessageTemplate(r.Context(), gatewayName.(string), projectId, messageType)
+			mt, mterr := sh.Store.GetMessageTemplate(r.Context(), gatewayName.(string), projectId, messageType)
 			if mterr != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": mterr.Error()})
@@ -903,8 +976,9 @@ func GenerateOtpHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func GetUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func GetUserHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("GetUserHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -937,7 +1011,7 @@ func GetUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -956,8 +1030,9 @@ func GetUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func UpdateUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func UpdateUserHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("UpdateUserHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -990,14 +1065,14 @@ func UpdateUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 		}
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -1041,8 +1116,9 @@ func UpdateUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func EditUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func EditUserHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("UpdateUserHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -1092,14 +1168,14 @@ func EditUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -1124,8 +1200,9 @@ func EditUserHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ChangePasswordHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ChangePasswordHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ChangePasswordHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -1142,14 +1219,14 @@ func ChangePasswordHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -1190,8 +1267,9 @@ func ChangePasswordHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func GetSsoUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func GetSsoUrlHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("GetSsoUrl - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -1199,7 +1277,7 @@ func GetSsoUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		params := r.URL.Query()
 		state := params.Get("state")
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -1216,7 +1294,7 @@ func GetSsoUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 		pkceRequired, err := authObjI.GetAttribute(r.Context(), "pkce")
 		if pkceRequired.(bool) {
-			err = s.SavePkceEvent(r.Context(), msParams, s)
+			err = sh.Store.SavePkceEvent(r.Context(), msParams, sh.Store)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -1231,22 +1309,23 @@ func GetSsoUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func RegisterHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func RegisterHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("RegisterHandler - Start")
 		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(ctx, projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(ctx, projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(ctx).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)
@@ -1311,21 +1390,22 @@ func getUserIdFromToken(tokenObj map[string]interface{}) (userId string, err err
 	return
 }
 
-func RemoveIdentityHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func RemoveIdentityHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("RemoveIdentityHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		authName := vars["authname"]
 
-		authObjI, err := s.GetAuth(r.Context(), projectId, authName, s)
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
 		if authObjI.GetAuthDb() != nil {
-			authObjI.GetAuthDb().SetConn(s.GetConn())
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		} else {
 			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
 			server_handlers.FormatResponse(w, 400)

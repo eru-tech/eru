@@ -3,16 +3,44 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
-	"net/http"
 )
 
-func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+const StoreTableName = "eruql_config"
+const StoreTenantTableName = "eruql_tenant_config"
+
+func StoreLoadHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("StoreLoadHandler - Start")
+
+		// Load new store from DB
+		newStore, err := module_store.LoadStore(r.Context(), StoreTableName, StoreTenantTableName)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(fmt.Sprintf("Failed to load store: %v", err))
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		// Update the global StoreHolder with the new store
+		sh.Store = newStore
+
+		logs.WithContext(r.Context()).Info("Store loaded and replaced successfully")
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(newStore)
+	}
+}
+func StoreCompareHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("StoreCompareHandler - Start")
 		vars := mux.Vars(r)
@@ -31,7 +59,7 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 
 		storeCompare := module_model.StoreCompare{}
-		myPrj, err := s.GetExtendedProjectConfig(r.Context(), projectID, s)
+		myPrj, err := sh.Store.GetExtendedProjectConfig(r.Context(), projectID, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -55,12 +83,14 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ProjectSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		err := s.SaveProject(r.Context(), projectID, s, true)
+		err := sh.Store.SaveProject(r.Context(), projectID, sh.Store, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -72,12 +102,14 @@ func ProjectSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ProjectRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		err := s.RemoveProject(r.Context(), projectID, s)
+		err := sh.Store.RemoveProject(r.Context(), projectID, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -90,21 +122,21 @@ func ProjectRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ProjectListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ProjectListHandler - Start")
-		projectIds := s.GetProjectList(r.Context())
+		projectIds := sh.Store.GetProjectList(r.Context())
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"projects": projectIds})
 	}
 }
 
-func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectConfigHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ProjectConfigHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		project, err := s.GetExtendedProjectConfig(r.Context(), projectID, s)
+		project, err := sh.Store.GetExtendedProjectConfig(r.Context(), projectID, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -116,8 +148,10 @@ func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectSetingsSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectSetingsSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -143,7 +177,7 @@ func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		err := s.SaveProjectSettings(r.Context(), projectId, projectSettings, s)
+		err := sh.Store.SaveProjectSettings(r.Context(), projectId, projectSettings, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -155,7 +189,7 @@ func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-//func ProjectGenerateAesKeyHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+//func ProjectGenerateAesKeyHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 //	return func(w http.ResponseWriter, r *http.Request) {
 //		logs.WithContext(r.Context()).Debug("ProjectGenerateAesKeyHandler - Start")
 //		bytes := make([]byte, 32) //generate a random 32 byte key for AES-256

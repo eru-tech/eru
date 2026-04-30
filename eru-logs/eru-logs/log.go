@@ -19,17 +19,20 @@ var Logger *zap.Logger
 
 //var FileLogger *zap.Logger
 
-func LogInit(serviceName string) {
+func LogInit(serviceName string, instanceId string) {
 	logLevel := os.Getenv("LOG_LEVEL")
 	if logLevel == "" {
 		logLevel = "info"
 	}
+
+	initialFields := fmt.Sprintf(`{"service": "%s", "instance_id": "%s"}`, serviceName, instanceId)
+
 	logConfig := []byte(fmt.Sprint(`{
        "level" :"`, logLevel, `",
        "encoding": "json",
        "outputPaths":["stdout"],
        "errorOutputPaths":["stderr"],
- 	   "initialFields": {"service": "`, serviceName, `"},
+ 	   "initialFields": `, initialFields, `,
        "encoderConfig": {
            "messageKey":"msg",
            "levelKey":"level",

@@ -5,20 +5,55 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	agents_factory "github.com/eru-tech/eru/eru-ai/agents/agents_factory"
 	models "github.com/eru-tech/eru/eru-ai/models"
 	"github.com/eru-tech/eru/eru-ai/module_model"
 	"github.com/eru-tech/eru/eru-ai/module_store"
+	"github.com/eru-tech/eru/eru-ai/tools"
 	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
+	function_module_store "github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
+	vectorstore "github.com/eru-tech/eru/eru-vectorstore/vectorstore"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
 
-func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+const StoreTableName = "eruai_config"
+const StoreTenantTableName = "eruai_tenant_config"
+
+func StoreLoadHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("StoreLoadHandler - Start")
+
+		panic("Forced panic")
+
+		// Load new store from DB
+		newStore, err := module_store.LoadStore(r.Context(), StoreTableName, StoreTenantTableName)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(fmt.Sprintf("Failed to load store: %v", err))
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		// Update the global StoreHolder with the new store
+		sh.Store = newStore
+
+		logs.WithContext(r.Context()).Info("Store loaded and replaced successfully")
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(newStore)
+	}
+}
+
+func StoreCompareHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("StoreCompareHandler - Start")
 		vars := mux.Vars(r)
@@ -35,7 +70,7 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			return
 		}
 
-		myPrj, err := s.GetExtendedProjectConfig(r.Context(), projectID, s)
+		myPrj, err := sh.Store.GetExtendedProjectConfig(r.Context(), projectID, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -53,33 +88,38 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ProjectSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("ProjectSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		err := s.SaveProject(r.Context(), projectID, s, true)
+		err := sh.Store.SaveProject(r.Context(), projectID, sh.Store, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			return
 		} else {
+
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("project ", projectID, " created successfully")})
 		}
 	}
 }
 
-func ProjectRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("ProjectRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		err := s.RemoveProject(r.Context(), projectID, s)
+		err := sh.Store.RemoveProject(r.Context(), projectID, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-			return
 		} else {
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("project ", projectID, " removed successfully")})
@@ -87,21 +127,23 @@ func ProjectRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ProjectListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ProjectListHandler - Start")
-		projectIds := s.GetProjectList(r.Context())
+		projectIds := sh.Store.GetProjectList(r.Context())
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"projects": projectIds})
 	}
 }
 
-func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectConfigHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ProjectConfigHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
-		project, err := s.GetExtendedProjectConfig(r.Context(), projectID, s)
+		project, err := sh.Store.GetExtendedProjectConfig(r.Context(), projectID, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -112,8 +154,11 @@ func ProjectConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ModelSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ModelSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("ModelSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -161,7 +206,7 @@ func ModelSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		err = s.SaveModel(r.Context(), modelObj, projectId, tenantId, s, true)
+		err = sh.Store.SaveModel(r.Context(), modelObj, projectId, tenantId, sh.Store, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -177,27 +222,33 @@ func ModelSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ModelRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ModelRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("ModelRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
 		modelName := vars["modelname"]
-		err := s.RemoveModel(r.Context(), modelName, projectId, tenantId, s)
+		err := sh.Store.RemoveModel(r.Context(), modelName, projectId, tenantId, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore(r.Context(), projectId, "", s)
+			sh.Store.SaveStore(r.Context(), projectId, "", sh.Store)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("model ", modelName, " removed successfully")})
 		}
 	}
 }
 
-func AgentSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func AgentSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("AgentSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -243,7 +294,7 @@ func AgentSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		err = s.SaveAgent(r.Context(), agentObj, projectId, tenantId, s, true)
+		err = sh.Store.SaveAgent(r.Context(), agentObj, projectId, tenantId, sh.Store, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -259,27 +310,286 @@ func AgentSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func AgentRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func AgentRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("AgentRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
 		agentName := vars["agentname"]
-		err := s.RemoveAgent(r.Context(), agentName, projectId, tenantId, s)
+		err := sh.Store.RemoveAgent(r.Context(), agentName, projectId, tenantId, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			s.SaveStore(r.Context(), projectId, "", s)
+			sh.Store.SaveStore(r.Context(), projectId, "", sh.Store)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("agent ", agentName, " removed successfully")})
 		}
 	}
 }
-
-func ToolSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func VectorSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("VectorSaveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		vectorStoreName := vars["vectorstorename"]
+
+		vectorFromReq := json.NewDecoder(r.Body)
+		vectorFromReq.DisallowUnknownFields()
+
+		var vectorRecords vectorstore.VectorRecords
+		if err := vectorFromReq.Decode(&vectorRecords); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err = utils.ValidateStruct(r.Context(), vectorRecords, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		err := sh.Store.SaveVectors(r.Context(), vectorRecords, vectorStoreName, projectId, tenantId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("vectors saved successfully for vectorstore ", vectorStoreName)})
+	}
+}
+func VectorRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("VectorRemoveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		vectorStoreName := vars["vectorstorename"]
+
+		vectorFromReq := json.NewDecoder(r.Body)
+		vectorFromReq.DisallowUnknownFields()
+
+		var vectorRecordsDelete vectorstore.VectorRecordsDelete
+		if err := vectorFromReq.Decode(&vectorRecordsDelete); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err = utils.ValidateStruct(r.Context(), vectorRecordsDelete, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		err := sh.Store.RemoveVectors(r.Context(), vectorRecordsDelete, vectorStoreName, projectId, tenantId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("vectors deleted successfully for vectorstore ", vectorStoreName)})
+	}
+}
+func VectorListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("VectorListHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		vectorStoreName := vars["vectorstorename"]
+
+		vectorFromReq := json.NewDecoder(r.Body)
+		vectorFromReq.DisallowUnknownFields()
+
+		var vectorRecordsList vectorstore.VectorRecordsList
+		if err := vectorFromReq.Decode(&vectorRecordsList); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err = utils.ValidateStruct(r.Context(), vectorRecordsList, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		records, err := sh.Store.ListVectors(r.Context(), vectorRecordsList, vectorStoreName, projectId, tenantId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(records)
+	}
+}
+func VectorSearchHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("VectorSearchHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		vectorStoreName := vars["vectorstorename"]
+
+		vectorFromReq := json.NewDecoder(r.Body)
+		vectorFromReq.DisallowUnknownFields()
+
+		var vectorRecordsSearch vectorstore.VectorRecordsSearch
+		if err := vectorFromReq.Decode(&vectorRecordsSearch); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err = utils.ValidateStruct(r.Context(), vectorRecordsSearch, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+		records, err := sh.Store.SearchVectors(r.Context(), vectorRecordsSearch, vectorStoreName, projectId, tenantId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(records)
+	}
+}
+func VectorStoreSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("VectorStoreSaveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		storeType := ""
+		vectorStoreFromReq := json.NewDecoder(r.Body)
+		vectorStoreFromReq.DisallowUnknownFields()
+
+		var vectorStoreObjTmp map[string]interface{}
+		if err := vectorStoreFromReq.Decode(&vectorStoreObjTmp); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			if storeTypeI, ok := vectorStoreObjTmp["vector_type"]; !ok {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": "missing field in object : store_type"})
+				return
+			} else {
+				storeType = storeTypeI.(string)
+			}
+		}
+		vectorStoreObj := vectorstore.GetVectorStore(storeType)
+		vectorStoreJson, err := json.Marshal(vectorStoreObjTmp)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		if err = json.Unmarshal(vectorStoreJson, &vectorStoreObj); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		} else {
+			err = utils.ValidateStruct(r.Context(), vectorStoreObj, "")
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+		}
+
+		err = sh.Store.SaveVectorStore(r.Context(), vectorStoreObj, projectId, tenantId, sh.Store, true)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			vectorStoreName := vectorStoreObj.GetAttribute(r.Context(), "vector_name")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("vectorstore ", vectorStoreName, " saved successfully")})
+		}
+	}
+}
+func VectorStoreSyncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("VectorStoreSyncHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		vectorStoreName := vars["vectorstorename"]
+		err := sh.Store.SyncVectorStore(r.Context(), vectorStoreName, projectId, tenantId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("vectorstore ", vectorStoreName, " synced successfully")})
+		}
+	}
+}
+func VectorStoreRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("VectorStoreRemoveHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		vectorStoreName := vars["vectorstorename"]
+		err := sh.Store.RemoveVectorStore(r.Context(), vectorStoreName, projectId, tenantId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("vectorstore ", vectorStoreName, " removed successfully")})
+		}
+	}
+}
+
+func ToolSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("ToolSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -327,7 +637,7 @@ func ToolSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		err = s.SaveTool(r.Context(), toolObj, projectId, tenantId, s, true)
+		err = sh.Store.SaveTool(r.Context(), toolObj, projectId, tenantId, sh.Store, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -339,14 +649,17 @@ func ToolSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ToolRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ToolRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("ToolRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
 		toolName := vars["toolname"]
-		err := s.RemoveTool(r.Context(), toolName, projectId, tenantId, s)
+		err := sh.Store.RemoveTool(r.Context(), toolName, projectId, tenantId, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -356,36 +669,154 @@ func ToolRemoveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
+func FetchConversationHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("FetchConversationHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		agentName := vars["agentname"]
+		conversationId := vars["conversationid"]
+		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, conversationId, agentName, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		}
 
-func AgentExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+		claims := r.Header.Get("claims")
+		if claims != "" {
+			r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
+		}
+
+		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
+		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+
+		conversation, err := agent.LoadConversationHistory(r.Context(), conversationId, projectId, tenantId)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(conversation)
+		}
+
+	}
+}
+func ListConversationsHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ListConversationsHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		agentName := vars["agentname"]
+		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, "", agentName, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		}
+
+		claims := r.Header.Get("claims")
+		if claims != "" {
+			r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
+		}
+
+		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
+		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+
+		conversations, err := agent.LoadConversationList(r.Context(), projectId, tenantId)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(conversations)
+		}
+
+	}
+}
+
+func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("AgentExecuteHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
 		agentName := vars["agentname"]
-		agent, err := s.GetAgent(r.Context(), projectId, tenantId, agentName, s)
+		conversationId := vars["conversationid"]
+
+		isStream := strings.HasSuffix(r.URL.Path, "/stream")
+
+		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, conversationId, agentName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-		} else {
-			logs.WithContext(r.Context()).Info(fmt.Sprintf("Agent: %v", agent))
-			agentParamsFromReq := json.NewDecoder(r.Body)
-			agentParamsFromReq.DisallowUnknownFields()
+			return
+		}
 
-			var agentMessage agents.AgentMessage
-			if err := agentParamsFromReq.Decode(&agentMessage); err != nil {
-				logs.WithContext(r.Context()).Error(err.Error())
-				server_handlers.FormatResponse(w, 400)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		agentParamsFromReq := json.NewDecoder(r.Body)
+		agentParamsFromReq.DisallowUnknownFields()
+
+		var agentMessage agents.AgentMessage
+		if err := agentParamsFromReq.Decode(&agentMessage); err != nil {
+			utils.PrintRequestBody(r.Context(), r, "")
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if conversationId == "" {
+			conversationId = uuid.New().String()
+		}
+		if agentMessage.MessageId == "" {
+			agentMessage.MessageId = uuid.New().String()
+		}
+		claims := r.Header.Get("claims")
+		if claims != "" {
+			r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
+		}
+
+		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
+		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+
+		if isStream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Connection", "keep-alive")
+			w.WriteHeader(http.StatusOK)
+
+			flusher, canFlush := w.(http.Flusher)
+
+			sendSSE := func(event agents.StreamEvent) {
+				data, err := json.Marshal(event)
+				if err != nil {
+					return
+				}
+				fmt.Fprintf(w, "data: %s\n\n", string(data))
+				if canFlush {
+					flusher.Flush()
+				}
+			}
+
+			streamCb := agents.StreamCallback(func(event agents.StreamEvent) {
+				sendSSE(event)
+			})
+
+			ctx := agents.WithStreamCallback(r.Context(), streamCb)
+			agentResult, err := agent.Execute(ctx, agentMessage, conversationId, projectId, tenantId)
+			if err != nil {
+				sendSSE(agents.StreamEvent{Event: agents.StreamEventError, Data: err.Error()})
 				return
 			}
-			logs.WithContext(r.Context()).Info(fmt.Sprintf("AgentMessage: %v", agentMessage))
-			agentResult, err := agent.Execute(r.Context(), agentMessage)
+
+			agentResult.ConversationId = conversationId
+			sendSSE(agents.StreamEvent{Event: agents.StreamEventDone, Data: agentResult})
+		} else {
+			agentResult, err := agent.Execute(r.Context(), agentMessage, conversationId, projectId, tenantId)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			} else {
+				agentResult.ConversationId = conversationId
 				logs.WithContext(r.Context()).Info(fmt.Sprintf("AgentResult: %v", agentResult))
 				server_handlers.FormatResponse(w, 200)
 				_ = json.NewEncoder(w).Encode(agentResult)
@@ -394,31 +825,44 @@ func AgentExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ToolCallbackHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ToolCallbackHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ToolCallbackHandler - Start")
-		ctx := context.WithValue(r.Context(), "Erufuncbaseurl", module_store.Erufuncbaseurl)
+		ctx := context.WithValue(r.Context(), tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
 		toolName := vars["toolname"]
 		actionName := "callback"
 
-		tool, err := s.GetTool(ctx, projectId, tenantId, toolName, actionName, s)
+		tool, err := sh.Store.GetTool(ctx, projectId, tenantId, toolName, actionName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
 			toolBodyFromReq := json.NewDecoder(r.Body)
 			toolBodyFromReq.DisallowUnknownFields()
-
-			var toolBody map[string]interface{}
-			if err := toolBodyFromReq.Decode(&toolBody); err != nil {
-				logs.WithContext(r.Context()).Error(err.Error())
-				//server_handlers.FormatResponse(w, 400)
-				//json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-				//return
-				toolBody = make(map[string]interface{})
+			toolBody := make(map[string]interface{})
+			contentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
+			logs.WithContext(r.Context()).Info(fmt.Sprintf("contentType: %v", contentType))
+			switch contentType {
+			case "application/json":
+				if err := toolBodyFromReq.Decode(&toolBody); err != nil {
+					logs.WithContext(r.Context()).Error(err.Error())
+					toolBody = make(map[string]interface{})
+				}
+			case "application/x-www-form-urlencoded":
+				if err := r.ParseForm(); err != nil {
+					logs.WithContext(r.Context()).Error(err.Error())
+					toolBody = make(map[string]interface{})
+				} else {
+					for key, values := range r.PostForm {
+						if len(values) > 0 {
+							toolBody[key] = values[0]
+						}
+					}
+				}
 			}
 
 			params := r.URL.Query()
@@ -444,15 +888,17 @@ func ToolCallbackHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
-func ToolCbUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+
+func ToolCbUrlHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ToolCbUrlHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
 		toolName := vars["toolname"]
 		actionName := "callback"
-		tool, err := s.GetTool(r.Context(), projectId, tenantId, toolName, actionName, s)
+		tool, err := sh.Store.GetTool(r.Context(), projectId, tenantId, toolName, actionName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -462,11 +908,15 @@ func ToolCbUrlHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"url": tool.GetToolCbUrl(projectId, tenantId)})
 	}
 }
-func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+
+func ToolExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ToolExecuteHandler - Start")
 		ctx := context.WithValue(r.Context(), "eruauthbaseurl", module_store.Eruauthbaseurl)
 		ctx = context.WithValue(ctx, "eruaiport", module_store.Eruaiport)
+		ctx = context.WithValue(ctx, tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
+
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
@@ -474,7 +924,7 @@ func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		actionName := vars["actionname"]
 		logs.WithContext(r.Context()).Info(fmt.Sprintf("Tool Name: %v", toolName))
 		logs.WithContext(r.Context()).Info(fmt.Sprintf("Action Name: %v", actionName))
-		tool, err := s.GetTool(r.Context(), projectId, tenantId, toolName, actionName, s)
+		tool, err := sh.Store.GetTool(r.Context(), projectId, tenantId, toolName, actionName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -502,13 +952,14 @@ func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 					toolParams.Params[key] = values[0]
 				}
 			}
+
 			toolResult, persistStore, err := tool.Execute(ctx, projectId, tenantId, actionName, toolParams.Params)
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			} else {
 				if persistStore {
-					err = s.SaveTool(r.Context(), tool, projectId, tenantId, s, true)
+					err = sh.Store.SaveTool(r.Context(), tool, projectId, tenantId, sh.Store, true)
 					if err != nil {
 						logs.WithContext(r.Context()).Error(err.Error())
 						server_handlers.FormatResponse(w, 400)
@@ -522,8 +973,87 @@ func ToolExecuteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ToolWhatsAppEndpointExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("ToolExecuteHandler - Start")
+		ctx := context.WithValue(r.Context(), "eruauthbaseurl", module_store.Eruauthbaseurl)
+		ctx = context.WithValue(ctx, "eruaiport", module_store.Eruaiport)
+		ctx = context.WithValue(ctx, tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		toolName := vars["toolname"]
+		actionName := vars["actionname"]
+		endpoint := vars["endpoint"]
+		tool, err := sh.Store.GetTool(r.Context(), projectId, tenantId, toolName, actionName, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			toolParamsFromReq := json.NewDecoder(r.Body)
+			toolParamsFromReq.DisallowUnknownFields()
+
+			type tParams struct {
+				Params map[string]interface{} `json:"params"`
+			}
+
+			var toolParams tParams
+			var toolParamsMap map[string]interface{}
+			if err := toolParamsFromReq.Decode(&toolParamsMap); err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+			if toolParams.Params == nil {
+				toolParams.Params = make(map[string]interface{})
+			}
+			toolParams.Params = toolParamsMap
+			queryParams := r.URL.Query()
+			for key, values := range queryParams {
+				if len(values) > 0 {
+					toolParams.Params[key] = values[0]
+				}
+			}
+			toolParams.Params["endpoint"] = endpoint
+
+			toolResult, persistStore, err := tool.Execute(ctx, projectId, tenantId, actionName, toolParams.Params)
+			if err != nil {
+				server_handlers.FormatResponse(w, 421)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			} else {
+				if persistStore {
+					err = sh.Store.SaveTool(r.Context(), tool, projectId, tenantId, sh.Store, true)
+					if err != nil {
+						logs.WithContext(r.Context()).Error(err.Error())
+						server_handlers.FormatResponse(w, 400)
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					}
+				}
+				encryptedResponse, ok := toolResult["encrypted_response"]
+				if ok {
+					encryptedResponseStr, ok := encryptedResponse.(string)
+					if ok {
+						w.Header().Set("Cache-Control", "no-store")
+						w.Header().Set("Content-Type", "plain/text")
+						w.WriteHeader(200)
+						w.Write([]byte(encryptedResponseStr))
+						return
+					}
+				}
+				server_handlers.FormatResponse(w, 421)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "decryption failed"})
+			}
+		}
+	}
+}
+
+func ProjectSettingsSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
 		logs.WithContext(r.Context()).Debug("ProjectSetingsSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -549,7 +1079,7 @@ func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		err := s.SaveProjectSettings(r.Context(), projectId, projectSettings, s)
+		err := sh.Store.SaveProjectSettings(r.Context(), projectId, projectSettings, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -558,5 +1088,77 @@ func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("project settings for ", projectId, " saved successfully")})
 		}
+	}
+}
+func ConfigSyncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SaveVarHandler - Start")
+		vars := mux.Vars(r)
+		project_event_name := vars["event_name"]
+		varJson := json.NewDecoder(r.Body)
+		varJson.DisallowUnknownFields()
+
+		project_id := ""
+		event_name := ""
+
+		splitEventText := strings.Split(project_event_name, "__")
+		if len(splitEventText) == 2 {
+			project_id = splitEventText[0]
+			event_name = splitEventText[1]
+		}
+		tmplBodyFromReq := json.NewDecoder(r.Body)
+		tmplBodyFromReq.DisallowUnknownFields()
+		var tmplBody interface{}
+		if err := tmplBodyFromReq.Decode(&tmplBody); err != nil {
+			logs.Logger.Error(err.Error())
+		}
+		configEvent, err := sh.Store.FetchEvent(r.Context(), project_id, event_name)
+		if err != nil {
+			logs.Logger.Error(fmt.Sprintf("Failed to fetch config event: %v", err))
+		} else {
+			logs.Logger.Info(fmt.Sprintf("tmplBody: %v", tmplBody))
+			endpoint := fmt.Sprintf("%s/%s?instance_id=%s", server_handlers.BaseUrl, server_handlers.ConfigSyncEvent, server_handlers.InstanceId)
+			notification, confirmation, err := configEvent.ProcessNotification(r.Context(), tmplBody, endpoint)
+			if err != nil {
+				logs.Logger.Error(fmt.Sprintf("failed to process notification: %v", err))
+			}
+			logs.Logger.Info(fmt.Sprintf("confirmation: %v, configEvent: %v", confirmation, configEvent))
+			if confirmation {
+				err = sh.Store.SaveStore(r.Context(), project_id, "", sh.Store)
+				if err != nil {
+					logs.Logger.Error(fmt.Sprintf("failed to save store after confirmation: %v", err))
+				}
+			}
+			nInstanceId := ""
+			nServiceName := ""
+			if notification != nil {
+				for k, v := range notification {
+					if k == "instance_id" {
+						nInstanceId = v.StringValue
+					}
+					if k == "service_name" {
+						nServiceName = v.StringValue
+					}
+				}
+			}
+			// process notification only if it is from same service name but different instance id
+			if nInstanceId != server_handlers.InstanceId && nServiceName == server_handlers.ServerName {
+				sh.Lock()
+				defer sh.Unlock()
+
+				// Load new store from DB
+				newStore, err := module_store.LoadStore(r.Context(), StoreTableName, StoreTenantTableName)
+				if err != nil {
+					logs.WithContext(r.Context()).Error(fmt.Sprintf("Failed to load store: %v", err))
+					server_handlers.FormatResponse(w, 400)
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					return
+				}
+				// Update the global StoreHolder with the new store
+				sh.Store = newStore
+			}
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode("ok")
 	}
 }

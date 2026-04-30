@@ -107,12 +107,16 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(ctx context.Context, sel ast.Selection,
 		}
 	}
 	sqlCols := SQLCols{}
+	errMsg := ""
 	if field.SelectionSet == nil {
 		var tmpSelSet []ast.Selection
 		sqlCols, _ = sqlObj.processColumnList(ctx, tmpSelSet, sqlObj.MainTableName, vars, 0, 0, datasource, s, sqlMaker)
 		sqlCols.ColWithAlias = append(sqlCols.ColWithAlias, " * ")
 	} else {
-		sqlCols, _ = sqlObj.processColumnList(ctx, field.SelectionSet.Selections, sqlObj.MainTableName, vars, 0, 0, datasource, s, sqlMaker)
+		sqlCols, errMsg = sqlObj.processColumnList(ctx, field.SelectionSet.Selections, sqlObj.MainTableName, vars, 0, 0, datasource, s, sqlMaker)
+		if errMsg != "" {
+			return errors.New(errMsg)
+		}
 	}
 	sqlObj.Columns = sqlCols
 	err = sqlObj.MakeQuery(ctx, sqlMaker, withColAlias)
@@ -185,6 +189,14 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 								cs_a = csArray[0]
 								cs_c = csArray[0]
 							}
+							cscArray := strings.Split(cs_c, "~")
+							dt := ""
+							if len(cscArray) > 1 {
+								cs_c = cscArray[0]
+								dt = cscArray[1]
+								cs_a = fmt.Sprint(cs_a, "~", dt)
+							}
+
 							jc := sqlMaker.MakeJsonColumn(fv, cs_c)
 							n := ast.Name{field.Kind, field.Loc, jc}
 							al := ast.Name{field.Kind, field.Loc, fmt.Sprint(cs_a)}
@@ -369,6 +381,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 				tj, e := datasource.GetTableJoins(ctx, tableName, colTableName, sqlObj.tableNames)
 				if e != nil {
 					logs.WithContext(ctx).Error(e.Error())
+					//TODO if join not found then consider not handling it as error - currrently sql is sent to db with no columns resulting in sql failing
 					return SQLCols{}, e.Error()
 				}
 				if sqlObj.SecurityClause == nil {
@@ -380,6 +393,8 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 					//ignoring error if security rule not defined - simply execute without security rule
 					if !strings.Contains(e.Error(), "TableSecurityRule not defined for") {
 						return SQLCols{}, e.Error()
+					} else {
+						e = nil
 					}
 				}
 				//if sqlObj.JoinClause == nil {
@@ -447,7 +462,7 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 								newVal = strings.Replace(newVal.(string), "\\.", ".", -1)
 							}
 						}
-						if v == "$or" || v == "or" {
+						if v == "$or" || v == "or" || v == "_or" {
 							if reflect.TypeOf(newVal).Kind().String() != "slice" {
 								errStr := "Error : or clause has single element"
 								logs.WithContext(ctx).Error(errStr)
@@ -543,13 +558,23 @@ func processWhereClause(ctx context.Context, val interface{}, parentKey string, 
 									logs.WithContext(ctx).Warn("between clause is not a map")
 								}
 								preFix := "'"
-								//checking only from value to determine with values recevied are int/float to avoid adding single quote in sql
-								_, Interr := strconv.Atoi(btwClause["from"].(string))
-								if Interr == nil {
+								//checking only "from" value to determine with values recevied are int/float to avoid adding single quote in sql
+								fromVal := btwClause["from"]
+								_, intOk := fromVal.(int)
+								_, int64Ok := fromVal.(int64)
+								_, float32Ok := fromVal.(float32)
+								_, float64Ok := fromVal.(float64)
+								isNumber := intOk || int64Ok || float32Ok || float64Ok
+								if isNumber {
 									preFix = ""
-								}
-								if _, flErr := strconv.ParseFloat(btwClause["from"].(string), 64); flErr == nil {
-									preFix = ""
+								} else {
+									_, Interr := strconv.Atoi(btwClause["from"].(string))
+									if Interr == nil {
+										preFix = ""
+									}
+									if _, flErr := strconv.ParseFloat(btwClause["from"].(string), 64); flErr == nil {
+										preFix = ""
+									}
 								}
 								btwClauseStr := fmt.Sprint(preFix, btwClause["from"], preFix, " and ", preFix, btwClause["to"], preFix)
 								tempArray = append(tempArray, fmt.Sprint(parentKey, op, btwClauseStr))

@@ -6,6 +6,7 @@ import (
 
 	"github.com/eru-tech/eru/eru-functions/functions"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
@@ -46,8 +47,9 @@ type ProjectSettings struct {
 }
 type ExtendedProject struct {
 	Project
-	Variables     store.Variables `json:"variables"`
-	SecretManager sm.SmStoreI     `json:"secret_manager"`
+	Variables     store.Variables      `json:"variables"`
+	SecretManager sm.SmStoreI          `json:"secret_manager"`
+	Scheduler     scheduler.SchedulerI `json:"scheduler"`
 }
 
 type Project struct {

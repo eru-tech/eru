@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"runtime"
@@ -19,13 +20,18 @@ import (
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
 
 var ServerName = "unkown"
+var InstanceId = "unkown"
 var RepoName = "unkown.json"
 var AllowedOrigins = ""
 var RequestIdKey = "request_id"
+var ConfigSyncEvent = "unknown"
+var BaseUrl = ""
+var EruqlBaseUrl = ""
 
 func HelloHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/hello" {
@@ -39,7 +45,9 @@ func HelloHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, fmt.Sprint("Hello ", ServerName))
 }
-
+func SetInstanceId() {
+	InstanceId = fmt.Sprintf("%s-%s", ServerName, uuid.New().String())
+}
 func EnvHandler(s store.StoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("EnvHandler - Start")
@@ -70,35 +78,33 @@ func StateHandler(s store.StoreI) http.HandlerFunc {
 	}
 }
 
-func EchoHandler(w http.ResponseWriter, r *http.Request) {
-	err := r.ParseMultipartForm((1 << 20) * 10)
-	logs.Logger.Info(fmt.Sprint("r.ParseMultipartForm error = ", err))
-	formData := r.MultipartForm
-	res := make(map[string]interface{})
-	res["FormData"] = formData
-	res["Host"] = r.Host
-	res["Header"] = r.Header
-	res["URL"] = r.URL
-	tmplBodyFromReq := json.NewDecoder(r.Body)
-	tmplBodyFromReq.DisallowUnknownFields()
-	var tmplBody interface{}
-	if err := tmplBodyFromReq.Decode(&tmplBody); err != nil {
-		logs.Logger.Error(err.Error())
+func EchoHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("PeerEchoHandler - Start")
+		url := "https://echo-http-requests.appspot.com/echo"
+		resp, err := http.Get(url)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		utils.PrintResponseBody(r.Context(), resp, "PeerEchoHandler - Response")
+		defer resp.Body.Close()
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			FormatResponse(w, 500)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, resp.StatusCode)
+		var bodyContent interface{}
+		if err := json.Unmarshal(bodyBytes, &bodyContent); err != nil {
+			w.Write(bodyBytes)
+		} else {
+			_ = json.NewEncoder(w).Encode(bodyContent)
+		}
 	}
-	res["Body"] = tmplBody
-	res["Method"] = r.Method
-	res["MultipartForm"] = r.MultipartForm
-	res["RequestURI"] = r.RequestURI
-	res["RemoteAddr"] = r.RemoteAddr
-	res["Response"] = r.Response
-	res["Cookies"] = r.Cookies()
-	FormatResponse(w, 200)
-	_ = json.NewEncoder(w).Encode(res)
-	logs.Logger.Info("w.Header() from echo handler")
-	logs.Logger.Info(fmt.Sprint(w.Header()))
-
 }
-
 func SaveVarHandler(s store.StoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("SaveVarHandler - Start")
@@ -729,7 +735,29 @@ func PublishEventHandler(s store.StoreI) http.HandlerFunc {
 
 func PollEventHandler(s store.StoreI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		logs.WithContext(r.Context()).Debug("PublishEventHandler - Start")
+		logs.WithContext(r.Context()).Debug("PollEventHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		eventName := vars["eventname"]
+
+		err := s.PollEvent(r.Context(), projectId, eventName, s)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("event polled for project ", projectId, ".")})
+	}
+}
+
+func SubscribeEventHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("SubscribeEventHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		if projectId == "" {
@@ -740,7 +768,49 @@ func PollEventHandler(s store.StoreI) http.HandlerFunc {
 		eventJson := json.NewDecoder(r.Body)
 		eventJson.DisallowUnknownFields()
 
-		err := s.PollEvent(r.Context(), projectId, eventName, s)
+		subscription := make(map[string]interface{})
+		eventI := events.GetEvent(eventName)
+		if err := eventJson.Decode(&subscription); err == nil {
+			err = eventI.Subscribe(r.Context(), subscription)
+			if err != nil {
+				FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+		}
+
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("subscription for event ", eventName, " for project ", projectId, " subscribed successfully.")})
+	}
+}
+
+func UnsubscribeEventHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("UnsubscribeEventHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		eventName := vars["eventname"]
+		subscriptionId := vars["subscriptionid"]
+		logs.WithContext(r.Context()).Info(fmt.Sprintf("eventname: %s", eventName))
+		logs.WithContext(r.Context()).Info(fmt.Sprintf("subscriptionid: %s", subscriptionId))
+		eventI, err := s.FetchEvent(r.Context(), projectId, eventName)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		logs.WithContext(r.Context()).Info(fmt.Sprintf("eventI: %v", eventI))
+		err = eventI.Unsubscribe(r.Context(), subscriptionId)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		err = s.SaveStore(r.Context(), projectId, "", s)
 		if err != nil {
 			FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -748,7 +818,28 @@ func PollEventHandler(s store.StoreI) http.HandlerFunc {
 		}
 
 		FormatResponse(w, 200)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("event message processed for project ", projectId, ".")})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("subscription for event ", eventName, " for project ", projectId, " unsubscribed successfully.")})
+	}
+}
+
+func ListSubscriptionsEventHandler(s store.StoreI) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ListSubscriptionsEventHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		if projectId == "" {
+			projectId = "gateway"
+		}
+		eventName := vars["eventname"]
+		eventI := events.GetEvent(eventName)
+		subscriptions, err := eventI.ListSubscriptions(r.Context())
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(subscriptions)
 	}
 }
 

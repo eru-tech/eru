@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	"github.com/eru-tech/eru/eru-ai/agents/agents_factory"
@@ -15,6 +16,7 @@ import (
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
 	"github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
+	vectorstore "github.com/eru-tech/eru/eru-vectorstore/vectorstore"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -58,10 +60,11 @@ type Project struct {
 }
 
 type TenantConfig struct {
-	TenantId string                   `json:"tenant_id" eru:"required"`
-	Models   map[string]models.ModelI `json:"models"`
-	Tools    map[string]tools.Tooling `json:"tools"`
-	Agents   map[string]agents.AgentI `json:"agents"`
+	TenantId     string                              `json:"tenant_id" eru:"required"`
+	Models       map[string]models.ModelI            `json:"models"`
+	Tools        map[string]tools.Tooling            `json:"tools"`
+	Agents       map[string]agents.AgentI            `json:"agents"`
+	VectorStores map[string]vectorstore.VectorStoreI `json:"vector_stores"`
 }
 
 type ProjectSettings struct {
@@ -76,10 +79,11 @@ func (prj *Project) AddModel(ctx context.Context, tenantId string, modelObj mode
 
 	if _, ok := prj.Tenants[tenantId]; !ok {
 		prj.Tenants[tenantId] = TenantConfig{
-			TenantId: tenantId,
-			Models:   make(map[string]models.ModelI),
-			Tools:    make(map[string]tools.Tooling),
-			Agents:   make(map[string]agents.AgentI),
+			TenantId:     tenantId,
+			Models:       make(map[string]models.ModelI),
+			Tools:        make(map[string]tools.Tooling),
+			Agents:       make(map[string]agents.AgentI),
+			VectorStores: make(map[string]vectorstore.VectorStoreI),
 		}
 	}
 	modelNameI, _ := modelObj.GetAttribute(ctx, "model_name")
@@ -110,10 +114,11 @@ func (prj *Project) AddTool(ctx context.Context, tenantId string, toolObj tools.
 
 	if _, ok := prj.Tenants[tenantId]; !ok {
 		prj.Tenants[tenantId] = TenantConfig{
-			TenantId: tenantId,
-			Models:   make(map[string]models.ModelI),
-			Tools:    make(map[string]tools.Tooling),
-			Agents:   make(map[string]agents.AgentI),
+			TenantId:     tenantId,
+			Models:       make(map[string]models.ModelI),
+			Tools:        make(map[string]tools.Tooling),
+			Agents:       make(map[string]agents.AgentI),
+			VectorStores: make(map[string]vectorstore.VectorStoreI),
 		}
 	}
 	toolNameI, _ := toolObj.GetAttribute(ctx, "tool_name")
@@ -144,16 +149,31 @@ func (prj *Project) AddAgent(ctx context.Context, tenantId string, agentObj agen
 
 	if _, ok := prj.Tenants[tenantId]; !ok {
 		prj.Tenants[tenantId] = TenantConfig{
-			TenantId: tenantId,
-			Models:   make(map[string]models.ModelI),
-			Tools:    make(map[string]tools.Tooling),
-			Agents:   make(map[string]agents.AgentI),
+			TenantId:     tenantId,
+			Models:       make(map[string]models.ModelI),
+			Tools:        make(map[string]tools.Tooling),
+			Agents:       make(map[string]agents.AgentI),
+			VectorStores: make(map[string]vectorstore.VectorStoreI),
 		}
 	}
 	agentNameI, _ := agentObj.GetAttribute(ctx, "agent_name")
 	agentName := agentNameI.(string)
 	if agentName == "" {
 		return errors.New("agent_name cannot be blank")
+	}
+	oldAgentObj, ok := prj.Tenants[tenantId].Agents[agentName]
+	if ok {
+		cacheI := oldAgentObj.GetChatMemory()
+		if cacheI != nil {
+			err := cacheI.SyncPersistence(ctx, oldAgentObj.GetChatMemory())
+			if err != nil {
+				return err
+			}
+		}
+	}
+	err := agentObj.ValidateChatMemory(ctx, prj.ProjectId)
+	if err != nil {
+		return err
 	}
 	prj.Tenants[tenantId].Agents[agentName] = agentObj
 	return nil
@@ -168,6 +188,58 @@ func (prj *Project) RemoveAgent(ctx context.Context, tenantId string, agentName 
 		return errors.New("agent not found")
 	}
 	delete(prj.Tenants[tenantId].Agents, agentName)
+	return nil
+}
+
+func (prj *Project) AddVectorStore(ctx context.Context, tenantId string, vectorStoreObj vectorstore.VectorStoreI) (isNew bool, updatedVectorStoreObj vectorstore.VectorStoreI, err error) {
+	logs.WithContext(ctx).Debug("AddVectorStore - Start")
+	isNew = false
+	if prj.Tenants == nil {
+		prj.Tenants = make(map[string]TenantConfig)
+	}
+
+	if _, ok := prj.Tenants[tenantId]; !ok {
+		prj.Tenants[tenantId] = TenantConfig{
+			TenantId:     tenantId,
+			Models:       make(map[string]models.ModelI),
+			Tools:        make(map[string]tools.Tooling),
+			Agents:       make(map[string]agents.AgentI),
+			VectorStores: make(map[string]vectorstore.VectorStoreI),
+		}
+	}
+	vectorStoreName := vectorStoreObj.GetAttribute(ctx, "vector_name")
+	if vectorStoreName == "" {
+		return isNew, nil, errors.New("vectorstore name cannot be blank")
+	}
+
+	bn := vectorStoreObj.GetAttribute(ctx, "bucket_name")
+	if !strings.Contains(bn, tenantId) && bn != "" {
+		vectorStoreObj.SetAttribute(ctx, "bucket_name", bn+"-"+tenantId)
+	}
+
+	if vs, ok := prj.Tenants[tenantId].VectorStores[vectorStoreName]; !ok {
+		isNew = true
+		prj.Tenants[tenantId].VectorStores[vectorStoreName] = vectorStoreObj
+	} else {
+		err = vs.UpdateVectorStore(ctx, vectorStoreObj)
+		if err != nil {
+			return false, nil, err
+		}
+		vectorStoreObj = vs
+	}
+	return isNew, vectorStoreObj, nil
+}
+
+func (prj *Project) RemoveVectorStore(ctx context.Context, tenantId string, vectorStoreName string) error {
+	logs.WithContext(ctx).Debug("RemoveVectorStore - Start")
+	if _, ok := prj.Tenants[tenantId]; !ok {
+		return errors.New("tenant not found")
+	}
+	if _, ok := prj.Tenants[tenantId].VectorStores[vectorStoreName]; !ok {
+		return errors.New("vectorstore not found")
+	}
+
+	delete(prj.Tenants[tenantId].VectorStores, vectorStoreName)
 	return nil
 }
 

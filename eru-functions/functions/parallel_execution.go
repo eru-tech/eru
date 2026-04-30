@@ -3,13 +3,14 @@ package functions
 import (
 	"context"
 	"fmt"
-	"github.com/eru-tech/eru/eru-events/events"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"github.com/jmoiron/sqlx"
 	"net/http"
 	"runtime/debug"
 	"sync"
 	"time"
+
+	"github.com/eru-tech/eru/eru-events/events"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/jmoiron/sqlx"
 )
 
 type Job struct {
@@ -61,6 +62,56 @@ type EventJob struct {
 type EventResult struct {
 	Job       EventJob
 	EventMsgs []events.EventMsg
+}
+
+type StepStatus struct {
+	Finished     chan struct{}
+	ResponseVars map[string]FuncTemplateVars
+	RequestVars  map[string]FuncTemplateVars
+}
+
+type StepSync struct {
+	Steps sync.Map // map[string]*StepStatus
+}
+
+var stepSyncKey = "stepSync"
+
+func InitStepSync(ctx context.Context) context.Context {
+	if ctx.Value(stepSyncKey) != nil {
+		return ctx
+	}
+	return context.WithValue(ctx, stepSyncKey, &StepSync{})
+}
+
+func signalStep(ctx context.Context, stepName string, responseVars map[string]FuncTemplateVars, requestVars map[string]FuncTemplateVars) {
+	ssI := ctx.Value(stepSyncKey)
+	if ssI == nil {
+		return
+	}
+	ss := ssI.(*StepSync)
+	statusI, _ := ss.Steps.LoadOrStore(stepName, &StepStatus{Finished: make(chan struct{})})
+	status := statusI.(*StepStatus)
+	status.ResponseVars = responseVars
+	status.RequestVars = requestVars
+	// check if already closed to avoid panic
+	select {
+	case <-status.Finished:
+	default:
+		close(status.Finished)
+	}
+}
+
+func WaitForStep(ctx context.Context, stepName string) (map[string]FuncTemplateVars, map[string]FuncTemplateVars) {
+	ssI := ctx.Value(stepSyncKey)
+	if ssI == nil {
+		logs.WithContext(ctx).Info(fmt.Sprint("stepSync not found in context for step wait: ", stepName))
+		return nil, nil
+	}
+	ss := ssI.(*StepSync)
+	statusI, _ := ss.Steps.LoadOrStore(stepName, &StepStatus{Finished: make(chan struct{})})
+	status := statusI.(*StepStatus)
+	<-status.Finished
+	return status.ResponseVars, status.RequestVars
 }
 
 func worker(ctx context.Context, route *Route, wg *sync.WaitGroup, jobs chan Job, results chan Result) {
@@ -138,13 +189,18 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 
 			r, rErr = CloneRequest(ctx, req)
 			if rErr != nil {
-				logs.WithContext(ctx).Error(rErr.Error())
+				return
 			}
-			resVarsI, _ := cloneInterface(ctx, resVars)
-			resVarsClone, _ = resVarsI.(map[string]*TemplateVars)
+			var err1 error
+			resVarsClone, err1 = safeCloneVarsMap(ctx, resVars)
+			if err1 != nil {
+				return
+			}
 
-			reqVarsI, _ := cloneInterface(ctx, reqVars)
-			reqVarsClone, _ = reqVarsI.(map[string]*TemplateVars)
+			reqVarsClone, err1 = safeCloneVarsMap(ctx, reqVars)
+			if err1 != nil {
+				return
+			}
 		}
 		funcJob := FuncJob{loopCounter, r, fs, reqVarsClone, resVarsClone, "", mainRouteName, funcThread, loopThread, "true", funcStepName, endFuncStepName, childStart, fromAsync, inLoop}
 		funcJobs <- funcJob
@@ -192,12 +248,21 @@ func workerFunc(ctx context.Context, wg *sync.WaitGroup, funcJobs chan FuncJob, 
 		cloneFuncVarsMap := funcVars
 
 		if funcJob.started {
-			cloneFuncVarsI, _ := cloneInterface(ctx, funcVars)
-			cloneFuncVarsMap, _ = cloneFuncVarsI.(map[string]FuncTemplateVars)
+			cloneFuncVarsI, err1 := cloneInterface(ctx, funcVars)
+			if err1 != nil {
+				return
+			}
+			var typeOk bool
+			cloneFuncVarsMap, typeOk = cloneFuncVarsI.(map[string]FuncTemplateVars)
+			if !typeOk {
+				_ = logs.Err(ctx, fmt.Errorf("cloneInterface(ctx, funcVars) failed to convert to map[string]FuncTemplateVars"), "")
+				return
+			}
 		}
 
 		output := FuncResult{funcJob, resp, FuncTemplateVars{}, cloneFuncVarsMap, e, asyncFuncDataBatch}
 		funcResults <- output
+		signalStep(ctx, funcJob.funcStep.FuncKey, cloneFuncVarsMap, cloneFuncVarsMap)
 		//	logs.FileLogger.Info(fmt.Sprint("parallel_execution workerFunc ended for ", funcJob.funcStep.FuncKey))
 	}
 	wg.Done()
@@ -221,11 +286,16 @@ func allocateFuncInner(ctx context.Context, req *http.Request, fs *FuncStep, req
 		if funcStep.FuncKey == funcStepName || started || funcStepName == "" {
 			logs.WithContext(ctx).Info(fmt.Sprint("inside allocateFuncInner lopp for ", funcStep.FuncKey))
 			var funcStepErr error
-			reqVarsI, _ := cloneInterface(ctx, reqVars)
-			reqVarsClone, _ = reqVarsI.(map[string]*TemplateVars)
+			var err1 error
+			reqVarsClone, err1 = safeCloneVarsMap(ctx, reqVars)
+			if err1 != nil {
+				return
+			}
 
-			resVarsI, _ := cloneInterface(ctx, resVars)
-			resVarsClone, _ = resVarsI.(map[string]*TemplateVars)
+			resVarsClone, err1 = safeCloneVarsMap(ctx, resVars)
+			if err1 != nil {
+				return
+			}
 
 			if len(loopArray) > 1 {
 				funcStep, funcStepErr = fs.Clone(ctx)
@@ -309,6 +379,9 @@ func workerFuncInner(ctx context.Context, wg *sync.WaitGroup, funcJobs chan Func
 		}
 		output := FuncResult{funcJob, resp, cloneFuncVars, nil, e, asyncFuncDataBatch}
 		funcResults <- output
+		resVarsMap := make(map[string]FuncTemplateVars)
+		resVarsMap[funcJob.funcStep.FuncKey] = cloneFuncVars
+		signalStep(ctx, funcJob.funcStep.FuncKey, resVarsMap, resVarsMap)
 		//logs.FileLogger.Info(fmt.Sprint("parallel_execution workerFuncInner ended for ", funcJob.funcStep.FuncKey))
 	}
 	wg.Done()

@@ -8,30 +8,65 @@ import (
 	model "github.com/eru-tech/eru/eru-ai/models"
 	"github.com/eru-tech/eru/eru-ai/module_store"
 	"github.com/eru-tech/eru/eru-ai/tools"
-	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
+	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
 )
 
-func ToolListHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ModelEmbeddingsHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		logs.WithContext(r.Context()).Debug("ToolListHandler - Start")
-		toolName := "MS_EMAIL" //get it from env variable
-		tool := tools_factory.GetTool(toolName)
-		mcpTools := tool.GetMcpTools()
+
+		logs.WithContext(r.Context()).Debug("ModelEmbeddingsHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		tenantId := vars["tenant"]
+		modelId := vars["model"]
+		embeddingFromReq := json.NewDecoder(r.Body)
+		embeddingFromReq.DisallowUnknownFields()
+
+		var embeddingInputRequest model.EmbeddingInputRequest
+		if err := embeddingFromReq.Decode(&embeddingInputRequest); err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		err := utils.ValidateStruct(r.Context(), embeddingInputRequest, "")
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+			return
+		}
+		modelObj, err := sh.Store.GetModel(r.Context(), projectId, tenantId, modelId, sh.Store)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		embeddings, embeddingsErr := modelObj.GenerateEmbeddings(r.Context(), embeddingInputRequest.Inputs, embeddingInputRequest.ChunkConfig, embeddingInputRequest.Dimension)
+		if embeddingsErr != nil {
+			logs.WithContext(r.Context()).Error(embeddingsErr.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": embeddingsErr.Error()})
+			return
+		}
 		server_handlers.FormatResponse(w, 200)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"tools": mcpTools})
+		_ = json.NewEncoder(w).Encode(embeddings)
 	}
 }
-func ModelQueryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+
+func ModelQueryHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ModelSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
 		modelId := vars["model"]
 		toolName := vars["tool"]
+		actionName := vars["action"]
 		modelFromReq := json.NewDecoder(r.Body)
 		modelFromReq.DisallowUnknownFields()
 
@@ -42,7 +77,7 @@ func ModelQueryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		modelObj, err := s.GetModel(r.Context(), projectId, tenantId, modelId, s)
+		modelObj, err := sh.Store.GetModel(r.Context(), projectId, tenantId, modelId, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -60,7 +95,7 @@ func ModelQueryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(res)
 		} else {
-			tool, tErr := s.GetTool(r.Context(), projectId, tenantId, toolName, "", s)
+			tool, tErr := sh.Store.GetTool(r.Context(), projectId, tenantId, toolName, actionName, sh.Store)
 			if tErr != nil {
 				logs.WithContext(r.Context()).Error(tErr.Error())
 				server_handlers.FormatResponse(w, 400)
@@ -82,13 +117,14 @@ func ModelQueryHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func AgentListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func AgentListNamesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("AgentListNamesHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		tenantID := vars["tenant"]
-		agents, err := s.GetAgentNames(r.Context(), projectID, tenantID)
+		agents, err := sh.Store.GetAgentNames(r.Context(), projectID, tenantID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -100,13 +136,33 @@ func AgentListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func ToolListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func VectorStoreListNamesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("VectorStoreListNamesHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+		tenantID := vars["tenant"]
+		vectorStores, err := sh.Store.GetVectorStoreNames(r.Context(), projectID, tenantID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		} else {
+			logs.WithContext(r.Context()).Info(fmt.Sprintf("VectorStores: %v", vectorStores))
+			server_handlers.FormatResponse(w, 200)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"vectorstores": vectorStores})
+		}
+	}
+}
+
+func ToolListNamesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
 		logs.WithContext(r.Context()).Debug("ToolListNamesHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		tenantID := vars["tenant"]
-		tools, err := s.GetToolNames(r.Context(), projectID, tenantID)
+		tools, err := sh.Store.GetToolNames(r.Context(), projectID, tenantID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -115,5 +171,57 @@ func ToolListNamesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"tools": tools})
 		}
+	}
+}
+
+func ToolListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("ToolListHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+		tenantID := vars["tenant"]
+		names, err := sh.Store.GetToolNames(r.Context(), projectID, tenantID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		toolList := make([]interface{}, 0, len(names))
+		for _, name := range names {
+			tool, err := sh.Store.GetTool(r.Context(), projectID, tenantID, name, "", sh.Store)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(fmt.Sprintf("GetTool %s: %v", name, err))
+				continue
+			}
+			toolList = append(toolList, tool.GetSpec())
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"tools": toolList})
+	}
+}
+
+func AgentListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("AgentListHandler - Start")
+		vars := mux.Vars(r)
+		projectID := vars["project"]
+		tenantID := vars["tenant"]
+		names, err := sh.Store.GetAgentNames(r.Context(), projectID, tenantID)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		agentList := make([]interface{}, 0, len(names))
+		for _, name := range names {
+			agent, err := sh.Store.GetAgent(r.Context(), projectID, tenantID, "", name, sh.Store)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(fmt.Sprintf("GetAgent %s: %v", name, err))
+				continue
+			}
+			agentList = append(agentList, agent.GetSpec())
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"agents": agentList})
 	}
 }

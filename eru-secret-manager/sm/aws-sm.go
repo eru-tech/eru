@@ -54,11 +54,11 @@ func (awsSmStore *AwsSmStore) Init(ctx context.Context) (err error) {
 	awsSmStore.client = secretsmanager.NewFromConfig(awsConf)
 	return err
 }
-func (awsSmStore *AwsSmStore) InitCache(ctx context.Context) (err error) {
+func (awsSmStore *AwsSmStore) InitCache(ctx context.Context, projectId string) (err error) {
 	if awsSmStore.CacheStoreType == "" {
-		awsSmStore.CacheStoreType = "ERU"
+		awsSmStore.CacheStoreType = "INMEMORY"
 	}
-	awsSmStore.SetCacheStore(cache.GetCacheStore(awsSmStore.CacheStoreType))
+	awsSmStore.SetCacheStore(cache.GetCacheStore(awsSmStore.CacheStoreType, projectId))
 	logs.WithContext(ctx).Info(fmt.Sprint(awsSmStore.CacheStore))
 	return
 }
@@ -78,12 +78,12 @@ func (awsSmStore *AwsSmStore) FetchSmValue(ctx context.Context) (resultJson map[
 
 	result, err := awsSmStore.client.GetSecretValue(ctx, input)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, err, "failed to get secret value")
 		return
 	}
 	err = json.Unmarshal([]byte(*result.SecretString), &resultJson)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, err, "failed to unmarshal secret value")
 		resultJson["secret"] = *result.SecretString
 		return
 	}
@@ -280,19 +280,26 @@ func (awsSmStore *AwsSmStore) MakeFromJson(ctx context.Context, rj *json.RawMess
 	return nil
 }
 
-func (awsSmStore *AwsSmStore) GetSmValue(ctx context.Context, secretName string, secretKey string, forceFetch bool) (secretValue interface{}, err error) {
+func (awsSmStore *AwsSmStore) GetSmValue(ctx context.Context, projectId string, secretName string, secretKey string, forceFetch bool) (secretValue interface{}, err error) {
 	logs.WithContext(ctx).Debug("GetSmValue - Start")
 
 	if !forceFetch {
 		logs.WithContext(ctx).Info(fmt.Sprint("fetch secret from cache for : ", secretKey))
 		if awsSmStore.CacheStore == nil {
-			logs.WithContext(ctx).Info(fmt.Sprint("initializing sm cache"))
-			err = awsSmStore.InitCache(ctx)
+			logs.WithContext(ctx).Info("initializing sm cache")
+			err = awsSmStore.InitCache(ctx, projectId)
+			forceFetch = true //since cache is not initialized, fetch from cloud
+		} else {
+			secretValue, err = awsSmStore.CacheStore.Get(ctx, fmt.Sprint(secretName, "_", secretKey))
+			if secretValue == "" {
+				forceFetch = true //since fetching from cache failed, fetch from cloud
+			}
 		}
-		secretValue, err = awsSmStore.CacheStore.Get(ctx, fmt.Sprint(secretName, "_", secretKey))
+	}
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
 	}
 	if err != nil || forceFetch {
-		logs.WithContext(ctx).Error(err.Error())
 		logs.WithContext(ctx).Info(fmt.Sprint("fetch secret from cloud for : ", secretKey))
 		if awsSmStore.client == nil {
 			err = awsSmStore.Init(ctx)

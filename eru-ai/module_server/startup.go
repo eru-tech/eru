@@ -2,62 +2,45 @@ package module_server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"strings"
 
+	"github.com/eru-tech/eru/eru-ai/module_server/handlers"
 	"github.com/eru-tech/eru/eru-ai/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 )
 
-const StoreTableName = "eruai_config"
-const StoreTenantTableName = "eruai_tenant_config"
-
-func StartUp() (module_store.ModuleStoreI, error) {
+func StartUp(ctx context.Context) (module_store.ModuleStoreI, error) {
 	erufuncbaseurl := os.Getenv("ERUFUNCTIONS_BASEURL")
 	if erufuncbaseurl == "" {
 		erufuncbaseurl = "http://localhost:8083"
-		logs.WithContext(context.Background()).Info("'ERUFUNCTIONS_BASEURL' environment variable not found - setting default value as http://localhost:8083")
+		logs.WithContext(ctx).Info("'ERUFUNCTIONS_BASEURL' environment variable not found - setting default value as http://localhost:8083")
 	}
 	module_store.Erufuncbaseurl = erufuncbaseurl
 
 	eruauthbaseurl := os.Getenv("ERUAUTH_BASEURL")
 	if eruauthbaseurl == "" {
 		eruauthbaseurl = "http://localhost:8085"
-		logs.WithContext(context.Background()).Info("'ERUAUTH_BASEURL' environment variable not found - setting default value as http://localhost:8085")
+		logs.WithContext(ctx).Info("'ERUAUTH_BASEURL' environment variable not found - setting default value as http://localhost:8085")
 	}
 	module_store.Eruauthbaseurl = eruauthbaseurl
 
-	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
-	if storeType == "" {
-		storeType = "STANDALONE"
-		logs.WithContext(context.Background()).Info("STORE_TYPE environment variable not found - loading default standlone store")
+	eruqlbaseurl := os.Getenv("ERUQL_BASEURL")
+	if eruqlbaseurl == "" {
+		eruqlbaseurl = "http://localhost:8087"
+		logs.WithContext(ctx).Info("'ERUQL_BASEURL' environment variable not found - setting default value as http://localhost:8087")
 	}
-	var myStore module_store.ModuleStoreI
-	var err error
-	switch storeType {
-	case "POSTGRES":
-		myStore = new(module_store.ModuleDbStore)
-		myStore.SetDbType(storeType)
-		myStore.SetStoreTableName(StoreTableName)
-		myStore.SetStoreTenantTableName(StoreTenantTableName)
-		myStore.CreateConn()
-	case "STANDALONE":
-		// myStore, err = store.LoadStoreFromFile()
-		myStore = new(module_store.ModuleFileStore)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, errors.New(fmt.Sprint("Invalid STORE_TYPE ", storeType))
+	server_handlers.EruqlBaseUrl = eruqlbaseurl
+	module_store.Eruqlbaseurl = eruqlbaseurl
+
+	eruaibaseurl := os.Getenv("ERUAI_BASEURL")
+	if eruaibaseurl == "" {
+		eruaibaseurl = "http://localhost:8088"
+		logs.WithContext(ctx).Info("'ERUAI_BASEURL' environment variable not found - setting default value as http://localhost:8088")
 	}
-	storeBytes, err := myStore.GetStoreByteArray("")
-	if err == nil {
-		module_store.UnMarshalStore(context.Background(), storeBytes, myStore)
-	} else {
-		logs.WithContext(context.Background()).Error(err.Error())
-	}
-	//s.Store = myStore
-	return myStore, err
+	module_store.Eruaibaseurl = eruaibaseurl
+	logs.WithContext(ctx).Info(fmt.Sprintf("ERUAI_BASEURL: %s", module_store.Eruaibaseurl))
+
+	return module_store.LoadStore(ctx, handlers.StoreTableName, handlers.StoreTenantTableName)
 }

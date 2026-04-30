@@ -3,13 +3,18 @@ package eru_utils
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
+	"net/textproto"
 	httpurl "net/url"
+	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -91,9 +96,13 @@ func ValidateStruct(ctx context.Context, s interface{}, parentKey string) error 
 		if !isError && !isOptional {
 			switch f.Field(i).Kind().String() {
 			case "struct":
-				e := ValidateStruct(ctx, f.Field(i).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name))
-				if e != nil {
-					errs = append(errs, e.Error())
+				if f.Field(i).CanInterface() {
+					e := ValidateStruct(ctx, f.Field(i).Interface(), fmt.Sprint(parentKey, f.Type().Field(i).Name))
+					if e != nil {
+						errs = append(errs, e.Error())
+					}
+				} else {
+					logs.WithContext(ctx).Error(fmt.Sprintf("field %s is not interface", f.Type().Field(i).Name))
 				}
 			case "slice":
 				ff := f.Field(i)
@@ -140,8 +149,10 @@ func ReplaceUnderscoresWithDots(str string) string {
 func PrintResponseBody(ctx context.Context, response *http.Response, msg string) {
 	logs.WithContext(ctx).Debug("PrintResponseBody - Start")
 	logs.WithContext(ctx).Info(msg)
-	logs.WithContext(ctx).Info(fmt.Sprintf("response: %+v", response))
 	if response != nil {
+		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
+			return
+		}
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
@@ -150,9 +161,7 @@ func PrintResponseBody(ctx context.Context, response *http.Response, msg string)
 			logs.WithContext(ctx).Info(fmt.Sprint(response.Request.URL))
 		}
 		cl, _ := strconv.Atoi(response.Header.Get("Content-Length"))
-		if cl > 1000 {
-			logs.WithContext(ctx).Info(string(body)[0:1000])
-		} else if len(string(body)) > 1000 {
+		if cl > 1000 || len(string(body)) > 1000 {
 			logs.WithContext(ctx).Info(string(body)[0:1000])
 		} else {
 			logs.WithContext(ctx).Info(string(body))
@@ -167,8 +176,8 @@ func PrintResponseBody(ctx context.Context, response *http.Response, msg string)
 func PrintRequestBody(ctx context.Context, request *http.Request, msg string) {
 	logs.WithContext(ctx).Debug("PrintRequestBody - Start")
 	logs.WithContext(ctx).Info(msg)
-	logs.WithContext(ctx).Info(fmt.Sprintf("request.Header: %+v", request.Header))
 	logs.WithContext(ctx).Info(fmt.Sprintf("request.URL: %+v", request.URL))
+	logs.WithContext(ctx).Info(fmt.Sprintf("request.URL: %+v", request.Header))
 
 	if request != nil {
 		if request.Body != nil {
@@ -179,7 +188,7 @@ func PrintRequestBody(ctx context.Context, request *http.Request, msg string) {
 
 			logs.WithContext(ctx).Info(fmt.Sprint(request.URL))
 			cl, _ := strconv.Atoi(request.Header.Get("Content-Length"))
-			if cl > 1000 && len(string(body)) > 1000 {
+			if cl > 1000 || len(string(body)) > 1000 {
 				logs.WithContext(ctx).Info(string(body)[0:1000])
 			} else {
 				logs.WithContext(ctx).Info(string(body))
@@ -216,6 +225,13 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	//logs.WithContext(ctx).Info(fmt.Sprintf("ctx: %+v", ctx))
 
 	req = req.WithContext(ctx)
+	requestId := ctx.Value("request_id")
+	if requestId != nil {
+		req.Header.Set("request_id", requestId.(string))
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("req.URL.Host: %+v, req.Host: %+v", req.URL.Host, req.Host))
+	req.Host = req.URL.Host
+	//req.Header.Add("Host", req.URL.Host)
 
 	/*
 			host := req.URL.Host
@@ -282,9 +298,10 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	//for _, c := range req.Cookies() {
 	//	logs.WithContext(ctx).Info(c.String())
 	//}
-
+	logs.WithContext(ctx).Info("before HTTPClientTransporter")
 	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
-
+	logs.WithContext(ctx).Info("after HTTPClientTransporter")
+	logs.WithContext(ctx).Info(fmt.Sprintf("resp: %+v", resp))
 	//resp, err = otelhttp.NewTransport(http.DefaultTransport).RoundTrip(req)
 
 	//resp, err = http.DefaultTransport.RoundTrip(req)
@@ -336,10 +353,54 @@ func HTTPClientTransporter(rt http.RoundTripper) http.RoundTripper {
 	return otelhttp.NewTransport(rt)
 }
 
+func CreateHttpClientWithTLS(ctx context.Context, clientCertB64 string, clientKeyB64 string, timeout time.Duration) (*http.Client, error) {
+	tlsCfg := &tls.Config{}
+	if clientCertB64 != "" && clientKeyB64 != "" {
+		clientKeyBytes, err := base64.StdEncoding.DecodeString(clientKeyB64)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("error decoding client key: %v", err))
+			return nil, fmt.Errorf("error decoding client key: %w", err)
+		}
+		clientCertBytes, err := base64.StdEncoding.DecodeString(clientCertB64)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("error decoding client certificate: %v", err))
+			return nil, fmt.Errorf("error decoding client certificate: %w", err)
+		}
+		cert, err := tls.X509KeyPair(clientCertBytes, clientKeyBytes)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("error loading client certificate: %v", err))
+			return nil, fmt.Errorf("error loading client certificate: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+
+	transport := &http.Transport{TLSClientConfig: tlsCfg}
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+	client := &http.Client{Transport: HTTPClientTransporter(transport), Timeout: timeout}
+	return client, nil
+}
+
 func callHttp(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}) (resp *http.Response, err error) {
 	logs.WithContext(ctx).Debug("callHttp - Start")
 	req := &http.Request{}
-	if postBody != nil {
+	contentType := headers.Get("Content-Type")
+	if contentType == "application/x-ndjson" {
+		if postBodyBytes, postBodyBytesOk := postBody.([]byte); postBodyBytesOk {
+			req, err = http.NewRequest(method, url, bytes.NewBuffer(postBodyBytes))
+		} else {
+			return nil, errors.New("postBody is not a []byte")
+		}
+	} else if contentType == "text/plain" {
+		if postBodyBytes, ok := postBody.([]byte); ok {
+			req, err = http.NewRequest(method, url, bytes.NewBuffer(postBodyBytes))
+		} else if postBodyStr, ok := postBody.(string); ok {
+			req, err = http.NewRequest(method, url, bytes.NewBufferString(postBodyStr))
+		} else {
+			return nil, errors.New("postBody must be string or []byte for text/plain content type")
+		}
+	} else if postBody != nil {
 		reqBody, reqBodyerr := json.Marshal(postBody)
 		if reqBodyerr != nil {
 			logs.WithContext(ctx).Error(reqBodyerr.Error())
@@ -419,7 +480,7 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 	resp, err := callHttp(ctx, method, url, headers, formData, reqCookies, params, postBody)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, resp.Header, resp.Cookies(), resp.StatusCode, err
+		return nil, nil, nil, 0, err
 	}
 	statusCode = resp.StatusCode
 	respHeaders = resp.Header
@@ -427,6 +488,293 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 	defer resp.Body.Close()
 	//todo - check if below change from reqContentType to header.get breaks anything
 	//todo - merge conflict - main had below first if commented
+	contentType := strings.Split(headers.Get("Content-Type"), ";")[0]
+	respcontentType := strings.Split(resp.Header.Get("Content-Type"), ";")[0]
+	if resp.ContentLength > 0 || contentType == encodedForm || contentType == applicationJson {
+		if respcontentType == applicationJson {
+			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, nil, nil, resp.StatusCode, err
+			}
+		} else {
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+			}
+			resBody := make(map[string]interface{})
+			resBody["body"] = string(body)
+			res = resBody
+		}
+	} else {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		resBody := make(map[string]interface{})
+		resBody["body"] = string(body)
+		res = resBody
+	}
+	if resp.StatusCode >= 400 {
+		statusCode = resp.StatusCode
+		resBytes, bytesErr := json.Marshal(res)
+		if bytesErr != nil {
+			logs.WithContext(ctx).Error(bytesErr.Error())
+			return nil, nil, nil, statusCode, bytesErr
+		}
+		err = errors.New(string(resBytes))
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, resp.Header, resp.Cookies(), statusCode, err
+	}
+	return
+}
+
+type FileData struct {
+	FieldName   string
+	FileName    string
+	Content     []byte
+	ContentType string
+}
+
+func createFormFilePart(w *multipart.Writer, fieldName string, fileName string, contentType string) (io.Writer, error) {
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldName, fileName))
+	h.Set("Content-Type", contentType)
+	return w.CreatePart(h)
+}
+
+func CallHttpWithFiles(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, files []FileData, reqCookies []*http.Cookie, params map[string]string) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
+	logs.WithContext(ctx).Debug("CallHttpWithFiles - Start")
+
+	var reqBody bytes.Buffer
+	multipartWriter := multipart.NewWriter(&reqBody)
+
+	for fk, fd := range formData {
+		fieldWriter, fErr := multipartWriter.CreateFormField(fk)
+		if fErr != nil {
+			err = logs.Err(ctx, fErr, "failed to create form field")
+			return nil, nil, nil, 0, err
+		}
+		_, fErr = fieldWriter.Write([]byte(fd))
+		if fErr != nil {
+			err = logs.Err(ctx, fErr, "failed to write form field")
+			return nil, nil, nil, 0, err
+		}
+	}
+
+	for _, f := range files {
+		fileWriter, fErr := createFormFilePart(multipartWriter, f.FieldName, f.FileName, f.ContentType)
+		if fErr != nil {
+			err = logs.Err(ctx, fErr, "failed to create form file")
+			return nil, nil, nil, 0, err
+		}
+		_, fErr = fileWriter.Write(f.Content)
+		if fErr != nil {
+			err = logs.Err(ctx, fErr, "failed to write form file")
+			return nil, nil, nil, 0, err
+		}
+	}
+
+	multipartWriter.Close()
+
+	req, err := http.NewRequest(method, url, &reqBody)
+	if err != nil {
+		err = logs.Err(ctx, err, "failed to create request")
+		return nil, nil, nil, 0, err
+	}
+
+	for _, v := range reqCookies {
+		req.AddCookie(v)
+	}
+	for k, v := range headers {
+		req.Header[k] = v
+	}
+	req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+	req.Header.Set("Content-Length", strconv.Itoa(reqBody.Len()))
+	req.ContentLength = int64(reqBody.Len())
+
+	reqParams := req.URL.Query()
+	for k, v := range params {
+		reqParams.Add(k, v)
+	}
+	req.URL.RawQuery = reqParams.Encode()
+	PrintRequestBody(ctx, req, "request from CallHttpWithFiles")
+	resp, err := ExecuteHttp(ctx, req)
+	if err != nil {
+		return nil, nil, nil, 0, err
+	}
+	statusCode = resp.StatusCode
+	respHeaders = resp.Header
+	respCookies = resp.Cookies()
+	defer resp.Body.Close()
+
+	respContentType := strings.Split(resp.Header.Get("Content-Type"), ";")[0]
+	if respContentType == applicationJson {
+		if decErr := json.NewDecoder(resp.Body).Decode(&res); decErr != nil {
+			err = logs.Err(ctx, decErr, "failed to decode response")
+			return nil, nil, nil, resp.StatusCode, err
+		}
+	} else {
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			logs.WithContext(ctx).Error(readErr.Error())
+		}
+		resBody := make(map[string]interface{})
+		resBody["body"] = string(body)
+		res = resBody
+	}
+
+	if resp.StatusCode >= 400 {
+		statusCode = resp.StatusCode
+		resBytes, bytesErr := json.Marshal(res)
+		if bytesErr != nil {
+			return nil, nil, nil, statusCode, bytesErr
+		}
+		err = errors.New(string(resBytes))
+		return nil, resp.Header, resp.Cookies(), statusCode, err
+	}
+	return
+}
+
+func callHttpWithTLS(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}, clientCertB64 string, clientKeyB64 string, timeout time.Duration) (resp *http.Response, err error) {
+	logs.WithContext(ctx).Debug("callHttpWithTLS - Start")
+	req := &http.Request{}
+	if headers.Get("Content-Type") == "application/x-ndjson" {
+		if postBodyBytes, postBodyBytesOk := postBody.([]byte); postBodyBytesOk {
+			req, err = http.NewRequest(method, url, bytes.NewBuffer(postBodyBytes))
+		} else {
+			return nil, errors.New("postBody is not a []byte")
+		}
+	} else if postBody != nil {
+		reqBody, reqBodyerr := json.Marshal(postBody)
+		if reqBodyerr != nil {
+			logs.WithContext(ctx).Error(reqBodyerr.Error())
+			return nil, reqBodyerr
+		}
+		req, err = http.NewRequest(method, url, bytes.NewBuffer(reqBody))
+	} else {
+		req, err = http.NewRequest(method, url, nil)
+	}
+
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	req = req.WithContext(ctx)
+	req.Host = req.URL.Host
+
+	for _, v := range reqCookies {
+		req.AddCookie(v)
+	}
+	for k, v := range headers {
+		for _, vv := range v {
+			req.Header.Add(k, vv)
+		}
+	}
+
+	reqParams := req.URL.Query()
+	for k, v := range params {
+		reqParams.Add(k, v)
+	}
+	req.URL.RawQuery = reqParams.Encode()
+	reqContentType := strings.Split(req.Header.Get("Content-type"), ";")[0]
+	if reqContentType == multiPartForm {
+		var reqBodyNew bytes.Buffer
+		multipartWriter := multipart.NewWriter(&reqBodyNew)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		for fk, fd := range formData {
+			fieldWriter, err := multipartWriter.CreateFormField(fk)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, err
+			}
+			_, err = fieldWriter.Write([]byte(fd))
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, err
+			}
+		}
+		multipartWriter.Close()
+		req.Body = io.NopCloser(&reqBodyNew)
+		if reqContentType == multiPartForm {
+			req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
+		}
+		req.Header.Set("Content-Length", strconv.Itoa(reqBodyNew.Len()))
+		req.ContentLength = int64(reqBodyNew.Len())
+	}
+	if reqContentType == encodedForm {
+		data := httpurl.Values{}
+		var reqBodyNew bytes.Buffer
+		for fk, fd := range formData {
+			data.Add(fk, fd)
+		}
+		encodedData := data.Encode()
+		reqBodyNew.WriteString(encodedData)
+		req.Body = io.NopCloser(&reqBodyNew)
+		req.Header.Set("Content-Length", strconv.Itoa(len(data.Encode())))
+		req.ContentLength = int64(len(data.Encode()))
+	}
+
+	PrintRequestBody(ctx, req, "printing request just before utils.callHttpWithTLS")
+
+	client, err := CreateHttpClientWithTLS(ctx, clientCertB64, clientKeyB64, timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err = client.Do(req)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+
+	PrintResponseBody(ctx, resp, "printing response immediately after utils.callHttpWithTLS")
+
+	allowedOriginsI := ctx.Value("allowed_origins")
+	originI := ctx.Value("origin")
+
+	allowedOrigins := ""
+	if allowedOriginsI != nil {
+		allowedOrigins = allowedOriginsI.(string)
+	}
+
+	origin := ""
+	if originI != nil {
+		origin = originI.(string)
+	}
+	if req.Header.Get("Origin") == "" && origin != "" && allowedOrigins != "" {
+		logs.WithContext(ctx).Info(fmt.Sprint("setting cors headers as origin is blank"))
+		envOrigin := strings.Split(allowedOrigins, ",")
+		for _, o := range envOrigin {
+			oo := strings.Replace(o, "*.", "", -1)
+			if strings.Contains(origin, oo) {
+				resp.Header.Set("Access-Control-Allow-Origin", origin)
+				resp.Header.Set("Access-Control-Allow-Credentials", "true")
+				resp.Header.Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+				resp.Header.Set("Access-Control-Expose-Headers", "Authorization, Content-Type")
+				break
+			}
+		}
+	}
+	return
+}
+
+func CallHttpWithTLS(ctx context.Context, method string, url string, headers http.Header, formData map[string]string, reqCookies []*http.Cookie, params map[string]string, postBody interface{}, clientCertB64 string, clientKeyB64 string, timeout time.Duration) (res interface{}, respHeaders http.Header, respCookies []*http.Cookie, statusCode int, err error) {
+	logs.WithContext(ctx).Debug("CallHttpWithTLS - Start")
+	resp, err := callHttpWithTLS(ctx, method, url, headers, formData, reqCookies, params, postBody, clientCertB64, clientKeyB64, timeout)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, nil, 0, err
+	}
+	statusCode = resp.StatusCode
+	respHeaders = resp.Header
+	respCookies = resp.Cookies()
+	defer resp.Body.Close()
 	contentType := strings.Split(headers.Get("Content-Type"), ";")[0]
 	respcontentType := strings.Split(resp.Header.Get("Content-Type"), ";")[0]
 	if resp.ContentLength > 0 || contentType == encodedForm || contentType == applicationJson {
@@ -740,18 +1088,20 @@ func ReplaceVariables(ctx context.Context, str string, vars map[string]interface
 	return
 }
 
-func UnqotePlanText(ctx context.Context, response *http.Response) (responseNew *http.Response, err error) {
-	logs.WithContext(ctx).Debug("UnqotePlanText - Start")
+func UnqotePlainText(ctx context.Context, response *http.Response) (responseNew *http.Response, err error) {
+	logs.WithContext(ctx).Debug("UnqotePlainText - Start")
 	if response != nil {
 		if response.Header.Get("Content-Type") == "text/plain" {
-			body, err := io.ReadAll(response.Body)
-			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+			body, berr := io.ReadAll(response.Body)
+			if berr != nil {
+				err = logs.Err(ctx, fmt.Errorf("io.ReadAll error : %w", berr), "")
+				return nil, err
 			}
 			bodyStr := string(body)
 			bodyStr, err = strconv.Unquote(bodyStr)
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, fmt.Errorf("strconv.Unquote error : %w", err), "")
+				return nil, err
 			}
 			response.ContentLength = int64(len(bodyStr))
 			response.Header.Set("Content-Length", fmt.Sprint(len(bodyStr)))
@@ -869,4 +1219,208 @@ func GetCronStr(ctx context.Context, nextRun time.Time) string {
 	cronStr := fmt.Sprintf("%d %d %d %d *", nextRun.Minute(), nextRun.Hour(), nextRun.Day(), nextRun.Month())
 	logs.WithContext(ctx).Info(fmt.Sprint("Scheduling job to run at: ", nextRun.Format(time.RFC3339)))
 	return cronStr
+}
+
+// GetServiceAddress automatically detects the service's IP address and port
+// Returns a URL in the format "http://ip:port" or "https://ip:port"
+func GetServiceAddress(ctx context.Context, port string) (string, error) {
+	logs.WithContext(ctx).Debug("GetServiceAddress - Start")
+
+	// Get local IP address
+	localIP, err := getLocalIP()
+	if err != nil {
+		return "", fmt.Errorf("failed to get local IP: %w", err)
+	}
+
+	// Determine scheme (http or https)
+	scheme := "http"
+	if os.Getenv("HTTPS_ENABLED") == "true" {
+		scheme = "https"
+	}
+
+	// Construct service address
+	serviceAddress := fmt.Sprintf("%s://%s:%s", scheme, localIP, port)
+	logs.WithContext(ctx).Info(fmt.Sprintf("Detected service address: %s", serviceAddress))
+
+	return serviceAddress, nil
+}
+
+// getLocalIP returns the local IP address that can be reached from other machines
+func getLocalIP() (string, error) {
+	// Try to get the IP from environment variable first (useful for Docker/K8s)
+	if envIP := os.Getenv("SERVICE_IP"); envIP != "" {
+		return envIP, nil
+	}
+
+	// Try to get IP from Kubernetes downward API
+	if k8sIP := os.Getenv("POD_IP"); k8sIP != "" {
+		return k8sIP, nil
+	}
+
+	// Try to get IP from Docker environment
+	if dockerIP := os.Getenv("HOST_IP"); dockerIP != "" {
+		return dockerIP, nil
+	}
+
+	// Get all network interfaces
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+
+	// Look for a non-loopback interface with a valid IP
+	for _, iface := range interfaces {
+		// Skip loopback and down interfaces
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			switch v := addr.(type) {
+			case *net.IPNet:
+				// Skip IPv6 and loopback addresses
+				if v.IP.To4() != nil && !v.IP.IsLoopback() {
+					return v.IP.String(), nil
+				}
+			case *net.IPAddr:
+				// Skip IPv6 and loopback addresses
+				if v.IP.To4() != nil && !v.IP.IsLoopback() {
+					return v.IP.String(), nil
+				}
+			}
+		}
+	}
+
+	// Fallback to localhost if no external IP found
+	return "localhost", nil
+}
+
+func StructToJSONSchema(t reflect.Type, seenFields []string) eru_models.JSONSchema {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	schema := eru_models.JSONSchema{
+		Type:       "object",
+		Properties: make(map[string]eru_models.JSONSchema),
+	}
+
+	var requiredFields []string
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		isSeen := false
+		for _, seenField := range seenFields {
+			if seenField == field.Name {
+				isSeen = true
+				break
+			}
+		}
+		if isSeen {
+			continue
+		}
+		seenFields = append(seenFields, field.Name)
+
+		// Skip unexported fields
+		if field.PkgPath != "" {
+			continue
+		}
+
+		jsonTag := field.Tag.Get("json")
+		if jsonTag == "-" {
+			continue
+		}
+		if jsonTag == "" {
+			if field.Anonymous && field.Type.Kind() == reflect.Struct {
+				embedded := StructToJSONSchema(field.Type, seenFields)
+				for k, v := range embedded.Properties {
+					schema.Properties[k] = v
+				}
+				requiredFields = append(requiredFields, embedded.Required...)
+			}
+			continue
+		}
+		name := jsonTag
+		if commaIdx := findComma(jsonTag); commaIdx != -1 {
+			name = jsonTag[:commaIdx]
+		}
+
+		fieldSchema := goTypeToSchema(field.Type, seenFields)
+
+		// Handle required
+		if field.Tag.Get("eru") == "required" {
+			requiredFields = append(requiredFields, name)
+		}
+
+		// Add description from field tag if present
+		if desc := field.Tag.Get("desc"); desc != "" {
+			fieldSchema.Description = desc
+		}
+
+		// Add format from field tag if present
+		if format := field.Tag.Get("format"); format != "" {
+			fieldSchema.Format = format
+		}
+		if defaultVal := field.Tag.Get("default"); defaultVal != "" {
+			fieldSchema.Description += fmt.Sprint(" - default value: ", defaultVal)
+			requiredFields = append(requiredFields, name)
+		}
+		schema.Properties[name] = fieldSchema
+	}
+
+	if len(requiredFields) > 0 {
+		schema.Required = requiredFields
+	}
+
+	return schema
+}
+
+func goTypeToSchema(t reflect.Type, seenFields []string) eru_models.JSONSchema {
+	kind := t.Kind()
+
+	switch kind {
+	case reflect.String:
+		return eru_models.JSONSchema{Type: "string"}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return eru_models.JSONSchema{Type: "integer"}
+	case reflect.Float32, reflect.Float64:
+		return eru_models.JSONSchema{Type: "number"}
+	case reflect.Bool:
+		return eru_models.JSONSchema{Type: "boolean"}
+	case reflect.Slice, reflect.Array:
+		return eru_models.JSONSchema{
+			Type:  "array",
+			Items: ptr(goTypeToSchema(t.Elem(), seenFields)),
+		}
+	case reflect.Map, reflect.Struct:
+		if t.Kind() == reflect.Map {
+			valueSchema := goTypeToSchema(t.Elem(), seenFields)
+			return eru_models.JSONSchema{
+				Type:                 "object",
+				AdditionalProperties: valueSchema,
+				Description:          "A map where each key is a unique identifier derived from the step type or system and user instructions",
+			}
+		}
+		return StructToJSONSchema(t, seenFields)
+	default:
+		return eru_models.JSONSchema{Type: "string"} // Fallback
+	}
+}
+
+func findComma(tag string) int {
+	for i, c := range tag {
+		if c == ',' {
+			return i
+		}
+	}
+	return -1
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }

@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -15,8 +18,6 @@ import (
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/segmentio/ksuid"
-	"io"
-	"mime/multipart"
 )
 
 const (
@@ -232,8 +233,6 @@ func (awsStorage *AwsStorage) CreateStorage(ctx context.Context, cloneStorage St
 			return
 		}
 
-		logs.WithContext(ctx).Info(fmt.Sprint("be = ", be))
-
 		if !be {
 			bn, _ := cloneStorage.GetAttribute("bucket_name")
 			rg, _ := cloneStorage.GetAttribute("region")
@@ -297,7 +296,7 @@ func (awsStorage *AwsStorage) DeleteStorage(ctx context.Context, forceDelete boo
 		}
 	}
 	if forceDelete {
-		err = cloneStorage.EmptyBucket()
+		err = cloneStorage.EmptyBucket(ctx)
 		if err != nil {
 			return
 		}
@@ -318,18 +317,18 @@ func (awsStorage *AwsStorage) DeleteStorage(ctx context.Context, forceDelete boo
 	return
 }
 
-func (awsStorage *AwsStorage) EmptyBucket() (err error) {
+func (awsStorage *AwsStorage) EmptyBucket(ctx context.Context) (err error) {
 	paginator := s3.NewListObjectsV2Paginator(awsStorage.session, &s3.ListObjectsV2Input{
 		Bucket: aws.String(awsStorage.BucketName),
 	})
 
 	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(context.Background())
+		page, err := paginator.NextPage(ctx)
 		if err != nil {
 			return err
 		}
 		for _, obj := range page.Contents {
-			_, delErr := awsStorage.session.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+			_, delErr := awsStorage.session.DeleteObject(ctx, &s3.DeleteObjectInput{
 				Bucket: aws.String(awsStorage.BucketName),
 				Key:    obj.Key,
 			})

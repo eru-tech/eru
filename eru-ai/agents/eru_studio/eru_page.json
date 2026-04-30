@@ -1,0 +1,371 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.erutech.example/eru-page.schema.json",
+    "title": "EruPage",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "id",
+        "name",
+        "components",
+        "styles"
+    ],
+    "properties": {
+        "id": {
+            "type": "string"
+        },
+        "name": {
+            "type": "string"
+        },
+        "title": {
+            "type": "string"
+        },
+        "entity_name": {
+            "type": "string"
+        },
+        "route": {
+            "type": "string"
+        },
+        "components": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/EruComponent"
+            }
+        },
+        "styles": {
+            "$ref": "#/$defs/PageStyles"
+        },
+        "display_mode": {
+            "type": "string",
+            "enum": [
+                "inline",
+                "popup",
+                "side_panel"
+            ]
+        },
+        "parent_page_id": {
+            "type": "string"
+        }
+    },
+    "$defs": {
+        "EruComponent": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "type",
+                "properties",
+                "styles"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "isNested": {
+                    "type": "boolean"
+                },
+                "properties": {
+                    "$ref": "#/$defs/ResponsiveEruComponentProperties"
+                },
+                "styles": {
+                    "$ref": "#/$defs/ComponentStyles"
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/ComponentEventSubscription"
+                    }
+                },
+                "validation_rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/ValidationRule"
+                    }
+                },
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/EruComponent"
+                    }
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "description": "Timestamp string (format not enforced; you may choose to enforce date-time in your implementation)."
+                },
+                "updated_at": {
+                    "type": "string",
+                    "description": "Timestamp string (format not enforced; you may choose to enforce date-time in your implementation)."
+                }
+            }
+        },
+        "PageStyles": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "classes",
+                "responsive_classes",
+                "responsive_styles",
+                "custom"
+            ],
+            "properties": {
+                "classes": {
+                    "type": "string"
+                },
+                "responsive_classes": {
+                    "$ref": "#/$defs/ResponsiveClasses"
+                },
+                "responsive_styles": {
+                    "$ref": "#/$defs/ResponsiveStyleProperties"
+                },
+                "custom": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "ComponentStyles": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "classes",
+                "responsive_classes",
+                "responsive_styles",
+                "custom"
+            ],
+            "properties": {
+                "classes": {
+                    "type": "string"
+                },
+                "responsive_classes": {
+                    "$ref": "#/$defs/ResponsiveClasses"
+                },
+                "responsive_styles": {
+                    "$ref": "#/$defs/ResponsiveStyleProperties"
+                },
+                "custom": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "ResponsiveClasses": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "base": {
+                    "type": "string"
+                },
+                "sm": {
+                    "type": "string"
+                },
+                "md": {
+                    "type": "string"
+                },
+                "lg": {
+                    "type": "string"
+                },
+                "xl": {
+                    "type": "string"
+                },
+                "2xl": {
+                    "type": "string"
+                }
+            }
+        },
+        "ResponsiveStyleProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "base": {
+                    "$ref": "#/$defs/StyleProperties"
+                },
+                "sm": {
+                    "$ref": "#/$defs/StyleProperties"
+                },
+                "md": {
+                    "$ref": "#/$defs/StyleProperties"
+                },
+                "lg": {
+                    "$ref": "#/$defs/StyleProperties"
+                },
+                "xl": {
+                    "$ref": "#/$defs/StyleProperties"
+                },
+                "2xl": {
+                    "$ref": "#/$defs/StyleProperties"
+                }
+            }
+        },
+        "ResponsiveEruComponentProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "base": {
+                    "$ref": "#/$defs/EruComponentProperties"
+                },
+                "sm": {
+                    "$ref": "#/$defs/EruComponentProperties"
+                },
+                "md": {
+                    "$ref": "#/$defs/EruComponentProperties"
+                },
+                "lg": {
+                    "$ref": "#/$defs/EruComponentProperties"
+                },
+                "xl": {
+                    "$ref": "#/$defs/EruComponentProperties"
+                },
+                "2xl": {
+                    "$ref": "#/$defs/EruComponentProperties"
+                }
+            }
+        },
+        "EruComponentProperties": {
+            "type": "object",
+            "description": "Component properties; supports known fields plus arbitrary component-specific keys.",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "placeholder": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "alt": {
+                    "type": "string"
+                },
+                "href": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                },
+                "disabled": {
+                    "type": "boolean"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "readonly": {
+                    "type": "boolean"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {}
+                },
+                "identifier": {
+                    "type": "boolean"
+                }
+            },
+            "additionalProperties": true
+        },
+        "StyleProperties": {
+            "type": "object",
+            "description": "Arbitrary CSS-like style map (keys and value types may vary).",
+            "additionalProperties": {
+                "anyOf": [
+                    {
+                        "type": "string"
+                    },
+                    {
+                        "type": "number"
+                    },
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "null"
+                    },
+                    {
+                        "type": "array"
+                    },
+                    {
+                        "type": "object"
+                    }
+                ]
+            }
+        },
+        "ComponentEventSubscription": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "event",
+                "action"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "event": {
+                    "type": "string"
+                },
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "no-action",
+                        "call-api",
+                        "fetch-page-data"
+                    ]
+                },
+                "apiName": {
+                    "type": "string"
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "action": {
+                                "const": "call-api"
+                            }
+                        },
+                        "required": [
+                            "action"
+                        ]
+                    },
+                    "then": {
+                        "required": [
+                            "apiName"
+                        ]
+                    }
+                }
+            ]
+        },
+        "ValidationRule": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "type",
+                "message"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "required",
+                        "min",
+                        "max",
+                        "minLength",
+                        "maxLength",
+                        "pattern",
+                        "email",
+                        "custom"
+                    ]
+                },
+                "value": {},
+                "message": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

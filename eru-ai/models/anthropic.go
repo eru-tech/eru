@@ -1,124 +1,40 @@
-package model
+package models
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
+	"strings"
+	"time"
 
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
-	utils "github.com/eru-tech/eru/eru-utils"
-)
-
-const (
-	AnthropicApiUrl     = "https://api.anthropic.com/v1/messages"
-	AnthropicApiVersion = "2023-06-01"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 type AnthropicModel struct {
 	Model
+	client anthropic.Client
+	inited bool
 }
 
-// Request Types
-type AnthropicChatRequest struct {
-	Model         string                   `json:"model" eru:"required"`
-	Messages      []AnthropicMessage       `json:"messages" eru:"required"`
-	MaxTokens     int                      `json:"max_tokens,omitempty"`
-	StopSequences []string                 `json:"stop_sequences,omitempty"`
-	Stream        bool                     `json:"stream,omitempty"`
-	Temperature   float64                  `json:"temperature,omitempty"`
-	System        string                   `json:"system,omitempty"`
-	Metadata      AnthropicMessageMetaData `json:"metadata,omitempty"`
+func (m *AnthropicModel) getClient() anthropic.Client {
+	if !m.inited {
+		m.client = anthropic.NewClient(option.WithAPIKey(m.LLMSecret))
+		m.inited = true
+	}
+	return m.client
 }
 
-type AnthropicChatToolRequest struct {
-	AnthropicChatRequest
-	ToolChoice AnthropicToolChoice    `json:"tool_choice,omitempty"`
-	Tools      []AnthropicRequestTool `json:"tools,omitempty"`
-	TopK       int                    `json:"top_k,omitempty"`
-	TopP       float64                `json:"top_p,omitempty"`
-}
-
-type AnthropicMessageMetaData struct {
-	UserId string `json:"user_id"`
-}
-
-type AnthropicMessage struct {
-	Role    string                    `json:"role"`
-	Content []AnthropicMessageContent `json:"content"`
-}
-
-type AnthropicMessageContent struct {
-	Text         *string                 `json:"text,omitempty"`
-	Source       *AnthropicContentSource `json:"source,omitempty"`
-	Id           string                  `json:"id,omitempty"`
-	ToolUseId    string                  `json:"tool_use_id,omitempty"`
-	Content      string                  `json:"content,omitempty"`
-	IsError      bool                    `json:"is_error,omitempty"`
-	Name         string                  `json:"name,omitempty"`
-	Input        interface{}             `json:"input,omitempty"`
-	Type         string                  `json:"type" eru:"required"`
-	CacheControl *AnthropicCacheControl  `json:"cache_control,omitempty"`
-}
-
-type AnthropicContentSource struct {
-	Data      string `json:"data"`
-	MediaType string `json:"media_type"`
-	Type      string `json:"type"`
-}
-type AnthropicCacheControl struct {
-	Type string `json:"type,omitempty"`
-	TTL  int    `json:"ttl,omitempty"`
-}
-
-type AnthropicToolChoice struct {
-	//Name                   string `json:"name" eru:"required"`
-	Type string `json:"type" eru:"required"`
-	//DisableParallelToolUse bool   `json:"disable_parallel_tool_use,omitempty"`
-}
-
-type AnthropicRequestTool struct {
-	//Type         string                `json:"type" eru:"required"`
-	Name         string                 `json:"name" eru:"required"`
-	Description  string                 `json:"description" eru:"required"`
-	InputSchema  eru_models.JSONSchema  `json:"input_schema,omitempty"`
-	CacheControl *AnthropicCacheControl `json:"cache_control,omitempty"`
-}
-
-// Response Types
-type AnthropicChatResponse struct {
-	Id           string         `json:"id"`
-	Type         string         `json:"type"`
-	Role         string         `json:"role"`
-	Content      []ContentBlock `json:"content"`
-	Model        string         `json:"model"`
-	StopReason   string         `json:"stop_reason"`
-	StopSequence string         `json:"stop_sequence"`
-	Usage        AnthropicUsage `json:"usage"`
-}
-
-type ContentBlock struct {
-	Type  string      `json:"type"`
-	Text  string      `json:"text,omitempty"`
-	Id    string      `json:"id,omitempty"`
-	Input interface{} `json:"input,omitempty"`
-	Name  string      `json:"name,omitempty"`
-}
-
-type AnthropicUsage struct {
-	InputTokens              int `json:"input_tokens"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-	OutputTokens             int `json:"output_tokens"`
-}
-
-// Implementation of ModelI interface
-func (anthropicModel *AnthropicModel) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+func (m *AnthropicModel) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
 	logs.WithContext(ctx).Debug("MakeFromJson - Start")
-	err := json.Unmarshal(*rj, &anthropicModel)
+	err := json.Unmarshal(*rj, m)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return err
@@ -126,243 +42,638 @@ func (anthropicModel *AnthropicModel) MakeFromJson(ctx context.Context, rj *json
 	return nil
 }
 
-func (anthropicModel *AnthropicModel) QueryModel(ctx context.Context, chatRequest ChatRequest) (queryResponse Message, err error) {
+func (m *AnthropicModel) QueryModel(ctx context.Context, chatRequest ChatRequest) (Message, error) {
 	logs.WithContext(ctx).Debug("QueryModel - Start")
+	client := m.getClient()
 
-	anthropicRequest, err := anthropicModel.makeAnthropicChatRequest(ctx, chatRequest)
+	messages := convertMessages(ctx, chatRequest.Messages)
+
+	msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:       m.LLMName,
+		MaxTokens:   int64(1024),
+		Temperature: anthropic.Float(m.Temprature),
+		Messages:    messages,
+	})
 	if err != nil {
-		return
+		logs.WithContext(ctx).Error(err.Error())
+		return Message{}, err
 	}
 
-	anthropicResponse, err := anthropicModel.queryModel(ctx, anthropicRequest)
-	if err != nil {
-		return
-	}
-
-	// Combine all text blocks from content
 	var combinedContent string
-	for _, block := range anthropicResponse.Content {
+	for _, block := range msg.Content {
 		if block.Type == "text" {
-			combinedContent += block.Text
+			combinedContent += block.AsText().Text
 		}
 	}
 
-	queryResponse = Message{
-		Content: combinedContent,
-		Role:    "assistant",
-	}
-	return
+	return Message{Content: combinedContent, Role: "assistant"}, nil
 }
 
-func (anthropicModel *AnthropicModel) makeAnthropicChatRequest(ctx context.Context, chatRequest ChatRequest) (anthropicRequest AnthropicChatRequest, err error) {
-	logs.WithContext(ctx).Debug("makeAnthropicChatRequest - Start")
-
-	anthropicRequest = AnthropicChatRequest{
-		Model:       anthropicModel.LLMName,
-		MaxTokens:   1024,
-		Temperature: anthropicModel.Temprature,
-	}
-
-	for _, message := range chatRequest.Messages {
-		aContent := AnthropicMessageContent{
-			Type:         "text",
-			Text:         &message.Content,
-			CacheControl: nil,
-		}
-		anthropicRequest.Messages = append(anthropicRequest.Messages, AnthropicMessage{
-			Role:    message.Role,
-			Content: []AnthropicMessageContent{aContent},
-		})
-	}
-
-	return
-}
-
-func (anthropicModel *AnthropicModel) queryModel(ctx context.Context, chatRequest AnthropicChatRequest) (anthropicResponse AnthropicChatResponse, err error) {
-	logs.WithContext(ctx).Debug("queryModel - Start")
-
-	reqHeader := http.Header{}
-	reqHeader.Add("x-api-key", anthropicModel.LLMSecret)
-	reqHeader.Add("anthropic-version", AnthropicApiVersion)
-	reqHeader.Add("Content-Type", "application/json")
-
-	logs.WithContext(ctx).Info(fmt.Sprint(chatRequest))
-
-	response, _, _, _, err := utils.CallHttp(ctx, "POST", AnthropicApiUrl, reqHeader, nil, nil, nil, chatRequest)
-	if err != nil {
-		return
-	}
-
-	responseJson, err := json.Marshal(response)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return
-	}
-
-	err = json.Unmarshal(responseJson, &anthropicResponse)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return
-	}
-
-	logs.WithContext(ctx).Info(fmt.Sprint(anthropicResponse))
-	return
-}
-
-// Add the tool implementation
-func (anthropicModel *AnthropicModel) QueryModelWithTool(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (queryResponse JsonMessage, err error) {
+func (m *AnthropicModel) QueryModelWithTool(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentName string, agentPrompt string) (JsonMessage, error) {
 	logs.WithContext(ctx).Debug("QueryModelWithTool - Start")
-	anthropicChatToolRequest, err := anthropicModel.makeAnthropicChatToolRequest(ctx, chatRequest, tools, agentName, agentPrompt)
-	if err != nil {
-		return
+	client := m.getClient()
+
+	sdkTools, toolPrompt := convertTools(ctx, toolsMap)
+
+	systemContent := strings.TrimSpace(fmt.Sprint(agentPrompt, "\n", toolPrompt))
+
+	var messages []anthropic.MessageParam
+	messages = append(messages, anthropic.NewAssistantMessage(
+		anthropic.NewTextBlock(systemContent),
+	))
+	for _, message := range chatRequest.Messages {
+		messages = append(messages, convertSingleMessage(ctx, message))
 	}
-	anthropicChatResponse, err := anthropicModel.queryModelTool(ctx, anthropicChatToolRequest)
+
+	msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:       m.LLMName,
+		MaxTokens:   int64(1024),
+		Temperature: anthropic.Float(m.Temprature),
+		Messages:    messages,
+		Tools:       sdkTools,
+		ToolChoice: anthropic.ToolChoiceUnionParam{
+			OfAny: &anthropic.ToolChoiceAnyParam{Type: "any"},
+		},
+	})
 	if err != nil {
-		return
-	}
-	outputJson := make(map[string]interface{})
-	outputJson, ok := anthropicChatResponse.Content[0].Input.(map[string]interface{})
-	if !ok {
-		err = errors.New("input is not a map")
 		logs.WithContext(ctx).Error(err.Error())
-		outputJson = make(map[string]interface{})
-		outputJson["raw"] = anthropicChatResponse.Content[0].Input
-		return
+		return JsonMessage{}, err
 	}
 
-	queryResponse = JsonMessage{
-		Content: outputJson,
-		Role:    "assistant",
-	}
-	return
-}
-func (anthropicModel *AnthropicModel) makeAnthropicChatToolRequest(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (anthropicChatRequest AnthropicChatToolRequest, err error) {
-	logs.WithContext(ctx).Debug("makeAnthropicChatToolRequest - Start")
-
-	var anthropicRequestTools []AnthropicRequestTool
-	toolPrompt := ""
-	for _, tool := range tools {
-		toolNameI, _ := tool.GetAttribute(ctx, "tool_name")
-		toolDescriptionI, _ := tool.GetAttribute(ctx, "description")
-		toolParametersI, _ := tool.GetAttribute(ctx, "parameters")
-		toolSystemPromptI, _ := tool.GetAttribute(ctx, "system_prompt")
-		toolName := toolNameI.(string)
-		toolDescription := toolDescriptionI.(string)
-		toolParameters := toolParametersI.(eru_models.JSONSchema)
-
-		toolPrompt += fmt.Sprint("Tool prompt for Tool ", toolName, " is as follows :\n", toolSystemPromptI.(string))
-		reqTool := AnthropicRequestTool{
-			Name:        toolName,
-			Description: toolDescription,
-			InputSchema: toolParameters,
-			//Type:         "custom",
-			CacheControl: nil,
+	for _, block := range msg.Content {
+		if block.Type == "tool_use" {
+			toolUse := block.AsToolUse()
+			outputJson := make(map[string]interface{})
+			if err := json.Unmarshal(toolUse.Input, &outputJson); err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				outputJson = map[string]interface{}{"raw": string(toolUse.Input)}
+			}
+			return JsonMessage{Content: outputJson, Role: "assistant"}, nil
 		}
-		anthropicRequestTools = append(anthropicRequestTools, reqTool)
 	}
-	anthropicChatRequest.Model = anthropicModel.LLMName
-	anthropicChatRequest.Temperature = anthropicModel.Temprature
-	anthropicChatRequest.MaxTokens = 1024
-	//anthropicChatRequest.StopSequences = []string{""}
-	anthropicChatRequest.Stream = false
-	anthropicChatRequest.System = ""
-	anthropicChatRequest.Metadata = AnthropicMessageMetaData{}
-	anthropicChatRequest.ToolChoice = AnthropicToolChoice{
-		Type: "any",
-	}
-	anthropicChatRequest.Tools = anthropicRequestTools
-	//anthropicChatRequest.Metadata.Content.CacheControl = AnthropicCacheControl{Type: "ephemeral"}
 
-	content := fmt.Sprint(agentPrompt, "\n", toolPrompt)
-	anthropicChatRequest.Messages = append(anthropicChatRequest.Messages, AnthropicMessage{
-		Role:    "assistant",
-		Content: []AnthropicMessageContent{{Type: "text", Text: &content}}, //CacheControl: AnthropicCacheControl{Type: "ephemeral"},
+	return JsonMessage{}, errors.New("no tool_use block in response")
+}
 
+func (m *AnthropicModel) QueryModelStreaming(ctx context.Context, chatRequest ChatRequest, callback func(chunk string)) (Message, error) {
+	logs.WithContext(ctx).Debug("QueryModelStreaming - Start")
+	client := m.getClient()
+
+	messages := convertMessages(ctx, chatRequest.Messages)
+
+	stream := client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
+		Model:       m.LLMName,
+		MaxTokens:   int64(1024),
+		Temperature: anthropic.Float(m.Temprature),
+		Messages:    messages,
 	})
 
-	for _, message := range chatRequest.Messages {
-		anthropicChatRequest.Messages = append(anthropicChatRequest.Messages, AnthropicMessage{
-			Role:    message.Role,
-			Content: anthropicModel.makeAnthropicChatRequestContent(ctx, message),
-		})
+	var message anthropic.Message
+	for stream.Next() {
+		event := stream.Current()
+		message.Accumulate(event)
+		if event.Type == "content_block_delta" {
+			delta := event.AsContentBlockDelta()
+			if delta.Delta.Type == "text_delta" {
+				callback(delta.Delta.AsTextDelta().Text)
+			}
+		}
 	}
-	return
+	if err := stream.Err(); err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return Message{}, err
+	}
+
+	var content string
+	for _, block := range message.Content {
+		if block.Type == "text" {
+			content += block.AsText().Text
+		}
+	}
+	return Message{Content: content, Role: "assistant"}, nil
 }
 
-func (anthropicModel *AnthropicModel) makeAnthropicChatRequestContent(ctx context.Context, message Message) (anthropicRequestMessageContent []AnthropicMessageContent) {
-	logs.WithContext(ctx).Debug("makeOpenAIChatRequestContent - Start")
-	if message.Content != "" {
-		anthropicRequestMessageContent = append(anthropicRequestMessageContent, AnthropicMessageContent{
-			Type:         "text",
-			Text:         &message.Content,
-			Source:       nil,
-			CacheControl: nil,
-		})
+func (m *AnthropicModel) QueryModelWithReasoning(ctx context.Context, chatRequest ChatRequest, thinkingBudget int) (Message, string, error) {
+	logs.WithContext(ctx).Debug("QueryModelWithReasoning - Start")
+	client := m.getClient()
+
+	messages := convertMessages(ctx, chatRequest.Messages)
+
+	msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     m.LLMName,
+		MaxTokens: int64(16000),
+		Messages:  messages,
+		Thinking: anthropic.ThinkingConfigParamUnion{
+			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
+				Type:         "enabled",
+				BudgetTokens: int64(thinkingBudget),
+			},
+		},
+	})
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return Message{}, "", err
 	}
-	if len(message.Files) > 0 {
-		for _, file := range message.Files {
-			if file.FileData != "" {
-				anthropicRequestMessageContent = append(anthropicRequestMessageContent, AnthropicMessageContent{
-					Type: "document",
-					Text: nil,
-					Source: &AnthropicContentSource{
-						MediaType: file.FileType,
-						Type:      "base64",
-						Data:      file.FileData,
+
+	var content, thinking string
+	for _, block := range msg.Content {
+		if block.Type == "text" {
+			content += block.AsText().Text
+		}
+		if block.Type == "thinking" {
+			thinking += block.AsThinking().Thinking
+		}
+	}
+	return Message{Content: content, Role: "assistant"}, thinking, nil
+}
+
+func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (Message, []StepTrace, error) {
+	logs.WithContext(ctx).Debug("RunToolLoop - Start")
+	ctx, span := otel.Tracer("eru-ai").Start(ctx, "Anthropic.RunToolLoop",
+		oteltrace.WithAttributes(attribute.String("model", m.LLMName), attribute.Int("max_iterations", maxIterations)),
+	)
+	defer span.End()
+	client := m.getClient()
+
+	sdkTools, toolPrompt := convertTools(ctx, toolsMap)
+	systemContent := agentPrompt
+	if toolPrompt != "" {
+		systemContent = strings.TrimSpace(fmt.Sprint(agentPrompt, "\n", toolPrompt))
+	}
+
+	messages := convertMessages(ctx, chatRequest.Messages)
+
+	var traces []StepTrace
+
+	maxTokens := resolveMaxTokens(m.MaxTokens, thinkingBudget)
+
+	for iteration := 1; iteration <= maxIterations; iteration++ {
+		params := anthropic.MessageNewParams{
+			Model:     m.LLMName,
+			MaxTokens: maxTokens,
+			Messages:  messages,
+			Tools:     sdkTools,
+			System: []anthropic.TextBlockParam{
+				{Text: systemContent},
+			},
+		}
+		if thinkingBudget > 0 {
+			params.Thinking = anthropic.ThinkingConfigParamUnion{
+				OfEnabled: &anthropic.ThinkingConfigEnabledParam{
+					Type:         "enabled",
+					BudgetTokens: int64(thinkingBudget),
+				},
+			}
+		} else {
+			params.Temperature = anthropic.Float(m.Temprature)
+		}
+
+		msg, err := client.Messages.New(ctx, params)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return Message{}, traces, err
+		}
+
+		trace := StepTrace{
+			Iteration: iteration,
+			Timestamp: time.Now(),
+		}
+
+		var assistantBlocks []anthropic.ContentBlockParamUnion
+		var toolUseBlocks []anthropic.ToolUseBlock
+		var finalContent string
+
+		for _, block := range msg.Content {
+			switch block.Type {
+			case "thinking":
+				trace.Thinking = block.AsThinking().Thinking
+				assistantBlocks = append(assistantBlocks, anthropic.ContentBlockParamUnion{
+					OfThinking: &anthropic.ThinkingBlockParam{
+						Type:      "thinking",
+						Thinking:  block.AsThinking().Thinking,
+						Signature: block.AsThinking().Signature,
 					},
-					CacheControl: nil,
 				})
-			} else if file.FileId != "" {
-				/* anthropicRequestMessageContent = append(anthropicRequestMessageContent, AnthropicMessageContent{
-					Type: "file",
-					Source: AnthropicContentSource{
-						FileId: file.FileId,
+			case "text":
+				finalContent += block.AsText().Text
+				assistantBlocks = append(assistantBlocks, anthropic.NewTextBlock(block.AsText().Text))
+			case "tool_use":
+				tu := block.AsToolUse()
+				toolUseBlocks = append(toolUseBlocks, tu)
+				assistantBlocks = append(assistantBlocks, anthropic.ContentBlockParamUnion{
+					OfToolUse: &anthropic.ToolUseBlockParam{
+						ID:    tu.ID,
+						Name:  tu.Name,
+						Input: tu.Input,
+						Type:  "tool_use",
 					},
-				}) */
-				//TODO: Add file id support
-			} else if file.ImageData != "" {
-				anthropicRequestMessageContent = append(anthropicRequestMessageContent, AnthropicMessageContent{
-					Type: "image",
-					Text: nil,
-					Source: &AnthropicContentSource{
-						MediaType: file.FileType,
-						Type:      "base64",
-						Data:      file.ImageData,
+				})
+			}
+		}
+
+		messages = append(messages, anthropic.MessageParam{
+			Role:    "assistant",
+			Content: assistantBlocks,
+		})
+
+		if string(msg.StopReason) == "max_tokens" {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Anthropic response truncated: stop_reason=max_tokens, max_tokens=%d. Increase model.max_tokens or reduce thinking_budget.", maxTokens))
+		}
+
+		if len(toolUseBlocks) == 0 {
+			trace.Content = finalContent
+			traces = append(traces, trace)
+			return Message{Content: finalContent, Role: "assistant"}, traces, nil
+		}
+
+		for _, tu := range toolUseBlocks {
+			inputMap := make(map[string]interface{})
+			if uerr := json.Unmarshal(tu.Input, &inputMap); uerr != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("tool_use %s input parse failed (likely truncated by max_tokens=%d): %v; raw=%s", tu.Name, maxTokens, uerr, string(tu.Input)))
+			}
+
+			if tu.Name == "structured_output" {
+				trace.ToolName = tu.Name
+				trace.ToolInput = inputMap
+				traces = append(traces, trace)
+				if len(inputMap) == 0 {
+					return Message{}, traces, fmt.Errorf("structured_output tool input was empty or truncated; raise model.max_tokens (current=%d) or lower thinking_budget", maxTokens)
+				}
+				resultBytes, _ := json.Marshal(inputMap)
+				return Message{Content: string(resultBytes), Role: "assistant"}, traces, nil
+			}
+
+			trace.ToolName = tu.Name
+			trace.ToolInput = inputMap
+		}
+
+		var toolResultBlocks []anthropic.ContentBlockParamUnion
+		for _, tu := range toolUseBlocks {
+			inputMap := make(map[string]interface{})
+			json.Unmarshal(tu.Input, &inputMap)
+
+			result, execErr := toolExecutor(ctx, tu.Name, inputMap)
+			if execErr != nil {
+				toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(tu.ID, fmt.Sprintf("Error: %s", execErr.Error()), true))
+				trace.ToolResult = map[string]interface{}{"error": execErr.Error()}
+			} else {
+				resultBytes, _ := json.Marshal(result)
+				toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(tu.ID, string(resultBytes), false))
+				trace.ToolResult = result
+			}
+		}
+		traces = append(traces, trace)
+
+		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
+	}
+
+	return Message{Content: "max iterations reached", Role: "assistant"}, traces, nil
+}
+
+func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor, streamCb StreamEventCallback) (Message, []StepTrace, error) {
+	logs.WithContext(ctx).Debug("RunToolLoopStreaming - Start")
+	ctx, span := otel.Tracer("eru-ai").Start(ctx, "Anthropic.RunToolLoopStreaming",
+		oteltrace.WithAttributes(attribute.String("model", m.LLMName), attribute.Int("max_iterations", maxIterations)),
+	)
+	defer span.End()
+	client := m.getClient()
+
+	sdkTools, toolPrompt := convertTools(ctx, toolsMap)
+	systemContent := agentPrompt
+	if toolPrompt != "" {
+		systemContent = strings.TrimSpace(fmt.Sprint(agentPrompt, "\n", toolPrompt))
+	}
+
+	messages := convertMessages(ctx, chatRequest.Messages)
+	var traces []StepTrace
+
+	maxTokens := resolveMaxTokens(m.MaxTokens, thinkingBudget)
+
+	for iteration := 1; iteration <= maxIterations; iteration++ {
+		params := anthropic.MessageNewParams{
+			Model:     m.LLMName,
+			MaxTokens: maxTokens,
+			Messages:  messages,
+			Tools:     sdkTools,
+			System: []anthropic.TextBlockParam{
+				{Text: systemContent},
+			},
+		}
+		if thinkingBudget > 0 {
+			params.Thinking = anthropic.ThinkingConfigParamUnion{
+				OfEnabled: &anthropic.ThinkingConfigEnabledParam{
+					Type:         "enabled",
+					BudgetTokens: int64(thinkingBudget),
+				},
+			}
+		} else {
+			params.Temperature = anthropic.Float(m.Temprature)
+		}
+
+		stream := client.Messages.NewStreaming(ctx, params)
+
+		trace := StepTrace{
+			Iteration: iteration,
+			Timestamp: time.Now(),
+		}
+
+		var msg anthropic.Message
+		var currentThinking string
+
+		for stream.Next() {
+			event := stream.Current()
+			msg.Accumulate(event)
+
+			if event.Type == "content_block_delta" {
+				delta := event.AsContentBlockDelta()
+				switch delta.Delta.Type {
+				case "thinking_delta":
+					chunk := delta.Delta.AsThinkingDelta().Thinking
+					currentThinking += chunk
+					if streamCb != nil {
+						streamCb(ModelStreamEvent{
+							Type:      StreamThinking,
+							Content:   chunk,
+							Iteration: iteration,
+						})
+					}
+				case "text_delta":
+					chunk := delta.Delta.AsTextDelta().Text
+					if streamCb != nil {
+						streamCb(ModelStreamEvent{
+							Type:      StreamTextDelta,
+							Content:   chunk,
+							Iteration: iteration,
+						})
+					}
+				}
+			}
+		}
+
+		if err := stream.Err(); err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return Message{}, traces, err
+		}
+
+		trace.Thinking = currentThinking
+
+		var assistantBlocks []anthropic.ContentBlockParamUnion
+		var toolUseBlocks []anthropic.ToolUseBlock
+		var finalContent string
+
+		for _, block := range msg.Content {
+			switch block.Type {
+			case "thinking":
+				assistantBlocks = append(assistantBlocks, anthropic.ContentBlockParamUnion{
+					OfThinking: &anthropic.ThinkingBlockParam{
+						Type:      "thinking",
+						Thinking:  block.AsThinking().Thinking,
+						Signature: block.AsThinking().Signature,
 					},
-					CacheControl: nil,
+				})
+			case "text":
+				finalContent += block.AsText().Text
+				assistantBlocks = append(assistantBlocks, anthropic.NewTextBlock(block.AsText().Text))
+			case "tool_use":
+				tu := block.AsToolUse()
+				toolUseBlocks = append(toolUseBlocks, tu)
+				assistantBlocks = append(assistantBlocks, anthropic.ContentBlockParamUnion{
+					OfToolUse: &anthropic.ToolUseBlockParam{
+						ID:    tu.ID,
+						Name:  tu.Name,
+						Input: tu.Input,
+						Type:  "tool_use",
+					},
+				})
+			}
+		}
+
+		messages = append(messages, anthropic.MessageParam{
+			Role:    "assistant",
+			Content: assistantBlocks,
+		})
+
+		if string(msg.StopReason) == "max_tokens" {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Anthropic streaming response truncated: stop_reason=max_tokens, max_tokens=%d. Increase model.max_tokens or reduce thinking_budget.", maxTokens))
+		}
+
+		if len(toolUseBlocks) == 0 {
+			trace.Content = finalContent
+			traces = append(traces, trace)
+			return Message{Content: finalContent, Role: "assistant"}, traces, nil
+		}
+
+		for _, tu := range toolUseBlocks {
+			inputMap := make(map[string]interface{})
+			if uerr := json.Unmarshal(tu.Input, &inputMap); uerr != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("tool_use %s input parse failed (likely truncated by max_tokens=%d): %v; raw=%s", tu.Name, maxTokens, uerr, string(tu.Input)))
+			}
+
+			if tu.Name == "structured_output" {
+				trace.ToolName = tu.Name
+				trace.ToolInput = inputMap
+				traces = append(traces, trace)
+				if len(inputMap) == 0 {
+					return Message{}, traces, fmt.Errorf("structured_output tool input was empty or truncated; raise model.max_tokens (current=%d) or lower thinking_budget", maxTokens)
+				}
+				resultBytes, _ := json.Marshal(inputMap)
+				return Message{Content: string(resultBytes), Role: "assistant"}, traces, nil
+			}
+
+			if streamCb != nil {
+				streamCb(ModelStreamEvent{
+					Type:      StreamToolUse,
+					ToolName:  tu.Name,
+					ToolInput: inputMap,
+					Iteration: iteration,
+				})
+			}
+			trace.ToolName = tu.Name
+			trace.ToolInput = inputMap
+		}
+
+		var toolResultBlocks []anthropic.ContentBlockParamUnion
+		for _, tu := range toolUseBlocks {
+			inputMap := make(map[string]interface{})
+			json.Unmarshal(tu.Input, &inputMap)
+
+			result, execErr := toolExecutor(ctx, tu.Name, inputMap)
+			if execErr != nil {
+				toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(tu.ID, fmt.Sprintf("Error: %s", execErr.Error()), true))
+				trace.ToolResult = map[string]interface{}{"error": execErr.Error()}
+				if streamCb != nil {
+					streamCb(ModelStreamEvent{Type: StreamToolResult, Content: execErr.Error(), ToolName: tu.Name, Iteration: iteration})
+				}
+			} else {
+				resultBytes, _ := json.Marshal(result)
+				toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(tu.ID, string(resultBytes), false))
+				trace.ToolResult = result
+				if streamCb != nil {
+					streamCb(ModelStreamEvent{Type: StreamToolResult, Content: string(resultBytes), ToolName: tu.Name, Iteration: iteration})
+				}
+			}
+		}
+		traces = append(traces, trace)
+		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
+	}
+
+	return Message{Content: "max iterations reached", Role: "assistant"}, traces, nil
+}
+
+func convertMessages(ctx context.Context, messages []Message) []anthropic.MessageParam {
+	var result []anthropic.MessageParam
+	for _, msg := range messages {
+		result = append(result, convertSingleMessage(ctx, msg))
+	}
+	return result
+}
+
+func convertSingleMessage(ctx context.Context, msg Message) anthropic.MessageParam {
+	var blocks []anthropic.ContentBlockParamUnion
+
+	if msg.Content != "" {
+		blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
+	}
+
+	for _, file := range msg.Files {
+		if file.ImageData != "" {
+			blocks = append(blocks, anthropic.NewImageBlockBase64(file.FileType, file.ImageData))
+		} else if file.FileData != "" {
+			if file.FileType == "application/pdf" {
+				blocks = append(blocks, anthropic.ContentBlockParamUnion{
+					OfDocument: &anthropic.DocumentBlockParam{
+						Source: anthropic.DocumentBlockParamSourceUnion{
+							OfBase64: &anthropic.Base64PDFSourceParam{
+								Data: file.FileData,
+							},
+						},
+					},
+				})
+			} else {
+				blocks = append(blocks, anthropic.ContentBlockParamUnion{
+					OfDocument: &anthropic.DocumentBlockParam{
+						Source: anthropic.DocumentBlockParamSourceUnion{
+							OfText: &anthropic.PlainTextSourceParam{
+								Data: file.FileData,
+							},
+						},
+					},
 				})
 			}
 		}
 	}
 
-	return
+	if len(blocks) == 0 {
+		blocks = append(blocks, anthropic.NewTextBlock(""))
+	}
+
+	switch msg.Role {
+	case "user":
+		return anthropic.NewUserMessage(blocks...)
+	case "assistant":
+		return anthropic.NewAssistantMessage(blocks...)
+	default:
+		return anthropic.NewUserMessage(blocks...)
+	}
 }
 
-func (anthropicModel *AnthropicModel) queryModelTool(ctx context.Context, toolRequest AnthropicChatToolRequest) (anthropicResponse AnthropicChatResponse, err error) {
-	logs.WithContext(ctx).Debug("queryModelTool - Start")
+func convertTools(ctx context.Context, toolsMap map[string]tools.Tooling) ([]anthropic.ToolUnionParam, string) {
+	var sdkTools []anthropic.ToolUnionParam
+	var toolPrompt string
 
-	reqHeader := http.Header{}
-	reqHeader.Add("x-api-key", anthropicModel.LLMSecret)
-	reqHeader.Add("anthropic-version", AnthropicApiVersion)
-	reqHeader.Add("Content-Type", "application/json")
+	for _, tool := range toolsMap {
+		toolNameI, _ := tool.GetAttribute(ctx, "tool_name")
+		toolDescI, _ := tool.GetAttribute(ctx, "description")
+		toolParamsI, _ := tool.GetAttribute(ctx, "parameters")
+		toolSysPromptI, _ := tool.GetAttribute(ctx, "system_prompt")
 
-	logs.WithContext(ctx).Info(fmt.Sprint(toolRequest))
+		toolName := toolNameI.(string)
+		toolDesc := toolDescI.(string)
+		toolParams := toolParamsI.(eru_models.JSONSchema)
+		toolSysPrompt := toolSysPromptI.(string)
 
-	response, _, _, _, err := utils.CallHttp(ctx, "POST", AnthropicApiUrl, reqHeader, nil, nil, nil, toolRequest)
-	if err != nil {
-		return
+		toolPrompt += fmt.Sprint("Tool prompt for Tool ", toolName, " is as follows :\n", toolSysPrompt)
+
+		sdkTools = append(sdkTools, anthropic.ToolUnionParam{
+			OfTool: &anthropic.ToolParam{
+				Name:        toolName,
+				Description: anthropic.String(toolDesc),
+				InputSchema: jsonSchemaToSDK(toolParams),
+			},
+		})
 	}
+	return sdkTools, toolPrompt
+}
 
-	responseJson, err := json.Marshal(response)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return
+func jsonSchemaToSDK(schema eru_models.JSONSchema) anthropic.ToolInputSchemaParam {
+	properties := make(map[string]any)
+	for name, prop := range schema.Properties {
+		properties[name] = jsonSchemaPropertyToMap(prop)
 	}
+	param := anthropic.ToolInputSchemaParam{
+		Type:       "object",
+		Properties: properties,
+		Required:   schema.Required,
+	}
+	if schema.AdditionalProperties != nil {
+		param.ExtraFields = map[string]any{"additionalProperties": schema.AdditionalProperties}
+	}
+	return param
+}
 
-	err = json.Unmarshal(responseJson, &anthropicResponse)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return
+func jsonSchemaPropertyToMap(schema eru_models.JSONSchema) map[string]any {
+	m := map[string]any{}
+	if schema.Type != "" {
+		m["type"] = schema.Type
 	}
-	return
+	if schema.Description != "" {
+		m["description"] = schema.Description
+	}
+	if len(schema.Enum) > 0 {
+		m["enum"] = schema.Enum
+	}
+	if schema.Format != "" {
+		m["format"] = schema.Format
+	}
+	if len(schema.Properties) > 0 {
+		props := make(map[string]any)
+		for k, v := range schema.Properties {
+			props[k] = jsonSchemaPropertyToMap(v)
+		}
+		m["properties"] = props
+	}
+	if len(schema.Required) > 0 {
+		m["required"] = schema.Required
+	}
+	if schema.Items != nil {
+		m["items"] = jsonSchemaPropertyToMap(*schema.Items)
+	}
+	if schema.AdditionalProperties != nil {
+		m["additionalProperties"] = schema.AdditionalProperties
+	}
+	return m
+}
+
+// resolveMaxTokens picks a sensible MaxTokens for a Messages request.
+//
+// Anthropic counts thinking tokens against MaxTokens, so a small MaxTokens
+// combined with a non-trivial thinking_budget can leave too few tokens for
+// the actual response — typically observed as a truncated tool_use input
+// that fails to parse. We give the user-configured value priority and add
+// a generous default that always reserves at least 16k of headroom over
+// the thinking budget.
+func resolveMaxTokens(configured int64, thinkingBudget int) int64 {
+	const defaultBase int64 = 32000
+	const headroom int64 = 16000
+
+	if configured > 0 {
+		return configured
+	}
+	if thinkingBudget <= 0 {
+		return defaultBase
+	}
+	if int64(thinkingBudget)+headroom > defaultBase {
+		return int64(thinkingBudget) + headroom
+	}
+	return defaultBase
 }

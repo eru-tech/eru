@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
-	"github.com/eru-tech/eru/eru-rules/module_store"
 	"os"
 	"strings"
+
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-rules/module_store"
 )
 
 const StoreTableName = "erurules_config"
 
-func StartUp() (module_store.ModuleStoreI, error) {
+func StartUp(ctx context.Context) (module_store.ModuleStoreI, error) {
 	logs.WithContext(context.Background()).Debug("Start - Start")
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
 	if storeType == "" {

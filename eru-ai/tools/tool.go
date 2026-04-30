@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"slices"
 	"strings"
 
 	db "github.com/eru-tech/eru/eru-db/db"
@@ -18,16 +17,11 @@ import (
 	gojsonschema "github.com/xeipuuv/gojsonschema"
 )
 
-type McpToolList struct {
-	ToolName        string `json:"name"`
-	ToolDescription string `json:"description"`
-	ComponentUrl    string `json:"component_url"`
-}
 type ToolHooks struct {
-	CLBK string `json:"clbk"` //callback
-	POEX string `json:"poex"` //post execute
-	ARSU string `json:"arsu"` //auto renew subscription
-	ARRT string `json:"arrt"` //auto renew refresh token
+	CLBK string            `json:"clbk,omitempty"` //callback
+	POEX map[string]string `json:"poex,omitempty"` //post execute
+	ARSU string            `json:"arsu,omitempty"` //auto renew subscription
+	ARRT string            `json:"arrt,omitempty"` //auto renew refresh token
 }
 
 type Tool struct {
@@ -37,7 +31,7 @@ type Tool struct {
 	SystemPrompt    string                `json:"system_prompt"`
 	OutputSchema    eru_models.JSONSchema `json:"output_schema"`
 	Parameters      eru_models.JSONSchema `json:"parameters"`
-	Actions         map[string]ToolAction `json:"actions"`
+	ToolAction      ToolAction            `json:"-" eru:"optional"`
 	Hooks           ToolHooks             `json:"hooks"`
 	HookAsyncEvent  string                `json:"hook_async_event"`
 	Scheduler       scheduler.SchedulerI  `json:"-"`
@@ -50,12 +44,18 @@ type ToolCallback struct {
 	ResponseContentType string `json:"response_content_type"`
 }
 
+type ActionInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
 type ToolAction struct {
-	ActionName   string                `json:"action_name" eru:"required"`
-	Description  string                `json:"description"`
-	SystemPrompt string                `json:"system_prompt"`
-	OutputSchema eru_models.JSONSchema `json:"output_schema"`
-	Parameters   eru_models.JSONSchema `json:"parameters"`
+	ActionName    string                       `json:"action_name" eru:"required"`
+	Description   string                       `json:"description"`
+	SystemPrompt  string                       `json:"system_prompt"`
+	OutputSchema  eru_models.JSONSchema        `json:"output_schema"`
+	Parameters    eru_models.JSONSchema        `json:"parameters"`
+	GetParameters func() eru_models.JSONSchema `json:"-"`
 }
 
 type ToolInput struct {
@@ -71,13 +71,19 @@ type ToolInputFields struct {
 	FieldDescription string `json:"field_description"`
 	FieldRequired    bool   `json:"field_required"`
 }
+type contextKey string
+
+const (
+	EruFuncBaseUrlKey contextKey = "Erufuncbaseurl"
+	eruFuncBaseUrlKey            = EruFuncBaseUrlKey
+)
 
 type Tooling interface {
 	GetSpec() Tooling
 	GetBytes(ctx context.Context) ([]byte, error)
 	BytesToTool(ctx context.Context, toolObjJson []byte) (Tooling, error)
-	GetActionsList() []string
-	GetMcpTools() []McpToolList
+	GetActionsList() []ActionInfo
+	GetActions() []ToolAction
 	ValidateAction(ctx context.Context, actionName string, realTool Tooling) (err error)
 	SetPrivateAttributes(ctx context.Context, realTool Tooling) (err error)
 	GetInputFields() []ToolInputFields
@@ -86,12 +92,27 @@ type Tooling interface {
 	ValidateOutput(ctx context.Context, output json.RawMessage) error
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
+	SetAttribute(ctx context.Context, attributeName string, attributeValue interface{}) (err error)
 	GetToolCallback() ToolCallback
 	GetToolCbUrl(projectId string, tenantId string) string
-	ExecuteCallbackHook(ctx context.Context, projectId string, tenantId string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error)
+	ExecuteHook(ctx context.Context, hookType string, actionName string, projectId string, tenantId string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error)
 	GetToolDb() db.DbI
 	SetToolDb(db.DbI)
 	SetScheduler(scheduler.SchedulerI)
+	SaveTenantSecret(ctx context.Context, projectId string, tenantId string, secretName string, secretValue string) (err error)
+	SetToolAction(actionName string)
+	GetParameters() eru_models.JSONSchema
+}
+
+func (tool *Tool) SetToolAction(actionName string) {
+	tool.ToolAction = ToolAction{}
+}
+
+func (tool *Tool) GetParameters() eru_models.JSONSchema {
+	if tool.ToolAction.GetParameters == nil {
+		return tool.Parameters
+	}
+	return tool.ToolAction.GetParameters()
 }
 
 func (tool *Tool) GetBytes(ctx context.Context) ([]byte, error) {
@@ -143,21 +164,17 @@ func (tool *Tool) SetPrivateAttributes(ctx context.Context, realTool Tooling) (e
 	return nil
 }
 
-func (tool *Tool) GetActionsList() []string {
-	actions := []string{}
-	for actionName := range tool.Actions {
-		actions = append(actions, actionName)
-	}
-	return actions
+func (tool *Tool) GetActionsList() []ActionInfo {
+	return []ActionInfo{}
+}
+
+func (tool *Tool) GetActions() []ToolAction {
+	return []ToolAction{}
 }
 
 func (tool *Tool) GetInputFields() []ToolInputFields {
 	fields := []ToolInputFields{}
 	return fields
-}
-
-func (tool *Tool) GetMcpTools() []McpToolList {
-	return []McpToolList{}
 }
 
 func (tool *Tool) ValidateOutput(ctx context.Context, output json.RawMessage) error {
@@ -223,6 +240,27 @@ func (tool *Tool) GetAttribute(ctx context.Context, attributeName string) (attri
 		return nil, err
 	}
 }
+func (tool *Tool) SetAttribute(ctx context.Context, attributeName string, attributeValue interface{}) (err error) {
+	switch attributeName {
+	case "tool_name":
+		tool.ToolName = attributeValue.(string)
+	case "tool_type":
+		tool.ToolType = attributeValue.(string)
+	case "system_prompt":
+		tool.SystemPrompt = attributeValue.(string)
+	case "output_schema":
+		tool.OutputSchema = attributeValue.(eru_models.JSONSchema)
+	case "parameters":
+		tool.Parameters = attributeValue.(eru_models.JSONSchema)
+	case "description":
+		tool.Description = attributeValue.(string)
+	default:
+		err = errors.New("attribute not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	return nil
+}
 
 func (tool *Tool) ValidateAction(ctx context.Context, actionName string, realTool Tooling) (err error) {
 	logs.WithContext(ctx).Info("ValidateAction - Start")
@@ -234,7 +272,14 @@ func (tool *Tool) ValidateAction(ctx context.Context, actionName string, realToo
 		//if no actions are defined, and no action name is provided, return nil
 		return
 	}
-	if !slices.Contains(actions, actionName) {
+	found := false
+	for _, a := range actions {
+		if a.Name == actionName {
+			found = true
+			break
+		}
+	}
+	if !found {
 		err = errors.New("action " + actionName + " not found")
 		logs.WithContext(ctx).Error(err.Error())
 		return
@@ -243,9 +288,27 @@ func (tool *Tool) ValidateAction(ctx context.Context, actionName string, realToo
 	return
 }
 
-func (tool *Tool) ExecuteCallbackHook(ctx context.Context, projectId string, tenantId string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error) {
+func (tool *Tool) ExecuteHook(ctx context.Context, hookType string, actionName string, projectId string, tenantId string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, err error) {
 	logs.WithContext(ctx).Info("ExecuteCallbackHook - Start")
-	if tool.Hooks.CLBK != "" {
+	hookFunction := ""
+	switch hookType {
+	case "clbk":
+		hookFunction = tool.Hooks.CLBK
+	case "poex":
+		if tool.Hooks.POEX != nil {
+			hookFunction = tool.Hooks.POEX[actionName]
+		}
+	case "arsu":
+		hookFunction = tool.Hooks.ARSU
+	case "arrt":
+		hookFunction = tool.Hooks.ARRT
+	default:
+		err = errors.New("callback type not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+
+	if hookFunction != "" {
 		paramMap := make(map[string]string)
 		for k, v := range params {
 			paramMap[k] = strings.Join(v, ",")
@@ -254,10 +317,26 @@ func (tool *Tool) ExecuteCallbackHook(ctx context.Context, projectId string, ten
 		if tool.HookAsyncEvent != "" {
 			asyncEvent = fmt.Sprint("/", tool.HookAsyncEvent)
 		}
-		url := fmt.Sprint(ctx.Value("Erufuncbaseurl").(string), "/", projectId, "/func/", tool.Hooks.CLBK, asyncEvent)
+		efurl := ctx.Value(EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+		url := fmt.Sprint(efurlString, "/", projectId, "/func/", hookFunction, asyncEvent)
 		logs.WithContext(ctx).Info(fmt.Sprintf("url: %v", url))
 		headers := http.Header{}
 		headers.Add("Content-Type", "application/json")
+		claims := ctx.Value("claims")
+		if claims != nil {
+			headers.Add("claims", claims.(string))
+		}
 		res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, nil, nil, paramMap, body)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
@@ -267,4 +346,53 @@ func (tool *Tool) ExecuteCallbackHook(ctx context.Context, projectId string, ten
 		return res, nil
 	}
 	return nil, nil
+}
+
+func (tool *Tool) ExecuteFunction(ctx context.Context, projectId string, tenantId string, functionName string, body map[string]interface{}, params map[string][]string) (functionResult interface{}, err error) {
+	logs.WithContext(ctx).Info("ExecuteFunction - Start")
+	paramMap := make(map[string]string)
+	for k, v := range params {
+		paramMap[k] = strings.Join(v, ",")
+	}
+	efurl := ctx.Value(eruFuncBaseUrlKey)
+	if efurl == nil {
+		err = errors.New("erufuncbaseurl not found in context")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	efurlString, ok := efurl.(string)
+	if !ok {
+		err = errors.New("erufuncbaseurl is not a string")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	url := fmt.Sprint(efurlString, "/", projectId, "/func/", functionName)
+	logs.WithContext(ctx).Info(fmt.Sprintf("url: %v", url))
+	headers := http.Header{}
+	headers.Add("Content-Type", "application/json")
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, nil, nil, paramMap, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("res: %v", res))
+	return res, nil
+}
+
+func (tool *Tool) SaveTenantSecret(ctx context.Context, projectId string, tenantId string, secretName string, secretValue string) (err error) {
+	logs.WithContext(ctx).Debug("saveTenantSecret Execute - Start")
+	eruaiport := ctx.Value("eruaiport").(string)
+	url := fmt.Sprint("http://localhost:", eruaiport, "/store/", projectId, "/", tenantId, "/sm/set")
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	secretPost := make(map[string]interface{})
+	secretInnerPost := make(map[string]interface{})
+	secretInnerPost[secretName] = secretValue
+	secretPost["secret_value"] = secretInnerPost
+	_, _, _, _, err = utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, secretPost)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	return nil
 }

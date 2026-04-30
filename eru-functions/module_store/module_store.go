@@ -10,16 +10,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-
 	"net/url"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"strconv"
-
-
 
 	"github.com/eru-tech/eru/eru-db/db"
 	"github.com/eru-tech/eru/eru-events/events"
@@ -27,9 +26,12 @@ import (
 	"github.com/eru-tech/eru/eru-functions/module_model"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	"github.com/eru-tech/eru/eru-scheduler/scheduler"
+	server "github.com/eru-tech/eru/eru-server/server"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/eru-tech/eru/eru-store/store"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -39,15 +41,40 @@ var FuncThreads = 3
 var LoopThreads = 3
 var EventThreads = 3
 
+type ContextKey string
+
 const (
-	UPDATE_FUNC_ASYNC = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
-	SELECT_FUNC_ASYNC = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
-	//SELECT_FUNC_REQUEST = "select * from erufunctions_requests where project_id=??? and tenant_id=??? and func_group_name=??? and (request_name=??? or 'ALL'=???)"
-	//SAVE_FUNC_REQUEST   = "insert into erufunctions_requests (request_id, request_name, func_group_name, project_id, tenant_id, request_json) values (???, ???, ???, ???, ???, ???) on conflict (request_id) do update set request_json=EXCLUDED.request_json , request_name=EXCLUDED.request_name"
-	//DELETE_FUNC_REQUEST = "delete from erufunctions_requests where request_id=??? returning request_id"
+	ContextKeyEruqlbaseurl ContextKey = "eruqlbaseurl"
+	ContextKeyEruaibaseurl ContextKey = "eruaibaseurl"
+)
+
+func getEruqlbaseurl(ctx context.Context) string {
+	if ctx != nil {
+		if baseurl, ok := ctx.Value(ContextKeyEruqlbaseurl).(string); ok && baseurl != "" {
+			return baseurl
+		}
+	}
+	return Eruqlbaseurl
+}
+
+func getEruaibaseurl(ctx context.Context) string {
+	if ctx != nil {
+		if baseurl, ok := ctx.Value(ContextKeyEruaibaseurl).(string); ok && baseurl != "" {
+			return baseurl
+		}
+	}
+	return Eruaibaseurl
+}
+
+const (
+	UPDATE_FUNC_ASYNC    = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
+	SELECT_FUNC_ASYNC    = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
+	INSERT_FUNC_SCHEDULE = "insert into erufunctions_schedules (schedule_id, project_id, tenant_id, func_group_name, func_step_name, event_msg, scheduler_name, scheduler_label,job_id, start_date, end_date) values (???, ???, ???, ???, ???, ???, ???, ???, ???, ???, ???)"
+	DELETE_FUNC_SCHEDULE = "delete from erufunctions_schedules where job_id=???"
 )
 
 type StoreHolder struct {
+	sync.RWMutex
 	Store ModuleStoreI
 }
 
@@ -65,6 +92,7 @@ type ModuleStoreI interface {
 	SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error
 	//SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error
 	SaveProjectSettings(ctx context.Context, projectId string, projectConfig module_model.ProjectSettings, realStore ModuleStoreI) error
+	GetProjectSettings(ctx context.Context, projectId string) (module_model.ProjectSettings, error)
 	RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error
 	//SaveProjectAuthorizer(ctx context.Context, projectId string, authorizer functions.Authorizer, realStore ModuleStoreI) error
 	//RemoveProjectAuthorizer(ctx context.Context, projectId string, authorizerName string) error
@@ -76,6 +104,9 @@ type ModuleStoreI interface {
 	RemoveRoute(ctx context.Context, routeName string, projectId string, realStore ModuleStoreI) error
 	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route functions.Route, err error)
 	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
+	GetFunc(ctx context.Context, funcName string, projectId string, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
+	ScheduleFunc(ctx context.Context, funcSchedule scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) error
+	UnScheduleFunc(ctx context.Context, projectId string, jobId string, realStore ModuleStoreI) error
 	GetWf(ctx context.Context, wfName string, projectId string, s ModuleStoreI) (wfObj functions.Workflow, err error)
 	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
 	SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
@@ -223,7 +254,17 @@ func (ms *ModuleStore) GetExtendedProjectConfig(ctx context.Context, projectId s
 	ePrj = module_model.ExtendedProject{}
 	if prj, ok := ms.Projects[projectId]; ok {
 		ePrj.Variables, err = realStore.FetchVars(ctx, projectId)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		ePrj.SecretManager, err = realStore.FetchSm(ctx, projectId)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		ePrj.Scheduler, err = realStore.FetchScheduler(ctx, projectId)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
 		ePrj.ProjectId = prj.ProjectId
 		ePrj.ProjectSettings = prj.ProjectSettings
 		ePrj.Routes = prj.Routes
@@ -346,6 +387,17 @@ func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string
 	return cloneRoute, nil
 }
 
+func (ms *ModuleStore) GetFunc(ctx context.Context, funcName string, projectId string, s ModuleStoreI) (cloneFunc functions.FuncGroup, err error) {
+	logs.WithContext(ctx).Debug("GetFunc - Start")
+	funcGroup := functions.FuncGroup{}
+	if prg, ok := ms.Projects[projectId]; ok {
+		if funcGroup, ok = prg.FuncGroups[funcName]; !ok {
+			return funcGroup, errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
+		}
+		return funcGroup, nil
+	}
+	return
+}
 func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (cloneFunc functions.FuncGroup, err error) {
 	logs.WithContext(ctx).Debug("GetAndValidateFunc - Start")
 	funcGroup := functions.FuncGroup{}
@@ -422,7 +474,6 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	}
 
 	if funcStep.FunctionName != "" {
-		logs.WithContext(ctx).Info(fmt.Sprint("funcStep.FunctionName called for ", funcStep.FunctionName))
 		funcGroup, fgErr := ms.GetAndValidateFunc(ctx, funcStep.FunctionName, projectId, host, url, method, headers, reqBody, s, fromAsync, "")
 		if fgErr != nil {
 			err = fgErr
@@ -462,8 +513,9 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			r.RewriteUrl = fmt.Sprint("/store/", projectId, "/myquery/execute/", funcStep.QueryName, output, encode)
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
-			tmpSplit := strings.Split(Eruqlbaseurl, "://")
-			tg.Host = Eruqlbaseurl
+			eruqlbaseurl := getEruqlbaseurl(ctx)
+			tmpSplit := strings.Split(eruqlbaseurl, "://")
+			tg.Host = eruqlbaseurl
 			tg.Scheme = "https"
 			if len(tmpSplit) > 0 {
 				tg.Scheme = tmpSplit[0]
@@ -474,7 +526,6 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			r.Condition = ""
 			r.TargetHosts = append(r.TargetHosts, tg)
 		} else if funcStep.Api.Host != "" {
-			logs.WithContext(ctx).Info(fmt.Sprint("making dummy route for api ", funcStep.GetRouteName(), " ", funcStep.FuncKey))
 			r.RouteName = strings.Replace(strings.Replace(funcStep.Api.Host, ".", "", -1), ":", "", -1)
 			r.RouteName = funcStep.GetRouteName()
 			r.Url = "/"
@@ -495,8 +546,9 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/tool/", funcStep.ToolName, toolAction)
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
-			tmpSplit := strings.Split(Eruaibaseurl, "://")
-			tg.Host = Eruaibaseurl
+			eruaibaseurl := getEruaibaseurl(ctx)
+			tmpSplit := strings.Split(eruaibaseurl, "://")
+			tg.Host = eruaibaseurl
 			tg.Scheme = "https"
 			if len(tmpSplit) > 0 {
 				tg.Scheme = tmpSplit[0]
@@ -510,12 +562,16 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			r.RouteName = funcStep.AgentName
 			r.Url = "/"
 			r.MatchType = "PREFIX"
-
-			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/agent/", funcStep.AgentName)
+			conversationId := ""
+			if funcStep.ConversationId != "" {
+				conversationId = fmt.Sprint("/", funcStep.ConversationId)
+			}
+			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/agent/", funcStep.AgentName, conversationId)
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
-			tmpSplit := strings.Split(Eruaibaseurl, "://")
-			tg.Host = Eruaibaseurl
+			eruaibaseurl := getEruaibaseurl(ctx)
+			tmpSplit := strings.Split(eruaibaseurl, "://")
+			tg.Host = eruaibaseurl
 			tg.Scheme = "https"
 			if len(tmpSplit) > 0 {
 				tg.Scheme = tmpSplit[0]
@@ -603,6 +659,16 @@ func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string
 	ms.Projects[projectId].ProjectSettings = projectSettings
 	logs.WithContext(ctx).Info("SaveStore called from SaveProjectSettings")
 	return realStore.SaveStore(ctx, projectId, "", realStore)
+}
+
+func (ms *ModuleStore) GetProjectSettings(ctx context.Context, projectId string) (module_model.ProjectSettings, error) {
+	logs.WithContext(ctx).Debug("SaveProjectConfig - Start")
+	err := ms.checkProjectExists(ctx, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return module_model.ProjectSettings{}, err
+	}
+	return ms.Projects[projectId].ProjectSettings, nil
 }
 
 func (ms *ModuleStore) checkProjectExists(ctx context.Context, projectId string) error {
@@ -739,7 +805,7 @@ func (ms *ModuleStore) GetWfCloneObject(ctx context.Context, projectId string, w
 
 func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, s ModuleStoreI) (asyncFuncData AsyncFuncData, err error) {
 	logs.WithContext(ctx).Debug("FetchAsyncEvent - Start")
-	logs.WithContext(ctx).Info(fmt.Sprint("FetchAsyncEvent called for asyncId = ", asyncId))
+	logs.WithContext(ctx).Info(fmt.Sprint("FetchAsyncEvent called for asyncId = ", asyncId, asyncStatus))
 	var selectQueries []*models.Queries
 	selectQueryFuncAsync := models.Queries{}
 	selectQueryFuncAsync.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SELECT_FUNC_ASYNC)
@@ -751,7 +817,7 @@ func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyn
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("selectOutput = ", selectOutput))
+	logs.WithContext(ctx).Info(fmt.Sprint("length of selectOutput = ", len(selectOutput)))
 	var fVars functions.FuncTemplateVars
 	if selectOutput[0] != nil {
 		if selectOutput[0][0] != nil {
@@ -785,7 +851,7 @@ func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asy
 	updateQueryFuncAsync.Vals = append(updateQueryFuncAsync.Vals, asyncStatus, eventResponse, asyncId)
 	updateQueryFuncAsync.Rank = 1
 	updateQueries = append(updateQueries, &updateQueryFuncAsync)
-	logs.WithContext(ctx).Info(fmt.Sprint("updateQueryFuncAsync = ", updateQueryFuncAsync))
+
 	_, err = eru_utils.ExecuteDbSave(ctx, s.GetConn(), updateQueries)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -803,7 +869,10 @@ func (ms *ModuleStore) FetchProjectEvents(ctx context.Context, s ModuleStoreI, c
 				eventName, err := e.GetAttribute("event_name")
 				if err == nil {
 					if slices.Contains(asyncEventsList, eventName.(string)) {
-						go ms.StartPolling(ctx, p.ProjectId, e, s, cnt)
+						gm := server.GetGlobalGoroutineManager(ctx)
+						gm.SafeGoWithRestartBehavior("fetch-project-events-polling", func(bgCtx context.Context) {
+							ms.StartPolling(bgCtx, p.ProjectId, e, s, cnt)
+						}, server.ContinueOnMaxRetries)
 					}
 				}
 			}
@@ -819,55 +888,48 @@ func (ms *ModuleStore) StartPolling(ctx context.Context, projectId string, event
 		event.SetCon(s.GetConn(), s.GetDbType())
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("StartPolling - Start : ", eventName, " jcnt = ", jcnt))
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+
 	for {
-		logs.WithContext(ctx).Info(fmt.Sprint("polling message for event : ", eventName, " jcnt = ", jcnt))
-		eventJobs := make(chan functions.EventJob, 10)
-		eventResults := make(chan functions.EventResult, 10)
-		//startTime := time.Now()
-		go functions.AllocateEvent(ctx, event, eventJobs, EventThreads)
-		done := make(chan bool)
+		select {
+		case <-ctx.Done():
+			logs.WithContext(ctx).Info(fmt.Sprint("Polling stopped for event: ", eventName, " jcnt = ", jcnt))
+			return nil
+		default:
+			logs.WithContext(ctx).Info(fmt.Sprint("polling message for event : ", eventName, " jcnt = ", jcnt))
 
-		go func(done chan bool, eventResults chan functions.EventResult) {
-			defer func() {
-				if r := recover(); r != nil {
-					logs.WithContext(ctx).Error(fmt.Sprint("goroutine panicked in StartPolling: ", r))
-				}
-			}()
-			cnt := 0
-			for res := range eventResults {
-				startTime := time.Now()
-				cnt = cnt + 1
-				err = ms.ProcessEvents(ctx, projectId, res.EventMsgs, event, s, cnt, jcnt)
-				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
-					//ignore error and continue to poll
-					err = nil
-				}
-				endTime := time.Now()
-				diff := endTime.Sub(startTime)
-				logs.WithContext(ctx).Info(fmt.Sprint("result processing ending for ", eventName, " job worker ", cnt, " of ", jcnt, " is ", diff.Seconds(), "seconds"))
-			}
-			done <- true
-		}(done, eventResults)
+			eventJobs := make(chan functions.EventJob, 10)
+			eventResults := make(chan functions.EventResult, 10)
+			done := make(chan bool, 1)
 
-		//set it to one to run synchronously
-		noOfWorkers := 1 //EventThreads
-		functions.CreateWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults, s.GetConn(), jcnt)
-		<-done
-		/*
-			if !msgRecd {
-				ep, err := s.GetExtendedProjectConfig(ctx, projectId, s)
-				var waitTime int32 = 5
-				if err == nil {
-					waitTime = ep.ProjectSettings.AsyncRepollWaitTime
+			gm.SafeGo(fmt.Sprintf("polling-allocator-%s-%d", eventName, jcnt), func(allocCtx context.Context) {
+				functions.AllocateEvent(allocCtx, event, eventJobs, EventThreads)
+			})
+
+			gm.SafeGo(fmt.Sprintf("polling-results-%s-%d", eventName, jcnt), func(bgCtx context.Context) {
+				cnt := 0
+				for res := range eventResults {
+					startTime := time.Now()
+					cnt = cnt + 1
+					err = ms.ProcessEvents(bgCtx, projectId, res.EventMsgs, event, s, cnt, jcnt)
+					if err != nil {
+						logs.WithContext(bgCtx).Error(err.Error())
+						err = nil
+					}
+					endTime := time.Now()
+					diff := endTime.Sub(startTime)
+					logs.WithContext(bgCtx).Info(fmt.Sprint("result processing ending for ", eventName, " job worker ", cnt, " of ", jcnt, " is ", diff.Seconds(), "seconds"))
 				}
-				logs.WithContext(ctx).Info(fmt.Sprint("waiting for next poll since no message retrived this time : ", waitTime))
-				time.Sleep(time.Duration(waitTime) * time.Second)
-			} else {
-				logs.WithContext(ctx).Info(fmt.Sprint("next poll is immediate after processing the current messages : ", len(eventResults)))
-			}
-		*/
-		event.InitiatPollingInterval(ctx)
+				done <- true
+			})
+
+			noOfWorkers := 1
+			functions.CreateWorkerPoolEvent(ctx, noOfWorkers, eventJobs, eventResults, s.GetConn(), jcnt)
+			<-done
+
+			event.InitiatPollingInterval(ctx)
+		}
 	}
 }
 
@@ -887,16 +949,12 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 			startTimeaid := time.Now()
 			ctx := context.WithoutCancel(nctx)
 			ctx = logs.NewContext(ctx, zap.String(server_handlers.RequestIdKey, async_id))
-			logs.WithContext(nctx).Info(fmt.Sprint("async_id = ", async_id))
 
 			asyncFuncData, err = ms.FetchAsyncEvent(ctx, async_id, aStatus, s)
-			logs.WithContext(ctx).Info(fmt.Sprint("after fetch event  = ", asyncFuncData.AsyncId))
 			if err != nil || asyncFuncData.AsyncId == "" {
 				failedCount = failedCount + 1
 				asyncStatus = "FAILED"
-				logs.WithContext(ctx).Error(fmt.Sprint("event not found", cnt, ":", jcnt))
 			} else {
-				logs.WithContext(ctx).Info(fmt.Sprint("event found", cnt, ":", jcnt))
 				bodyMap := make(map[string]interface{})
 				eventResponseBytes := []byte("{}")
 				bodyMapOk := false
@@ -911,10 +969,10 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 				} else {
 					var eventReq *http.Request
 					if bodyMap, bodyMapOk = asyncFuncData.EventMsg.Vars.Body.(map[string]interface{}); !bodyMapOk {
-						logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
+						logs.WithContext(ctx).Error("Request Body could not be retrieved, setting it as blank")
 					}
+
 					if len(requestBytes) > 0 {
-						logs.WithContext(ctx).Info("here 3")
 						r := bufio.NewReader(bytes.NewBuffer(requestBytes))
 						if eventReq, err = http.ReadRequest(r); err != nil { // deserialize request
 							failedCount = failedCount + 1
@@ -923,6 +981,29 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 							logs.WithContext(ctx).Error(err.Error())
 						}
 					} else {
+						projectSettings, err := ms.GetProjectSettings(ctx, projectId)
+						if err != nil {
+							logs.WithContext(ctx).Error(err.Error())
+							err = nil //ignore error and continue
+						}
+						headers := http.Header{}
+						headers.Set("Content-Type", "application/json")
+						var tokenMap map[string]interface{}
+						var tokenMapOk bool
+						if tokenMap, tokenMapOk = asyncFuncData.EventMsg.Vars.Token.(map[string]interface{}); !tokenMapOk {
+							logs.WithContext(ctx).Error("Request Toekn not be retrieved, setting it as blank")
+						} else {
+							if projectSettings.ClaimsKey != "" {
+								tokenBytes, err := json.Marshal(tokenMap)
+								if err != nil {
+									logs.WithContext(ctx).Error(err.Error())
+									err = nil //ignore error and continue
+								} else {
+									headers.Set(projectSettings.ClaimsKey, (string)(tokenBytes))
+								}
+							}
+						}
+
 						eventReq = &http.Request{
 							Method: "POST",
 							URL: &url.URL{
@@ -930,9 +1011,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 								Host:   "localhost",
 								Path:   "/",
 							},
-							Header: http.Header{
-								"Content-Type": []string{"application/json"},
-							},
+							Header: headers,
 						}
 						body, err := json.Marshal(bodyMap)
 						if err != nil {
@@ -1027,7 +1106,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 			diffaid := endTimeaid.Sub(startTimeaid)
 			logs.WithContext(ctx).Info(fmt.Sprint("total time taken for asyncid ", async_id, " is ", diffaid.Seconds(), "seconds"))
 		}
-		logs.WithContext(nctx).Info(fmt.Sprint("Delete msg called for ", m.Msg))
+		logs.WithContext(nctx).Info(fmt.Sprint("Delete msg called for ", m.MsgIdentifer))
 		_ = event.DeleteMessage(nctx, m.MsgIdentifer)
 		endTime := time.Now()
 		diff := endTime.Sub(startTime)
@@ -1036,64 +1115,140 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 	return
 }
 
-/* func (ms *ModuleStore) SaveFuncRequest(ctx context.Context, sampleRequest module_model.SampleRequest, projectId string, tenantId string, s ModuleStoreI) (err error) {
-	logs.WithContext(ctx).Debug("SaveFuncRequest - Start")
-	sampleRequestBytes, err := json.Marshal(sampleRequest.RequestBody)
-	if err != nil {
-		err = logs.Err(ctx, err, "error marshalling sample request")
-		return
+func LoadStore(ctx context.Context, StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
+	logs.WithContext(ctx).Info("Loading store")
+	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
+	if storeType == "" {
+		storeType = "STANDALONE"
+		logs.WithContext(ctx).Info("STORE_TYPE environment variable not found - loading default standlone store")
 	}
-	var saveQueries []*models.Queries
-	saveQueryFuncRequest := models.Queries{}
-	saveQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SAVE_FUNC_REQUEST)
-	saveQueryFuncRequest.Vals = append(saveQueryFuncRequest.Vals, sampleRequest.RequestId, sampleRequest.RequestName, sampleRequest.FuncGroupName, projectId, tenantId, (string)(sampleRequestBytes))
-	saveQueryFuncRequest.Rank = 1
-	saveQueries = append(saveQueries, &saveQueryFuncRequest)
-	_, err = eru_utils.ExecuteDbSave(ctx, s.GetConn(), saveQueries)
-	if err != nil {
-		return
+	var myStore ModuleStoreI
+	var err error
+	switch storeType {
+	case "POSTGRES":
+		myStore = new(ModuleDbStore)
+		myStore.SetDbType(storeType)
+		myStore.SetStoreTableName(StoreTableName)
+		//myStore.SetStoreTenantTableName(StoreTenantTableName)
+		myStore.CreateConn()
+	case "STANDALONE":
+		// myStore, err = store.LoadStoreFromFile()
+		myStore = new(ModuleFileStore)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.New(fmt.Sprint("Invalid STORE_TYPE ", storeType))
 	}
-	return
+	storeBytes, err := myStore.GetStoreByteArray("")
+	if err == nil {
+		err = json.Unmarshal(storeBytes, myStore)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		err = myStore.SetStoreFromBytes(ctx, storeBytes, myStore)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, err
+		}
+	} else {
+		logs.WithContext(ctx).Error(err.Error())
+	}
+	//s.Store = myStore
+	return myStore, err
 }
+func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Info("ScheduleFunc - Start")
+	scheduleId := uuid.New().String()
+	scheduler, err := realStore.FetchScheduler(ctx, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	reqBodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	jobName := fmt.Sprintf("%s_%s_%s_%s_%s", projectId, scheduleConfig.TenantId, funcName, scheduleConfig.SchedulerName, scheduleId)
+	cronStr := scheduleConfig.GetCronStr(ctx)
+	schedulerCommand := fmt.Sprint("CALL schedule_procedure('", funcName, "','", string(reqBodyBytes), "','", scheduleConfig.SchedulerName, "')")
+	jobId, err := scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
+	if err != nil {
+		return err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("ScheduleFunc - End : ", jobId))
 
-func (ms *ModuleStore) RemoveFuncRequest(ctx context.Context, requestId string, s ModuleStoreI) (err error) {
-	logs.WithContext(ctx).Debug("RemoveFuncRequest - Start")
+	tokenObj := map[string]interface{}{}
+	err = json.Unmarshal([]byte(tokenStr), &tokenObj)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+
+	reqBody["job_id"] = jobId
+	requestBody := map[string]interface{}{
+		"Vars": map[string]interface{}{
+			"Body":    reqBody,
+			"OrgBody": reqBody,
+			"Token":   tokenObj,
+		},
+		"ReqVars": map[string]interface{}{},
+		"ResVars": map[string]interface{}{},
+	}
+	reqBodyBytes, err = json.Marshal(requestBody)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	//recalling schedule with same jobname to edit the body with job id
+	schedulerCommand = fmt.Sprint("CALL schedule_procedure('", funcName, "','", string(reqBodyBytes), "','", scheduleConfig.SchedulerName, "')")
+	jobId, err = scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
+	if err != nil {
+		return err
+	}
+	ed := scheduleConfig.EndDate
+	if ed == "" {
+		ed = "2099-12-31"
+	}
+	var insertQueries []*models.Queries
+	insertScheduleLog := models.Queries{}
+	insertScheduleLog.Query = db.GetDb(realStore.GetDbType()).GetDbQuery(ctx, INSERT_FUNC_SCHEDULE)
+	insertScheduleLog.Vals = []interface{}{scheduleId, projectId, scheduleConfig.TenantId, funcName, "", string(reqBodyBytes), scheduleConfig.SchedulerName, scheduleConfig.SchedulerLabel, jobId, scheduleConfig.StartDate, ed}
+	insertScheduleLog.Rank = 2
+	insertQueries = append(insertQueries, &insertScheduleLog)
+
+	insertOutput, insertOutputErr := eru_utils.ExecuteDbSave(ctx, realStore.GetConn(), insertQueries)
+	if insertOutputErr != nil {
+		return insertOutputErr
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("insertOutput : ", insertOutput))
+
+	return nil
+}
+func (ms *ModuleStore) UnScheduleFunc(ctx context.Context, projectId string, jobId string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Info("UnScheduleFunc - Start")
+	scheduler, err := realStore.FetchScheduler(ctx, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	err = scheduler.Unschedule(ctx, jobId, "")
+	if err != nil {
+		// do nothing and continue
+	}
 	var deleteQueries []*models.Queries
-	deleteQueryFuncRequest := models.Queries{}
-	deleteQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, DELETE_FUNC_REQUEST)
-	deleteQueryFuncRequest.Vals = append(deleteQueryFuncRequest.Vals, requestId)
-	deleteQueryFuncRequest.Rank = 1
-	deleteQueries = append(deleteQueries, &deleteQueryFuncRequest)
-	var delResult [][]map[string]interface{}
-	delResult, err = eru_utils.ExecuteDbSave(ctx, s.GetConn(), deleteQueries)
-	if err != nil {
-		return
-	}
-	if len(delResult[0]) == 0 {
-		err = logs.Err(ctx, fmt.Errorf("func request not found %s", requestId), "")
-		return
-	}
-	return
-}
+	deleteScheduleLog := models.Queries{}
+	deleteScheduleLog.Query = db.GetDb(realStore.GetDbType()).GetDbQuery(ctx, DELETE_FUNC_SCHEDULE)
+	deleteScheduleLog.Vals = []interface{}{jobId}
+	deleteScheduleLog.Rank = 1
+	deleteQueries = append(deleteQueries, &deleteScheduleLog)
 
-func (ms *ModuleStore) GetFuncRequests(ctx context.Context, projectId string, tenantId string, funcName string, s ModuleStoreI) (requests []module_model.SampleRequest, err error) {
-	logs.WithContext(ctx).Debug("GetFuncRequests - Start")
-	selectQueryFuncRequest := models.Queries{}
-	selectQueryFuncRequest.Query = db.GetDb(s.GetDbType()).GetDbQuery(ctx, SELECT_FUNC_REQUEST)
-	selectQueryFuncRequest.Vals = append(selectQueryFuncRequest.Vals, projectId, tenantId, funcName, "ALL", "ALL")
-	selectQueryFuncRequest.Rank = 1
-	output, err := eru_utils.ExecuteDbFetch(ctx, s.GetConn(), selectQueryFuncRequest)
-	if err != nil {
-		return
+	deleteOutput, deleteOutputErr := eru_utils.ExecuteDbSave(ctx, realStore.GetConn(), deleteQueries)
+	if deleteOutputErr != nil {
+		return deleteOutputErr
 	}
-	requests = []module_model.SampleRequest{}
-	for _, request := range output {
-		requests = append(requests, module_model.SampleRequest{
-			RequestId:     eru_utils.GetStringField(request, "request_id"),
-			RequestName:   eru_utils.GetStringField(request, "request_name"),
-			RequestBody:   eru_utils.GetMapField(request, "request_json"),
-			FuncGroupName: eru_utils.GetStringField(request, "func_group_name"),
-		})
-	}
-	return
-} */
+	logs.WithContext(ctx).Info(fmt.Sprint("deleteOutput : ", deleteOutput))
+
+	return nil
+}

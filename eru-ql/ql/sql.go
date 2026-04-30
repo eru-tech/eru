@@ -102,7 +102,6 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 				str = v.(string)
 				vBytes, err := processTemplate(ctx, "variable", str, sqd.FinalVariables, "string", "", nil)
 				if err != nil {
-					logs.WithContext(ctx).Error(err.Error())
 					return nil, nil, err
 				}
 				if string(vBytes) != "" {
@@ -132,10 +131,11 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 		sqd.Query = sqd.secureSQL(ctx, sqd.Query, projectId, datasource, s, sr)
 		logs.WithContext(ctx).Info(sqd.Query)
 		if sqd.OutputType == eru_writes.OutputTypeCsv || sqd.OutputType == eru_writes.OutputTypeExcel {
-			result, err = sr.ExecuteQueryForCsv(ctx, sqd.Query, datasource, "Results")
+			result, err = sr.ExecuteQueryForCsv(ctx, sqd.Query, datasource, "Results", sr)
 			if err != nil {
 				err = logs.Err(ctx, err, "")
 			}
+			queryObj.DataTypes = sr.GetResultDataTypes(ctx)
 			res = append(res, result)
 		} else {
 			result, err = sr.ExecutePreparedQuery(ctx, sqd.Query, datasource)

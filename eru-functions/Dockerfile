@@ -1,4 +1,4 @@
-FROM golang:1.22.2-alpine3.19
+FROM golang:1.24.5-alpine3.22
 
 WORKDIR /build
 
@@ -6,10 +6,12 @@ WORKDIR /build
 COPY . .
 WORKDIR eru-functions
 
-# Build eru-files
+# Build eru-functions with CGO disabled
+# Note: This build will not include Kafka functionality due to CGO requirements
+# Use DB event type for async processing when Kafka is not available
 RUN GOOS=linux CGO_ENABLED=0 go build -a -ldflags '-s -w -extldflags "-static"' -o app .
 
-FROM alpine:3.19.0
+FROM alpine:3.22.0
 
 WORKDIR /build/eru-functions/app
 COPY --from=0 /build/eru-functions/app .

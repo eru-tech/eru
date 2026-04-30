@@ -25,11 +25,11 @@ type SmStoreI interface {
 	FetchSmValue(ctx context.Context) (resultJson map[string]string, err error)
 	SetSmValue(ctx context.Context, secretName string, secretJson map[string]string) (err error)
 	UnsetSmValue(ctx context.Context, secretName string, secretKey string) (err error)
-	GetSmValue(ctx context.Context, secretName string, secretKey string, forceFetch bool) (secretValue interface{}, err error)
+	GetSmValue(ctx context.Context, projectId string, secretName string, secretKey string, forceFetch bool) (secretValue interface{}, err error)
 	GetSmValues(ctx context.Context, secretName string) (secretValues map[string]string, err error)
 	GetSecretName() string
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
-	InitCache(ctx context.Context) error
+	InitCache(ctx context.Context, projectId string) error
 	GetCacheStore() cache.CacheStoreI
 	SetCacheStore(cache.CacheStoreI)
 }
@@ -60,7 +60,7 @@ func (smStore *SmStore) SetCacheStore(cs cache.CacheStoreI) {
 	smStore.CacheStore = cs
 }
 
-func (smStore *SmStore) InitCache(ctx context.Context) (err error) {
+func (smStore *SmStore) InitCache(ctx context.Context, projectId string) (err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
@@ -83,7 +83,7 @@ func (smStore *SmStore) UnsetSmValue(ctx context.Context, secretName string, sec
 	return
 }
 
-func (smStore *SmStore) GetSmValue(ctx context.Context, secretName string, secretKey string, forceFetch bool) (secretValue interface{}, err error) {
+func (smStore *SmStore) GetSmValue(ctx context.Context, projectId string, secretName string, secretKey string, forceFetch bool) (secretValue interface{}, err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return

@@ -36,3 +36,13 @@ config.json
 .gitignore
 eru-ql/eru-ql.log
 .gitignore
+eru-sql-llm-analysis.md
+*.md
+eru-ai/app
+eru-gateway/app
+eru-functions/app
+launch.json
+tasks.json
+.gitignore
+eru-ai/localhost-key.pem
+eru-ai/localhost.pem

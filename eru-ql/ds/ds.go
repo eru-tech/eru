@@ -2,12 +2,14 @@ package ds
 
 import (
 	"context"
+	b64 "encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	common_types "github.com/eru-tech/eru/eru-ql/common_types"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/graphql-go/graphql/language/ast"
@@ -24,14 +26,20 @@ import (
 	"time"
 )
 
-var blockedWords = []string{"SELECT ", "SELECT*", "INSERT ", "UPDATE ", "DELETE FROM ", "CREATE TABLE ", "CREATE FUNTIONS ", "CREATE PROCEDURE ", "CREATE VIEW ", "CREATE INDEXES ", "CREATE SEQUENCE ", "DROP TABLE", "DROP FUNTIONS", "DROP VIEW", "DROP INDEXES", "DROP SEQUENCES", "ALTER ", "TRUNCATE ", "RENAME ", "REVOKE ", "COMMIT ", "ROLLBACK ", "SAVEPOINT ", "\\U003CSCRIPT"}
-var blockedRegex = []string{"OR[ ]*'", "AND[ ]*'", "GRANT\\s+\\w+\\s+ON"}
+var blockedWords = []string{"SELECT * FROM", "SELECT*FROM", "INSERT INTO ", "DELETE FROM ", "CREATE TABLE ", "CREATE FUNCTION ", "CREATE PROCEDURE ", "CREATE VIEW ", "CREATE INDEX ", "CREATE SEQUENCE ", "DROP TABLE ", "DROP FUNCTION ", "DROP VIEW ", "DROP INDEX ", "DROP SEQUENCES", "ALTER TABLE", "TRUNCATE TABLE ", "RENAME TABLE ", "SAVEPOINT ", "\\U003CSCRIPT"}
+
+// var blockedRegex = []string{"OR[ ]*'", "AND[ ]*'", "GRANT\\s+\\w+\\s+ON"}
+var blockedRegex = []string{"GRANT\\s+\\w+\\s+ON"}
 
 type tablesInQuery struct {
 	name   string
 	nested bool
 }
-
+type ResultDataTypes struct {
+	ColName             string
+	ColType             string
+	ColDatabaseTypeName string
+}
 type SqlMaker struct {
 	TestFlag      bool
 	QueryType     string
@@ -59,6 +67,7 @@ type SqlMaker struct {
 	//resultIndexHolder []int
 	resultIndexHolderNew [][]map[int]int
 	result               map[string]interface{}
+	ResultDataTypes      []ResultDataTypes
 	//tempRA               []map[int]int
 	//tempA                map[int]int
 	//t                    int
@@ -101,15 +110,19 @@ type SqlMakerI interface {
 	ExecuteQuery(ctx context.Context, datasource *module_model.DataSource, qrm module_model.QueryResultMaker) (res map[string]interface{}, err error)
 	ExecuteMutationQuery(ctx context.Context, datasource *module_model.DataSource, myself SqlMakerI, mrm module_model.MutationResultMaker) (res []map[string]interface{}, err error)
 	ExecutePreparedQuery(ctx context.Context, query string, datasource *module_model.DataSource) (res map[string]interface{}, err error)
-	ExecuteQueryForCsv(ctx context.Context, query string, datasource *module_model.DataSource, aliasName string) (res map[string]interface{}, err error)
+	ExecuteQueryForCsv(ctx context.Context, query string, datasource *module_model.DataSource, aliasName string, myself SqlMakerI) (res map[string]interface{}, err error)
 	RollbackQuery(ctx context.Context) (err error)
-	GetTableList(ctx context.Context, query string, datasource *module_model.DataSource, myself SqlMakerI) (err error)
-	GetTableMetaDataSQL(ctx context.Context) string
-	MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]module_model.TableColsMetaData) (string, error)
+	GetTableList(ctx context.Context, datasource *module_model.DataSource, tableName string, myself SqlMakerI) (err error)
+	GetTableMetaDataSQL(ctx context.Context, tableName string) string
+	SaveTable(ctx context.Context, tableName string, tableStructure common_types.TableStructure, isEdit bool, dataSource *module_model.DataSource) (err error)
+	DropTable(ctx context.Context, tableName string, dataSource *module_model.DataSource) (err error)
+	MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]common_types.TableColsMetaData) (string, error)
 	MakeDropTableSQL(ctx context.Context, tableName string) (string, error)
 	getDataTypeMapping(ctx context.Context, dataType string) string
+	getErutoDBDataTypeMapping(ctx context.Context, dataType string) string
 	GetSqlResult(ctx context.Context) map[string]interface{}
 	GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string
+	MakeUpsertQuery(ctx context.Context, tableName string, insertCols []string, colsPlaceholder string, conflictCols []string, updateCols []string, action string, returningStr string) (string, error)
 	GetBlockedWords() []string
 	GetBlockedRegex() []string
 	VerifyForBlockedWords(ctx context.Context, key string, val interface{}, realSqr SqlMakerI) (err error)
@@ -118,10 +131,14 @@ type SqlMakerI interface {
 	MakeJsonColumn(jsonField string, jsonKey string) string
 	ExtractTableNames(ctx context.Context, query string) module_model.TablesInQuery
 	DefaultSchemaName() string
+	GetResultDataTypes(ctx context.Context) []ResultDataTypes
 }
 
 func (sqr *SqlMaker) GetBlockedWords() []string {
 	return blockedWords
+}
+func (sqr *SqlMaker) CreateDatabase(ctx context.Context, databaseName string) error {
+	return errors.New("CreateDatabase not implemented")
 }
 func (sqr *SqlMaker) GetBlockedRegex() []string {
 	return blockedRegex
@@ -179,18 +196,73 @@ func (sqr *SqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, rowCount i
 	return strings.Repeat(" ? ", colCount*rowCount)
 }
 
+func (sqr *SqlMaker) MakeUpsertQuery(ctx context.Context, tableName string, insertCols []string, colsPlaceholder string, conflictCols []string, updateCols []string, action string, returningStr string) (string, error) {
+	logs.WithContext(ctx).Debug("MakeUpsertQuery - Start")
+	return "", errors.New("upsert not supported for this database dialect")
+}
+
+func buildUpsertSets(insertCols []string, conflictSet map[string]bool, updateCols []string, formatSet func(col string) string) []string {
+	insertSet := make(map[string]bool)
+	for _, c := range insertCols {
+		cc := strings.TrimSpace(c)
+		if cc != "" {
+			insertSet[cc] = true
+		}
+	}
+	var sets []string
+	if len(updateCols) > 0 {
+		seen := make(map[string]bool)
+		for _, c := range updateCols {
+			cc := strings.TrimSpace(c)
+			if cc == "" || conflictSet[cc] || !insertSet[cc] || seen[cc] {
+				continue
+			}
+			seen[cc] = true
+			sets = append(sets, formatSet(cc))
+		}
+		return sets
+	}
+	for _, c := range insertCols {
+		cc := strings.TrimSpace(c)
+		if cc == "" || conflictSet[cc] {
+			continue
+		}
+		sets = append(sets, formatSet(cc))
+	}
+	return sets
+}
+
 func (sqr *SqlMaker) GetBaseSqlMaker(ctx context.Context) *SqlMaker {
 	return sqr
 }
-func (sqr *SqlMaker) GetTableMetaDataSQL(ctx context.Context) string {
+func (sqr *SqlMaker) GetResultDataTypes(ctx context.Context) []ResultDataTypes {
+	return sqr.ResultDataTypes
+}
+func (sqr *SqlMaker) GetTableMetaDataSQL(ctx context.Context, tableName string) string {
 	return ""
 }
 
-func (sqr *SqlMaker) MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]module_model.TableColsMetaData) (string, error) {
+func (sqr *SqlMaker) SaveTable(ctx context.Context, tableName string, tableStructure common_types.TableStructure, isEdit bool, dataSource *module_model.DataSource) (err error) {
+	return nil
+}
+func (sqr *SqlMaker) DropTable(ctx context.Context, tableName string, dataSource *module_model.DataSource) (err error) {
+	query, err := sqr.MakeDropTableSQL(ctx, tableName)
+	if err != nil {
+		return err
+	}
+	_, err = sqr.ExecutePreparedQuery(ctx, query, dataSource)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (sqr *SqlMaker) MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]common_types.TableColsMetaData) (string, error) {
 	return "", nil
 }
 func (sqr *SqlMaker) MakeDropTableSQL(ctx context.Context, tableName string) (string, error) {
-	return "", nil
+	logs.WithContext(ctx).Debug("MakeDropTableSQL - Start")
+	return fmt.Sprint("drop table ", tableName), nil
 }
 
 func (sqr *SqlMaker) GetSqlResult(ctx context.Context) map[string]interface{} {
@@ -495,10 +567,8 @@ func (sqr *SqlMaker) ProcessGraphQL(sel ast.Selection, vars map[string]interface
 }
 */
 
-func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datasource *module_model.DataSource, aliasName string) (res map[string]interface{}, err error) {
+func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datasource *module_model.DataSource, aliasName string, myself SqlMakerI) (res map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ExecuteQueryForCsv - Start")
-	//ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond) //TODO: to get context as argument
-	//defer cancel()
 	rows, e := datasource.Con.Queryx(query)
 	if e != nil {
 		e = logs.Err(ctx, e, "")
@@ -515,9 +585,12 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 	sqr.result = make(map[string]interface{})
 	var innerResult [][]interface{}
 	firstRow := true
+	var innerResultDataTypes []ResultDataTypes
+	var innerResultDataTypesMap = make(map[string]ResultDataTypes)
 	for rows.Next() {
 		var innerResultRow []interface{}
 		var innerResultLabel []interface{}
+
 		ee = rows.MapScan(mapping)
 		if ee != nil {
 			ee = logs.Err(ctx, ee, "")
@@ -530,7 +603,26 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 				if len(colHeaderArray) > 1 {
 					colHeader = colHeaderArray[1]
 				}
+				colHeaderArray = strings.Split(colHeader, "~")
+				dt := colType.DatabaseTypeName()
+				if len(colHeaderArray) > 1 {
+					colType.DatabaseTypeName()
+					colHeader = colHeaderArray[0]
+					dt = colHeaderArray[1]
+				}
 				innerResultLabel = append(innerResultLabel, colHeader)
+				ct := ""
+				if mapping[colType.Name()] != nil {
+					ct = reflect.TypeOf(mapping[colType.Name()]).String()
+				}
+				if dt == "b64" {
+					innerResultDataTypesMap[colType.Name()] = ResultDataTypes{ColName: colHeader, ColType: ct, ColDatabaseTypeName: dt}
+					dt = colType.DatabaseTypeName()
+				} else {
+					innerResultDataTypesMap[colType.Name()] = ResultDataTypes{ColName: colHeader, ColType: ct, ColDatabaseTypeName: myself.getDataTypeMapping(ctx, dt)}
+				}
+				innerResultDataTypes = append(innerResultDataTypes, ResultDataTypes{ColName: colHeader, ColType: ct, ColDatabaseTypeName: myself.getDataTypeMapping(ctx, dt)})
+
 			}
 			if mapping[colType.Name()] != nil {
 				if reflect.TypeOf(mapping[colType.Name()]).String() == "[]uint8" && colType.DatabaseTypeName() == "NUMERIC" {
@@ -558,6 +650,43 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 					n := mapping[colType.Name()].(int64)
 					mapping[colType.Name()] = fmt.Sprintf("%d", n)
 					//}
+				} else if innerResultDataTypesMap[colType.Name()].ColDatabaseTypeName == "b64" {
+					strV, err := b64.StdEncoding.DecodeString(mapping[colType.Name()].(string))
+					if err != nil {
+						err = logs.Err(ctx, err, "")
+						err = nil // silently proceed even if base64 decoding fails
+					} else {
+						mapping[colType.Name()] = string(strV)
+					}
+				} else if innerResultDataTypesMap[colType.Name()].ColDatabaseTypeName == "JSON" {
+					var v interface{}
+					strValue, strValueOk := mapping[colType.Name()].(string)
+					if strValueOk {
+						err = json.Unmarshal([]byte(strValue), &v)
+						if err != nil {
+							err = logs.Err(ctx, err, "")
+							return nil, err
+						}
+						var newV []string
+						if reflect.TypeOf(v).Kind() == reflect.Slice {
+							for _, vv := range v.([]interface{}) {
+								strVV, err := json.Marshal(vv)
+								if err != nil {
+									err = logs.Err(ctx, err, "")
+									return nil, err
+								}
+								uqStrVV, err := strconv.Unquote(string(strVV))
+								if err != nil {
+									uqStrVV = string(strVV)
+								}
+								if uqStrVV == "null" {
+									uqStrVV = ""
+								}
+								newV = append(newV, uqStrVV)
+							}
+							mapping[colType.Name()] = strings.Join(newV, ",")
+						}
+					}
 				} else if (colType.DatabaseTypeName() == "JSONB" || colType.DatabaseTypeName() == "JSON") || colType.DatabaseTypeName() == "BPCHAR" {
 					mapping[colType.Name()] = string(mapping[colType.Name()].([]byte))
 				}
@@ -583,14 +712,13 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 		innerResult = append(innerResult, []interface{}{})
 	}
 	sqr.result[aliasName] = innerResult
+	sqr.ResultDataTypes = innerResultDataTypes
 	return sqr.result, nil
 }
 
 func (sqr *SqlMaker) ExecutePreparedQuery(ctx context.Context, query string, datasource *module_model.DataSource) (res map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ExecutePreparedQuery - Start")
 	logs.WithContext(ctx).Info(query)
-	//ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond) //TODO: to get context as argument
-	//defer cancel()
 	rows, e := datasource.Con.Queryx(query)
 	if e != nil {
 		e = logs.Err(ctx, e, "")
@@ -668,8 +796,8 @@ func (sqr *SqlMaker) ExecuteMutationQuery(ctx context.Context, datasource *modul
 	sqr.DBQuery = mrm.DBQuery
 	sqr.PreparedQuery = mrm.PreparedQuery
 	var errMsgs []string
-	ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond) //TODO: to get context as argument
-	defer cancel()
+	//ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond) //TODO: to get context as argument
+	//defer cancel()
 	if sqr.openTxn || (sqr.TxnFlag && !sqr.SingleTxn) {
 		logs.WithContext(ctx).Debug("datasource.Con.MustBegin() called in ExecuteMutationQuery")
 		sqr.tx = datasource.Con.MustBegin() //begin txn only once for all queries OR begin txn outside for loop to insert all docs as single txn
@@ -1006,6 +1134,7 @@ func (sqr *SqlMaker) ExecuteQuery(ctx context.Context, datasource *module_model.
 			}
 			_ = actualColType
 
+			// TODO : json boolean/numeric values are returned as TEXT by postgres - need to check if we can return BOOLEAN
 			if colType.DatabaseTypeName() == "NUMERIC" && mapping[colType.Name()] != nil {
 				f := 0.0
 				if reflect.TypeOf(mapping[colType.Name()]).String() == "[]uint8" {
@@ -1478,18 +1607,19 @@ func (sqr *SqlMaker) AddLimitSkipClause(ctx context.Context, query string, limit
 	return newQuery
 }
 
-func (sqr *SqlMaker) GetTableList(ctx context.Context, query string, datasource *module_model.DataSource, myself SqlMakerI) (err error) {
+func (sqr *SqlMaker) GetTableList(ctx context.Context, datasource *module_model.DataSource, tableName string, myself SqlMakerI) (err error) {
 	logs.WithContext(ctx).Debug("GetTableList - Start")
-	tableList := make(map[string]map[string]module_model.TableColsMetaData)
+	tableList := make(map[string]map[string]common_types.TableColsMetaData)
+	query := myself.GetTableMetaDataSQL(ctx, tableName)
 	rows, e := datasource.Con.Queryx(query)
-
+	logs.WithContext(ctx).Info(fmt.Sprintf("GetTableList - query: %s", query))
 	if e != nil {
 		logs.WithContext(ctx).Error(e.Error())
 		return e
 	}
 	defer rows.Close()
 	for rows.Next() {
-		innerResultRow := module_model.TableColsMetaData{}
+		innerResultRow := common_types.TableColsMetaData{}
 		e = rows.StructScan(&innerResultRow)
 		if e != nil {
 			logs.WithContext(ctx).Error(e.Error())
@@ -1498,7 +1628,7 @@ func (sqr *SqlMaker) GetTableList(ctx context.Context, query string, datasource 
 		innerResultRow.OwnDataType = myself.getDataTypeMapping(ctx, innerResultRow.DataType)
 		tableKey := fmt.Sprint(innerResultRow.TblSchema, ".", innerResultRow.TblName)
 		if tableList[tableKey] == nil {
-			tableList[tableKey] = make(map[string]module_model.TableColsMetaData)
+			tableList[tableKey] = make(map[string]common_types.TableColsMetaData)
 		}
 		tableList[tableKey][innerResultRow.ColName] = innerResultRow
 	}

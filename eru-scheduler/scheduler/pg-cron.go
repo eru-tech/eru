@@ -96,7 +96,6 @@ func (pgCronScheduler *PgCronScheduler) getStoreDbPath() string {
 
 func (pgCronScheduler *PgCronScheduler) Schedule(ctx context.Context, scheduleJobName string, scheduleCommand string, scheduleCron string) (jobId string, err error) {
 	logs.WithContext(ctx).Debug("ScheduleCronJob - Start")
-
 	var insertQueries []*models.Queries
 	insertQueryFuncAsync := models.Queries{}
 	query := fmt.Sprint("SELECT cron.schedule('", scheduleJobName, "','", scheduleCron, "', $$ ", scheduleCommand, "; $$)::text AS job_id;")
@@ -104,6 +103,7 @@ func (pgCronScheduler *PgCronScheduler) Schedule(ctx context.Context, scheduleJo
 	insertQueryFuncAsync.Query = query
 	insertQueryFuncAsync.Rank = 1
 	insertQueries = append(insertQueries, &insertQueryFuncAsync)
+
 	insertOutput, insertOutputErr := utils.ExecuteDbSave(ctx, pgCronScheduler.GetConn(), insertQueries)
 	if insertOutputErr != nil {
 		logs.WithContext(ctx).Error(insertOutputErr.Error())
@@ -125,7 +125,7 @@ func (pgCronScheduler *PgCronScheduler) Unschedule(ctx context.Context, schedule
 
 	query := ""
 	if scheduleJobId != "" {
-		query = fmt.Sprint("SELECT cron.unschedule('", scheduleJobId, "');")
+		query = fmt.Sprint("SELECT cron.unschedule(", scheduleJobId, ");")
 	} else if scheduleJobName != "" {
 		query = fmt.Sprint("DO $$ DECLARE jid int; BEGIN SELECT jobid INTO jid FROM cron.job WHERE jobname = '", scheduleJobName, "'; IF jid IS NOT NULL THEN PERFORM cron.unschedule(jid); END IF; END $$;")
 	} else {

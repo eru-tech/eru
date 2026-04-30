@@ -3,16 +3,20 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+
 	"github.com/eru-tech/eru/eru-gateway/module_model"
 	"github.com/eru-tech/eru/eru-gateway/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/gorilla/mux"
-	"net/http"
 )
 
-func FetchVarsHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+const StoreTableName = "erugateway_config"
+const StoreTenantTableName = "erugateway_config_tenant"
+
+func FetchVarsHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -22,8 +26,31 @@ func FetchVarsHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 	}
 }
+func StoreLoadHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 
-func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+		logs.WithContext(r.Context()).Debug("StoreLoadHandler - Start")
+
+		// Load new store from DB
+		newStore, err := module_store.LoadStore(r.Context(), StoreTableName, StoreTenantTableName)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(fmt.Sprintf("Failed to load store: %v", err))
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		// Update the global StoreHolder with the new store
+		sh.Store = newStore
+
+		logs.WithContext(r.Context()).Info("Store loaded and replaced successfully")
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(newStore)
+	}
+}
+func StoreCompareHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("StoreCompareHandler - Start")
 
@@ -32,7 +59,7 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		var moduleStore module_store.ExendedModuleStore
 		storeCompare := module_model.StoreCompare{}
 		if err := projectJson.Decode(&moduleStore); err == nil {
-			storeCompare, err = s.CompareModuleStore(r.Context(), moduleStore, s)
+			storeCompare, err = sh.Store.CompareModuleStore(r.Context(), moduleStore, sh.Store)
 
 		} else {
 			server_handlers.FormatResponse(w, 400)
@@ -44,8 +71,10 @@ func StoreCompareHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 
 	}
 }
-func SaveListenerRuleHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func SaveListenerRuleHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("SaveListenerRuleHandler - Start")
 		lrFromReq := json.NewDecoder(r.Body)
 		lrFromReq.DisallowUnknownFields()
@@ -64,7 +93,7 @@ func SaveListenerRuleHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 		}
-		err := s.SaveListenerRule(r.Context(), &lrObj, s, true)
+		err := sh.Store.SaveListenerRule(r.Context(), &lrObj, sh.Store, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -76,12 +105,14 @@ func SaveListenerRuleHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func RemoveListenerRuleHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func RemoveListenerRuleHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("RemoveListenerRuleHandler - Start")
 		vars := mux.Vars(r)
 		listenerRuleName := vars["listenerrulename"]
-		err := s.RemoveListenerRule(r.Context(), listenerRuleName, s)
+		err := sh.Store.RemoveListenerRule(r.Context(), listenerRuleName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -93,26 +124,28 @@ func RemoveListenerRuleHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func GetListenerRulesHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func GetListenerRulesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("GetListenerRulesHandler - Start")
-		listenerRules := s.GetListenerRules(r.Context())
+		listenerRules := sh.Store.GetListenerRules(r.Context())
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"listener_rules": listenerRules})
 	}
 }
 
-func GetConfigHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func GetConfigHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("GetConfigHandler - Start")
-		ms := s.GetExtendedGatewayConfig(r.Context(), s)
+		ms := sh.Store.GetExtendedGatewayConfig(r.Context(), sh.Store)
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(ms)
 	}
 }
 
-func SaveAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func SaveAuthorizerHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("SaveAuthorizerHandler - Start")
 		authFromReq := json.NewDecoder(r.Body)
 		authFromReq.DisallowUnknownFields()
@@ -131,7 +164,7 @@ func SaveAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 				return
 			}
 		}
-		err := s.SaveAuthorizer(r.Context(), authObj, s, true)
+		err := sh.Store.SaveAuthorizer(r.Context(), authObj, sh.Store, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -143,12 +176,14 @@ func SaveAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func RemoveAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func RemoveAuthorizerHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("RemoveAuthorizerHandler - Start")
 		vars := mux.Vars(r)
 		authorizerName := vars["authorizername"]
-		err := s.RemoveAuthorizer(r.Context(), authorizerName, s)
+		err := sh.Store.RemoveAuthorizer(r.Context(), authorizerName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -160,26 +195,28 @@ func RemoveAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 	}
 }
 
-func GetAuthorizerHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func GetAuthorizerHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("GetAuthorizerHandler - Start")
-		authorizers := s.GetAuthorizers(r.Context())
+		authorizers := sh.Store.GetAuthorizers(r.Context())
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"authorizers": authorizers})
 	}
 }
 
-func GetProjectSetingsHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func GetProjectSetingsHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("GetProjectSetingsHandler - Start")
-		project_settings := s.GetProjectSettings(r.Context())
+		project_settings := sh.Store.GetProjectSettings(r.Context())
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"project_settings": project_settings})
 	}
 }
 
-func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func ProjectSetingsSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
 		logs.WithContext(r.Context()).Debug("ProjectSetingsSaveHandler - Start")
 
 		prjConfigFromReq := json.NewDecoder(r.Body)
@@ -203,7 +240,7 @@ func ProjectSetingsSaveHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 			}
 		}
 
-		err := s.SaveProjectSettings(r.Context(), projectSettings, s, true)
+		err := sh.Store.SaveProjectSettings(r.Context(), projectSettings, sh.Store, true)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)

@@ -183,7 +183,7 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 			// Process item tax withheld
 			for _, taxWithheld := range item.ItemTaxWithheldList {
 				for _, tax := range taxWithheld.TaxesWithheld {
-					if tax.CurrencyAmount != 0 {
+					if tax.ChargeAmount.CurrencyAmount != 0 {
 						simplified = append(simplified, SimplifiedFinancialEvent{
 							EventType:       "shipment_item_tax_withheld",
 							PostedDate:      event.PostedDate,
@@ -191,9 +191,9 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 							SellerOrderId:   event.SellerOrderId,
 							MarketplaceName: event.MarketplaceName,
 							SellerSKU:       item.SellerSKU,
-							Amount:          tax.CurrencyAmount,
-							CurrencyCode:    tax.CurrencyCode,
-							Description:     "Tax Withheld",
+							Amount:          tax.ChargeAmount.CurrencyAmount,
+							CurrencyCode:    tax.ChargeAmount.CurrencyCode,
+							Description:     tax.ChargeType,
 							Quantity:        item.QuantityShipped,
 						})
 					}
@@ -339,7 +339,7 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 			// Process item tax withheld
 			for _, taxWithheld := range item.ItemTaxWithheldList {
 				for _, tax := range taxWithheld.TaxesWithheld {
-					if tax.CurrencyAmount != 0 {
+					if tax.ChargeAmount.CurrencyAmount != 0 {
 						simplified = append(simplified, SimplifiedFinancialEvent{
 							EventType:       "shipment_item_adjustment_tax_withheld",
 							PostedDate:      event.PostedDate,
@@ -347,9 +347,9 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 							SellerOrderId:   event.SellerOrderId,
 							MarketplaceName: event.MarketplaceName,
 							SellerSKU:       item.SellerSKU,
-							Amount:          tax.CurrencyAmount,
-							CurrencyCode:    tax.CurrencyCode,
-							Description:     "Tax Withheld",
+							Amount:          tax.ChargeAmount.CurrencyAmount,
+							CurrencyCode:    tax.ChargeAmount.CurrencyCode,
+							Description:     tax.ChargeType,
 							Quantity:        item.QuantityShipped,
 						})
 					}
@@ -592,7 +592,7 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 			}
 			for _, taxWithheld := range item.ItemTaxWithheldList {
 				for _, tax := range taxWithheld.TaxesWithheld {
-					if tax.CurrencyAmount != 0 {
+					if tax.ChargeAmount.CurrencyAmount != 0 {
 						simplified = append(simplified, SimplifiedFinancialEvent{
 							EventType:       "refund_item_tax_withheld",
 							PostedDate:      event.PostedDate,
@@ -600,9 +600,9 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 							SellerOrderId:   event.SellerOrderId,
 							MarketplaceName: event.MarketplaceName,
 							SellerSKU:       item.SellerSKU,
-							Amount:          tax.CurrencyAmount,
-							CurrencyCode:    tax.CurrencyCode,
-							Description:     "Tax Withheld",
+							Amount:          tax.ChargeAmount.CurrencyAmount,
+							CurrencyCode:    tax.ChargeAmount.CurrencyCode,
+							Description:     tax.ChargeType,
 							Quantity:        item.QuantityShipped,
 						})
 					}
@@ -738,7 +738,7 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 			}
 			for _, taxWithheld := range item.ItemTaxWithheldList {
 				for _, tax := range taxWithheld.TaxesWithheld {
-					if tax.CurrencyAmount != 0 {
+					if tax.ChargeAmount.CurrencyAmount != 0 {
 						simplified = append(simplified, SimplifiedFinancialEvent{
 							EventType:       "refund_item_adjustment_tax_withheld",
 							PostedDate:      event.PostedDate,
@@ -746,9 +746,9 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 							SellerOrderId:   event.SellerOrderId,
 							MarketplaceName: event.MarketplaceName,
 							SellerSKU:       item.SellerSKU,
-							Amount:          tax.CurrencyAmount,
-							CurrencyCode:    tax.CurrencyCode,
-							Description:     "Tax Withheld",
+							Amount:          tax.ChargeAmount.CurrencyAmount,
+							CurrencyCode:    tax.ChargeAmount.CurrencyCode,
+							Description:     tax.ChargeType,
 							Quantity:        item.QuantityShipped,
 						})
 					}
@@ -988,7 +988,7 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 			}
 			for _, taxWithheld := range item.ItemTaxWithheldList {
 				for _, tax := range taxWithheld.TaxesWithheld {
-					if tax.CurrencyAmount != 0 {
+					if tax.ChargeAmount.CurrencyAmount != 0 {
 						simplified = append(simplified, SimplifiedFinancialEvent{
 							EventType:       prefix + "item_tax_withheld",
 							PostedDate:      event.PostedDate,
@@ -996,9 +996,9 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 							SellerOrderId:   event.SellerOrderId,
 							MarketplaceName: event.MarketplaceName,
 							SellerSKU:       item.SellerSKU,
-							Amount:          tax.CurrencyAmount,
-							CurrencyCode:    tax.CurrencyCode,
-							Description:     "Tax Withheld",
+							Amount:          tax.ChargeAmount.CurrencyAmount,
+							CurrencyCode:    tax.ChargeAmount.CurrencyCode,
+							Description:     tax.ChargeType,
 							Quantity:        item.QuantityShipped,
 						})
 					}
@@ -1134,7 +1134,7 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 			}
 			for _, taxWithheld := range item.ItemTaxWithheldList {
 				for _, tax := range taxWithheld.TaxesWithheld {
-					if tax.CurrencyAmount != 0 {
+					if tax.ChargeAmount.CurrencyAmount != 0 {
 						simplified = append(simplified, SimplifiedFinancialEvent{
 							EventType:       prefix + "item_adjustment_tax_withheld",
 							PostedDate:      event.PostedDate,
@@ -1142,9 +1142,9 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 							SellerOrderId:   event.SellerOrderId,
 							MarketplaceName: event.MarketplaceName,
 							SellerSKU:       item.SellerSKU,
-							Amount:          tax.CurrencyAmount,
-							CurrencyCode:    tax.CurrencyCode,
-							Description:     "Tax Withheld",
+							Amount:          tax.ChargeAmount.CurrencyAmount,
+							CurrencyCode:    tax.ChargeAmount.CurrencyCode,
+							Description:     tax.ChargeType,
 							Quantity:        item.QuantityShipped,
 						})
 					}
@@ -1406,7 +1406,7 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 			// Process tax withheld
 			for _, taxWithheld := range item.ItemTaxWithheldList {
 				for _, tax := range taxWithheld.TaxesWithheld {
-					if tax.CurrencyAmount != 0 {
+					if tax.ChargeAmount.CurrencyAmount != 0 {
 						simplified = append(simplified, SimplifiedFinancialEvent{
 							EventType:       "chargeback_item_tax_withheld",
 							PostedDate:      event.PostedDate,
@@ -1414,8 +1414,9 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 							SellerOrderId:   event.SellerOrderId,
 							MarketplaceName: event.MarketplaceName,
 							SellerSKU:       item.SellerSKU,
-							Amount:          tax.CurrencyAmount,
-							CurrencyCode:    tax.CurrencyCode,
+							Amount:          tax.ChargeAmount.CurrencyAmount,
+							CurrencyCode:    tax.ChargeAmount.CurrencyCode,
+							Description:     tax.ChargeType,
 							Quantity:        item.QuantityShipped,
 						})
 					}
@@ -1567,7 +1568,7 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 				// Process tax withheld
 				for _, taxWithheld := range item.ItemTaxWithheldList {
 					for _, tax := range taxWithheld.TaxesWithheld {
-						if tax.CurrencyAmount != 0 {
+						if tax.ChargeAmount.CurrencyAmount != 0 {
 							simplified = append(simplified, SimplifiedFinancialEvent{
 								EventType:       "chargeback_item_tax_withheld_adjustment",
 								PostedDate:      event.PostedDate,
@@ -1575,8 +1576,9 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 								SellerOrderId:   event.SellerOrderId,
 								MarketplaceName: event.MarketplaceName,
 								SellerSKU:       item.SellerSKU,
-								Amount:          tax.CurrencyAmount,
-								CurrencyCode:    tax.CurrencyCode,
+								Amount:          tax.ChargeAmount.CurrencyAmount,
+								CurrencyCode:    tax.ChargeAmount.CurrencyCode,
+								Description:     tax.ChargeType,
 								Quantity:        item.QuantityShipped,
 							})
 						}
@@ -1918,14 +1920,14 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 		}
 		for _, taxWithheld := range event.RetrochargeTaxWithheldList {
 			for _, tax := range taxWithheld.TaxesWithheld {
-				if tax.CurrencyAmount != 0 {
+				if tax.ChargeAmount.CurrencyAmount != 0 {
 					simplified = append(simplified, SimplifiedFinancialEvent{
 						EventType:       "retrocharge_tax_withheld",
 						PostedDate:      event.PostedDate,
 						AmazonOrderId:   event.AmazonOrderId,
 						MarketplaceName: event.MarketplaceName,
-						Amount:          tax.CurrencyAmount,
-						CurrencyCode:    tax.CurrencyCode,
+						Amount:          tax.ChargeAmount.CurrencyAmount,
+						CurrencyCode:    tax.ChargeAmount.CurrencyCode,
 						Description:     event.RetrochargeEventType,
 					})
 				}
@@ -1987,14 +1989,14 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 		}
 		for _, taxWithheld := range event.RentalTaxWithheldList {
 			for _, tax := range taxWithheld.TaxesWithheld {
-				if tax.CurrencyAmount != 0 {
+				if tax.ChargeAmount.CurrencyAmount != 0 {
 					simplified = append(simplified, SimplifiedFinancialEvent{
 						EventType:       "rental_tax_withheld",
 						PostedDate:      event.PostedDate,
 						AmazonOrderId:   event.AmazonOrderId,
 						MarketplaceName: event.MarketplaceName,
-						Amount:          tax.CurrencyAmount,
-						CurrencyCode:    tax.CurrencyCode,
+						Amount:          tax.ChargeAmount.CurrencyAmount,
+						CurrencyCode:    tax.ChargeAmount.CurrencyCode,
 						Description:     event.RentalEventType,
 					})
 				}
@@ -2503,12 +2505,12 @@ func (amazonTool *AmazonTool) convertToSimplifiedEvents(financialEvents *Financi
 		}
 		for _, taxWithheld := range event.TaxesWithheld {
 			for _, tax := range taxWithheld.TaxesWithheld {
-				if tax.CurrencyAmount != 0 {
+				if tax.ChargeAmount.CurrencyAmount != 0 {
 					simplified = append(simplified, SimplifiedFinancialEvent{
 						EventType:    "tax_withholding_detail",
 						PostedDate:   event.PostedDate,
-						Amount:       tax.CurrencyAmount,
-						CurrencyCode: tax.CurrencyCode,
+						Amount:       tax.ChargeAmount.CurrencyAmount,
+						CurrencyCode: tax.ChargeAmount.CurrencyCode,
 						Description:  "Tax Withholding Detail",
 					})
 				}

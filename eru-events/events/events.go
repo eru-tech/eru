@@ -27,8 +27,17 @@ type EventI interface {
 	Clone(ctx context.Context) (cloneEvent EventI, err error)
 	SetCon(con *sqlx.DB, dbType string)
 	InitiatPollingInterval(ctx context.Context)
+	Subscribe(ctx context.Context, subscription map[string]interface{}) (err error)
+	Unsubscribe(ctx context.Context, subscriptionId string) (err error)
+	ListSubscriptions(ctx context.Context) (subscriptions []map[string]interface{}, err error)
+	ProcessNotification(ctx context.Context, msg interface{}, endPoint string) (notification map[string]EventNotification, confirmation bool, err error)
 }
 
+type EventNotification struct {
+	DataType    string `json:"data_type" eru:"required"`
+	BinaryValue []byte `json:"binary_value"`
+	StringValue string `json:"string_value"`
+}
 type Event struct {
 	EventType       string `json:"event_type" eru:"required"`
 	EventName       string `json:"event_name" eru:"required"`
@@ -60,8 +69,8 @@ func GetEvent(eventType string) EventI {
 		return new(AWS_SNS_Event)
 	case "DB":
 		return new(DB_Event)
-	case "KAFKA":
-		return new(Kafka_Event)
+	/* case "KAFKA":
+	return new(Kafka_Event) */
 	default:
 		return nil
 	}
@@ -95,7 +104,7 @@ func (event *Event) Publish(ctx context.Context, msg interface{}, e EventI) (msg
 }
 
 func (event *Event) Poll(ctx context.Context) (eventMsgs []EventMsg, err error) {
-	err = errors.New("method not implemented")
+	err = errors.New("this event does not support polling")
 	logs.WithContext(ctx).Error(err.Error())
 	return
 }
@@ -118,4 +127,27 @@ func (event *Event) SetCon(con *sqlx.DB, dbType string) {
 
 func (event *Event) InitiatPollingInterval(ctx context.Context) {
 	time.Sleep(time.Duration(event.PollingInterval) * time.Second)
+}
+
+func (event *Event) Subscribe(ctx context.Context, subscription map[string]interface{}) (err error) {
+	err = errors.New("this event does not support subscription")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
+func (event *Event) Unsubscribe(ctx context.Context, subscriptionId string) (err error) {
+	err = errors.New("this event does not support subscription")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
+func (event *Event) ListSubscriptions(ctx context.Context) (subscriptions []map[string]interface{}, err error) {
+	err = errors.New("this event does not support subscriptions")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+func (event *Event) ProcessNotification(ctx context.Context, msg interface{}, endPoint string) (notification map[string]EventNotification, confirmation bool, err error) {
+	err = errors.New("this event does not support notification")
+	logs.WithContext(ctx).Error(err.Error())
+	return
 }

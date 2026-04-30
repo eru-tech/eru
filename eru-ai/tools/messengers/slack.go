@@ -6,16 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
 const (
 	INSERT_FUNC_ASYNC_SLACK = "insert into eruai_cb_slack (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
 	SLACK_BASE_URL          = "https://slack.com/api"
+	JoinChannel             = "join_channel"
 )
 
 type SlackTool struct {
@@ -30,37 +33,21 @@ type slackToolWithToken struct {
 	AuthName     string
 }
 
-func (slackTool *SlackTool) GetActionsList() []string {
-	actions := []string{}
-	actions = append(actions, SendMessage)
-	actions = append(actions, SubscribeWebhooks)
-	actions = append(actions, ListChannels)
-	actions = append(actions, ListUsers)
-	actions = append(actions, CreateChannel)
-	actions = append(actions, InviteToChannel)
-	actions = append(actions, UploadMedia)
-	actions = append(actions, Callback)
-	return actions
-}
-
-func (slackTool *SlackTool) GetMcpTools() []tools.McpToolList {
-	mcpTools := []tools.McpToolList{}
-	mcpTools = append(mcpTools, tools.McpToolList{
-		ToolName:        SendMessage,
-		ToolDescription: "Send messages to Slack channels via Web API",
-		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", SendMessage),
-	})
-	mcpTools = append(mcpTools, tools.McpToolList{
-		ToolName:        ListChannels,
-		ToolDescription: "List all channels in Slack workspace",
-		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", ListChannels),
-	})
-	mcpTools = append(mcpTools, tools.McpToolList{
-		ToolName:        ListUsers,
-		ToolDescription: "List all users in Slack workspace",
-		ComponentUrl:    fmt.Sprintf("/tools/%s/component.json", ListUsers),
-	})
-	return mcpTools
+func (slackTool *SlackTool) GetActionsList() []tools.ActionInfo {
+	return []tools.ActionInfo{
+		{Name: SendMessage},
+		{Name: ReadMessages},
+		{Name: Login},
+		{Name: GetSsoUrl},
+		{Name: SubscribeWebhooks},
+		{Name: ListChannels},
+		{Name: ListUsers},
+		{Name: CreateChannel},
+		{Name: InviteToChannel},
+		{Name: JoinChannel},
+		{Name: UploadMedia},
+		{Name: Callback},
+	}
 }
 
 func (slackTool *SlackTool) GetSpec() tools.Tooling {
@@ -79,47 +66,227 @@ func (slackTool *SlackTool) MakeFromJson(ctx context.Context, rj *json.RawMessag
 
 func (slackTool *SlackTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("SlackTool Execute - Start")
+	var toolRequest interface{}
 	switch actionName {
 	case SendMessage:
-		return slackTool.SendMessage(ctx, params)
+		toolResult, toolRequest, persistStore, err = slackTool.SendMessage(ctx, params)
+	case ReadMessages:
+		toolResult, toolRequest, persistStore, err = slackTool.ReadMessages(ctx, params)
 	case SubscribeWebhooks:
-		return slackTool.SubscribeWebhooks(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = slackTool.SubscribeWebhooks(ctx, projectId, tenantId, params)
 	case ListChannels:
-		return slackTool.ListChannels(ctx, params)
+		toolResult, toolRequest, persistStore, err = slackTool.ListChannels(ctx, params)
 	case ListUsers:
-		return slackTool.ListUsers(ctx, params)
+		toolResult, toolRequest, persistStore, err = slackTool.ListUsers(ctx, params)
 	case CreateChannel:
-		return slackTool.CreateChannel(ctx, params)
+		toolResult, toolRequest, persistStore, err = slackTool.CreateChannel(ctx, params)
 	case InviteToChannel:
-		return slackTool.InviteToChannel(ctx, params)
+		toolResult, toolRequest, persistStore, err = slackTool.InviteToChannel(ctx, params)
+	case JoinChannel:
+		toolResult, toolRequest, persistStore, err = slackTool.JoinChannel(ctx, params)
 	case UploadMedia:
-		return slackTool.UploadMedia(ctx, params)
+		toolResult, toolRequest, persistStore, err = slackTool.UploadMedia(ctx, params)
+	case Login:
+		toolResult, toolRequest, persistStore, err = slackTool.Login(ctx, projectId, tenantId, params, "")
+	case GetSsoUrl:
+		toolResult, toolRequest, persistStore, err = slackTool.GetSsoUrl(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
+
+	gm := server.GetGlobalGoroutineManager(ctx)
+	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
+		claims := ctx.Value("claims")
+		if claims != nil {
+			bgCtx = context.WithValue(bgCtx, "claims", claims)
+		}
+		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
+		if efurl == nil {
+			err = errors.New("erufuncbaseurl not found in context")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		efurlString, ok := efurl.(string)
+		if !ok {
+			err = errors.New("erufuncbaseurl is not a string")
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		} else {
+			bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, efurlString)
+		}
+
+		body := make(map[string]interface{})
+		if toolRequest != nil {
+			body["request"] = toolRequest
+		}
+		if toolResult != nil {
+			body["response"] = toolResult
+		}
+		body["tenant_id"] = tenantId
+		body["project_id"] = projectId
+
+		if params["metadata"] != nil {
+			body["metadata"] = params["metadata"]
+		}
+
+		hookResult, err := slackTool.ExecuteHook(bgCtx, "poex", actionName, projectId, tenantId, body, nil)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+		logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+	}, server.ContinueOnMaxRetries)
+
+	return toolResult, persistStore, err
+}
+func (slackTool *SlackTool) getAccessToken(ctx context.Context, params map[string]interface{}) (token string) {
+	token = ""
+	if tokenType, tokenTypeOk := params["token_type"]; tokenTypeOk {
+		if tokenTypeStr, tokenTypeStrOk := tokenType.(string); tokenTypeStrOk {
+			switch tokenTypeStr {
+			case "bot":
+				logs.WithContext(ctx).Info("Using bot token")
+				token = slackTool.SlackAccount.BotAccessToken
+			case "user":
+				logs.WithContext(ctx).Info("Using user token")
+				token = slackTool.SlackAccount.AuthedUserAccessToken
+			}
+		}
+	} else {
+		//if token_type is not provided, use bot token by default
+		logs.WithContext(ctx).Info("Using bot token by default")
+		token = slackTool.SlackAccount.BotAccessToken
+	}
+	return token
+}
+func (slackTool *SlackTool) GetSsoUrl(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("GetSsoUrl Execute - Start")
+	if slackTool.AuthName == "" {
+		err = errors.New("auth name is required")
+		logs.Err(ctx, err, "")
+		return nil, nil, false, err
+	}
+	eruauthUrl := ctx.Value("eruauthbaseurl").(string)
+	url := fmt.Sprint(eruauthUrl, "/", projectId, "/", slackTool.AuthName, "/getssourl")
+	logs.WithContext(ctx).Info(fmt.Sprint("url: ", url))
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	qParams := make(map[string]string)
+	if params["state"] != nil {
+		qParams["state"] = params["state"].(string)
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, qParams, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResultOk := false
+	toolResult, toolResultOk = res.(map[string]interface{})
+	if !toolResultOk {
+		err = errors.New("toolResult is not a map")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("toolResult: ", toolResult))
+	return toolResult, map[string]interface{}{"query": qParams}, false, nil
+}
+func (slackTool *SlackTool) Login(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, renewStr string) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("Login Execute - Start")
+	if slackTool.AuthName == "" {
+		err = errors.New("auth name is required")
+		logs.Err(ctx, err, "")
+		return nil, nil, false, err
+	}
+	eruauthUrl := ctx.Value("eruauthbaseurl").(string)
+	url := fmt.Sprint(eruauthUrl, "/", projectId, "/", slackTool.AuthName, "/idptoken", renewStr)
+	logs.WithContext(ctx).Info(fmt.Sprint("url: ", url))
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, params)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+
+	var slackTokens SlackTokens
+	resBytes, _ := json.Marshal(res)
+	err = json.Unmarshal(resBytes, &slackTokens)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	if !slackTokens.Ok {
+		err = logs.Err(ctx, errors.New(slackTokens.Error), "")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+
+	err = slackTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprintf("%s_authed_user_access_token", slackTool.ToolName), slackTokens.AuthedUser.AccessToken)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	err = slackTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprintf("%s_authed_user_id", slackTool.ToolName), slackTokens.AuthedUser.Id)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	err = slackTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprintf("%s_bot_access_token", slackTool.ToolName), slackTokens.AccessToken)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	err = slackTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprintf("%s_bot_user_id", slackTool.ToolName), slackTokens.BotUserId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+
+	//slackTool.EmailAccount.TokenExpirationDateTime = time.Now().UTC().Add(time.Duration(msTokens.ExpiresIn) * time.Second).Format(time.RFC3339)
+	persistStore = true
+
+	toolResult = make(map[string]interface{})
+	toolResult["login_status"] = "success"
+	return toolResult, map[string]interface{}{"body": params}, persistStore, nil
 }
 
-func (slackTool *SlackTool) SendMessage(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (slackTool *SlackTool) SendMessage(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("SendMessage Execute - Start")
 
 	messagePayload, messagePayloadOk := params["message_payload"]
 	if !messagePayloadOk {
 		err = errors.New("message_payload parameter is required")
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
+	}
+	var messagePayloadStruct SlackMessagePayload
+	messagePayloadBytes, err := json.Marshal(messagePayload)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	err = json.Unmarshal(messagePayloadBytes, &messagePayloadStruct)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	err = utils.ValidateStruct(ctx, messagePayloadStruct, "")
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
 	}
 
 	logs.WithContext(ctx).Info("Sending Slack message")
 
 	url := fmt.Sprintf("%s/chat.postMessage", SLACK_BASE_URL)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AccessToken))
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.getAccessToken(ctx, params)))
 	headers.Set("Content-Type", "application/json")
 
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, messagePayload)
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, messagePayloadStruct)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
@@ -144,10 +311,123 @@ func (slackTool *SlackTool) SendMessage(ctx context.Context, params map[string]i
 		toolResult["status"] = "sent"
 	}
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": messagePayloadStruct}, false, nil
 }
 
-func (slackTool *SlackTool) SubscribeWebhooks(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (slackTool *SlackTool) ReadMessages(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("ReadMessages Execute - Start")
+
+	// Validate required channel parameter
+	channel, channelOk := params["channel"]
+	if !channelOk || channel == "" {
+		err = errors.New("channel parameter is required")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+
+	url := fmt.Sprintf("%s/conversations.history", SLACK_BASE_URL)
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.getAccessToken(ctx, params)))
+	headers.Set("Content-Type", "application/json")
+
+	queryParams := map[string]string{
+		"channel": fmt.Sprintf("%v", channel),
+	}
+
+	// Optional parameters
+	if limit, limitOk := params["limit"]; limitOk {
+		queryParams["limit"] = fmt.Sprintf("%v", limit)
+	}
+	if latest, latestOk := params["latest"]; latestOk {
+		queryParams["latest"] = fmt.Sprintf("%v", latest)
+	}
+	if oldest, oldestOk := params["oldest"]; oldestOk {
+		queryParams["oldest"] = fmt.Sprintf("%v", oldest)
+	}
+	if inclusive, inclusiveOk := params["inclusive"]; inclusiveOk {
+		queryParams["inclusive"] = fmt.Sprintf("%v", inclusive)
+	}
+	if cursor, cursorOk := params["cursor"]; cursorOk {
+		queryParams["cursor"] = fmt.Sprintf("%v", cursor)
+	}
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+
+	// Check if we got a "not_in_channel" error
+	if resMap, resMapOk := res.(map[string]interface{}); resMapOk {
+		if ok, okExists := resMap["ok"]; okExists && !ok.(bool) {
+			if errorMsg, errorExists := resMap["error"]; errorExists && errorMsg == "not_in_channel" {
+				logs.WithContext(ctx).Info("Not in channel, attempting to join and retry")
+
+				// Try to join the channel
+				joinResult, _, _, joinErr := slackTool.JoinChannel(ctx, params)
+				if joinErr != nil {
+					logs.WithContext(ctx).Error(fmt.Sprintf("Failed to join channel: %v", joinErr))
+					return nil, nil, false, fmt.Errorf("failed to join channel: %v", joinErr)
+				}
+
+				// Check if join was successful
+				if joinResMap, joinResMapOk := joinResult["result"].(map[string]interface{}); joinResMapOk {
+					if joinOk, joinOkExists := joinResMap["ok"]; joinOkExists && !joinOk.(bool) {
+						logs.WithContext(ctx).Error("Failed to join channel")
+						return nil, nil, false, errors.New("failed to join channel")
+					}
+				}
+
+				// Retry reading messages
+				logs.WithContext(ctx).Info("Retrying to read messages after joining channel")
+				res, _, _, _, err = utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+				if err != nil {
+					logs.WithContext(ctx).Error(err.Error())
+					return nil, nil, false, err
+				}
+			}
+		}
+	}
+
+	toolResult = make(map[string]interface{})
+	toolResult["messages"] = res
+
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
+}
+
+func (slackTool *SlackTool) JoinChannel(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("JoinChannel Execute - Start")
+
+	// Validate required channel parameter
+	channel, channelOk := params["channel"]
+	if !channelOk || channel == "" {
+		err = errors.New("channel parameter is required")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+
+	url := fmt.Sprintf("%s/conversations.join", SLACK_BASE_URL)
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.getAccessToken(ctx, params)))
+	headers.Set("Content-Type", "application/json")
+
+	payload := map[string]interface{}{
+		"channel": channel,
+	}
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+
+	toolResult = make(map[string]interface{})
+	toolResult["result"] = res
+
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
+}
+
+func (slackTool *SlackTool) SubscribeWebhooks(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("SubscribeWebhooks Execute - Start")
 
 	webhookUrl := slackTool.GetToolCbUrl(projectId, tenantId)
@@ -155,124 +435,257 @@ func (slackTool *SlackTool) SubscribeWebhooks(ctx context.Context, projectId str
 
 	toolResult = make(map[string]interface{})
 	toolResult["webhook_url"] = webhookUrl
-	toolResult["verification_token"] = slackTool.SlackAccount.WebhookVerifyToken
+	//toolResult["verification_token"] = slackTool.SlackAccount.WebhookVerifyToken
 	toolResult["status"] = "configured"
 	toolResult["instructions"] = "Configure this webhook URL in your Slack app's Event Subscriptions with the provided verification token"
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": params}, false, nil
 }
 
-func (slackTool *SlackTool) ListChannels(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (slackTool *SlackTool) ListChannels(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("ListChannels Execute - Start")
+
+	// Convert params to query parameters
+	queryParams := map[string]string{}
+	for k, v := range params {
+		queryParams[k] = fmt.Sprintf("%v", v)
+	}
+
+	// Call recursively to get all channels
+	consolidatedResponse, err := slackTool.getChannelsRecursive(ctx, queryParams, "")
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	toolResult = make(map[string]interface{})
+	toolResult["channels"] = consolidatedResponse
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
+}
+
+func (slackTool *SlackTool) getChannelsRecursive(ctx context.Context, queryParams map[string]string, cursor string) ([]interface{}, error) {
+	logs.WithContext(ctx).Debug("getChannelsRecursive Execute - Start")
+	var allChannels []interface{}
 
 	url := fmt.Sprintf("%s/conversations.list", SLACK_BASE_URL)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AccessToken))
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.getAccessToken(ctx, map[string]interface{}{})))
+	headers.Set("Content-Type", "application/json")
 
-	queryParams := map[string]string{}
-	if limit, limitOk := params["limit"]; limitOk {
-		queryParams["limit"] = fmt.Sprintf("%v", limit)
-	}
-	if types, typesOk := params["types"]; typesOk {
-		queryParams["types"] = fmt.Sprintf("%v", types)
+	// Prepare query parameters based on whether cursor is provided
+	currentQueryParams := make(map[string]string)
+	if cursor != "" {
+		// When cursor is provided, only pass the cursor parameter
+		currentQueryParams["cursor"] = cursor
+	} else {
+		// For the first call, pass all original parameters
+		for k, v := range queryParams {
+			currentQueryParams[k] = v
+		}
 	}
 
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, currentQueryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, err
+	}
+
+	// Parse response to extract channels and next cursor
+	responseMap, ok := res.(map[string]interface{})
+	if !ok {
+		logs.WithContext(ctx).Error("Response is not a map")
+		return nil, errors.New("invalid response format")
+	}
+
+	// Extract channels from current response
+	if responseOk, exists := responseMap["ok"]; exists && responseOk.(bool) {
+		if channelsData, exists := responseMap["channels"]; exists {
+			if channelsList, ok := channelsData.([]interface{}); ok {
+				allChannels = append(allChannels, channelsList...)
+			}
+		}
+
+		// Check for next_cursor
+		if responseCursor, exists := responseMap["response_metadata"]; exists {
+			if metadataMap, ok := responseCursor.(map[string]interface{}); ok {
+				if nextCursor, exists := metadataMap["next_cursor"]; exists {
+					if nextCursorStr, ok := nextCursor.(string); ok && nextCursorStr != "" {
+						logs.WithContext(ctx).Info(fmt.Sprintf("Found next_cursor: %s, making recursive call", nextCursorStr))
+						// Recursive call with next_cursor
+						nextChannels, err := slackTool.getChannelsRecursive(ctx, queryParams, nextCursorStr)
+						if err != nil {
+							return nil, err
+						}
+						allChannels = append(allChannels, nextChannels...)
+					}
+				}
+			}
+		}
+	} else {
+		// Handle error response
+		if errorMsg, exists := responseMap["error"]; exists {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Slack API error: %v", errorMsg))
+			return nil, fmt.Errorf("slack API error: %v", errorMsg)
+		}
+	}
+
+	// No more next_cursor, return consolidated response
+	logs.WithContext(ctx).Debug(fmt.Sprintf("No more next_cursor found. Total channels collected: %d", len(allChannels)))
+
+	return allChannels, nil
+}
+
+func (slackTool *SlackTool) ListUsers(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("ListUsers Execute - Start")
+
+	// Convert params to query parameters
+	queryParams := map[string]string{}
+	for k, v := range params {
+		queryParams[k] = fmt.Sprintf("%v", v)
+	}
+
+	// Call recursively to get all users
+	consolidatedResponse, err := slackTool.getUsersRecursive(ctx, queryParams, "")
+	if err != nil {
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
-	toolResult["channels"] = res
-
-	return toolResult, false, nil
+	toolResult["users"] = consolidatedResponse
+	return toolResult, map[string]interface{}{"query": queryParams}, false, nil
 }
 
-func (slackTool *SlackTool) ListUsers(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
-	logs.WithContext(ctx).Debug("ListUsers Execute - Start")
+func (slackTool *SlackTool) getUsersRecursive(ctx context.Context, queryParams map[string]string, cursor string) ([]interface{}, error) {
+	logs.WithContext(ctx).Debug("getUsersRecursive Execute - Start")
+	var allUsers []interface{}
 
 	url := fmt.Sprintf("%s/users.list", SLACK_BASE_URL)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AccessToken))
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.getAccessToken(ctx, map[string]interface{}{})))
+	headers.Set("Content-Type", "application/json")
 
-	queryParams := map[string]string{}
-	if limit, limitOk := params["limit"]; limitOk {
-		queryParams["limit"] = fmt.Sprintf("%v", limit)
+	// Prepare query parameters based on whether cursor is provided
+	currentQueryParams := make(map[string]string)
+	if cursor != "" {
+		// When cursor is provided, only pass the cursor parameter
+		currentQueryParams["cursor"] = cursor
+	} else {
+		// For the first call, pass all original parameters
+		for k, v := range queryParams {
+			currentQueryParams[k] = v
+		}
 	}
 
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, queryParams, nil)
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, []*http.Cookie{}, currentQueryParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, err
 	}
 
-	toolResult = make(map[string]interface{})
-	toolResult["users"] = res
+	// Parse response to extract users and next cursor
+	responseMap, ok := res.(map[string]interface{})
+	if !ok {
+		logs.WithContext(ctx).Error("Response is not a map")
+		return nil, errors.New("invalid response format")
+	}
 
-	return toolResult, false, nil
+	// Extract users from current response
+	if responseOk, exists := responseMap["ok"]; exists && responseOk.(bool) {
+		if usersData, exists := responseMap["members"]; exists {
+			if usersList, ok := usersData.([]interface{}); ok {
+				allUsers = append(allUsers, usersList...)
+			}
+		}
+
+		// Check for next_cursor
+		if responseCursor, exists := responseMap["response_metadata"]; exists {
+			if metadataMap, ok := responseCursor.(map[string]interface{}); ok {
+				if nextCursor, exists := metadataMap["next_cursor"]; exists {
+					if nextCursorStr, ok := nextCursor.(string); ok && nextCursorStr != "" {
+						logs.WithContext(ctx).Info(fmt.Sprintf("Found next_cursor: %s, making recursive call", nextCursorStr))
+						// Recursive call with next_cursor
+						nextUsers, err := slackTool.getUsersRecursive(ctx, queryParams, nextCursorStr)
+						if err != nil {
+							return nil, err
+						}
+						allUsers = append(allUsers, nextUsers...)
+					}
+				}
+			}
+		}
+	} else {
+		// Handle error response
+		if errorMsg, exists := responseMap["error"]; exists {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Slack API error: %v", errorMsg))
+			return nil, fmt.Errorf("slack API error: %v", errorMsg)
+		}
+	}
+
+	// No more next_cursor, return consolidated response
+	logs.WithContext(ctx).Debug(fmt.Sprintf("No more next_cursor found. Total users collected: %d", len(allUsers)))
+
+	return allUsers, nil
 }
 
-func (slackTool *SlackTool) CreateChannel(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (slackTool *SlackTool) CreateChannel(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("CreateChannel Execute - Start")
 
 	channelPayload, channelPayloadOk := params["channel_payload"]
 	if !channelPayloadOk {
 		err = errors.New("channel_payload parameter is required")
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprintf("%s/conversations.create", SLACK_BASE_URL)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AccessToken))
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.getAccessToken(ctx, params)))
 	headers.Set("Content-Type", "application/json")
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, channelPayload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": channelPayload}, false, nil
 }
 
-func (slackTool *SlackTool) InviteToChannel(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (slackTool *SlackTool) InviteToChannel(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("InviteToChannel Execute - Start")
 
 	invitePayload, invitePayloadOk := params["invite_payload"]
 	if !invitePayloadOk {
 		err = errors.New("invite_payload parameter is required")
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	url := fmt.Sprintf("%s/conversations.invite", SLACK_BASE_URL)
 	headers := http.Header{}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.SlackAccount.AccessToken))
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", slackTool.getAccessToken(ctx, params)))
 	headers.Set("Content-Type", "application/json")
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, invitePayload)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, false, err
+		return nil, nil, false, err
 	}
 
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
 
-	return toolResult, false, nil
+	return toolResult, map[string]interface{}{"body": invitePayload}, false, nil
 }
 
-func (slackTool *SlackTool) UploadMedia(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
+func (slackTool *SlackTool) UploadMedia(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("UploadMedia Execute - Start")
 
 	err = errors.New("UploadMedia not implemented yet - requires multipart form upload")
 	logs.WithContext(ctx).Error(err.Error())
-	return nil, false, err
+	return nil, nil, false, err
 }
 
 func (slackTool *SlackTool) GetToolCallback() tools.ToolCallback {
@@ -302,8 +715,8 @@ func (slackTool *SlackTool) Callback(ctx context.Context, projectId string, tena
 
 	// Handle event callback
 	if eventType, typeOk := body["type"]; typeOk && eventType == "event_callback" {
-		go func() {
-			bgCtx := context.Background()
+		gm := server.GetGlobalGoroutineManager(ctx)
+		gm.SafeGoWithRestartBehavior("slack-event-callback", func(bgCtx context.Context) {
 			if eruFuncBaseUrl, ok := ctx.Value("Erufuncbaseurl").(string); ok {
 				bgCtx = context.WithValue(bgCtx, "Erufuncbaseurl", eruFuncBaseUrl)
 			}
@@ -346,28 +759,28 @@ func (slackTool *SlackTool) Callback(ctx context.Context, projectId string, tena
 
 				// Structure event data based on type for consistent processing
 				eventDetails := map[string]interface{}{
-					"event_type":    eventPayload.Event.Type,
-					"event_ts":      eventPayload.Event.EventTs,
-					"user":          eventPayload.Event.User,
-					"channel":       eventPayload.Event.Channel,
-					"channel_type":  eventPayload.Event.ChannelType,
-					"team_id":       eventPayload.TeamId,
-					"api_app_id":    eventPayload.ApiAppId,
-					"event_id":      eventPayload.EventId,
-					"event_time":    eventPayload.EventTime,
-					"tenant_id":     tenantId,
-					"project_id":    projectId,
+					"event_type":   eventPayload.Event.Type,
+					"event_ts":     eventPayload.Event.EventTs,
+					"user":         eventPayload.Event.User,
+					"channel":      eventPayload.Event.Channel,
+					"channel_type": eventPayload.Event.ChannelType,
+					"team_id":      eventPayload.TeamId,
+					"api_app_id":   eventPayload.ApiAppId,
+					"event_id":     eventPayload.EventId,
+					"event_time":   eventPayload.EventTime,
+					"tenant_id":    tenantId,
+					"project_id":   projectId,
 				}
 
 				// Add event-specific data based on event type
 				switch eventPayload.Event.Type {
 				case "message":
 					eventDetails["message"] = map[string]interface{}{
-						"text":         eventPayload.Event.Text,
-						"ts":           eventPayload.Event.Ts,
+						"text":          eventPayload.Event.Text,
+						"ts":            eventPayload.Event.Ts,
 						"client_msg_id": eventPayload.Event.ClientMsgId,
-						"thread_ts":    eventPayload.Event.Thread_ts,
-						"blocks":       eventPayload.Event.Blocks,
+						"thread_ts":     eventPayload.Event.Thread_ts,
+						"blocks":        eventPayload.Event.Blocks,
 					}
 					logs.WithContext(bgCtx).Info(fmt.Sprintf("Message from user %s: %s", eventPayload.Event.User, eventPayload.Event.Text))
 
@@ -410,20 +823,20 @@ func (slackTool *SlackTool) Callback(ctx context.Context, projectId string, tena
 				}
 
 				hookBody := map[string]interface{}{
-					"type":        "slack_event",
-					"event":       eventDetails,
-					"tenant_id":   tenantId,
-					"event_time":  eventPayload.EventTime,
+					"type":       "slack_event",
+					"event":      eventDetails,
+					"tenant_id":  tenantId,
+					"event_time": eventPayload.EventTime,
 				}
 
-				hookResult, err := slackTool.ExecuteCallbackHook(bgCtx, projectId, tenantId, hookBody, params)
+				hookResult, err := slackTool.ExecuteHook(bgCtx, "clbk", "", projectId, tenantId, hookBody, params)
 				if err != nil {
 					logs.WithContext(bgCtx).Error(err.Error())
 					return
 				}
 				logs.WithContext(bgCtx).Info(fmt.Sprint("Slack event callback result: ", hookResult))
 			}
-		}()
+		}, server.ContinueOnMaxRetries)
 	}
 
 	return "OK", false, nil
@@ -434,8 +847,11 @@ func (slackTool *SlackTool) GetToolCbUrl(projectId string, tenantId string) stri
 }
 
 func (slackTool *SlackTool) SetPrivateAttributes(ctx context.Context, realTool tools.Tooling) (err error) {
-	slackTool.SlackAccount.AccessToken = "$SECRET_slack_access_token"
-	slackTool.SlackAccount.WebhookVerifyToken = "$SECRET_slack_webhook_verify_token"
+	slackTool.SlackAccount.AuthedUserAccessToken = fmt.Sprintf("$SECRET_%s_authed_user_access_token", slackTool.ToolName)
+	slackTool.SlackAccount.AuthedUserId = fmt.Sprintf("$SECRET_%s_authed_user_id", slackTool.ToolName)
+	slackTool.SlackAccount.BotAccessToken = fmt.Sprintf("$SECRET_%s_bot_access_token", slackTool.ToolName)
+	slackTool.SlackAccount.BotUserId = fmt.Sprintf("$SECRET_%s_bot_user_id", slackTool.ToolName)
+
 	return nil
 }
 
@@ -443,12 +859,15 @@ func (slackTool *SlackTool) GetBytes(ctx context.Context) ([]byte, error) {
 	slackToolWithToken := slackToolWithToken{
 		Tool: slackTool.Tool,
 		SlackAccount: slackAccountWithToken{
-			TeamId:             slackTool.SlackAccount.TeamId,
-			BotUserId:          slackTool.SlackAccount.BotUserId,
-			AccessToken:        slackTool.SlackAccount.AccessToken,
-			WebhookVerifyToken: slackTool.SlackAccount.WebhookVerifyToken,
-			WebhookUrl:         slackTool.SlackAccount.WebhookUrl,
-			AppId:              slackTool.SlackAccount.AppId,
+			TeamId:                slackTool.SlackAccount.TeamId,
+			BotUserId:             slackTool.SlackAccount.BotUserId,
+			AuthedUserAccessToken: slackTool.SlackAccount.AuthedUserAccessToken,
+			BotAccessToken:        slackTool.SlackAccount.BotAccessToken,
+			AuthedUserId:          slackTool.SlackAccount.AuthedUserId,
+			TeamName:              slackTool.SlackAccount.TeamName,
+			Enterprise:            slackTool.SlackAccount.Enterprise,
+			IsEnterpriseInstall:   slackTool.SlackAccount.IsEnterpriseInstall,
+			AppId:                 slackTool.SlackAccount.AppId,
 		},
 		AuthName: slackTool.AuthName,
 	}
@@ -472,14 +891,30 @@ func (slackTool *SlackTool) BytesToTool(ctx context.Context, toolObjJson []byte)
 	slackTool = &SlackTool{
 		Tool: slackToolWithToken.Tool,
 		SlackAccount: SlackAccount{
-			TeamId:             slackToolWithToken.SlackAccount.TeamId,
-			BotUserId:          slackToolWithToken.SlackAccount.BotUserId,
-			AccessToken:        slackToolWithToken.SlackAccount.AccessToken,
-			WebhookVerifyToken: slackToolWithToken.SlackAccount.WebhookVerifyToken,
-			WebhookUrl:         slackToolWithToken.SlackAccount.WebhookUrl,
-			AppId:              slackToolWithToken.SlackAccount.AppId,
+			TeamId:                slackToolWithToken.SlackAccount.TeamId,
+			BotUserId:             slackToolWithToken.SlackAccount.BotUserId,
+			AuthedUserAccessToken: slackToolWithToken.SlackAccount.AuthedUserAccessToken,
+			BotAccessToken:        slackToolWithToken.SlackAccount.BotAccessToken,
+			AuthedUserId:          slackToolWithToken.SlackAccount.AuthedUserId,
+			TeamName:              slackToolWithToken.SlackAccount.TeamName,
+			Enterprise:            slackToolWithToken.SlackAccount.Enterprise,
+			IsEnterpriseInstall:   slackToolWithToken.SlackAccount.IsEnterpriseInstall,
+			AppId:                 slackToolWithToken.SlackAccount.AppId,
 		},
 		AuthName: slackToolWithToken.AuthName,
 	}
 	return slackTool, nil
+}
+
+func init() {
+	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		ToolType:     "Slack",
+		Category:     "Communication",
+		Description:  "Slack integration for messaging, channels, and webhooks",
+		Actions:      []tools.ActionInfo{{Name: SendMessage}, {Name: ReadMessages}, {Name: Login}, {Name: GetSsoUrl}, {Name: SubscribeWebhooks}, {Name: ListChannels}, {Name: ListUsers}, {Name: CreateChannel}, {Name: InviteToChannel}, {Name: JoinChannel}, {Name: UploadMedia}, {Name: Callback}},
+		OAuthEnabled: true,
+		Icon:         "",
+		IconType:     "svg",
+		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(SlackTool{}), []string{}),
+	})
 }

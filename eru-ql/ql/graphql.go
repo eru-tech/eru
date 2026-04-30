@@ -191,11 +191,18 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				}
 				sqlObj.SecurityClause[sqlObj.MainTableName], _, err = getTableSecurityRule(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.FinalVariables, sqlObj.MainTableName)
 				if err != nil {
-					errMsg = err.Error()
-					errFound = true
+					if !strings.Contains(err.Error(), "TableSecurityRule not defined for") {
+						return nil, nil, err
+					} else {
+						err = nil
+					}
 				}
 
 				err = sqlObj.ProcessGraphQL(ctx, v, datasource, graphQLs[i], gqd.FinalVariables, s, gqd.ExecuteFlag) //TODO to handle if err recd.
+				//TODO : test this error handling
+				if err != nil {
+					return nil, nil, err
+				}
 
 				queryObj.Query = sqlObj.DBQuery
 				queryObj.Cols = strings.Join(sqlObj.Columns.ColNames, " , ")
@@ -210,10 +217,11 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					qrm.SQLQuery = sqlObj.DBQuery
 
 					if gqd.OutputType == eru_writes.OutputTypeCsv || gqd.OutputType == eru_writes.OutputTypeExcel {
-						result, err = graphQLs[i].ExecuteQueryForCsv(ctx, qrm.SQLQuery, datasource, mainAliasNames[i])
+						result, err = graphQLs[i].ExecuteQueryForCsv(ctx, qrm.SQLQuery, datasource, mainAliasNames[i], graphQLs[i])
 						if err != nil {
 							err = logs.Err(ctx, err, "")
 						}
+						queryObj.DataTypes = graphQLs[i].GetResultDataTypes(ctx)
 					} else {
 						result, err = graphQLs[i].ExecuteQuery(ctx, datasource, qrm)
 					}
@@ -280,7 +288,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				sqlObj.openTxn = openTxn
 				sqlObj.closeTxn = closeTxn
 				sqlObj.QueryObject = gqd.QueryObject
-				err = sqlObj.ProcessMutationGraphQL(ctx, v, gqd.FinalVariables, datasource)
+				err = sqlObj.ProcessMutationGraphQL(ctx, v, gqd.FinalVariables, datasource, graphQLs[i])
 				if err != nil {
 					logs.WithContext(ctx).Error(err.Error())
 				}
@@ -408,7 +416,6 @@ func ParseAstValue(ctx context.Context, value ast.Value, vars map[string]interfa
 		}
 		vBytes, err := processTemplate(ctx, "variable", v, vars, "string", "", "")
 		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
 		if string(vBytes) != "" {
@@ -560,7 +567,6 @@ func processMapVariable(ctx context.Context, m map[string]interface{}, vars map[
 				} else {
 					vBytes, err := processTemplate(ctx, "variable", v.(string), vars, "string", "", "")
 					if err != nil {
-						logs.WithContext(ctx).Error(err.Error())
 						return nil, err
 					}
 					if string(vBytes) == "" {
@@ -672,24 +678,29 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 		if sr.Select.IgnoreRecord != "" {
 			ignoreRecordBytes, irErr := processTemplate(ctx, "security_rule_ignore_record", sr.Select.IgnoreRecord, vars, "json", "", "")
 			if irErr != nil {
-				logs.WithContext(ctx).Error(irErr.Error())
+				irErr = logs.Err(ctx, irErr, "")
 				return "", make([]string, 0), irErr
 			}
 			ignoreRecord := make(map[string]interface{})
 			irErr = json.Unmarshal(ignoreRecordBytes, &ignoreRecord)
 			if irErr != nil {
-				logs.WithContext(ctx).Error(irErr.Error())
+				irErr = logs.Err(ctx, irErr, "")
 				return "", make([]string, 0), irErr
 			}
 
 			evalStr, evalErr := gotemplate.EvalFilter(ctx, sr.Select.IgnoreFilter, ignoreRecord)
 			if evalErr != nil {
-				logs.WithContext(ctx).Error(evalErr.Error())
+				evalErr = logs.Err(ctx, evalErr, "")
 				return "", make([]string, 0), evalErr
 			}
 			if evalStr {
 				return "", nil, nil
 			}
+		}
+		if sr.Select.RuleType == "deny" {
+			err = errors.New("access denied for table " + tableName)
+			err = logs.Err(ctx, err, "")
+			return "", nil, err
 		}
 
 		for _, v := range sr.Select.CustomRule.AND {
@@ -733,20 +744,20 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 
 		ds, dsErr := s.GetDataSource(ctx, projectId, dbAlias)
 		if dsErr != nil {
-			logs.WithContext(ctx).Error(dsErr.Error())
-			return
+			dsErr = logs.Err(ctx, dsErr, "")
+			return "", nil, dsErr
 		}
 		ctjObjMap := make(map[string]string)
 		for _, ctj := range ruleJoinChildTables {
 			ctjObj, e := ds.GetTableJoins(ctx, mainTableName, ctj, make(map[string]string))
 			if e != nil {
-				logs.WithContext(ctx).Error(e.Error())
-				return
+				e = logs.Err(ctx, e, "")
+				return "", nil, e
 			}
 			onClause, er := processMapVariable(ctx, ctjObj.GetOnClause(ctx), vars)
 			if er != nil {
-				logs.WithContext(ctx).Error(er.Error())
-				return
+				er = logs.Err(ctx, er, "")
+				return "", nil, er
 			}
 			oc, _ := processWhereClause(ctx, onClause, "", mainTableName, true, false)
 			ctjObjMap[ctj] = oc
@@ -757,8 +768,12 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 		for _, t := range templates {
 			ro, rj, rerr := getTableSecurityRule(ctx, projectId, dbAlias, t, s, op, vars, tableName)
 			if rerr != nil {
-				logs.WithContext(ctx).Error(rerr.Error())
-				return
+				if !strings.Contains(rerr.Error(), "TableSecurityRule not defined for") {
+					return "", nil, rerr
+				} else {
+					rerr = nil
+				}
+				return "", nil, rerr
 			}
 			ruleJoinTables = append(ruleJoinTables, rj...)
 			ruleOutput = strings.Replace(ruleOutput, fmt.Sprint("$TEMPLATE_", t), ro, -1)
@@ -771,13 +786,13 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 				for _, srJoin := range rjt {
 					tj, e := ds.GetTableJoins(ctx, p, srJoin, make(map[string]string))
 					if e != nil {
-						logs.WithContext(ctx).Error(e.Error())
-						return
+						e = logs.Err(ctx, e, "")
+						return "", nil, e
 					}
 					onClause, er := processMapVariable(ctx, tj.GetOnClause(ctx), vars)
 					if er != nil {
-						logs.WithContext(ctx).Error(er.Error())
-						return
+						er = logs.Err(ctx, er, "")
+						return "", nil, er
 					}
 					oc, _ := processWhereClause(ctx, onClause, "", p, true, false)
 					q = fmt.Sprint(q, " left join ", srJoin, " on ", oc)
@@ -791,12 +806,13 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 		_ = templates
 	} else {
 		err = errors.New(fmt.Sprint("Invalid Query Type : ", op))
-		logs.WithContext(ctx).Info(err.Error())
+		err = logs.Err(ctx, err, "")
+		return "", nil, err
 	}
 
 	if err != nil {
 		err = errors.New(fmt.Sprint("SecurityRule failed : ", err.Error()))
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, err, "")
 		return "", make([]string, 0), err
 	}
 	return ruleOutput, eru_utils.UniqueStrings(ruleJoinTables), nil

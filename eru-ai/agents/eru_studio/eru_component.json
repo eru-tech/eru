@@ -1,0 +1,340 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.erutech.example/eru-component.schema.json",
+    "title": "EruComponent",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "id",
+        "type",
+        "properties",
+        "styles"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "description": "Unique identifier for the component."
+        },
+        "type": {
+            "type": "string",
+            "description": "Type of the component."
+        },
+        "isNested": {
+            "type": "boolean",
+            "description": "Indicates if the component is nested."
+        },
+        "properties": {
+            "$ref": "#/$defs/ResponsiveEruComponentProperties",
+            "description": "Component properties; supports known fields plus arbitrary component-specific keys.",
+            "enum": [
+                "base",
+                "sm",
+                "md",
+                "lg",
+                "xl",
+                "2xl"
+            ]
+        },
+        "styles": {
+            "$ref": "#/$defs/ComponentStyles",
+            "description": "Arbitrary CSS-like style map (keys and value types may vary)."
+        },
+        "events": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/ComponentEventSubscription",
+                "description": "Component event subscriptions."
+            }
+        },
+        "validation_rules": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/ValidationRule",
+                "description": "Validation rules for the component."
+            }
+        },
+        "children": {
+            "type": "array",
+            "items": {
+                "$ref": "#",
+                "description": "Nested child components."
+            }
+        },
+        "parent_id": {
+            "type": "string",
+            "description": "Parent component identifier."
+        },
+        "created_at": {
+            "type": "string",
+            "description": "Timestamp string (format not enforced; you may choose to enforce date-time in your implementation)."
+        },
+        "updated_at": {
+            "type": "string",
+            "description": "Timestamp string (format not enforced; you may choose to enforce date-time in your implementation)."
+        }
+    },
+    "$defs": {
+        "ComponentStyles": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "classes",
+                "responsive_classes",
+                "responsive_styles",
+                "custom"
+            ],
+            "properties": {
+                "classes": {
+                    "type": "string",
+                    "description": "CSS classes for the component."
+                },
+                "responsive_classes": {
+                    "$ref": "#/$defs/ResponsiveClasses",
+                    "description": "Responsive CSS classes for the component."
+                },
+                "responsive_styles": {
+                    "$ref": "#/$defs/ResponsiveStyleProperties",
+                    "description": "Responsive CSS styles for the component."
+                },
+                "custom": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "description": "Custom CSS styles for the component."
+                }
+            }
+        },
+        "ResponsiveClasses": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "base": {
+                    "type": "string",
+                    "description": "CSS classes for the component."
+                },
+                "sm": {
+                    "type": "string",
+                    "description": "CSS classes for the component."
+                },
+                "md": {
+                    "type": "string",
+                    "description": "CSS classes for the component."
+                },
+                "lg": {
+                    "type": "string",
+                    "description": "CSS classes for the component."
+                },
+                "xl": {
+                    "type": "string",
+                    "description": "CSS classes for the component."
+                },
+                "2xl": {
+                    "type": "string",
+                    "description": "CSS classes for the component."
+                }
+            }
+        },
+        "ResponsiveStyleProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "base": {
+                    "$ref": "#/$defs/StyleProperties",
+                    "description": "CSS styles for the component."
+                },
+                "sm": {
+                    "$ref": "#/$defs/StyleProperties",
+                    "description": "CSS styles for the component."
+                },
+                "md": {
+                    "$ref": "#/$defs/StyleProperties",
+                    "description": "CSS styles for the component."
+                },
+                "lg": {
+                    "$ref": "#/$defs/StyleProperties",
+                    "description": "CSS styles for the component."
+                },
+                "xl": {
+                    "$ref": "#/$defs/StyleProperties",
+                    "description": "CSS styles for the component."
+                },
+                "2xl": {
+                    "$ref": "#/$defs/StyleProperties",
+                    "description": "CSS styles for the component."
+                }
+            }
+        },
+        "ResponsiveEruComponentProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "enum": [
+                "base",
+                "sm",
+                "md",
+                "lg",
+                "xl",
+                "2xl"
+            ],
+            "properties": {
+                "base": {
+                    "$ref": "#/$defs/EruComponentProperties",
+                    "description": "Component properties; supports known fields plus arbitrary component-specific keys."
+                },
+                "sm": {
+                    "$ref": "#/$defs/EruComponentProperties",
+                    "description": "Component properties; supports known fields plus arbitrary component-specific keys."
+                },
+                "md": {
+                    "$ref": "#/$defs/EruComponentProperties",
+                    "description": "Component properties; supports known fields plus arbitrary component-specific keys."
+                },
+                "lg": {
+                    "$ref": "#/$defs/EruComponentProperties",
+                    "description": "Component properties; supports known fields plus arbitrary component-specific keys."
+                },
+                "xl": {
+                    "$ref": "#/$defs/EruComponentProperties",
+                    "description": "Component properties; supports known fields plus arbitrary component-specific keys."
+                },
+                "2xl": {
+                    "$ref": "#/$defs/EruComponentProperties",
+                    "description": "Component properties; supports known fields plus arbitrary component-specific keys."
+                }
+            }
+        },
+        "EruComponentProperties": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "placeholder": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "alt": {
+                    "type": "string"
+                },
+                "href": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                },
+                "disabled": {
+                    "type": "boolean"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "readonly": {
+                    "type": "boolean"
+                },
+                "options": {
+                    "type": "array"
+                },
+                "identifier": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "StyleProperties": {
+            "type": "object",
+            "additionalProperties": {
+                "anyOf": [
+                    {
+                        "type": "string"
+                    },
+                    {
+                        "type": "number"
+                    },
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "null"
+                    },
+                    {
+                        "type": "array"
+                    },
+                    {
+                        "type": "object"
+                    }
+                ]
+            }
+        },
+        "ComponentEventSubscription": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "event",
+                "action"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "event": {
+                    "type": "string"
+                },
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "no-action",
+                        "call-api",
+                        "fetch-page-data"
+                    ]
+                },
+                "apiName": {
+                    "type": "string"
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "action": {
+                                "const": "call-api"
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "apiName"
+                        ]
+                    }
+                }
+            ]
+        },
+        "ValidationRule": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "type",
+                "message"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "required",
+                        "min",
+                        "max",
+                        "minLength",
+                        "maxLength",
+                        "pattern",
+                        "email",
+                        "custom"
+                    ]
+                },
+                "value": {},
+                "message": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

@@ -218,20 +218,19 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		goTmpl := gotemplate.GoTemplate{templateName, templateStr}
 		outputObj, err := goTmpl.Execute(ctx, vars["token"], outputType)
 		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
+			err = logs.Err(ctx, err, "")
 			return nil, err
 		} else if outputType == "string" {
 			return []byte(outputObj.(string)), nil
 		} else {
 			output, err = json.Marshal(outputObj)
 			if err != nil {
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, err, "")
 				return nil, err
 			}
 		}
 	} else {
-		err = errors.New("no variable prefix found")
-		//logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, errors.New("no variable prefix found"), "")
 	}
 	//todo - to add if prefix is not token
 	return

@@ -12,11 +12,25 @@ const (
 )
 
 type WriteData struct {
-	ColumnarDataMap            map[string][][]interface{}
-	ColumnarData               [][]interface{}
-	ColumnarDataHeader         []string
-	ColumnarDataHeaderFirstRow bool
-	FileName                   string
+	ColumnarDataMap map[string][][]interface{}
+	//ColumnarData               [][]interface{}
+	//ColumnarDataHeader         []string
+	//ColumnarDataHeaderFirstRow bool
+	ColumnarSettings map[string]ColumnarSettings
+	FileName         string
+}
+
+type ColumnarSettings struct {
+	HeaderFirstRow bool
+	Headers        map[string]ColumnHeaders
+}
+
+type ColumnHeaders struct {
+	HeaderName  string  `json:"header_name"`
+	HeaderLabel string  `json:"header_label"`
+	DataType    string  `json:"data_type"`
+	MaxWidth    float64 `json:"max_width"`
+	SubTotal    bool    `json:"sub_total"`
 }
 
 type WriteI interface {

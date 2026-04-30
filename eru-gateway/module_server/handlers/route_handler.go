@@ -21,14 +21,14 @@ var httpClient = http.Client{
 	},
 }
 
-func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
+func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		logs.WithContext(r.Context()).Debug("RouteHandler - Start")
 		host, url := extractHostUrl(r)
 		logs.WithContext(r.Context()).Info(host)
 		logs.WithContext(r.Context()).Info(url)
-		tg, authorizer, addHeaders, err := s.GetTargetGroupAuthorizer(r.Context(), r)
+		tg, authorizer, addHeaders, instanceId, err := sh.Store.GetTargetGroupAuthorizer(r.Context(), r)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "suspicious activity"})
@@ -170,6 +170,45 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		if tg.Method != "" {
 			r.Method = tg.Method
 		}
+
+		if instanceId != "" {
+			instances, err := rh.Registry.ListAllServices(r.Context())
+			if err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			} else {
+				instanceFound := false
+				for _, instance := range instances {
+					if instance.Id == instanceId {
+						instanceFound = true
+						tmpSplit1 := strings.Split(instance.Address, "://")
+						if tmpSplit1[0] == "http" || tmpSplit1[0] == "https" {
+							tmpSplit2 := strings.Split(tmpSplit1[1], ":")
+							logs.WithContext(r.Context()).Info(fmt.Sprint("tmpSplit2 = ", tmpSplit2))
+							logs.WithContext(r.Context()).Info(fmt.Sprint("tmpSplit1 = ", tmpSplit1))
+							r.Host = tmpSplit2[0]
+							if len(tmpSplit1) > 1 {
+								r.URL.Host = fmt.Sprint(tmpSplit1[1])
+							} else {
+								r.URL.Host = fmt.Sprint(tmpSplit1[0])
+							}
+							r.URL.Scheme = tmpSplit1[0]
+							break
+						}
+					}
+				}
+				if !instanceFound {
+					err = fmt.Errorf("instance not found")
+					logs.WithContext(r.Context()).Error(err.Error())
+					server_handlers.FormatResponse(w, 400)
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					return
+				}
+			}
+		}
+
 		//response, err := httpClient.Do(r)
 		response, err := utils.ExecuteHttp(r.Context(), r)
 		if err != nil {
@@ -180,23 +219,60 @@ func RouteHandler(s module_store.ModuleStoreI) http.HandlerFunc {
 		}
 		//defer response.Body.Close()
 
-		//remove CORS headers from w else it is getting passed even if rsponse is not sedning any header
-		w.Header().Del("Access-Control-Allow-Credentials")
-		w.Header().Del("Access-Control-Allow-Origin")
-		w.Header().Del("Access-Control-Allow-Headers")
-		w.Header().Del("Access-Control-Allow-Methods")
-
+		corsHeaders := []string{
+			"Access-Control-Allow-Credentials",
+			"Access-Control-Allow-Origin",
+			"Access-Control-Allow-Headers",
+			"Access-Control-Allow-Methods",
+		}
+		savedCors := make(map[string][]string)
+		for _, h := range corsHeaders {
+			if v := w.Header()[h]; len(v) > 0 {
+				savedCors[h] = v
+			}
+			w.Header().Del(h)
+		}
 		for k, v := range response.Header {
 			//logs.WithContext(r.Context()).Info(fmt.Sprint(k, " - ", v))
 			w.Header()[k] = v
 		}
+		for _, h := range corsHeaders {
+			if len(w.Header()[h]) == 0 {
+				if v, ok := savedCors[h]; ok {
+					w.Header()[h] = v
+				}
+			}
+		}
 		w.WriteHeader(response.StatusCode)
-		_, err = io.Copy(w, response.Body)
-		if err != nil {
-			logs.WithContext(r.Context()).Error(err.Error())
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-			return
+		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
+			flusher, canFlush := w.(http.Flusher)
+			if canFlush {
+				flusher.Flush()
+			}
+			buf := make([]byte, 4096)
+			for {
+				n, readErr := response.Body.Read(buf)
+				if n > 0 {
+					if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+						logs.WithContext(r.Context()).Error(writeErr.Error())
+						break
+					}
+					if canFlush {
+						flusher.Flush()
+					}
+				}
+				if readErr != nil {
+					break
+				}
+			}
+		} else {
+			_, err = io.Copy(w, response.Body)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(err.Error())
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
 		}
 		//logs.WithContext(r.Context()).Info(fmt.Sprint("---------------------------"))
 		//logs.WithContext(r.Context()).Info(fmt.Sprint(w.Header()))

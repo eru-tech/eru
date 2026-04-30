@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
@@ -32,6 +34,7 @@ const (
 var Erufuncbaseurl = "http://localhost:8083"
 
 type StoreHolder struct {
+	sync.RWMutex
 	Store ModuleStoreI
 }
 type ModuleStoreI interface {
@@ -724,4 +727,38 @@ func (ms *ModuleStore) FetchJWKKeys(ctx context.Context, projectId string, kid s
 	}
 	jwks = append(jwks, jwk)
 	return
+}
+func LoadStore(ctx context.Context, StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
+	logs.WithContext(ctx).Info("Loading store")
+	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
+	if storeType == "" {
+		storeType = "STANDALONE"
+		logs.WithContext(ctx).Info("STORE_TYPE environment variable not found - loading default standlone store")
+	}
+	var myStore ModuleStoreI
+	var err error
+	switch storeType {
+	case "POSTGRES":
+		myStore = new(ModuleDbStore)
+		myStore.SetDbType(storeType)
+		myStore.SetStoreTableName(StoreTableName)
+		//myStore.SetStoreTenantTableName(StoreTenantTableName)
+		myStore.CreateConn()
+	case "STANDALONE":
+		// myStore, err = store.LoadStoreFromFile()
+		myStore = new(ModuleFileStore)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.New(fmt.Sprint("Invalid STORE_TYPE ", storeType))
+	}
+	storeBytes, err := myStore.GetStoreByteArray("")
+	if err == nil {
+		UnMarshalStore(ctx, storeBytes, myStore)
+	} else {
+		logs.WithContext(ctx).Error(err.Error())
+	}
+	//s.Store = myStore
+	return myStore, err
 }

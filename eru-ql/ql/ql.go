@@ -11,6 +11,7 @@ import (
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
+	eru_writes "github.com/eru-tech/eru/eru-read-write/eru_writes"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
@@ -24,12 +25,25 @@ type QLData struct {
 	SecurityRule   security_rule.SecurityRule `json:"security_rule"`
 	IsPublic       bool                       `json:"is_public"`
 	OutputType     string                     `json:"output_type"`
+	PivotConfig    QLPivotConfig              `json:"pivot_config,omitempty"`
+	Formatter      eru_writes.CellFormatter   `json:"formatter,omitempty"`
+}
+
+type QLPivotConfig struct {
+	Columns      []string `json:"columns"`
+	Rows         []string `json:"rows"`
+	Aggregations []struct {
+		AggregationFunction string `json:"aggregation_function"`
+		Field_Name          string `json:"field_name"`
+		Filed_Label         string `json:"field_label"`
+	} `json:"aggregations"`
 }
 
 type QueryObject struct {
-	Query string
-	Cols  string
-	Type  string
+	Query     string
+	Cols      string
+	Type      string
+	DataTypes []ds.ResultDataTypes
 }
 
 type QL interface {
@@ -191,7 +205,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		if !isArray {
 			dd, er := d.(map[string]interface{}) // checking if docs is a single document without array
 			if !er {
-				return nil, errors.New("error while parsing value of 'docs'")
+				return nil, logs.Err(ctx, errors.New("error while parsing value of 'docs'"), "")
 			}
 			docs = append(docs, dd)
 		}
@@ -199,12 +213,11 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 		for i, doc := range docs {
 			dd, er := doc.(map[string]interface{}) // checking if docs is a single document without array
 			if !er {
-				return nil, errors.New("error while parsing value of 'docs'")
+				return nil, logs.Err(ctx, errors.New("error while parsing value of 'docs'"), "")
 			}
 			outputBytes, ptErr := executeTemplate(ctx, templateName, templateStr, dd, outputType)
 			if err != nil {
-				err = ptErr
-				logs.WithContext(ctx).Error(err.Error())
+				err = logs.Err(ctx, ptErr, "")
 				return
 			}
 			dd[key] = string(outputBytes)
@@ -254,6 +267,8 @@ func (qld *QLData) secureSQL(ctx context.Context, query string, projectId string
 				logs.WithContext(ctx).Info(srErr.Error())
 				if !strings.HasPrefix(srErr.Error(), "TableSecurityRule not defined for "+table.TableName) {
 					return
+				} else {
+					srErr = nil
 				}
 			}
 			if sRulesStr != "" {

@@ -61,6 +61,9 @@ func (store *DbStore) GetStoreTableName() (tablename string) {
 func (store *DbStore) GetStoreTenantTableName() (tablename string) {
 	return store.StoreTenantTableName
 }
+func (store *DbStore) GetUpdateTime() time.Time {
+	return store.UpdateTime
+}
 
 func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 	//TODO to implement this function
@@ -217,7 +220,11 @@ func (store *DbStore) SaveStore(ctx context.Context, projectId string, dbString 
 		logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.Commit : ", err.Error()))
 		tx.Rollback()
 	}
-
+	err = store.publishConfig(ctx)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in publishConfig : ", err.Error()))
+		err = nil
+	}
 	if store.ProjectRepos != nil {
 		if repo, repoOk := store.ProjectRepos[projectId]; repoOk {
 			if repo.GetAttribute("auto_commit").(bool) {
@@ -281,6 +288,11 @@ func (store *DbStore) SaveTenantStore(ctx context.Context, projectId string, ten
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.Commit : ", err.Error()))
 		tx.Rollback()
+	}
+	err = store.publishConfig(ctx)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in publishConfig : ", err.Error()))
+		err = nil
 	}
 
 	//TODO: implement repo commit for tennat config changes
@@ -443,4 +455,38 @@ func (store *DbStore) ExecuteDbSave(ctx context.Context, queries []Queries) (out
 		tx.Rollback()
 	}
 	return
+}
+
+func (store *DbStore) publishConfig(ctx context.Context) (err error) {
+	logs.WithContext(ctx).Debug("publishConfig - Start")
+
+	if ConfigSyncEvent != "unknown" && BaseUrl != "" {
+		project_id := ""
+		event_name := ""
+
+		splitEventText := strings.Split(ConfigSyncEvent, "__")
+		if len(splitEventText) == 2 {
+			project_id = splitEventText[0]
+			event_name = splitEventText[1]
+		}
+		configEvent, err := store.FetchEvent(context.Background(), project_id, event_name)
+		if err != nil {
+			logs.Logger.Error(fmt.Sprintf("Failed to fetch config event: %v", err))
+			err = nil
+		} else {
+			configMsg := map[string]interface{}{
+				"instance_id":  InstanceId,
+				"service_name": ServiceName,
+			}
+			msgId := ""
+			msgId, err = configEvent.Publish(context.Background(), configMsg, configEvent)
+			if err != nil {
+				logs.Logger.Error(fmt.Sprintf("Failed to publish config event: %v", err))
+				err = nil
+			} else {
+				logs.Logger.Info(fmt.Sprintf("Config event published successfully: %s", msgId))
+			}
+		}
+	}
+	return nil
 }

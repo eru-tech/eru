@@ -9,6 +9,7 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	common_types "github.com/eru-tech/eru/eru-ql/common_types"
 	parser "github.com/eru-tech/eru/eru-ql/ds/parser"
 
 	//eru_utils "github.com/eru-tech/eru/eru-utils"
@@ -18,7 +19,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-var dbBlockedWords = []string{"--"}
+var dbBlockedWords = []string{}
 var dbBlockedRegex = []string{}
 
 type PostgresSqlMaker struct {
@@ -106,96 +107,6 @@ func (pr *PostgresSqlMaker) ExtractTableNames(ctx context.Context, query string)
 func (pr *PostgresSqlMaker) DefaultSchemaName() string {
 	return "public."
 }
-func extractTableNames(tree antlr.Tree) (tableNames []string) {
-	switch ctx := tree.(type) {
-	case *parser.Relation_exprContext:
-		tableNames = append(tableNames, ctx.GetText())
-	default:
-		for i := 0; i < tree.GetChildCount(); i++ {
-			tableNames = append(tableNames, extractTableNames(tree.GetChild(i))...)
-		}
-	}
-	return tableNames
-}
-func extractAliasNames(tree antlr.Tree) (aliases []string) {
-	switch ctx := tree.(type) {
-	case *parser.Common_table_exprContext:
-		aliases = append(aliases, strings.Split(ctx.GetText(), "as(")[0])
-	default:
-		for i := 0; i < tree.GetChildCount(); i++ {
-			aliases = append(aliases, extractAliasNames(tree.GetChild(i))...)
-		}
-	}
-	return aliases
-}
-
-func extractTableAliasNames(tree antlr.Tree, query string) (tablesInQuery module_model.TablesInQuery) {
-
-	tablesInQuery = module_model.TablesInQuery{}
-	switch ctx := tree.(type) {
-	case *parser.Table_refContext:
-		startIndex := 0
-		stopIndex := 0
-		tn := ""
-		alias := ""
-		for _, v := range ctx.GetChildren() {
-			switch ctx1 := v.(type) {
-			case *parser.Relation_exprContext:
-				startIndex = ctx1.GetStart().GetStart()
-				stopIndex = ctx1.GetStop().GetStop() + 1
-				tn = ctx1.GetText()
-			case *parser.Alias_clauseContext:
-				stopIndex = ctx1.GetStop().GetStop() + 1
-				alias = ctx1.GetText()
-
-			default:
-				for i := 0; i < tree.GetChildCount(); i++ {
-					childTablesInQuery := extractTableAliasNames(tree.GetChild(i), query)
-					for _, v := range childTablesInQuery.Tables {
-						aliasFound := false
-						for _, vv := range tablesInQuery.Tables {
-							if vv.TableKey == v.TableKey {
-								aliasFound = true
-								break
-							}
-						}
-						if !aliasFound {
-							tablesInQuery.Tables = append(tablesInQuery.Tables, v)
-						}
-					}
-				}
-			}
-		}
-		if tn != "" {
-			if alias == "" {
-				alias = tn
-			}
-			tmpStopIndex := stopIndex + 5
-			if tmpStopIndex > len(query) {
-				tmpStopIndex = len(query)
-			}
-
-			tablesInQuery.Tables = append(tablesInQuery.Tables, module_model.TableInQuery{AliasName: alias, TableName: tn, TableKey: query[startIndex:stopIndex], TableKeyPrefix: query[startIndex-5 : startIndex], TableKeySuffix: query[stopIndex:tmpStopIndex]})
-		}
-	default:
-		for i := 0; i < tree.GetChildCount(); i++ {
-			childTablesInQuery := extractTableAliasNames(tree.GetChild(i), query)
-			for _, v := range childTablesInQuery.Tables {
-				aliasFound := false
-				for _, vv := range tablesInQuery.Tables {
-					if vv.TableKey == v.TableKey {
-						aliasFound = true
-						break
-					}
-				}
-				if !aliasFound {
-					tablesInQuery.Tables = append(tablesInQuery.Tables, v)
-				}
-			}
-		}
-	}
-	return
-}
 
 func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, rowCount int, colCount int, single bool) string {
 	logs.WithContext(ctx).Debug("GetPreparedQueryPlaceholder - Start")
@@ -215,12 +126,39 @@ func (pr *PostgresSqlMaker) GetPreparedQueryPlaceholder(ctx context.Context, row
 	return strings.Join(rowArray, " , ")
 }
 
-func (pr *PostgresSqlMaker) GetTableMetaDataSQL(ctx context.Context) string {
-	logs.WithContext(ctx).Debug("GetTableMetaDataSQL - Start")
-	return postgresTableMetaDataSQL
+func (pr *PostgresSqlMaker) MakeUpsertQuery(ctx context.Context, tableName string, insertCols []string, colsPlaceholder string, conflictCols []string, updateCols []string, action string, returningStr string) (string, error) {
+	logs.WithContext(ctx).Debug("MakeUpsertQuery - Start (postgres)")
+	if len(conflictCols) == 0 {
+		return "", errors.New("upsertOn must include at least one column")
+	}
+	conflictSet := make(map[string]bool)
+	for _, c := range conflictCols {
+		conflictSet[strings.TrimSpace(c)] = true
+	}
+	base := fmt.Sprint("insert into ", tableName, " (", strings.Join(insertCols, ","), ") values ", colsPlaceholder)
+	conflictClause := fmt.Sprint(" on conflict (", strings.Join(conflictCols, ","), ")")
+	if action == "nothing" {
+		return fmt.Sprint(base, conflictClause, " do nothing", returningStr), nil
+	}
+	sets := buildUpsertSets(insertCols, conflictSet, updateCols, func(col string) string {
+		return fmt.Sprint(col, " = excluded.", col)
+	})
+	if len(sets) == 0 {
+		return fmt.Sprint(base, conflictClause, " do nothing", returningStr), nil
+	}
+	return fmt.Sprint(base, conflictClause, " do update set ", strings.Join(sets, ","), returningStr), nil
 }
 
-func (pr *PostgresSqlMaker) MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]module_model.TableColsMetaData) (string, error) {
+func (pr *PostgresSqlMaker) GetTableMetaDataSQL(ctx context.Context, tableName string) string {
+	logs.WithContext(ctx).Debug("GetTableMetaDataSQL - Start")
+	stringToReplace := ""
+	if tableName != "" {
+		stringToReplace = fmt.Sprint("and c.table_name = '", tableName, "'")
+	}
+	return strings.Replace(postgresTableMetaDataSQL, "$$tableCondition$$", stringToReplace, 1)
+}
+
+func (pr *PostgresSqlMaker) MakeCreateTableSQL(ctx context.Context, tableName string, tableObj map[string]common_types.TableColsMetaData) (string, error) {
 	logs.WithContext(ctx).Debug("MakeCreateTableSQL - Start")
 	var cols []string
 	var fks []string
@@ -254,8 +192,10 @@ func (pr *PostgresSqlMaker) MakeCreateTableSQL(ctx context.Context, tableName st
 			dt = fmt.Sprint(dt, " (", v.NumericPrecision, ")")
 		case "character", "character varying":
 			dt = fmt.Sprint(dt, " (", v.CharMaxLength, ")")
-		case "timestamp without time zone", "timestamp with time zone", "time with time zone":
-			dt = fmt.Sprint(dt, " [", v.DatetimePrecision, "]")
+		case "timestamp without time zone", "timestamp with time zone":
+			dt = strings.Replace(dt, "timestamp", fmt.Sprint("timestamp (", v.DatetimePrecision, ")"), 1)
+		case "time with time zone":
+			dt = strings.Replace(dt, "time", fmt.Sprint("time (", v.DatetimePrecision, ")"), 1)
 		}
 
 		if v.FkTblName != "" {
@@ -283,11 +223,6 @@ func (pr *PostgresSqlMaker) MakeCreateTableSQL(ctx context.Context, tableName st
 
 	query := fmt.Sprint("create table ", tableName, " (", strings.Join(cols, " , "), " )")
 	return query, nil
-}
-
-func (pr *PostgresSqlMaker) MakeDropTableSQL(ctx context.Context, tableName string) (string, error) {
-	logs.WithContext(ctx).Debug("MakeDropTableSQL - Start")
-	return fmt.Sprint("drop table ", tableName), nil
 }
 
 func (pr *PostgresSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
@@ -334,20 +269,33 @@ func (pr *PostgresSqlMaker) AddLimitSkipClause(ctx context.Context, query string
 
 func (pr *PostgresSqlMaker) getDataTypeMapping(ctx context.Context, dataType string) string {
 	logs.WithContext(ctx).Debug("getDataTypeMapping - Start")
-	if postgresDataTypeMapping[dataType] == "" {
+	if postgresDataTypeMapping[strings.ToLower(dataType)] == "" {
 		return "NotSupported"
 	} else {
-		return postgresDataTypeMapping[dataType]
+		return postgresDataTypeMapping[strings.ToLower(dataType)]
 	}
 }
 
 func (pr *PostgresSqlMaker) getErutoDBDataTypeMapping(ctx context.Context, dataType string) string {
 	logs.WithContext(ctx).Debug("getErutoDBDataTypeMapping - Start")
-	if postgresErutoDBDataTypeMapping[dataType] == "" {
+	if postgresErutoDBDataTypeMapping[strings.ToLower(dataType)] == "" {
 		return "NotSupported"
 	} else {
-		return postgresErutoDBDataTypeMapping[dataType]
+		return postgresErutoDBDataTypeMapping[strings.ToLower(dataType)]
 	}
+}
+
+func (pr *PostgresSqlMaker) SaveTable(ctx context.Context, tableName string, tableStructure common_types.TableStructure, isEdit bool, dataSource *module_model.DataSource) (err error) {
+	logs.WithContext(ctx).Debug("SaveTable - Start")
+	query, err := pr.MakeCreateTableSQL(ctx, tableName, tableStructure.NewColumns)
+	if err != nil {
+		return err
+	}
+	_, err = pr.ExecutePreparedQuery(ctx, query, dataSource)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 const postgresTableMetaDataSQL = `select CAST(c.table_schema as VARCHAR) TblSchema,
@@ -393,7 +341,7 @@ LEFT JOIN (SELECT tc.table_schema, tc.constraint_name, tc.table_name, kcu.column
             	ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.table_schema
 			WHERE tc.constraint_type = 'FOREIGN KEY' ) fk
 ON fk.table_name = c.table_name AND fk.column_name = c.column_name AND fk.table_schema = c.table_schema
-WHERE  c.table_schema not in ('information_schema','pg_catalog')
+WHERE  c.table_schema not in ('information_schema','pg_catalog') $$tableCondition$$
 ORDER BY c.ordinal_position`
 
 //erudevsh
@@ -401,36 +349,45 @@ ORDER BY c.ordinal_position`
 var postgresDataTypeMapping = map[string]string{
 	"smallint":                    "SmallInteger",
 	"integer":                     "Integer",
+	"int4":                        "Integer",
+	"int8":                        "Integer",
+	"int16":                       "Integer",
+	"int32":                       "Integer",
+	"int64":                       "Integer",
+	"int":                         "Integer",
 	"bigint":                      "BigInteger",
 	"numeric":                     "Decimal",
 	"real":                        "Float",
 	"double precision":            "Float",
+	"varchar":                     "Varchar",
 	"character varying":           "Varchar",
 	"character":                   "Char",
 	"text":                        "String",
+	"timestamp":                   "DateTime",
 	"timestamp without time zone": "DateTime",
 	"timestamp with time zone":    "DateTimeWithZone",
 	"date":                        "Date",
 	"time without time zone":      "Time",
 	"time with time zone":         "TimeWithZone",
 	"boolean":                     "Boolean",
+	"bool":                        "Boolean",
 	"json":                        "JSON",
 	"jsonb":                       "JSON"}
 
 var postgresErutoDBDataTypeMapping = map[string]string{
-	"SmallInteger":     "smallint",
-	"Integer":          "integer",
-	"BigInteger":       "bigint",
-	"Decimal":          "numeric",
-	"Float":            "double precision",
-	"Varchar":          "character",
-	"Char":             "character varying",
-	"String":           "text",
-	"DateTime":         "timestamp without time zone",
-	"DateTimeWithZone": "timestamp with time zone",
-	"Date":             "date",
-	"Time":             "time with time zone",
-	"TimeWithZone":     "time with time zone",
-	"Boolean":          "boolean",
-	"JSON":             "jsonb",
+	"smallinteger":     "smallint",
+	"integer":          "integer",
+	"biginteger":       "bigint",
+	"decimal":          "numeric",
+	"float":            "double precision",
+	"varchar":          "character varying",
+	"char":             "character",
+	"string":           "text",
+	"datetime":         "timestamp without time zone",
+	"datetimewithzone": "timestamp with time zone",
+	"date":             "date",
+	"time":             "time with time zone",
+	"timewithzone":     "time with time zone",
+	"boolean":          "boolean",
+	"json":             "jsonb",
 }
