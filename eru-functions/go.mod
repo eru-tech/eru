@@ -28,7 +28,6 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.7.0 // indirect
 	cloud.google.com/go/iam v1.5.2 // indirect
-	cloud.google.com/go/kms v1.22.0 // indirect
 	cloud.google.com/go/pubsub v1.49.0 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.2.0 // indirect
@@ -81,7 +80,6 @@ require (
 	github.com/lestrrat-go/jwx v1.2.23 // indirect
 	github.com/lestrrat-go/option v1.0.0 // indirect
 	github.com/lib/pq v1.10.4 // indirect
-	github.com/mattn/go-sqlite3 v1.14.16 // indirect
 	github.com/mitchellh/copystructure v1.0.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -125,7 +123,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250728155136-f173205681a0 // indirect
 	google.golang.org/grpc v1.74.2 // indirect
 	google.golang.org/protobuf v1.36.7 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
 replace (
