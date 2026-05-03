@@ -466,7 +466,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	funcStep.FsDb.SetConn(s.GetConn())
 	if funcStep.AsyncEventName != "" {
 		var eventI events.EventI
-		eventI, err = s.FetchEvent(ctx, projectId, funcStep.AsyncEventName)
+		eventI, err = s.FetchEvent(ctx, projectId, funcStep.AsyncEventName, s)
 		if err != nil {
 			return
 		}

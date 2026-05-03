@@ -89,8 +89,9 @@ type StoreI interface {
 	SetCacheValue(ctx context.Context, projectId string, key string, value interface{}) (err error)
 	ValidateJSON(ctx context.Context, schema validator.Schema, data []interface{}) (records []interface{}, errRecords []interface{})
 	FetchEvents(ctx context.Context, projectId string) (events map[string]events.EventI, err error)
-	FetchEvent(ctx context.Context, projectId string, eventName string) (event events.EventI, err error)
+	FetchEvent(ctx context.Context, projectId string, eventName string, s StoreI) (event events.EventI, err error)
 	SaveEvent(ctx context.Context, projectId string, event events.EventI, s StoreI, persist bool) (err error)
+	CloneEvent(ctx context.Context, projectId string, event events.EventI, s StoreI) (eClone events.EventI, err error)
 	RemoveEvent(ctx context.Context, projectId string, eventName string, cloudDelete bool, s StoreI) (err error)
 	PublishEvent(ctx context.Context, projectId string, eventName string, msg interface{}, s StoreI) (msgId string, err error)
 	PollEvent(ctx context.Context, projectId string, eventName string, s StoreI) (err error)
@@ -1393,7 +1394,7 @@ func (store *Store) RemoveKms(ctx context.Context, projectId string, kmsName str
 	return
 }
 
-func (store *Store) FetchEvent(ctx context.Context, projectId string, eventName string) (event events.EventI, err error) {
+func (store *Store) FetchEvent(ctx context.Context, projectId string, eventName string, s StoreI) (eventClone events.EventI, err error) {
 	logs.WithContext(ctx).Debug("FetchEvent - Start")
 	if store.Events == nil {
 		err = errors.New("no event defined in store")
@@ -1406,13 +1407,18 @@ func (store *Store) FetchEvent(ctx context.Context, projectId string, eventName 
 		return nil, err
 	} else {
 		ok = false
-		if event, ok = eventMap[eventName]; !ok {
+		if event, ok := eventMap[eventName]; !ok {
 			err = errors.New(fmt.Sprint("event ", eventName, " not found for project :", projectId))
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
+		} else {
+			eventClone, err = s.CloneEvent(ctx, projectId, event, s)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, err
+			}
 		}
 	}
-
 	return
 }
 
@@ -1431,6 +1437,32 @@ func (store *Store) FetchEvents(ctx context.Context, projectId string) (event ma
 	}
 	return
 }
+func (store *Store) CloneEvent(ctx context.Context, projectId string, event events.EventI, s StoreI) (eClone events.EventI, err error) {
+	logs.WithContext(ctx).Debug("CloneEvent - Start")
+	eventJson, err := json.Marshal(event)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	eCloneBytes := s.ReplaceVariables(ctx, projectId, eventJson, nil)
+	eventType, err := event.GetAttribute("event_type")
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	eClone = events.GetEvent(eventType.(string))
+	if eClone == nil {
+		err = errors.New("unknown event_type: " + eventType.(string))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	err = json.Unmarshal(eCloneBytes, eClone)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return
+}
 func (store *Store) SaveEvent(ctx context.Context, projectId string, e events.EventI, s StoreI, persist bool) (err error) {
 	logs.WithContext(ctx).Debug("SaveEvent - Start")
 	if persist {
@@ -1444,11 +1476,17 @@ func (store *Store) SaveEvent(ctx context.Context, projectId string, e events.Ev
 		store.Events[projectId] = make(map[string]events.EventI)
 	}
 	if persist {
-		err = e.CreateEvent(ctx)
+		eClone, cloneErr := s.CloneEvent(ctx, projectId, e, store)
+		if cloneErr != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		err = eClone.CreateEvent(ctx)
 		if err != nil {
 			return
 		}
 	}
+
 	eName, err := e.GetAttribute("event_name")
 	if err != nil {
 		return
@@ -1476,12 +1514,17 @@ func (store *Store) RemoveEvent(ctx context.Context, projectId string, eventName
 		return
 	}
 	if store.Events[projectId][eventName] == nil {
-		err = errors.New(fmt.Sprint("event not found"))
+		err = errors.New(fmt.Sprint("event ", eventName, " not found"))
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 	if cloudDelete {
-		err = store.Events[projectId][eventName].DeleteEvent(ctx)
+		eClone, cloneErr := s.CloneEvent(ctx, projectId, store.Events[projectId][eventName], store)
+		if cloneErr != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		err = eClone.DeleteEvent(ctx)
 		if err != nil {
 			return
 		}

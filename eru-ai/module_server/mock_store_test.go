@@ -16,12 +16,12 @@ import (
 	db "github.com/eru-tech/eru/eru-db/db"
 	"github.com/eru-tech/eru/eru-events/events"
 	eru_models "github.com/eru-tech/eru/eru-models"
+	validator "github.com/eru-tech/eru/eru-read-write/validator"
 	repos "github.com/eru-tech/eru/eru-repos/repos"
 	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	kms "github.com/eru-tech/eru/eru-secret-manager/kms"
 	sm "github.com/eru-tech/eru/eru-secret-manager/sm"
 	store "github.com/eru-tech/eru/eru-store/store"
-	validator "github.com/eru-tech/eru/eru-read-write/validator"
 	vectorstore "github.com/eru-tech/eru/eru-vectorstore/vectorstore"
 	"github.com/jmoiron/sqlx"
 )
@@ -48,15 +48,15 @@ func (m *mockTool) Execute(_ context.Context, _, _ string, _ string, _ map[strin
 	return m.executeResult, false, m.executeErr
 }
 
-func (m *mockTool) GetToolDb() db.DbI        { return nil }
-func (m *mockTool) SetToolDb(_ db.DbI)       {}
+func (m *mockTool) GetToolDb() db.DbI                    { return nil }
+func (m *mockTool) SetToolDb(_ db.DbI)                   {}
 func (m *mockTool) GetParameters() eru_models.JSONSchema { return m.Tool.Parameters }
 
-func (m *mockTool) BytesToTool(_ context.Context, _ []byte) (tools.Tooling, error) { return m, nil }
-func (m *mockTool) GetActionsList() []tools.ActionInfo                               { return nil }
+func (m *mockTool) BytesToTool(_ context.Context, _ []byte) (tools.Tooling, error)    { return m, nil }
+func (m *mockTool) GetActionsList() []tools.ActionInfo                                { return nil }
 func (m *mockTool) ValidateAction(_ context.Context, _ string, _ tools.Tooling) error { return nil }
 func (m *mockTool) SetPrivateAttributes(_ context.Context, _ tools.Tooling) error     { return nil }
-func (m *mockTool) GetInputFields() []tools.ToolInputFields                            { return nil }
+func (m *mockTool) GetInputFields() []tools.ToolInputFields                           { return nil }
 func (m *mockTool) Callback(_ context.Context, _, _, _ string, _ map[string]interface{}, _ map[string][]string) (interface{}, bool, error) {
 	return nil, false, nil
 }
@@ -87,10 +87,10 @@ func (m *mockTool) GetToolCbUrl(_, _ string) string { return "" }
 func (m *mockTool) ExecuteHook(_ context.Context, _, _, _, _ string, _ map[string]interface{}, _ map[string][]string) (interface{}, error) {
 	return nil, nil
 }
-func (m *mockTool) SetScheduler(_ scheduler.SchedulerI)                                          {}
-func (m *mockTool) SaveTenantSecret(_ context.Context, _, _, _, _ string) error                  { return nil }
-func (m *mockTool) SetToolAction(_ string)                                                        {}
-func (m *mockTool) GetBytes(_ context.Context) ([]byte, error)                                   { return nil, nil }
+func (m *mockTool) SetScheduler(_ scheduler.SchedulerI)                         {}
+func (m *mockTool) SaveTenantSecret(_ context.Context, _, _, _, _ string) error { return nil }
+func (m *mockTool) SetToolAction(_ string)                                      {}
+func (m *mockTool) GetBytes(_ context.Context) ([]byte, error)                  { return nil, nil }
 
 type mockAgent struct {
 	agents.Agent
@@ -302,18 +302,18 @@ func (m *mockModuleStore) RemoveTool(_ context.Context, _, _, _ string, _ module
 	return nil
 }
 
-func (m *mockModuleStore) LoadStore(_ string, _ store.StoreI) error                  { return nil }
-func (m *mockModuleStore) GetStoreByteArray(_ string) ([]byte, error)                { return nil, nil }
+func (m *mockModuleStore) LoadStore(_ string, _ store.StoreI) error   { return nil }
+func (m *mockModuleStore) GetStoreByteArray(_ string) ([]byte, error) { return nil, nil }
 func (m *mockModuleStore) SaveStore(_ context.Context, _, _ string, _ store.StoreI) error {
 	return nil
 }
 func (m *mockModuleStore) SaveTenantStore(_ context.Context, _, _, _ string, _ interface{}) error {
 	return nil
 }
-func (m *mockModuleStore) SetDbType(_ string)   {}
-func (m *mockModuleStore) CreateConn() error    { return nil }
-func (m *mockModuleStore) GetConn() *sqlx.DB    { return nil }
-func (m *mockModuleStore) GetDbType() string    { return "STANDALONE" }
+func (m *mockModuleStore) SetDbType(_ string) {}
+func (m *mockModuleStore) CreateConn() error  { return nil }
+func (m *mockModuleStore) GetConn() *sqlx.DB  { return nil }
+func (m *mockModuleStore) GetDbType() string  { return "STANDALONE" }
 func (m *mockModuleStore) ExecuteDbSave(_ context.Context, _ []store.Queries) ([][]map[string]interface{}, error) {
 	return nil, nil
 }
@@ -326,7 +326,7 @@ func (m *mockModuleStore) GetStoreTableName() string        { return "" }
 func (m *mockModuleStore) GetStoreWithoutTenants(_ context.Context, _ store.StoreI) ([]byte, error) {
 	return nil, nil
 }
-func (m *mockModuleStore) GetStoreTenantTableName() string { return "" }
+func (m *mockModuleStore) GetStoreTenantTableName() string                         { return "" }
 func (m *mockModuleStore) SetVars(_ context.Context, _ map[string]store.Variables) {}
 func (m *mockModuleStore) SetTenantVars(_ context.Context, _ map[string]map[string]store.Variables) {
 }
@@ -383,7 +383,7 @@ func (m *mockModuleStore) SaveSm(_ context.Context, _ string, _ sm.SmStoreI, _ s
 	return nil
 }
 func (m *mockModuleStore) FetchSm(_ context.Context, _ string) (sm.SmStoreI, error) { return nil, nil }
-func (m *mockModuleStore) LoadSmValue(_ context.Context, _ string) error             { return nil }
+func (m *mockModuleStore) LoadSmValue(_ context.Context, _ string) error            { return nil }
 func (m *mockModuleStore) SetSmValue(_ context.Context, _ string, _ string, _ map[string]string) error {
 	return nil
 }
@@ -422,6 +422,9 @@ func (m *mockModuleStore) FetchEvent(_ context.Context, _, _ string) (events.Eve
 }
 func (m *mockModuleStore) SaveEvent(_ context.Context, _ string, _ events.EventI, _ store.StoreI, _ bool) error {
 	return nil
+}
+func (m *mockModuleStore) CloneEvent(_ context.Context, _ string, _ events.EventI, _ store.StoreI) (events.EventI, error) {
+	return nil, nil
 }
 func (m *mockModuleStore) RemoveEvent(_ context.Context, _ string, _ string, _ bool, _ store.StoreI) error {
 	return nil

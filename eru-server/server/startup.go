@@ -148,7 +148,7 @@ func LaunchWithContext(ctx context.Context, serverRouter *mux.Router, port strin
 			}
 
 			if project_id != "" && event_name != "" {
-				eventI, err := store.FetchEvent(ctx, project_id, event_name)
+				eventI, err := store.FetchEvent(ctx, project_id, event_name, store)
 				if err != nil {
 					logs.Logger.Error(fmt.Sprintf("Failed to fetch event for cleanup: %v", err))
 				} else {
@@ -221,7 +221,7 @@ func Init(ctx context.Context, store store.StoreI) (*mux.Router, *Server, error)
 			project_id = splitEventText[0]
 			event_name = splitEventText[1]
 		}
-		configEvent, err := store.FetchEvent(ctx, project_id, event_name)
+		configEvent, err := store.FetchEvent(ctx, project_id, event_name, store)
 		if err != nil {
 			logs.Logger.Error(fmt.Sprintf("Failed to fetch config event: %v", err))
 			err = nil

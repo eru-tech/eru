@@ -8,6 +8,7 @@ type EmailAccount struct {
 	SubscriptionId                 string `json:"subscription_id"`
 	SubscriptionExpirationDateTime string `json:"subscription_expiration_date_time"`
 	TokenExpirationDateTime        string `json:"token_expiration_date_time"`
+	HistoryId                      string `json:"history_id,omitempty"`
 }
 
 type emailAccountWithToken struct {
@@ -17,6 +18,7 @@ type emailAccountWithToken struct {
 	SubscriptionId                 string `json:"subscription_id"`
 	SubscriptionExpirationDateTime string `json:"subscription_expiration_date_time"`
 	TokenExpirationDateTime        string `json:"token_expiration_date_time"`
+	HistoryId                      string `json:"history_id,omitempty"`
 }
 
 const (

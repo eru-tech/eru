@@ -830,6 +830,7 @@ func ToolCallbackHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 
 		logs.WithContext(r.Context()).Debug("ToolCallbackHandler - Start")
 		ctx := context.WithValue(r.Context(), tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
+		ctx = context.WithValue(ctx, tools.RequestAuthorizationKey, r.Header.Get("Authorization"))
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
@@ -1112,7 +1113,7 @@ func ConfigSyncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		if err := tmplBodyFromReq.Decode(&tmplBody); err != nil {
 			logs.Logger.Error(err.Error())
 		}
-		configEvent, err := sh.Store.FetchEvent(r.Context(), project_id, event_name)
+		configEvent, err := sh.Store.FetchEvent(r.Context(), project_id, event_name, sh.Store)
 		if err != nil {
 			logs.Logger.Error(fmt.Sprintf("Failed to fetch config event: %v", err))
 		} else {
