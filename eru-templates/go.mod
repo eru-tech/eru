@@ -12,7 +12,6 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/xuri/excelize/v2 v2.9.1
-
 )
 
 require (

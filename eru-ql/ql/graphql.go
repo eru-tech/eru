@@ -15,6 +15,7 @@ import (
 	"github.com/eru-tech/eru/eru-ql/ds"
 	"github.com/eru-tech/eru/eru-ql/module_model"
 	"github.com/eru-tech/eru/eru-ql/module_store"
+	"github.com/eru-tech/eru/eru-ql/qlcache"
 	"github.com/eru-tech/eru/eru-read-write/eru_writes"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
@@ -223,7 +224,21 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 						}
 						queryObj.DataTypes = graphQLs[i].GetResultDataTypes(ctx)
 					} else {
-						result, err = graphQLs[i].ExecuteQuery(ctx, datasource, qrm)
+						loader := func(ctx context.Context) (map[string]interface{}, []string, error) {
+							r, lerr := graphQLs[i].ExecuteQuery(ctx, datasource, qrm)
+							if lerr != nil {
+								return nil, nil, lerr
+							}
+							tbls := graphQLs[i].ExtractTableNames(ctx, qrm.SQLQuery)
+							names := make([]string, 0, len(tbls.Tables))
+							for _, t := range tbls.Tables {
+								if t.TableName != "" {
+									names = append(names, t.TableName)
+								}
+							}
+							return r, names, nil
+						}
+						result, err = qlcache.ServeOrLoad(ctx, datasource, qrm.SQLQuery, graphQLs[i].DefaultSchemaName(), loader, qlcache.Options{})
 					}
 					if err != nil {
 						err = logs.Err(ctx, err, "")

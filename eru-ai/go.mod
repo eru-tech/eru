@@ -2,8 +2,6 @@ module github.com/eru-tech/eru/eru-ai
 
 go 1.24
 
-toolchain go1.24.5
-
 require (
 	firebase.google.com/go/v4 v4.19.0
 	github.com/anthropics/anthropic-sdk-go v1.35.0
@@ -49,7 +47,6 @@ require (
 	cloud.google.com/go/kms v1.22.0 // indirect
 	cloud.google.com/go/longrunning v0.6.7 // indirect
 	cloud.google.com/go/monitoring v1.24.2 // indirect
-	cloud.google.com/go/pubsub v1.49.0 // indirect
 	cloud.google.com/go/storage v1.55.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.27.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.51.0 // indirect
@@ -111,7 +108,6 @@ require (
 	github.com/lestrrat-go/jwx v1.2.23 // indirect
 	github.com/lestrrat-go/option v1.0.0 // indirect
 	github.com/lib/pq v1.10.4 // indirect
-	github.com/mattn/go-sqlite3 v1.14.16 // indirect
 	github.com/mitchellh/copystructure v1.0.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect

@@ -11,6 +11,7 @@ import (
 	eruotel "github.com/eru-tech/eru/eru-logs/eru-otel"
 	"github.com/eru-tech/eru/eru-ql/module_server"
 	"github.com/eru-tech/eru/eru-ql/module_store"
+	"github.com/eru-tech/eru/eru-ql/qlcache"
 	"github.com/eru-tech/eru/eru-server/server"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 )
@@ -90,6 +91,8 @@ func main() {
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 	}
+
+	qlcache.StartInvalidator(ctx, 0)
 
 	// Setup routes
 	module_server.AddModuleRoutes(sr, sh)

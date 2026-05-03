@@ -6,7 +6,6 @@ require (
 	github.com/eru-tech/eru/eru-logs v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-templates v0.0.0-00010101000000-000000000000
 	github.com/eru-tech/eru/eru-utils v0.0.0-00010101000000-000000000000
-
 )
 
 require (
@@ -71,7 +70,6 @@ require (
 	golang.org/x/crypto v0.40.0 // indirect
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
 replace (

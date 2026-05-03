@@ -59,7 +59,7 @@ func ProjectMyQuerySaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				logs.WithContext(r.Context()).Error(err.Error())
 				return
 			}
-			err = sh.Store.SaveMyQuery(r.Context(), projectID, queryName, queryType, "", gqd.Query, gqd.Variables, sh.Store, "", gqd.SecurityRule)
+			err = sh.Store.SaveMyQuery(r.Context(), projectID, queryName, queryType, "", gqd.Query, gqd.Variables, sh.Store, "", gqd.SecurityRule, 0, false, false)
 		} else if queryType == "sql" {
 			var sqd ql.SQLData
 			if err := json.NewDecoder(r.Body).Decode(&sqd); err != nil {
@@ -69,7 +69,7 @@ func ProjectMyQuerySaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				return
 			}
 
-			err = sh.Store.SaveMyQuery(r.Context(), projectID, queryName, queryType, sqd.DBAlias, sqd.Query, sqd.Variables, sh.Store, sqd.Cols, sqd.SecurityRule)
+			err = sh.Store.SaveMyQuery(r.Context(), projectID, queryName, queryType, sqd.DBAlias, sqd.Query, sqd.Variables, sh.Store, sqd.Cols, sqd.SecurityRule, sqd.CacheTTL, sqd.CacheSkip, sqd.CacheLock)
 		} else {
 			err = errors.New("Incorrect query type")
 		}

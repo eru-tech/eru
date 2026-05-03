@@ -68,4 +68,8 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/datasource/schema/{dbalias}/securetable/{tablename}").HandlerFunc(module_handlers.ProjectDataSourceRemoveSecureTableHandler(sh))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/datasource/schema/{dbalias}/transformtable/{tablename}").HandlerFunc(module_handlers.ProjectDataSourceSchemaTransformTableHandler(sh))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/datasource/schema/{dbalias}/maskcolumn/{tablename}/{colname}").HandlerFunc(module_handlers.ProjectDataSourceSchemaMasColumnHandler(sh))
+
+	cacheRouter := serverRouter.PathPrefix("/cache").Subrouter()
+	cacheRouter.Methods(http.MethodPost).Path("/{project}/invalidate").HandlerFunc(module_handlers.CacheInvalidateHandler(sh))
+	cacheRouter.Methods(http.MethodGet).Path("/stats").HandlerFunc(module_handlers.CacheStatsHandler())
 }

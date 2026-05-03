@@ -69,6 +69,10 @@ type CacheStoreI interface {
 	Get(ctx context.Context, key string) (value string, err error)
 	Set(ctx context.Context, key string, value interface{}) (err error)
 	SetWithTTL(ctx context.Context, key string, value interface{}, ttl time.Duration) (err error)
+	SetWithTagsTTL(ctx context.Context, key string, value interface{}, ttl time.Duration, tags []string) (err error)
+	InvalidateByTags(ctx context.Context, tags []string) (deleted int, err error)
+	AcquireLock(ctx context.Context, key string, ttl time.Duration, owner string) (acquired bool, err error)
+	ReleaseLock(ctx context.Context, key string, owner string) (err error)
 	GetKeys(ctx context.Context, pattern string) ([]string, error)
 	Delete(ctx context.Context, key string) error
 	ValidatePersistence(ctx context.Context, projectId string) error
@@ -102,6 +106,18 @@ func (cs *CacheStore) Set(ctx context.Context, key string, value interface{}) (e
 	return nil
 }
 func (cs *CacheStore) SetWithTTL(ctx context.Context, key string, value interface{}, ttl time.Duration) (err error) {
+	return nil
+}
+func (cs *CacheStore) SetWithTagsTTL(ctx context.Context, key string, value interface{}, ttl time.Duration, tags []string) (err error) {
+	return nil
+}
+func (cs *CacheStore) InvalidateByTags(ctx context.Context, tags []string) (int, error) {
+	return 0, nil
+}
+func (cs *CacheStore) AcquireLock(ctx context.Context, key string, ttl time.Duration, owner string) (bool, error) {
+	return false, nil
+}
+func (cs *CacheStore) ReleaseLock(ctx context.Context, key string, owner string) error {
 	return nil
 }
 func (cs *CacheStore) GetKeys(ctx context.Context, pattern string) ([]string, error) {
@@ -318,6 +334,9 @@ func GetCacheStore(cacheStoreType string, projectId string) (cs CacheStoreI) {
 	case "REDIS":
 		cs, _ = NewRedisCache()
 		//ignore error as return blank cache store as returned by NewRedisCache
+	case "REDIS_CLUSTER", "ELASTICACHE":
+		cs, _ = NewRedisClusterCache()
+		//ignore error as return blank cache store as returned by NewRedisClusterCache
 	case "ETCD":
 		cs, _ = NewEtcdCache()
 		//ignore error as return blank cache store as returned by NewEtcdCache
