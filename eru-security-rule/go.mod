@@ -47,6 +47,8 @@ require (
 	github.com/lestrrat-go/iter v1.0.1 // indirect
 	github.com/lestrrat-go/jwx v1.2.23 // indirect
 	github.com/lestrrat-go/option v1.0.0 // indirect
+	github.com/lib/pq v1.10.4 // indirect
+	github.com/mattn/go-sqlite3 v1.14.16 // indirect
 	github.com/mitchellh/copystructure v1.0.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

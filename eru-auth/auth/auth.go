@@ -84,6 +84,7 @@ type OAuthParams struct {
 	State               string `json:"state"`
 	Url                 string
 	Prompt              string `json:"prompt"`
+	AccessType          string `json:"access_type"`
 }
 
 type ChangePassword struct {

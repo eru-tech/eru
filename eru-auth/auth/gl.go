@@ -26,7 +26,8 @@ type GlAuth struct {
 
 type GlConfig struct {
 	AuthConfig
-	Prompt string `json:"prompt" eru:"required"`
+	Prompt     string `json:"prompt" eru:"required"`
+	AccessType string `json:"access_type"`
 }
 
 func (glAuth *GlAuth) PerformPreSaveTask(ctx context.Context) (err error) {
@@ -68,6 +69,7 @@ func (glAuth *GlAuth) GetUrl(ctx context.Context, state string) (urlStr string, 
 	oAuthParams.ResponseType = "code"
 	oAuthParams.State = state
 	oAuthParams.Prompt = glAuth.GlConfig.Prompt
+	oAuthParams.AccessType = glAuth.GlConfig.AccessType
 	params := url.Values{}
 	f := reflect.ValueOf(oAuthParams)
 	for i := 0; i < f.NumField(); i++ {
@@ -90,10 +92,15 @@ func (glAuth *GlAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody,
 	glLoginFormBody := make(map[string]string)
 	glLoginFormBody["client_id"] = glAuth.GlConfig.ClientId
 	glLoginFormBody["client_secret"] = glAuth.GlConfig.ClientSecret
-	logs.WithContext(ctx).Info(glAuth.GlConfig.RedirectURI)
-	glLoginFormBody["redirect_uri"] = glAuth.GlConfig.RedirectURI
-	glLoginFormBody["code"] = loginPostBody.IdpCode
-	glLoginFormBody["grant_type"] = "authorization_code"
+	if renewFlag {
+		glLoginFormBody["grant_type"] = "refresh_token"
+		glLoginFormBody["refresh_token"] = loginPostBody.RefreshToken
+	} else {
+		logs.WithContext(ctx).Info(glAuth.GlConfig.RedirectURI)
+		glLoginFormBody["redirect_uri"] = glAuth.GlConfig.RedirectURI
+		glLoginFormBody["code"] = loginPostBody.IdpCode
+		glLoginFormBody["grant_type"] = "authorization_code"
+	}
 
 	loginRes, _, _, _, loginErr := utils.CallHttp(ctx, http.MethodPost, glAuth.GlConfig.TokenUrl, headers, glLoginFormBody, nil, nil, nil)
 	if loginErr != nil {

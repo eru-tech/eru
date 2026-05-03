@@ -67,6 +67,8 @@ func GetEvent(eventType string) EventI {
 		return new(AWS_SQS_Event)
 	case "AWS_SNS":
 		return new(AWS_SNS_Event)
+	case "GCP_PUBSUB":
+		return new(GCP_PUBSUB_Event)
 	case "DB":
 		return new(DB_Event)
 	/* case "KAFKA":

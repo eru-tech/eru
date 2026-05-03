@@ -106,7 +106,7 @@ func AsyncFuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		projectId := vars["project"]
 		eventName := vars["eventname"]
 		eventId := vars["eventid"]
-		eventI, err := sh.Store.FetchEvent(r.Context(), projectId, eventName)
+		eventI, err := sh.Store.FetchEvent(r.Context(), projectId, eventName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "event not found"})

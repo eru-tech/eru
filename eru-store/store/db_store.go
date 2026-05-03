@@ -469,7 +469,7 @@ func (store *DbStore) publishConfig(ctx context.Context) (err error) {
 			project_id = splitEventText[0]
 			event_name = splitEventText[1]
 		}
-		configEvent, err := store.FetchEvent(context.Background(), project_id, event_name)
+		configEvent, err := store.FetchEvent(context.Background(), project_id, event_name, store)
 		if err != nil {
 			logs.Logger.Error(fmt.Sprintf("Failed to fetch config event: %v", err))
 			err = nil
