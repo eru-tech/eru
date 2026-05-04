@@ -49,6 +49,7 @@ type AuthI interface {
 	CompleteRecovery(ctx context.Context, recoveryPassword RecoveryPassword, cookies []*http.Cookie) (msg string, err error)
 	VerifyRecovery(ctx context.Context, recoveryPassword RecoveryPassword) (res map[string]string, cookies []*http.Cookie, err error)
 	VerifyCode(ctx context.Context, verifyCode VerifyCode, tokenObj map[string]interface{}, withToken bool) (res interface{}, err error)
+	VerifyCodeNoUser(ctx context.Context, verifyCode VerifyCode) (res interface{}, err error)
 	GetUrl(ctx context.Context, state string) (url string, oAuthParams OAuthParams, err error)
 	SetKms(ctx context.Context, kmsObj kms.KmsStoreI) (err error)
 	ApiTokenToUserToken(ctx context.Context, projectId string, apiToken string) (identity Identity, loginSuccess LoginSuccess, err error)
@@ -635,6 +636,12 @@ func (auth *Auth) GenerateVerifyCode(ctx context.Context, verifyIdentifier Verif
 func (auth *Auth) VerifyCode(ctx context.Context, verifyCode VerifyCode, tokenObj map[string]interface{}, withToken bool) (res interface{}, err error) {
 	logs.WithContext(ctx).Debug("VerifyCode - Start")
 	logs.WithContext(ctx).Info("VerifyCode Method not implemented")
+	return
+}
+
+func (auth *Auth) VerifyCodeNoUser(ctx context.Context, verifyCode VerifyCode) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("VerifyCodeNoUser - Start")
+	logs.WithContext(ctx).Info("VerifyCodeNoUser Method not implemented")
 	return
 }
 

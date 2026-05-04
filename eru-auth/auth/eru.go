@@ -33,6 +33,7 @@ const (
 	SELECT_IDENTITY_CREDENTIAL        = "select b.traits->>'first_name' first_name , a.* from eruauth_identity_credentials a left join eruauth_identities b on a.identity_id=b.identity_id where a.identity_credential = ???"
 	INSERT_OTP                        = "insert into eruauth_otp (otp_id, otp, identity_credential,identity_credential_type,otp_purpose) values (??? , ??? , ???,??? , ???)"
 	VERIFY_OTP                        = "select b.identity_id, a.* from eruauth_otp a left join eruauth_identity_credentials b on a.identity_credential=b.identity_credential where identity_id = ??? and otp = ??? and a.identity_credential = ??? and a.created_date + (5 * interval '1 minute') >= LOCALTIMESTAMP and otp_purpose = ???"
+	VERIFY_OTP_NOUSER                 = "select a.* from eruauth_otp a where otp = ??? and a.identity_credential = ??? and a.created_date + (5 * interval '1 minute') >= LOCALTIMESTAMP and otp_purpose = ???"
 	VERIFY_RECOVERY_OTP               = "select b.identity_id, a.* from eruauth_otp a left join eruauth_identity_credentials b on a.identity_credential=b.identity_credential where otp = ??? and a.identity_credential = ??? and a.created_date + (5 * interval '1 minute') >= LOCALTIMESTAMP and otp_purpose = ???"
 	CHANGE_PASSWORD                   = "update eruauth_identity_passwords set updated_date=LOCALTIMESTAMP, identity_password= ??? where identity_id= ???"
 	INSERT_DELETED_IDENTITY           = "insert into eruauth_deleted_identities (identity_id,identity_provider,identity_provider_id,traits,attributes,is_active,identity_password) select a.identity_id,identity_provider,identity_provider_id,traits,attributes,is_active, b.identity_password  from eruauth_identities a left join eruauth_identity_passwords b on a.identity_id=b.identity_id where a.identity_id= ???"
@@ -673,6 +674,26 @@ func (eruAuth *EruAuth) VerifyCode(ctx context.Context, verifyCode VerifyCode, t
 	res, err = eruAuth.UpdateUser(ctx, identity, verifyCode.UserId, tokenObj)
 	if withToken {
 		return res, err
+	}
+	return nil, err
+}
+
+func (eruAuth *EruAuth) VerifyCodeNoUser(ctx context.Context, verifyCode VerifyCode) (res interface{}, err error) {
+	logs.WithContext(ctx).Debug("VerifyCode - Start")
+	verifyQuery := models.Queries{}
+	verifyQuery.Query = eruAuth.AuthDb.GetDbQuery(ctx, VERIFY_OTP_NOUSER)
+	verifyQuery.Vals = append(verifyQuery.Vals, verifyCode.Code, verifyCode.Id, OTP_PURPOSE_VERIFY)
+	verifyQuery.Rank = 1
+	verifyOutput, err := utils.ExecuteDbFetch(ctx, eruAuth.AuthDb.GetConn(), verifyQuery)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, errors.New("something went wrong - please try again")
+	}
+
+	if len(verifyOutput) == 0 {
+		err = errors.New("code not found - please check and try again")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
 	}
 	return nil, err
 }
