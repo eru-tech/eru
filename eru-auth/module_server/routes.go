@@ -56,6 +56,8 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/getverifycode").HandlerFunc(module_handlers.GetVerifyCodeHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/verifyrecoverycode").HandlerFunc(module_handlers.VerifyRecoveryCodeHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/checkverifycode").HandlerFunc(module_handlers.CheckVerifyCodeHandler(sh))
+	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/verifycode").HandlerFunc(module_handlers.VerifyCodeHandler(sh))
+
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/completerecovery").HandlerFunc(module_handlers.CompleteRecoveryHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/login/api").HandlerFunc(module_handlers.LoginApiHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/login").HandlerFunc(module_handlers.LoginHandler(sh))
