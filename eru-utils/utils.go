@@ -491,7 +491,7 @@ func CallHttp(ctx context.Context, method string, url string, headers http.Heade
 	contentType := strings.Split(headers.Get("Content-Type"), ";")[0]
 	respcontentType := strings.Split(resp.Header.Get("Content-Type"), ";")[0]
 	if resp.ContentLength > 0 || contentType == encodedForm || contentType == applicationJson {
-		if respcontentType == applicationJson {
+		if respcontentType == applicationJson && resp.StatusCode != 204 {
 			if err = json.NewDecoder(resp.Body).Decode(&res); err != nil {
 				logs.WithContext(ctx).Error(err.Error())
 				return nil, nil, nil, resp.StatusCode, err

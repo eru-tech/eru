@@ -134,6 +134,7 @@ func (ms *ModuleStore) GenerateAesKey(ctx context.Context, projectId string, key
 
 func (ms *ModuleStore) SaveStorage(ctx context.Context, storageObj storage.StorageI, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveStorage - Start")
+	ctx = context.WithValue(ctx, "projectId", projectId)
 	if persist {
 		realStore.GetMutex().Lock()
 		defer realStore.GetMutex().Unlock()
@@ -225,6 +226,7 @@ func (ms *ModuleStore) GetStorageObjClone(ctx context.Context, projectId string,
 
 func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, s ModuleStoreI) (docId string, err error) {
 	logs.WithContext(ctx).Info("UploadFile - Start")
+	ctx = context.WithValue(ctx, "projectId", projectId)
 	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
 		return
@@ -253,6 +255,7 @@ func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storage
 
 func (ms *ModuleStore) UploadFileB64(ctx context.Context, projectId string, storageName string, file []byte, fileName string, docType string, folderPath string, s ModuleStoreI) (docId string, err error) {
 	logs.WithContext(ctx).Debug("UploadFileB64 - Start")
+	ctx = context.WithValue(ctx, "projectId", projectId)
 	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
 		return
@@ -389,6 +392,7 @@ func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, 
 }
 func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (file []byte, mimeType string, err error) {
 	logs.WithContext(ctx).Debug("DownloadFile - Start")
+	ctx = context.WithValue(ctx, "projectId", projectId)
 	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
 		return
@@ -494,6 +498,7 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 
 func (ms *ModuleStore) RemoveStorage(ctx context.Context, storageName string, projectId string, cloudDelete bool, forceDelete bool, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("RemoveStorage - Start")
+	ctx = context.WithValue(ctx, "projectId", projectId)
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
 	if prg, ok := ms.Projects[projectId]; ok {

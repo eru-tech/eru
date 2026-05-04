@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -102,6 +103,10 @@ func glCallEventUnsubscribe(ctx context.Context, projectId string, eventName str
 }
 
 func (glEmailTool *GlEmailTool) verifyOidcPush(ctx context.Context) error {
+	if strings.EqualFold(os.Getenv("ERUAI_SKIP_OIDC_VERIFY"), "true") {
+		logs.WithContext(ctx).Info("ERUAI_SKIP_OIDC_VERIFY=true - skipping oidc push verification")
+		return nil
+	}
 	if glEmailTool.OidcServiceAccount == "" {
 		return nil
 	}

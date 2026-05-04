@@ -57,6 +57,10 @@ func GetStorage(storageType string) StorageI {
 		return new(GcpStorage)
 	case "AZURE":
 		return new(AzureStorage)
+	case "GDRIVE":
+		return new(GdriveStorage)
+	case "ONEDRIVE":
+		return new(OneDriveStorage)
 
 	default:
 		return nil
