@@ -51,6 +51,17 @@ func DefaultDBSecurityRulesHandler() http.HandlerFunc {
 	}
 }
 
+func DefaultReadPolicyHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("DefaultReadPolicyHandler - Start")
+		vars := mux.Vars(r)
+		dbType := vars["dbType"]
+		_ = dbType
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ReadPolicy": ds.DefaultReadPolicy})
+	}
+}
+
 func ProjectDataSourceConfigHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ProjectDataSourceConfigHandler - Start")
@@ -106,6 +117,11 @@ func ProjectDataSourceSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("missing field in object : ", err.Error())})
+				return
+			}
+			if verr := validateReadDbConfigs(datasource.ReadDbConfigs); verr != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": verr.Error()})
 				return
 			}
 		}
@@ -629,4 +645,28 @@ func ConfigSyncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode("ok")
 	}
+}
+
+func validateReadDbConfigs(replicas []*module_model.ReadDbConfig) error {
+	if len(replicas) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(replicas))
+	for i, r := range replicas {
+		if r == nil {
+			return fmt.Errorf("read_db_configs[%d] is nil", i)
+		}
+		name := strings.TrimSpace(r.Name)
+		if name == "" {
+			return fmt.Errorf("read_db_configs[%d] name is required", i)
+		}
+		if _, dup := seen[name]; dup {
+			return fmt.Errorf("read_db_configs duplicate name %q", name)
+		}
+		seen[name] = struct{}{}
+		if r.DbConfig.Host == "" {
+			return fmt.Errorf("read_db_configs[%q] db_config.host is required", name)
+		}
+	}
+	return nil
 }

@@ -63,6 +63,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/login").HandlerFunc(module_handlers.LoginHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/idptoken/{renew}").HandlerFunc(module_handlers.IdpTokenHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/idptoken").HandlerFunc(module_handlers.IdpTokenHandler(sh))
+	authRouter.Methods(http.MethodGet).PathPrefix("/{authname}/gettoken").HandlerFunc(module_handlers.GetTokenHandler(sh))
 	authRouter.Methods(http.MethodDelete).PathPrefix("/{authname}/logout").HandlerFunc(module_handlers.LogoutHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/verify/{tokentype}").HandlerFunc(module_handlers.VerifyTokenHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/userinfo").HandlerFunc(module_handlers.UserInfoHandler(sh))

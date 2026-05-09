@@ -28,6 +28,7 @@ type QLData struct {
 	OutputType     string                     `json:"output_type"`
 	PivotConfig    QLPivotConfig              `json:"pivot_config,omitempty"`
 	Formatter      eru_writes.CellFormatter   `json:"formatter,omitempty"`
+	UseWriter      bool                       `json:"use_writer,omitempty"`
 }
 
 type QLPivotConfig struct {

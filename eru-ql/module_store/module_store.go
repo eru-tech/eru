@@ -216,6 +216,7 @@ func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore M
 				} else {
 					datasource.Con = datasourceClone.Con
 					datasource.ConStatus = datasourceClone.ConStatus
+					copyReadReplicaCons(datasource, datasourceClone)
 				}
 
 			} else {
@@ -225,6 +226,19 @@ func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore M
 		}
 	}
 	return nil
+}
+
+func copyReadReplicaCons(datasource *module_model.DataSource, datasourceClone *module_model.DataSource) {
+	if datasourceClone == nil {
+		return
+	}
+	for i := range datasource.ReadDbConfigs {
+		if i >= len(datasourceClone.ReadDbConfigs) {
+			break
+		}
+		datasource.ReadDbConfigs[i].Con = datasourceClone.ReadDbConfigs[i].Con
+		datasource.ReadDbConfigs[i].ConStatus = datasourceClone.ReadDbConfigs[i].ConStatus
+	}
 }
 
 func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error {
@@ -348,6 +362,7 @@ func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, dat
 		} else {
 			datasource.Con = datasourceClone.Con
 			datasource.ConStatus = datasourceClone.ConStatus
+			copyReadReplicaCons(datasource, datasourceClone)
 		}
 	}
 	logs.WithContext(ctx).Info("SaveStore called from SaveDataSource")

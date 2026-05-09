@@ -79,6 +79,7 @@ type StoreI interface {
 	SetSmValue(ctx context.Context, projectId string, secretName string, secretValue map[string]string) (err error)
 	UnsetSmValue(ctx context.Context, projectId string, secretName string, secretKey string) (err error)
 	GetSmValue(ctx context.Context, projectId string, secretName string, secretKey string, force_delete bool) (secret_Value interface{}, err error)
+	GetProjectSecret(ctx context.Context, projectId string, key string) (value string, err error)
 	LoadEnvValue(ctx context.Context, projectId string) (err error)
 	SetStoreFromBytes(ctx context.Context, storeBytes []byte, msi StoreI) (err error)
 	GetMutex() *sync.RWMutex
@@ -946,6 +947,34 @@ func (store *Store) GetSmValue(ctx context.Context, projectId string, secretName
 			}
 		}
 	}
+	return
+}
+
+func (store *Store) GetProjectSecret(ctx context.Context, projectId string, key string) (value string, err error) {
+	logs.WithContext(ctx).Debug("GetProjectSecret - Start")
+	if store.SecretManager == nil {
+		err = errors.New("no secret manager defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	smObj, ok := store.SecretManager[projectId]
+	if !ok || smObj == nil {
+		err = fmt.Errorf("Secret Manager not defined for project : %s", projectId)
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	v, err := store.GetSmValue(ctx, projectId, smObj.GetSecretName(), key, false)
+	if err != nil {
+		return
+	}
+	if v == nil {
+		return "", nil
+	}
+	if s, ok := v.(string); ok {
+		return s, nil
+	}
+	err = fmt.Errorf("secret value for key %s is not a string", key)
+	logs.WithContext(ctx).Error(err.Error())
 	return
 }
 

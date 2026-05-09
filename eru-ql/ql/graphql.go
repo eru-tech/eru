@@ -216,6 +216,8 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					qrm.QueryLevel = sqlObj.queryLevel
 					qrm.QuerySubLevel = sqlObj.querySubLevel
 					qrm.SQLQuery = sqlObj.DBQuery
+					qrm.UseWriter = gqd.UseWriter
+					ctx := ds.WithUseWriter(ctx, gqd.UseWriter)
 
 					if gqd.OutputType == eru_writes.OutputTypeCsv || gqd.OutputType == eru_writes.OutputTypeExcel {
 						result, err = graphQLs[i].ExecuteQueryForCsv(ctx, qrm.SQLQuery, datasource, mainAliasNames[i], graphQLs[i])

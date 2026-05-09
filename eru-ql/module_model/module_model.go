@@ -150,10 +150,28 @@ type DataSource struct {
 	TableJoins                 map[string]*TableJoins                               `json:"table_joins"`
 	Con                        *sqlx.DB                                             `json:"-"`
 	ConStatus                  bool                                                 `json:"con_status"`
+	ReadDbConfigs              []*ReadDbConfig                                      `json:"read_db_configs" eru:"optional"`
+	ReadPolicy                 ReadPolicy                                           `json:"read_policy" eru:"optional"`
+	ReadCounter                uint64                                               `json:"-"`
 	DbSecurityRules            SecurityRules                                        `json:"db_security_rules"`
 	QueryCache                 cache.CacheStoreI                                    `json:"query_cache"`
 	QueryCacheClone            cache.CacheStoreI                                    `json:"-"`
 	QueryCacheConfig           QueryCacheConfig                                     `json:"query_cache_config"`
+}
+
+type ReadDbConfig struct {
+	Name      string   `json:"name" eru:"required"`
+	DbConfig  DbConfig `json:"db_config" eru:"required"`
+	Weight    int      `json:"weight"`
+	Con       *sqlx.DB `json:"-"`
+	ConStatus bool     `json:"con_status"`
+}
+
+type ReadPolicy struct {
+	Strategy           string `json:"strategy"`
+	IncludeMainInReads bool   `json:"include_main_in_reads"`
+	MainWeight         int    `json:"main_weight"`
+	FailoverToMain     bool   `json:"failover_to_main"`
 }
 
 type TableJoins struct {
@@ -265,6 +283,7 @@ type QueryResultMaker struct {
 	MainAliasName string
 	Tables        [][]Tables
 	SQLQuery      string
+	UseWriter     bool
 }
 
 type MutationResultMaker struct {
@@ -561,7 +580,7 @@ func (prj *ExtendedProject) CompareProject(ctx context.Context, compareProject E
 		for _, cd := range compareProject.DataSources {
 			if md.DbAlias == cd.DbAlias {
 				dsFound = true
-				if !cmp.Equal(md, cd, cmpopts.IgnoreFields(DataSource{}, "Con", "SchemaTables", "SchemaTablesTransformation", "TableJoins"), cmpopts.IgnoreFields(common_types.TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
+				if !cmp.Equal(md, cd, cmpopts.IgnoreFields(DataSource{}, "Con", "ReadCounter", "SchemaTables", "SchemaTablesTransformation", "TableJoins"), cmpopts.IgnoreFields(ReadDbConfig{}, "Con", "ConStatus"), cmpopts.IgnoreFields(common_types.TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
 					if storeCompare.MismatchDataSources == nil {
 						storeCompare.MismatchDataSources = make(map[string]interface{})
 					}
@@ -754,6 +773,8 @@ func (ds *DataSource) UnmarshalJSON(b []byte) error {
 		SchemaTablesTransformation map[string]TransformRules                            `json:"schema_tables_transformation"`
 		TableJoins                 map[string]*TableJoins                               `json:"table_joins"`
 		ConStatus                  bool                                                 `json:"con_status"`
+		ReadDbConfigs              []*ReadDbConfig                                      `json:"read_db_configs"`
+		ReadPolicy                 ReadPolicy                                           `json:"read_policy"`
 		DbSecurityRules            SecurityRules                                        `json:"db_security_rules"`
 		QueryCacheConfig           QueryCacheConfig                                     `json:"query_cache_config"`
 	}
@@ -773,6 +794,8 @@ func (ds *DataSource) UnmarshalJSON(b []byte) error {
 	ds.SchemaTablesTransformation = tempDs.SchemaTablesTransformation
 	ds.TableJoins = tempDs.TableJoins
 	ds.ConStatus = tempDs.ConStatus
+	ds.ReadDbConfigs = tempDs.ReadDbConfigs
+	ds.ReadPolicy = tempDs.ReadPolicy
 	ds.DbSecurityRules = tempDs.DbSecurityRules
 	ds.QueryCacheConfig = tempDs.QueryCacheConfig
 

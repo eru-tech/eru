@@ -271,25 +271,52 @@ func (pr *PostgresSqlMaker) MakeCreateTableSQL(ctx context.Context, tableName st
 	return query, nil
 }
 
-func (pr *PostgresSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
-	logs.WithContext(ctx).Debug("CreateConn - Start")
-	connString := fmt.Sprint("postgres://", dataSource.DbConfig.User, ":", dataSource.DbConfig.Password, "@", dataSource.DbConfig.Host, ":", dataSource.DbConfig.Port, "/", dataSource.DbConfig.DefaultDB, "?sslmode=disable")
+func dialPostgres(ctx context.Context, cfg module_model.DbConfig) (*sqlx.DB, error) {
+	connString := fmt.Sprint("postgres://", cfg.User, ":", cfg.Password, "@", cfg.Host, ":", cfg.Port, "/", cfg.DefaultDB, "?sslmode=disable")
 	db, err := sqlx.Open("postgres", connString)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		dataSource.ConStatus = false
-		return err
+		return nil, err
 	}
-	logs.WithContext(ctx).Info("db connection was successfully done for fetch dummy query")
-	_, err = db.Queryx("select 1")
+	if _, err = db.Queryx("select 1"); err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	return db, nil
+}
+
+func (pr *PostgresSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
+	logs.WithContext(ctx).Debug("CreateConn - Start")
+	db, err := dialPostgres(ctx, dataSource.DbConfig)
 	if err != nil {
 		dataSource.ConStatus = false
-		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 	logs.WithContext(ctx).Info("dummy query success - setting con as true")
 	dataSource.Con = db
 	dataSource.ConStatus = true
+
+	for i := range dataSource.ReadDbConfigs {
+		if rerr := pr.ConnectReadReplica(ctx, dataSource, i); rerr != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("read replica ", dataSource.ReadDbConfigs[i].Name, " connect failed: ", rerr.Error()))
+		}
+	}
+	return nil
+}
+
+func (pr *PostgresSqlMaker) ConnectReadReplica(ctx context.Context, dataSource *module_model.DataSource, idx int) error {
+	if idx < 0 || idx >= len(dataSource.ReadDbConfigs) {
+		return errors.New("read replica index out of range")
+	}
+	replica := dataSource.ReadDbConfigs[idx]
+	db, err := dialPostgres(ctx, replica.DbConfig)
+	if err != nil {
+		replica.ConStatus = false
+		replica.Con = nil
+		return err
+	}
+	replica.Con = db
+	replica.ConStatus = true
 	return nil
 }
 

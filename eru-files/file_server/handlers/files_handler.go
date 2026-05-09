@@ -4,9 +4,11 @@ import (
 	"bytes"
 	b64 "encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/eru-tech/eru/eru-files/module_store"
@@ -609,5 +611,54 @@ func JsonValidatorHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"records": rec, "error": errRec})
 			return
 		}
+	}
+}
+
+func GetStorageTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		logs.WithContext(r.Context()).Debug("GetStorageTokenHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		storageName := vars["storagename"]
+
+		storageObj, _, err := sh.Store.GetStorageClone(r.Context(), projectId, storageName, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		authNameI, err := storageObj.GetAttribute("auth_name")
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		authName, _ := authNameI.(string)
+		if authName == "" {
+			err = errors.New("storage has no auth_name configured; only IdP-backed storages support gettoken")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		baseUrl := os.Getenv("ERUAUTH_BASEURL")
+		if baseUrl == "" {
+			err = errors.New("ERUAUTH_BASEURL env not set")
+			server_handlers.FormatResponse(w, 500)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		url := fmt.Sprintf("%s/%s/%s/gettoken", strings.TrimRight(baseUrl, "/"), projectId, authName)
+		headers := http.Header{}
+		headers.Set("Content-Type", "application/json")
+		res, _, _, status, err := utils.CallHttp(r.Context(), http.MethodGet, url, headers, map[string]string{}, nil, map[string]string{}, nil)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(fmt.Sprintf("eruauth gettoken failed (status %d): %s", status, err.Error()))
+			server_handlers.FormatResponse(w, http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(res)
 	}
 }

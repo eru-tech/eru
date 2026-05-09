@@ -45,6 +45,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodGet).Path("/{project}/datasource/defaultdriverconfig/{dbtype}").HandlerFunc(module_handlers.DefaultDriverConfigHandler())
 	storeRouter.Methods(http.MethodGet).Path("/{project}/datasource/defaultotherdbconfig/{dbtype}").HandlerFunc(module_handlers.DefaultOtherDBConfigHandler())
 	storeRouter.Methods(http.MethodGet).Path("/{project}/datasource/defaultdbsecurityrules/{dbtype}").HandlerFunc(module_handlers.DefaultDBSecurityRulesHandler())
+	storeRouter.Methods(http.MethodGet).Path("/{project}/datasource/defaultreadpolicy/{dbtype}").HandlerFunc(module_handlers.DefaultReadPolicyHandler())
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/datasource/save/{dbalias}").HandlerFunc(module_handlers.ProjectDataSourceSaveHandler(sh))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/datasource/remove/{dbalias}").HandlerFunc(module_handlers.ProjectDataSourceRemoveHandler(sh))

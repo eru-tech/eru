@@ -9,10 +9,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"strings"
-	"sync"
-	"time"
 
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -29,12 +26,7 @@ const (
 type GdriveStorage struct {
 	Storage
 	AuthName     string `json:"auth_name" eru:"required"`
-	RefreshToken string `json:"refresh_token" eru:"required"`
 	RootFolderId string `json:"root_folder_id"`
-
-	tokenMu     sync.Mutex
-	accessToken string
-	expiresAt   time.Time
 }
 
 func (g *GdriveStorage) GetAttribute(attributeName string) (interface{}, error) {
@@ -72,57 +64,39 @@ func (g *GdriveStorage) Init(ctx context.Context) error {
 	return nil
 }
 
-func (g *GdriveStorage) ensureAccessToken(ctx context.Context) (string, error) {
-	g.tokenMu.Lock()
-	defer g.tokenMu.Unlock()
-	if g.accessToken != "" && time.Until(g.expiresAt) > 5*time.Minute {
-		return g.accessToken, nil
-	}
+func (g *GdriveStorage) getAccessToken(ctx context.Context) (string, error) {
 	if g.AuthName == "" {
 		return "", errors.New("auth_name is required for GDRIVE storage")
 	}
-	if g.RefreshToken == "" {
-		return "", errors.New("refresh_token is required for GDRIVE storage")
-	}
 	projectId, _ := ctx.Value("projectId").(string)
 	if projectId == "" {
-		return "", errors.New("projectId not found in context for GDRIVE token refresh")
+		return "", errors.New("projectId not found in context")
 	}
-	baseUrl := os.Getenv("ERUAUTH_BASEURL")
+	baseUrl, _ := ctx.Value("eruauthbaseurl").(string)
 	if baseUrl == "" {
-		return "", errors.New("ERUAUTH_BASEURL env not set")
+		return "", errors.New("eruauthbaseurl not found in context")
 	}
-	url := fmt.Sprintf("%s/%s/%s/idptoken/renew", strings.TrimRight(baseUrl, "/"), projectId, g.AuthName)
+	url := fmt.Sprintf("%s/%s/%s/gettoken", strings.TrimRight(baseUrl, "/"), projectId, g.AuthName)
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
-	body := map[string]interface{}{"refresh_token": g.RefreshToken}
-	res, _, _, statusCode, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, nil, map[string]string{}, body)
+	res, _, _, statusCode, err := utils.CallHttp(ctx, http.MethodGet, url, headers, map[string]string{}, nil, map[string]string{}, nil)
 	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("idptoken renew failed (status %d): %s", statusCode, err.Error()))
+		logs.WithContext(ctx).Error(fmt.Sprintf("gettoken call failed (status %d): %s", statusCode, err.Error()))
 		return "", err
 	}
 	resMap, ok := res.(map[string]interface{})
 	if !ok {
-		return "", errors.New("idptoken response is not an object")
+		return "", errors.New("gettoken response is not an object")
 	}
 	at, _ := resMap["access_token"].(string)
 	if at == "" {
-		return "", errors.New("idptoken response missing access_token")
+		return "", errors.New("gettoken response missing access_token")
 	}
-	expSec := 3600.0
-	if v, ok := resMap["expires_in"].(float64); ok && v > 0 {
-		expSec = v
-	}
-	if rt, ok := resMap["refresh_token"].(string); ok && rt != "" {
-		g.RefreshToken = rt
-	}
-	g.accessToken = at
-	g.expiresAt = time.Now().Add(time.Duration(expSec) * time.Second)
 	return at, nil
 }
 
 func (g *GdriveStorage) driveCall(ctx context.Context, method, fullUrl string, headers http.Header, params map[string]string, postBody interface{}) (interface{}, http.Header, int, error) {
-	tok, err := g.ensureAccessToken(ctx)
+	tok, err := g.getAccessToken(ctx)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -130,18 +104,8 @@ func (g *GdriveStorage) driveCall(ctx context.Context, method, fullUrl string, h
 		headers = http.Header{}
 	}
 	headers.Set("Authorization", "Bearer "+tok)
+	headers.Set("Content-Type", "application/json")
 	res, respHeaders, _, status, err := utils.CallHttp(ctx, method, fullUrl, headers, map[string]string{}, nil, params, postBody)
-	if err != nil && status == http.StatusUnauthorized {
-		g.tokenMu.Lock()
-		g.accessToken = ""
-		g.tokenMu.Unlock()
-		tok, terr := g.ensureAccessToken(ctx)
-		if terr != nil {
-			return nil, nil, status, terr
-		}
-		headers.Set("Authorization", "Bearer "+tok)
-		res, respHeaders, _, status, err = utils.CallHttp(ctx, method, fullUrl, headers, map[string]string{}, nil, params, postBody)
-	}
 	return res, respHeaders, status, err
 }
 
@@ -271,7 +235,7 @@ func joinDocId(folderPath, fileName string) string {
 }
 
 func (g *GdriveStorage) uploadBytes(ctx context.Context, parentId, fileName string, data []byte, contentType string) (string, error) {
-	tok, err := g.ensureAccessToken(ctx)
+	tok, err := g.getAccessToken(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -371,7 +335,7 @@ func (g *GdriveStorage) DownloadFile(ctx context.Context, folderPath string, fil
 	if fileId == "" {
 		return nil, fmt.Errorf("file not found: %s", joinDocId(folderPath, fileName))
 	}
-	tok, err := g.ensureAccessToken(ctx)
+	tok, err := g.getAccessToken(ctx)
 	if err != nil {
 		return nil, err
 	}

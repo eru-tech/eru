@@ -11,12 +11,14 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/eru-tech/eru/eru-functions/functions"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-secret-manager/kms"
+	storepkg "github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
@@ -26,8 +28,9 @@ type AuthI interface {
 	//Login(req *http.Request) (res interface{}, cookies []*http.Cookie, err error)
 	SetAuthDb(authDbI AuthDbI)
 	GetAuthDb() (authDbI AuthDbI)
-	Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error)
-	IdpToken(ctx context.Context, idpToken LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error)
+	Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, s storepkg.StoreI) (identity Identity, loginSuccess LoginSuccess, err error)
+	IdpToken(ctx context.Context, idpToken LoginPostBody, projectId string, withTokens bool, renewFlag bool, s storepkg.StoreI) (loginResI interface{}, err error)
+	GetToken(ctx context.Context, projectId string, s storepkg.StoreI) (accessToken string, err error)
 	Register(ctx context.Context, registerUser RegisterUser, projectId string) (identity Identity, loginSuccess LoginSuccess, err error)
 	RemoveUser(ctx context.Context, removeUser RemoveUser) (err error)
 	Logout(ctx context.Context, req *http.Request) (res interface{}, resStatusCode int, err error)
@@ -366,9 +369,8 @@ func (auth *Auth) PerformPreSaveTask(ctx context.Context) (err error) {
 	return err
 }
 func (auth *Auth) PerformPreDeleteTask(ctx context.Context) (err error) {
-	err = errors.New("PerformPreDeleteTask Method not implemented")
-	logs.WithContext(ctx).Error(err.Error())
-	return err
+	logs.WithContext(ctx).Warn("PerformPreDeleteTask Method not implemented")
+	return nil
 }
 
 func (auth *Auth) GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error) {
@@ -534,13 +536,13 @@ func (auth *Auth) makeTokens(ctx context.Context, identity Identity) (eruTokens 
 	return
 }
 
-func (auth *Auth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
+func (auth *Auth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, s storepkg.StoreI) (identity Identity, loginSuccess LoginSuccess, err error) {
 	err = errors.New("Login Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return Identity{}, LoginSuccess{}, err
 }
 
-func (auth *Auth) IdpToken(ctx context.Context, idpToken LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error) {
+func (auth *Auth) IdpToken(ctx context.Context, idpToken LoginPostBody, projectId string, withTokens bool, renewFlag bool, s storepkg.StoreI) (loginResI interface{}, err error) {
 	err = errors.New("IdpToken Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err
@@ -693,5 +695,131 @@ func (auth *Auth) RemoveUser(ctx context.Context, removeUser RemoveUser) (err er
 func (auth *Auth) SetKms(ctx context.Context, kmsObj kms.KmsStoreI) (err error) {
 	auth.KmsKey = kmsObj
 	logs.WithContext(ctx).Info(fmt.Sprint(auth.KmsKey))
+	return
+}
+
+func (auth *Auth) GetToken(ctx context.Context, projectId string, s storepkg.StoreI) (accessToken string, err error) {
+	err = errors.New("GetToken Method not implemented")
+	logs.WithContext(ctx).Error(err.Error())
+	return
+}
+
+var tokenRefreshMu sync.Map
+
+func tokenLockFor(projectId string, authName string) *sync.Mutex {
+	key := fmt.Sprint(projectId, "/", authName)
+	if v, ok := tokenRefreshMu.Load(key); ok {
+		return v.(*sync.Mutex)
+	}
+	nm := &sync.Mutex{}
+	actual, _ := tokenRefreshMu.LoadOrStore(key, nm)
+	return actual.(*sync.Mutex)
+}
+
+func parseIdpTokens(res interface{}) (accessToken string, refreshToken string, expiresIn int64, ok bool) {
+	m, mok := res.(map[string]interface{})
+	if !mok {
+		return "", "", 0, false
+	}
+	ok = true
+	if at, atOk := m["access_token"].(string); atOk {
+		accessToken = at
+	}
+	if rt, rtOk := m["refresh_token"].(string); rtOk {
+		refreshToken = rt
+	}
+	switch ev := m["expires_in"].(type) {
+	case float64:
+		expiresIn = int64(ev)
+	case int64:
+		expiresIn = ev
+	case int:
+		expiresIn = int64(ev)
+	case string:
+		if v, perr := strconv.ParseInt(ev, 10, 64); perr == nil {
+			expiresIn = v
+		}
+	}
+	return
+}
+
+func tokenSecretKeys(authName string) (accessKey, refreshKey, expiryKey string) {
+	return authName + "_access_token", authName + "_refresh_token", authName + "_token_expiry"
+}
+
+func persistIdpTokens(ctx context.Context, s storepkg.StoreI, projectId string, authName string, accessToken string, refreshToken string, expiresIn int64) (err error) {
+	if s == nil {
+		err = errors.New("nil store passed to persistIdpTokens")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if authName == "" {
+		err = errors.New("empty authName passed to persistIdpTokens")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	accessKey, refreshKey, expiryKey := tokenSecretKeys(authName)
+	if accessToken != "" {
+		if err = s.SaveSecret(ctx, projectId, storepkg.Secrets{Key: accessKey, SecretValue: accessToken}, s); err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+	}
+	if refreshToken != "" {
+		if err = s.SaveSecret(ctx, projectId, storepkg.Secrets{Key: refreshKey, SecretValue: refreshToken}, s); err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+	}
+	if expiresIn > 0 {
+		exp := time.Now().UTC().Add(time.Duration(expiresIn) * time.Second).Format(time.RFC3339)
+		if err = s.SaveSecret(ctx, projectId, storepkg.Secrets{Key: expiryKey, SecretValue: exp}, s); err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+	}
+	return nil
+}
+
+func cachedAccessTokenIfValid(ctx context.Context, s storepkg.StoreI, projectId string, authName string) (accessToken string, valid bool) {
+	if s == nil || authName == "" {
+		return "", false
+	}
+	accessKey, _, expiryKey := tokenSecretKeys(authName)
+	expStr, err := s.GetProjectSecret(ctx, projectId, expiryKey)
+	if err != nil || expStr == "" {
+		return "", false
+	}
+	t, err := time.Parse(time.RFC3339, expStr)
+	if err != nil {
+		return "", false
+	}
+	if time.Now().UTC().Add(5 * time.Minute).After(t) {
+		return "", false
+	}
+	at, err := s.GetProjectSecret(ctx, projectId, accessKey)
+	if err != nil || at == "" {
+		return "", false
+	}
+	return at, true
+}
+
+func storedRefreshToken(ctx context.Context, s storepkg.StoreI, projectId string, authName string) (refreshToken string, err error) {
+	if s == nil {
+		err = errors.New("nil store passed to storedRefreshToken")
+		return
+	}
+	if authName == "" {
+		err = errors.New("empty authName passed to storedRefreshToken")
+		return
+	}
+	_, refreshKey, _ := tokenSecretKeys(authName)
+	refreshToken, err = s.GetProjectSecret(ctx, projectId, refreshKey)
+	if err != nil {
+		return
+	}
+	if refreshToken == "" {
+		err = errors.New("no refresh token stored; bootstrap idptoken first")
+	}
 	return
 }

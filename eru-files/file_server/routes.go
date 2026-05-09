@@ -36,6 +36,7 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	// functions for file events
 	fileRouter := serverRouter.PathPrefix("/files/{project}").Subrouter()
+	fileRouter.Methods(http.MethodGet).Path("/{storagename}/gettoken").HandlerFunc(file_handlers.GetStorageTokenHandler(sh))
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/upload").HandlerFunc(file_handlers.FileUploadHandler(sh))
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/uploadb64").HandlerFunc(file_handlers.FileUploadHandlerB64(sh))
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/uploadfromurl").HandlerFunc(file_handlers.FileUploadHandlerFromUrl(sh))
