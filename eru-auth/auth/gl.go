@@ -14,6 +14,7 @@ import (
 	"github.com/eru-tech/eru/eru-crypto/jwt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	storepkg "github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 )
@@ -26,8 +27,9 @@ type GlAuth struct {
 
 type GlConfig struct {
 	AuthConfig
-	Prompt     string `json:"prompt" eru:"required"`
-	AccessType string `json:"access_type"`
+	Prompt       string `json:"prompt" eru:"required"`
+	AccessType   string `json:"access_type"`
+	PersistToken bool   `json:"persist_token"`
 }
 
 func (glAuth *GlAuth) PerformPreSaveTask(ctx context.Context) (err error) {
@@ -41,7 +43,7 @@ func (glAuth *GlAuth) PerformPreSaveTask(ctx context.Context) (err error) {
 	return
 }
 
-func (glAuth *GlAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
+/* func (glAuth *GlAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
 	logs.WithContext(ctx).Debug("PerformPreDeleteTask - Start")
 	for _, v := range glAuth.Hydra.HydraClients {
 		err = glAuth.Hydra.RemoveHydraClient(ctx, v.ClientId)
@@ -50,7 +52,7 @@ func (glAuth *GlAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
 		}
 	}
 	return
-}
+} */
 
 func (glAuth *GlAuth) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
 	logs.WithContext(ctx).Debug("MakeFromJson - Start")
@@ -83,7 +85,7 @@ func (glAuth *GlAuth) GetUrl(ctx context.Context, state string) (urlStr string, 
 	return
 }
 
-func (glAuth *GlAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error) {
+func (glAuth *GlAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, renewFlag bool, s storepkg.StoreI) (loginResI interface{}, err error) {
 	logs.WithContext(ctx).Debug("Login - Start")
 
 	headers := http.Header{}
@@ -107,10 +109,50 @@ func (glAuth *GlAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody,
 		logs.WithContext(ctx).Error(fmt.Sprint(map[string]interface{}{"request_id": loginPostBody.IdpRequestId, "error": fmt.Sprint(loginErr)}))
 		return nil, errors.New("something went wrong - please try again")
 	}
+	if glAuth.GlConfig.PersistToken {
+		if at, rt, ei, ok := parseIdpTokens(loginRes); ok {
+			if perr := persistIdpTokens(ctx, s, projectId, glAuth.AuthName, at, rt, ei); perr != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("persistIdpTokens: ", perr.Error()))
+			}
+		}
+	}
 	return loginRes, nil
 }
 
-func (glAuth *GlAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
+func (glAuth *GlAuth) GetToken(ctx context.Context, projectId string, s storepkg.StoreI) (accessToken string, err error) {
+	logs.WithContext(ctx).Debug("GetToken - Start")
+	if !glAuth.GlConfig.PersistToken {
+		err = errors.New("persist_token not enabled for this auth config")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	mu := tokenLockFor(projectId, glAuth.AuthName)
+	mu.Lock()
+	defer mu.Unlock()
+
+	if at, ok := cachedAccessTokenIfValid(ctx, s, projectId, glAuth.AuthName); ok {
+		return at, nil
+	}
+	rt, rerr := storedRefreshToken(ctx, s, projectId, glAuth.AuthName)
+	if rerr != nil {
+		err = rerr
+		return
+	}
+	res, ierr := glAuth.IdpToken(ctx, LoginPostBody{RefreshToken: rt}, projectId, false, true, s)
+	if ierr != nil {
+		err = ierr
+		return
+	}
+	at, _, _, ok := parseIdpTokens(res)
+	if !ok || at == "" {
+		err = errors.New("refresh did not return an access_token")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return at, nil
+}
+
+func (glAuth *GlAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, s storepkg.StoreI) (identity Identity, loginSuccess LoginSuccess, err error) {
 	logs.WithContext(ctx).Debug("Login - Start")
 
 	headers := http.Header{}
@@ -128,6 +170,14 @@ func (glAuth *GlAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 	if loginErr != nil {
 		logs.WithContext(ctx).Error(fmt.Sprint(map[string]interface{}{"request_id": loginPostBody.IdpRequestId, "error": fmt.Sprint(loginErr)}))
 		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+	}
+
+	if glAuth.GlConfig.PersistToken {
+		if at, rt, ei, ok := parseIdpTokens(loginRes); ok {
+			if perr := persistIdpTokens(ctx, s, projectId, glAuth.AuthName, at, rt, ei); perr != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("persistIdpTokens: ", perr.Error()))
+			}
+		}
 	}
 
 	idToken := ""

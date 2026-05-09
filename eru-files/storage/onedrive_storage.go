@@ -9,10 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
-	"sync"
-	"time"
 
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -27,12 +24,7 @@ const (
 type OneDriveStorage struct {
 	Storage
 	AuthName     string `json:"auth_name" eru:"required"`
-	RefreshToken string `json:"refresh_token" eru:"required"`
 	RootFolderId string `json:"root_folder_id"`
-
-	tokenMu     sync.Mutex
-	accessToken string
-	expiresAt   time.Time
 }
 
 func (o *OneDriveStorage) GetAttribute(attributeName string) (interface{}, error) {
@@ -70,57 +62,39 @@ func (o *OneDriveStorage) Init(ctx context.Context) error {
 	return nil
 }
 
-func (o *OneDriveStorage) ensureAccessToken(ctx context.Context) (string, error) {
-	o.tokenMu.Lock()
-	defer o.tokenMu.Unlock()
-	if o.accessToken != "" && time.Until(o.expiresAt) > 5*time.Minute {
-		return o.accessToken, nil
-	}
+func (o *OneDriveStorage) getAccessToken(ctx context.Context) (string, error) {
 	if o.AuthName == "" {
 		return "", errors.New("auth_name is required for ONEDRIVE storage")
 	}
-	if o.RefreshToken == "" {
-		return "", errors.New("refresh_token is required for ONEDRIVE storage")
-	}
 	projectId, _ := ctx.Value("projectId").(string)
 	if projectId == "" {
-		return "", errors.New("projectId not found in context for ONEDRIVE token refresh")
+		return "", errors.New("projectId not found in context")
 	}
-	baseUrl := os.Getenv("ERUAUTH_BASEURL")
+	baseUrl, _ := ctx.Value("eruauthbaseurl").(string)
 	if baseUrl == "" {
-		return "", errors.New("ERUAUTH_BASEURL env not set")
+		return "", errors.New("eruauthbaseurl not found in context")
 	}
-	renewUrl := fmt.Sprintf("%s/%s/%s/idptoken/renew", strings.TrimRight(baseUrl, "/"), projectId, o.AuthName)
+	getUrl := fmt.Sprintf("%s/%s/%s/gettoken", strings.TrimRight(baseUrl, "/"), projectId, o.AuthName)
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
-	body := map[string]interface{}{"refresh_token": o.RefreshToken}
-	res, _, _, statusCode, err := utils.CallHttp(ctx, http.MethodPost, renewUrl, headers, map[string]string{}, nil, map[string]string{}, body)
+	res, _, _, statusCode, err := utils.CallHttp(ctx, http.MethodGet, getUrl, headers, map[string]string{}, nil, map[string]string{}, nil)
 	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("idptoken renew failed (status %d): %s", statusCode, err.Error()))
+		logs.WithContext(ctx).Error(fmt.Sprintf("gettoken call failed (status %d): %s", statusCode, err.Error()))
 		return "", err
 	}
 	resMap, ok := res.(map[string]interface{})
 	if !ok {
-		return "", errors.New("idptoken response is not an object")
+		return "", errors.New("gettoken response is not an object")
 	}
 	at, _ := resMap["access_token"].(string)
 	if at == "" {
-		return "", errors.New("idptoken response missing access_token")
+		return "", errors.New("gettoken response missing access_token")
 	}
-	expSec := 3600.0
-	if v, ok := resMap["expires_in"].(float64); ok && v > 0 {
-		expSec = v
-	}
-	if rt, ok := resMap["refresh_token"].(string); ok && rt != "" {
-		o.RefreshToken = rt
-	}
-	o.accessToken = at
-	o.expiresAt = time.Now().Add(time.Duration(expSec) * time.Second)
 	return at, nil
 }
 
 func (o *OneDriveStorage) graphCall(ctx context.Context, method, fullUrl string, headers http.Header, params map[string]string, postBody interface{}) (interface{}, http.Header, int, error) {
-	tok, err := o.ensureAccessToken(ctx)
+	tok, err := o.getAccessToken(ctx)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -129,17 +103,6 @@ func (o *OneDriveStorage) graphCall(ctx context.Context, method, fullUrl string,
 	}
 	headers.Set("Authorization", "Bearer "+tok)
 	res, respHeaders, _, status, err := utils.CallHttp(ctx, method, fullUrl, headers, map[string]string{}, nil, params, postBody)
-	if err != nil && status == http.StatusUnauthorized {
-		o.tokenMu.Lock()
-		o.accessToken = ""
-		o.tokenMu.Unlock()
-		tok, terr := o.ensureAccessToken(ctx)
-		if terr != nil {
-			return nil, nil, status, terr
-		}
-		headers.Set("Authorization", "Bearer "+tok)
-		res, respHeaders, _, status, err = utils.CallHttp(ctx, method, fullUrl, headers, map[string]string{}, nil, params, postBody)
-	}
 	return res, respHeaders, status, err
 }
 
@@ -255,7 +218,7 @@ func buildOneDriveFileName(docType, baseName string) string {
 }
 
 func (o *OneDriveStorage) uploadBytes(ctx context.Context, parentId, fileName string, data []byte, contentType string) (string, error) {
-	tok, err := o.ensureAccessToken(ctx)
+	tok, err := o.getAccessToken(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -344,7 +307,7 @@ func (o *OneDriveStorage) DownloadFile(ctx context.Context, folderPath string, f
 	if isFolder {
 		return nil, fmt.Errorf("path is a folder, not a file: %s", joinDocId(folderPath, fileName))
 	}
-	tok, err := o.ensureAccessToken(ctx)
+	tok, err := o.getAccessToken(ctx)
 	if err != nil {
 		return nil, err
 	}

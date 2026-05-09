@@ -15,6 +15,7 @@ import (
 	erupkce "github.com/eru-tech/eru/eru-crypto/pkce"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	storepkg "github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 )
@@ -27,6 +28,7 @@ type MsAuth struct {
 
 type MsConfig struct {
 	AuthConfig
+	PersistToken bool `json:"persist_token"`
 }
 
 func (msAuth *MsAuth) PerformPreSaveTask(ctx context.Context) (err error) {
@@ -40,7 +42,7 @@ func (msAuth *MsAuth) PerformPreSaveTask(ctx context.Context) (err error) {
 	return
 }
 
-func (msAuth *MsAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
+/* func (msAuth *MsAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
 	logs.WithContext(ctx).Debug("PerformPreDeleteTask - Start")
 	for _, v := range msAuth.Hydra.HydraClients {
 		err = msAuth.Hydra.RemoveHydraClient(ctx, v.ClientId)
@@ -49,7 +51,7 @@ func (msAuth *MsAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
 		}
 	}
 	return
-}
+} */
 
 func (msAuth *MsAuth) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
 	logs.WithContext(ctx).Debug("MakeFromJson - Start")
@@ -88,7 +90,7 @@ func (msAuth *MsAuth) GetUrl(ctx context.Context, state string) (urlStr string, 
 	return
 }
 
-func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
+func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, s storepkg.StoreI) (identity Identity, loginSuccess LoginSuccess, err error) {
 	logs.WithContext(ctx).Debug("Login - Start")
 
 	headers := http.Header{}
@@ -107,6 +109,14 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 	if loginErr != nil {
 		logs.WithContext(ctx).Error(fmt.Sprint(map[string]interface{}{"request_id": loginPostBody.IdpRequestId, "error": fmt.Sprint(loginErr)}))
 		return Identity{}, LoginSuccess{}, errors.New("something went wrong - please try again")
+	}
+
+	if msAuth.MsConfig.PersistToken {
+		if at, rt, ei, ok := parseIdpTokens(loginRes); ok {
+			if perr := persistIdpTokens(ctx, s, projectId, msAuth.AuthName, at, rt, ei); perr != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("persistIdpTokens: ", perr.Error()))
+			}
+		}
 	}
 
 	idToken := ""
@@ -341,7 +351,7 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 	return identity, LoginSuccess{}, nil
 }
 
-func (msAuth *MsAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error) {
+func (msAuth *MsAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, renewFlag bool, s storepkg.StoreI) (loginResI interface{}, err error) {
 	logs.WithContext(ctx).Debug("IdpToken - Start")
 
 	headers := http.Header{}
@@ -366,7 +376,47 @@ func (msAuth *MsAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody,
 		logs.WithContext(ctx).Error(fmt.Sprint(map[string]interface{}{"request_id": loginPostBody.IdpRequestId, "error": fmt.Sprint(loginErr)}))
 		return nil, errors.New("something went wrong - please try again")
 	}
+	if msAuth.MsConfig.PersistToken {
+		if at, rt, ei, ok := parseIdpTokens(loginRes); ok {
+			if perr := persistIdpTokens(ctx, s, projectId, msAuth.AuthName, at, rt, ei); perr != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("persistIdpTokens: ", perr.Error()))
+			}
+		}
+	}
 	return loginRes, nil
+}
+
+func (msAuth *MsAuth) GetToken(ctx context.Context, projectId string, s storepkg.StoreI) (accessToken string, err error) {
+	logs.WithContext(ctx).Debug("GetToken - Start")
+	if !msAuth.MsConfig.PersistToken {
+		err = errors.New("persist_token not enabled for this auth config")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	mu := tokenLockFor(projectId, msAuth.AuthName)
+	mu.Lock()
+	defer mu.Unlock()
+
+	if at, ok := cachedAccessTokenIfValid(ctx, s, projectId, msAuth.AuthName); ok {
+		return at, nil
+	}
+	rt, rerr := storedRefreshToken(ctx, s, projectId, msAuth.AuthName)
+	if rerr != nil {
+		err = rerr
+		return
+	}
+	res, ierr := msAuth.IdpToken(ctx, LoginPostBody{RefreshToken: rt}, projectId, false, true, s)
+	if ierr != nil {
+		err = ierr
+		return
+	}
+	at, _, _, ok := parseIdpTokens(res)
+	if !ok || at == "" {
+		err = errors.New("refresh did not return an access_token")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return at, nil
 }
 
 func (msAuth *MsAuth) GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error) {

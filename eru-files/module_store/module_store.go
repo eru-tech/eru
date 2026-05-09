@@ -65,6 +65,7 @@ type ModuleStoreI interface {
 	GetProjectList(ctx context.Context) []map[string]interface{}
 	SaveStorage(ctx context.Context, storageObj storage.StorageI, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveStorage(ctx context.Context, storageName string, projectId string, cloudDelete bool, forceDelete bool, realStore ModuleStoreI) error
+	GetStorageClone(ctx context.Context, projectId string, storageName string, s ModuleStoreI) (storageObjClone storage.StorageI, prj *file_model.Project, err error)
 	GenerateRsaKeyPair(ctx context.Context, projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (rsaKeyPair erursa.RsaKeyPair, err error)
 	GenerateAesKey(ctx context.Context, projectId string, keyPairName string, bits int, overwrite bool, realStore ModuleStoreI) (aesKey eruaes.AesKey, err error)
 	UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, fodlerPath string, s ModuleStoreI) (docId string, err error)
@@ -135,6 +136,7 @@ func (ms *ModuleStore) GenerateAesKey(ctx context.Context, projectId string, key
 func (ms *ModuleStore) SaveStorage(ctx context.Context, storageObj storage.StorageI, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveStorage - Start")
 	ctx = context.WithValue(ctx, "projectId", projectId)
+	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	if persist {
 		realStore.GetMutex().Lock()
 		defer realStore.GetMutex().Unlock()
@@ -142,6 +144,27 @@ func (ms *ModuleStore) SaveStorage(ctx context.Context, storageObj storage.Stora
 	prj, err := ms.GetProjectConfig(ctx, projectId)
 	if err != nil {
 		return err
+	}
+
+	if nameI, nameErr := storageObj.GetAttribute("storage_name"); nameErr == nil {
+		if name, _ := nameI.(string); name != "" {
+			if existing, ok := prj.Storages[name]; ok {
+				switch ns := storageObj.(type) {
+				case *storage.GdriveStorage:
+					if ns.RootFolderId == "" {
+						if es, ok := existing.(*storage.GdriveStorage); ok && es.RootFolderId != "" {
+							ns.RootFolderId = es.RootFolderId
+						}
+					}
+				case *storage.OneDriveStorage:
+					if ns.RootFolderId == "" {
+						if es, ok := existing.(*storage.OneDriveStorage); ok && es.RootFolderId != "" {
+							ns.RootFolderId = es.RootFolderId
+						}
+					}
+				}
+			}
+		}
 	}
 
 	if persist == true {
@@ -227,6 +250,7 @@ func (ms *ModuleStore) GetStorageObjClone(ctx context.Context, projectId string,
 func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, s ModuleStoreI) (docId string, err error) {
 	logs.WithContext(ctx).Info("UploadFile - Start")
 	ctx = context.WithValue(ctx, "projectId", projectId)
+	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
 		return
@@ -256,6 +280,7 @@ func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storage
 func (ms *ModuleStore) UploadFileB64(ctx context.Context, projectId string, storageName string, file []byte, fileName string, docType string, folderPath string, s ModuleStoreI) (docId string, err error) {
 	logs.WithContext(ctx).Debug("UploadFileB64 - Start")
 	ctx = context.WithValue(ctx, "projectId", projectId)
+	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
 		return
@@ -393,6 +418,7 @@ func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, 
 func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (file []byte, mimeType string, err error) {
 	logs.WithContext(ctx).Debug("DownloadFile - Start")
 	ctx = context.WithValue(ctx, "projectId", projectId)
+	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
 		return
@@ -499,6 +525,7 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 func (ms *ModuleStore) RemoveStorage(ctx context.Context, storageName string, projectId string, cloudDelete bool, forceDelete bool, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("RemoveStorage - Start")
 	ctx = context.WithValue(ctx, "projectId", projectId)
+	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
 	if prg, ok := ms.Projects[projectId]; ok {

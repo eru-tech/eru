@@ -831,6 +831,8 @@ func ToolCallbackHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("ToolCallbackHandler - Start")
 		ctx := context.WithValue(r.Context(), tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
 		ctx = context.WithValue(ctx, tools.RequestAuthorizationKey, r.Header.Get("Authorization"))
+		ctx = context.WithValue(ctx, "erufilesbaseurl", module_store.Erufilesbaseurl)
+		ctx = context.WithValue(ctx, "eruauthbaseurl", module_store.Eruauthbaseurl)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]
@@ -916,6 +918,7 @@ func ToolExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("ToolExecuteHandler - Start")
 		ctx := context.WithValue(r.Context(), "eruauthbaseurl", module_store.Eruauthbaseurl)
 		ctx = context.WithValue(ctx, "eruaiport", module_store.Eruaiport)
+		ctx = context.WithValue(ctx, "erufilesbaseurl", module_store.Erufilesbaseurl)
 		ctx = context.WithValue(ctx, tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
 
 		vars := mux.Vars(r)
@@ -980,6 +983,7 @@ func ToolWhatsAppEndpointExecuteHandler(sh *module_store.StoreHolder) http.Handl
 		logs.WithContext(r.Context()).Debug("ToolExecuteHandler - Start")
 		ctx := context.WithValue(r.Context(), "eruauthbaseurl", module_store.Eruauthbaseurl)
 		ctx = context.WithValue(ctx, "eruaiport", module_store.Eruaiport)
+		ctx = context.WithValue(ctx, "erufilesbaseurl", module_store.Erufilesbaseurl)
 		ctx = context.WithValue(ctx, tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
 		vars := mux.Vars(r)
 		projectId := vars["project"]

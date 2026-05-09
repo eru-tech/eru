@@ -524,7 +524,7 @@ func IdpTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		loginPostBody.CodeVerifier = msParams.CodeVerifier
 		loginPostBody.Nonce = msParams.Nonce
 
-		res, err := authObjI.IdpToken(ctx, loginPostBody, projectId, true, renewFlag)
+		res, err := authObjI.IdpToken(ctx, loginPostBody, projectId, true, renewFlag, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -534,6 +534,36 @@ func IdpTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(res)
 			return
 		}
+	}
+}
+
+func GetTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Info("GetTokenHandler - Start")
+		ctx := r.Context()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		authObjI, err := sh.Store.GetAuth(ctx, projectId, authName, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
+		}
+
+		accessToken, err := authObjI.GetToken(ctx, projectId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"access_token": accessToken})
 	}
 }
 
@@ -607,7 +637,7 @@ func LoginHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		loginPostBody.Nonce = msParams.Nonce
 		logs.WithContext(r.Context()).Info(fmt.Sprint("before login = ", loginPostBody))
 
-		res, tokens, err := authObjI.Login(ctx, loginPostBody, projectId, true)
+		res, tokens, err := authObjI.Login(ctx, loginPostBody, projectId, true, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

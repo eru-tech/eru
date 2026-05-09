@@ -26,6 +26,7 @@ var Erufuncbaseurl = "http://localhost:8083"
 var Eruauthbaseurl = "http://localhost:8085"
 var Eruqlbaseurl = "http://localhost:8087"
 var Eruaibaseurl = "http://localhost:8088"
+var Erufilesbaseurl = "http://localhost:8082"
 var Eruaiport = "8088"
 
 type StoreHolder struct {

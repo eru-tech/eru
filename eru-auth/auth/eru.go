@@ -15,6 +15,7 @@ import (
 	erusha "github.com/eru-tech/eru/eru-crypto/sha"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	storepkg "github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 )
@@ -239,7 +240,7 @@ func (eruAuth *EruAuth) PerformPreSaveTask(ctx context.Context) (err error) {
 	return
 }
 
-func (eruAuth *EruAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
+/* func (eruAuth *EruAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
 	logs.WithContext(ctx).Debug("PerformPreDeleteTask - Start")
 	for _, v := range eruAuth.Hydra.HydraClients {
 		err = eruAuth.Hydra.RemoveHydraClient(ctx, v.ClientId)
@@ -248,7 +249,7 @@ func (eruAuth *EruAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
 		}
 	}
 	return
-}
+} */
 
 func (eruAuth *EruAuth) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
 	logs.WithContext(ctx).Debug("MakeFromJson - Start")
@@ -472,7 +473,7 @@ func (eruAuth *EruAuth) UpdateUser(ctx context.Context, identity Identity, userI
 	return
 }
 
-func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
+func (eruAuth *EruAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, s storepkg.StoreI) (identity Identity, loginSuccess LoginSuccess, err error) {
 	logs.WithContext(ctx).Info("Login - Start")
 
 	loginQuery := models.Queries{}
