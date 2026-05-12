@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,6 +58,11 @@ func ProjectMyQuerySaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				logs.WithContext(r.Context()).Error(err.Error())
+				return
+			}
+			if strings.Contains(gqd.Query, "query IntrospectionQuery") {
+				server_handlers.FormatResponse(w, 200)
+				_ = json.NewEncoder(w).Encode(map[string]string{"message": "Query Introspection not implemented"})
 				return
 			}
 			err = sh.Store.SaveMyQuery(r.Context(), projectID, queryName, queryType, "", gqd.Query, gqd.Variables, sh.Store, "", gqd.SecurityRule, 0, false, false)
