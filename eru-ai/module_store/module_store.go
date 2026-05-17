@@ -726,7 +726,7 @@ func (ms *ModuleStore) GetAgentNames(ctx context.Context, projectId string, tena
 	logs.WithContext(ctx).Debug("GetAgentNames - Start")
 	if prj, ok := ms.Projects[projectId]; ok {
 		for _, tenant := range prj.Tenants {
-			if tenantId == "" || tenantId == tenant.TenantId {
+			if tenantId == "" || tenantId == tenant.TenantId || projectId == tenant.TenantId {
 				for agentName := range tenant.Agents {
 					agentNames = append(agentNames, agentName)
 				}
@@ -745,7 +745,7 @@ func (ms *ModuleStore) GetToolNames(ctx context.Context, projectId string, tenan
 
 	if prj, ok := ms.Projects[projectId]; ok {
 		for _, tenant := range prj.Tenants {
-			if tenantId == "" || tenantId == tenant.TenantId {
+			if tenantId == "" || tenantId == tenant.TenantId || projectId == tenant.TenantId {
 				for toolName := range tenant.Tools {
 					toolNames = append(toolNames, toolName)
 				}
