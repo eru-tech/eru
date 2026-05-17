@@ -840,9 +840,13 @@ func (ms *ModuleStore) GetVectorStore(ctx context.Context, projectId string, ten
 			return
 		}
 		if vs, ok := prj.Tenants[tenantId].VectorStores[vectorStoreName]; !ok {
-			err = errors.New("VectorStore " + vectorStoreName + " does not exists")
-			logs.WithContext(ctx).Info(err.Error())
-			return
+			if vs, ok = prj.Tenants[projectId].VectorStores[vectorStoreName]; !ok {
+				err = errors.New("VectorStore " + vectorStoreName + " does not exists")
+				logs.WithContext(ctx).Info(err.Error())
+				return
+			} else {
+				return vs, nil
+			}
 		} else {
 			return vs, nil
 		}
