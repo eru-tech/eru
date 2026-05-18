@@ -27,6 +27,7 @@ import (
 const (
 	GlBaseUrl              = "https://gmail.googleapis.com"
 	INSERT_FUNC_ASYNC_GL   = "insert into eruai_cb_glemail (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
+	SELECT_LAST_HISTORY_GL = "select request_body->'notification'->>'history_id' as history_id from eruai_cb_glemail where project_id = $1 and tenant_id = $2 and request_body->'notification'->>'email_address' = $3 order by created_date desc limit 1"
 )
 
 var (
@@ -221,6 +222,7 @@ func (glEmailTool *GlEmailTool) GetActionsList() []tools.ActionInfo {
 		{Name: StopAutoRenew},
 		{Name: StopSubscription},
 		{Name: ReadConversation},
+		{Name: ReadHistoryRange},
 	}
 }
 
@@ -264,6 +266,8 @@ func (glEmailTool *GlEmailTool) Execute(ctx context.Context, projectId string, t
 		toolResult, toolRequest, persistStore, err = glEmailTool.StopSubscription(ctx, projectId, tenantId, params)
 	case ReadConversation:
 		toolResult, toolRequest, persistStore, err = glEmailTool.ReadConversation(ctx, params)
+	case ReadHistoryRange:
+		toolResult, toolRequest, persistStore, err = glEmailTool.ReadHistoryRange(ctx, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -439,6 +443,110 @@ func (glEmailTool *GlEmailTool) ReadMessage(ctx context.Context, params map[stri
 		}
 	}
 	return toolResult, map[string]interface{}{"query": map[string]interface{}{"message_id": messageId, "format": format, "attachments": expandAttachments}}, false, nil
+}
+
+func (glEmailTool *GlEmailTool) fetchEmailsSince(ctx context.Context, startHistoryId string, maxHistoryId uint64) (mails []map[string]interface{}, latestHistoryId string, err error) {
+	logs.WithContext(ctx).Debug("fetchEmailsSince - Start")
+	if startHistoryId == "" {
+		err = errors.New("startHistoryId is required")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, "", err
+	}
+	historyUrl := fmt.Sprint(GlBaseUrl, "/gmail/v1/users/me/history")
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", glEmailTool.EmailAccount.AccessToken))
+	headers.Set("Content-Type", "application/json")
+
+	seen := make(map[string]bool)
+	pageToken := ""
+	bounded := false
+	for {
+		qParams := map[string]string{
+			"startHistoryId": startHistoryId,
+			"historyTypes":   "messageAdded",
+		}
+		if pageToken != "" {
+			qParams["pageToken"] = pageToken
+		}
+		res, _, _, _, callErr := utils.CallHttp(ctx, http.MethodGet, historyUrl, headers, map[string]string{}, []*http.Cookie{}, qParams, nil)
+		if callErr != nil {
+			logs.WithContext(ctx).Error(callErr.Error())
+			return nil, latestHistoryId, callErr
+		}
+		resBytes, _ := json.Marshal(res)
+		var list GlHistoryListResponse
+		if uErr := json.Unmarshal(resBytes, &list); uErr != nil {
+			logs.WithContext(ctx).Error(uErr.Error())
+			return nil, latestHistoryId, uErr
+		}
+		if list.HistoryId != "" {
+			latestHistoryId = list.HistoryId
+		}
+
+		for _, h := range list.History {
+			if maxHistoryId > 0 {
+				if recId, pErr := strconv.ParseUint(h.Id, 10, 64); pErr == nil && recId > maxHistoryId {
+					bounded = true
+					continue
+				}
+			}
+			for _, ma := range h.MessagesAdded {
+				if seen[ma.Message.Id] {
+					continue
+				}
+				seen[ma.Message.Id] = true
+				readMsg, _, _, readErr := glEmailTool.ReadMessage(ctx, map[string]interface{}{"message_id": ma.Message.Id})
+				if readErr != nil {
+					logs.WithContext(ctx).Error(readErr.Error())
+					continue
+				}
+				mails = append(mails, readMsg)
+			}
+		}
+
+		if bounded || list.NextPageToken == "" {
+			break
+		}
+		pageToken = list.NextPageToken
+	}
+	return mails, latestHistoryId, nil
+}
+
+func (glEmailTool *GlEmailTool) ReadHistoryRange(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("ReadHistoryRange Execute - Start")
+	fromVal, fromOk := params["from_history_id"]
+	if !fromOk || fromVal == nil {
+		err = errors.New("from_history_id is required")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	fromStr := strings.TrimSpace(fmt.Sprint(fromVal))
+	if fromStr == "" {
+		err = errors.New("from_history_id is required")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	var maxHid uint64
+	if toVal, ok := params["to_history_id"]; ok && toVal != nil {
+		toStr := strings.TrimSpace(fmt.Sprint(toVal))
+		if toStr != "" {
+			maxHid, err = strconv.ParseUint(toStr, 10, 64)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, nil, false, fmt.Errorf("to_history_id invalid: %w", err)
+			}
+		}
+	}
+	mails, latest, fetchErr := glEmailTool.fetchEmailsSince(ctx, fromStr, maxHid)
+	if fetchErr != nil {
+		return nil, nil, false, fetchErr
+	}
+	toolResult = map[string]interface{}{
+		"emails":     mails,
+		"count":      len(mails),
+		"history_id": latest,
+	}
+	return toolResult, map[string]interface{}{"from_history_id": fromStr, "to_history_id": maxHid}, false, nil
 }
 
 func (glEmailTool *GlEmailTool) SubscribeEmail(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, unsubscribe bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -774,18 +882,6 @@ func (glEmailTool *GlEmailTool) Callback(ctx context.Context, projectId string, 
 			return
 		}
 
-		var insertQueries []*models.Queries
-		insertQueryFuncAsync := models.Queries{}
-		insertQueryFuncAsync.Query = glEmailTool.ToolDb.GetDbQuery(bgCtx, INSERT_FUNC_ASYNC_GL)
-		insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, projectId, tenantId, string(bodyBytes), string(paramBytes))
-		insertQueryFuncAsync.Rank = 1
-		insertQueries = append(insertQueries, &insertQueryFuncAsync)
-		_, insertOutputErr := utils.ExecuteDbSave(bgCtx, glEmailTool.ToolDb.GetConn(), insertQueries)
-		if insertOutputErr != nil {
-			logs.WithContext(bgCtx).Error(insertOutputErr.Error())
-			return
-		}
-
 		var push GlPubSubPush
 		err = json.Unmarshal(bodyBytes, &push)
 		if err != nil {
@@ -814,65 +910,79 @@ func (glEmailTool *GlEmailTool) Callback(ctx context.Context, projectId string, 
 			return
 		}
 
-		startHistoryId := glEmailTool.EmailAccount.HistoryId
-		if startHistoryId == "" {
-			logs.WithContext(bgCtx).Info("no stored history id, storing notification history id and skipping fetch")
-			glEmailTool.EmailAccount.HistoryId = strconv.FormatUint(notification.HistoryId, 10)
-			return
-		}
-
-		historyUrl := fmt.Sprint(GlBaseUrl, "/gmail/v1/users/me/history")
-		historyHeaders := http.Header{}
-		historyHeaders.Set("Authorization", fmt.Sprintf("Bearer %s", glEmailTool.EmailAccount.AccessToken))
-		historyHeaders.Set("Content-Type", "application/json")
-		historyParams := map[string]string{
-			"startHistoryId": startHistoryId,
-			"historyTypes":   "messageAdded",
-		}
-
-		historyRes, _, _, _, err := utils.CallHttp(bgCtx, http.MethodGet, historyUrl, historyHeaders, map[string]string{}, []*http.Cookie{}, historyParams, nil)
-		if err != nil {
-			logs.WithContext(bgCtx).Error(err.Error())
-			return
-		}
-		historyResBytes, _ := json.Marshal(historyRes)
-		var historyList GlHistoryListResponse
-		err = json.Unmarshal(historyResBytes, &historyList)
-		if err != nil {
-			logs.WithContext(bgCtx).Error(err.Error())
-			return
-		}
-
-		seen := make(map[string]bool)
-		for _, h := range historyList.History {
-			for _, ma := range h.MessagesAdded {
-				if seen[ma.Message.Id] {
-					continue
+		startHistoryId := ""
+		if notification.EmailAddress != "" {
+			selectQ := models.Queries{}
+			selectQ.Query = glEmailTool.ToolDb.GetDbQuery(bgCtx, SELECT_LAST_HISTORY_GL)
+			selectQ.Vals = append(selectQ.Vals, projectId, tenantId, notification.EmailAddress)
+			rows, selectErr := utils.ExecuteDbFetch(bgCtx, glEmailTool.ToolDb.GetConn(), selectQ)
+			if selectErr != nil {
+				logs.WithContext(bgCtx).Error(selectErr.Error())
+			} else if len(rows) > 0 {
+				if hid := rows[0]["history_id"]; hid != nil {
+					switch v := hid.(type) {
+					case string:
+						startHistoryId = v
+					case []byte:
+						startHistoryId = string(v)
+					default:
+						startHistoryId = fmt.Sprint(v)
+					}
 				}
-				seen[ma.Message.Id] = true
-				readMsg, _, _, readErr := glEmailTool.ReadMessage(bgCtx, map[string]interface{}{"message_id": ma.Message.Id})
-				if readErr != nil {
-					logs.WithContext(bgCtx).Error(readErr.Error())
-					continue
-				}
-				hookBody := map[string]interface{}{
-					"mail":      readMsg,
-					"tenant_id": tenantId,
-				}
-				hookResult, hookErr := glEmailTool.ExecuteHook(bgCtx, "clbk", "", projectId, tenantId, hookBody, params)
-				if hookErr != nil {
-					logs.WithContext(bgCtx).Error(hookErr.Error())
-					continue
-				}
-				logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
 			}
 		}
 
-		if historyList.HistoryId != "" {
-			glEmailTool.EmailAccount.HistoryId = historyList.HistoryId
-		} else {
-			glEmailTool.EmailAccount.HistoryId = strconv.FormatUint(notification.HistoryId, 10)
+		enrichedBody := map[string]interface{}{
+			"envelope": body,
+			"notification": map[string]interface{}{
+				"email_address": notification.EmailAddress,
+				"history_id":    notification.HistoryId,
+			},
 		}
+		enrichedBytes, err := json.Marshal(enrichedBody)
+		if err != nil {
+			logs.WithContext(bgCtx).Error(err.Error())
+			return
+		}
+
+		var insertQueries []*models.Queries
+		insertQueryFuncAsync := models.Queries{}
+		insertQueryFuncAsync.Query = glEmailTool.ToolDb.GetDbQuery(bgCtx, INSERT_FUNC_ASYNC_GL)
+		insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, projectId, tenantId, string(enrichedBytes), string(paramBytes))
+		insertQueryFuncAsync.Rank = 1
+		insertQueries = append(insertQueries, &insertQueryFuncAsync)
+		_, insertOutputErr := utils.ExecuteDbSave(bgCtx, glEmailTool.ToolDb.GetConn(), insertQueries)
+		if insertOutputErr != nil {
+			logs.WithContext(bgCtx).Error(insertOutputErr.Error())
+			return
+		}
+
+		if startHistoryId == "" {
+			startHistoryId = glEmailTool.EmailAccount.HistoryId
+		}
+		if startHistoryId == "" {
+			logs.WithContext(bgCtx).Info("no prior history id and no watch fallback, skipping fetch")
+			return
+		}
+
+		mails, _, fetchErr := glEmailTool.fetchEmailsSince(bgCtx, startHistoryId, 0)
+		if fetchErr != nil {
+			logs.WithContext(bgCtx).Error(fetchErr.Error())
+			return
+		}
+		for _, mail := range mails {
+			hookBody := map[string]interface{}{
+				"mail":      mail,
+				"tenant_id": tenantId,
+			}
+			hookResult, hookErr := glEmailTool.ExecuteHook(bgCtx, "clbk", "", projectId, tenantId, hookBody, params)
+			if hookErr != nil {
+				logs.WithContext(bgCtx).Error(hookErr.Error())
+				continue
+			}
+			logs.WithContext(bgCtx).Info(fmt.Sprint(hookResult))
+		}
+
 	}, server.ContinueOnMaxRetries)
 
 	return "", false, nil
@@ -1151,7 +1261,7 @@ func init() {
 		ToolType:     "GlEmail",
 		Category:     "Communication",
 		Description:  "Google (Gmail) email integration for reading, sending, and subscribing to emails via Gmail API and Pub/Sub",
-		Actions:      []tools.ActionInfo{{Name: ReadEmail}, {Name: SendEmail}, {Name: SubscribeEmail}, {Name: ReadMessage}, {Name: GetSsoUrl}, {Name: Login}, {Name: RenewToken}, {Name: RenewSubscription}},
+		Actions:      []tools.ActionInfo{{Name: ReadEmail}, {Name: SendEmail}, {Name: SubscribeEmail}, {Name: ReadMessage}, {Name: GetSsoUrl}, {Name: Login}, {Name: RenewToken}, {Name: RenewSubscription}, {Name: ReadHistoryRange}},
 		OAuthEnabled: true,
 		Icon:         "",
 		IconType:     "svg",

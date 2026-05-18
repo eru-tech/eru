@@ -504,12 +504,10 @@ func (store *Store) SaveTenantSecret(ctx context.Context, projectId string, tena
 
 	}
 	tv := store.TenantVariables[projectId][tenantId]
-	logs.WithContext(ctx).Info(fmt.Sprint(tv))
 
 	if tv.Secrets == nil {
 		tv.Secrets = make(map[string]Secrets)
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(tv.Secrets))
 	tv.Secrets[newSecret.Key] = newSecret
 	store.TenantVariables[projectId][tenantId] = tv
 	err = s.SaveStore(ctx, projectId, "", s)

@@ -34,6 +34,9 @@ const (
 	ErufilesStopSubscription  = "stop_subscription"
 	ErufilesStopAutoRenew     = "stop_auto_renew"
 	ErufilesCallback          = "callback"
+	ErufilesLogin             = "login"
+	ErufilesRenewToken        = "renew_token"
+	ErufilesGetSsoUrl         = "get_sso_url"
 
 	erufilesGdrive   = "GDRIVE"
 	erufilesOneDrive = "ONEDRIVE"
@@ -67,6 +70,7 @@ type ErufilesTool struct {
 	tools.Tool
 	StorageName string `json:"storage_name" eru:"required"`
 	StorageType string `json:"storage_type" eru:"required"`
+	AuthName    string `json:"auth_name"`
 	EventName   string `json:"event_name"`
 	TargetPath  string `json:"target_path"`
 
@@ -139,6 +143,27 @@ var erufilesToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 	},
+	{
+		ActionName:   ErufilesGetSsoUrl,
+		Description:  "Get the IdP SSO URL via eru-auth for the configured auth_name (used by the consent/redirect flow).",
+		SystemPrompt: "Return the SSO URL for user consent.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+	},
+	{
+		ActionName:   ErufilesLogin,
+		Description:  "Exchange an OAuth authorization code for tokens via eru-auth (idptoken). Tokens are persisted by eru-auth when persist_token=true.",
+		SystemPrompt: "Convert an OAuth authorization code into tokens.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+	},
+	{
+		ActionName:   ErufilesRenewToken,
+		Description:  "Renew the IdP token explicitly via eru-auth (idptoken/renew). Normally not needed - gettoken auto-refreshes.",
+		SystemPrompt: "Renew the IdP token using its refresh_token.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+	},
 }
 
 func (t *ErufilesTool) GetActionsList() []tools.ActionInfo {
@@ -203,6 +228,8 @@ func (t *ErufilesTool) GetAttribute(ctx context.Context, attributeName string) (
 		return t.StorageName, nil
 	case "storage_type":
 		return t.StorageType, nil
+	case "auth_name":
+		return t.AuthName, nil
 	case "event_name":
 		return t.EventName, nil
 	case "target_path":
@@ -233,6 +260,8 @@ func (t *ErufilesTool) SetAttribute(ctx context.Context, attributeName string, a
 	case "storage_type":
 		s, _ := attributeValue.(string)
 		t.StorageType = strings.ToUpper(s)
+	case "auth_name":
+		t.AuthName, _ = attributeValue.(string)
 	case "event_name":
 		t.EventName, _ = attributeValue.(string)
 	case "target_path":
@@ -323,6 +352,12 @@ func (t *ErufilesTool) Execute(ctx context.Context, projectId string, tenantId s
 		toolResult, toolRequest, persistStore, err = t.Subscribe(ctx, projectId, tenantId, params, true)
 	case ErufilesStopAutoRenew:
 		toolResult, toolRequest, persistStore, err = t.StopAutoRenew(ctx, projectId, tenantId, params)
+	case ErufilesGetSsoUrl:
+		toolResult, toolRequest, persistStore, err = t.GetSsoUrl(ctx, projectId, tenantId, params)
+	case ErufilesLogin:
+		toolResult, toolRequest, persistStore, err = t.Login(ctx, projectId, tenantId, params, "")
+	case ErufilesRenewToken:
+		toolResult, toolRequest, persistStore, err = t.RenewToken(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -368,6 +403,76 @@ func unmarshalParams(ctx context.Context, params map[string]interface{}, target 
 		return logs.Err(ctx, err, "")
 	}
 	return nil
+}
+
+func eruauthBaseUrl(ctx context.Context) (string, error) {
+	if v, ok := ctx.Value("eruauthbaseurl").(string); ok && v != "" {
+		return strings.TrimRight(v, "/"), nil
+	}
+	if v := os.Getenv("ERUAUTH_BASEURL"); v != "" {
+		return strings.TrimRight(v, "/"), nil
+	}
+	return "", errors.New("eruauthbaseurl not found in context or env")
+}
+
+func (t *ErufilesTool) GetSsoUrl(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("ErufilesTool GetSsoUrl - Start")
+	if t.AuthName == "" {
+		err = errors.New("auth_name is required on the tool config")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	base, err := eruauthBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	ssoUrl := fmt.Sprint(base, "/", projectId, "/", t.AuthName, "/getssourl")
+	qParams := map[string]string{}
+	if params["state"] != nil {
+		qParams["state"], _ = params["state"].(string)
+	}
+	res, _, _, status, callErr := utils.CallHttp(ctx, http.MethodGet, ssoUrl, t.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, qParams, nil)
+	if callErr != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("erufiles getssourl failed (status %d): %s", status, callErr.Error()))
+		return nil, nil, false, callErr
+	}
+	rm, ok := res.(map[string]interface{})
+	if !ok {
+		err = errors.New("getssourl response is not an object")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	return rm, map[string]interface{}{"query": qParams}, false, nil
+}
+
+func (t *ErufilesTool) Login(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, renewStr string) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("ErufilesTool Login - Start")
+	if t.AuthName == "" {
+		err = errors.New("auth_name is required on the tool config")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	base, err := eruauthBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	idpUrl := fmt.Sprint(base, "/", projectId, "/", t.AuthName, "/idptoken", renewStr)
+	res, _, _, status, callErr := utils.CallHttp(ctx, http.MethodPost, idpUrl, t.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, params)
+	if callErr != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("erufiles idptoken failed (status %d): %s", status, callErr.Error()))
+		return nil, nil, false, callErr
+	}
+	rm, ok := res.(map[string]interface{})
+	if !ok {
+		err = errors.New("idptoken response is not an object")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	return rm, params, false, nil
+}
+
+func (t *ErufilesTool) RenewToken(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	return t.Login(ctx, projectId, tenantId, params, "/renew")
 }
 
 func (t *ErufilesTool) Upload(ctx context.Context, projectId string, params map[string]interface{}, b64Action bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -995,7 +1100,7 @@ func init() {
 			}
 			return infos
 		}(),
-		OAuthEnabled: false,
+		OAuthEnabled: true,
 		Icon:         "",
 		IconType:     "svg",
 		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(ErufilesTool{}), []string{}),

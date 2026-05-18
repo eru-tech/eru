@@ -34,4 +34,5 @@ const (
 	RenewSubscription = "renew_subscription"
 	StopAutoRenew     = "stop_auto_renew"
 	StopSubscription  = "stop_subscription"
+	ReadHistoryRange  = "read_history_range"
 )
