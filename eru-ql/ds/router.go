@@ -2,14 +2,22 @@ package ds
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
+	"net"
+	"strings"
 	"sync/atomic"
+	"syscall"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-ql/module_model"
+	mysqldrv "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 type RouterHint struct {
@@ -140,15 +148,62 @@ func ReadCon(ctx context.Context, ds *module_model.DataSource, hint RouterHint) 
 	return pick.db, pick.replica, nil
 }
 
-// MarkReadFailed flips a replica to unhealthy after a query/connection error so subsequent
-// picks skip it (and trigger a reconnect attempt). No-op when replica is nil (main writer).
-func MarkReadFailed(ctx context.Context, replica *module_model.ReadDbConfig) {
-	if replica == nil {
+// MarkReadFailed flips a replica to unhealthy only when err is connection-class, so subsequent
+// picks skip it (and trigger a reconnect attempt). SQL/permission/constraint errors leave the
+// pool intact. No-op when replica is nil (main writer) or err is not connection-related.
+func MarkReadFailed(ctx context.Context, replica *module_model.ReadDbConfig, err error) {
+	if replica == nil || !isConnError(err) {
 		return
 	}
+	logs.WithContext(ctx).Warn(fmt.Sprint("read replica ", replica.Name, " marked unhealthy: ", err.Error()))
 	replica.ConStatus = false
 	if replica.Con != nil {
 		_ = replica.Con.Close()
 		replica.Con = nil
 	}
+}
+
+// isConnError reports whether err is a connection-class failure that should drop the pool.
+// Returns false for SQL syntax, permission, constraint, and other query-level errors.
+func isConnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, driver.ErrBadConn) || errors.Is(err, sql.ErrConnDone) ||
+		errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ETIMEDOUT) {
+		return true
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		c := string(pqErr.Code)
+		// SQLSTATE class 08 = connection exception; 57P01/02/03 = admin shutdown / crash / cannot connect now.
+		if strings.HasPrefix(c, "08") || c == "57P01" || c == "57P02" || c == "57P03" {
+			return true
+		}
+	}
+	var myErr *mysqldrv.MySQLError
+	if errors.As(err, &myErr) {
+		// 2006 server has gone away, 2013 lost connection during query.
+		if myErr.Number == 2006 || myErr.Number == 2013 {
+			return true
+		}
+	}
+	s := err.Error()
+	return strings.Contains(s, "connection reset") ||
+		strings.Contains(s, "connection refused") ||
+		strings.Contains(s, "broken pipe") ||
+		strings.Contains(s, "no such host") ||
+		strings.Contains(s, "i/o timeout")
 }

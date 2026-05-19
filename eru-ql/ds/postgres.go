@@ -309,7 +309,11 @@ func (pr *PostgresSqlMaker) ConnectReadReplica(ctx context.Context, dataSource *
 		return errors.New("read replica index out of range")
 	}
 	replica := dataSource.ReadDbConfigs[idx]
-	db, err := dialPostgres(ctx, replica.DbConfig)
+	cfg := replica.DbConfig
+	if replica.ResolvedDbConfig.Host != "" {
+		cfg = replica.ResolvedDbConfig
+	}
+	db, err := dialPostgres(ctx, cfg)
 	if err != nil {
 		replica.ConStatus = false
 		replica.Con = nil

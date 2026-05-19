@@ -85,7 +85,11 @@ func (mr *MysqlSqlMaker) ConnectReadReplica(ctx context.Context, dataSource *mod
 		return errors.New("read replica index out of range")
 	}
 	replica := dataSource.ReadDbConfigs[idx]
-	db, err := dialMysql(ctx, replica.DbConfig)
+	cfg := replica.DbConfig
+	if replica.ResolvedDbConfig.Host != "" {
+		cfg = replica.ResolvedDbConfig
+	}
+	db, err := dialMysql(ctx, cfg)
 	if err != nil {
 		replica.ConStatus = false
 		replica.Con = nil

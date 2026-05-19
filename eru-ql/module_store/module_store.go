@@ -216,6 +216,7 @@ func (ms *ModuleStore) SetDataSourceConnections(ctx context.Context, realStore M
 				} else {
 					datasource.Con = datasourceClone.Con
 					datasource.ConStatus = datasourceClone.ConStatus
+					datasource.ResolvedDbConfig = datasourceClone.DbConfig
 					copyReadReplicaCons(datasource, datasourceClone)
 				}
 
@@ -238,6 +239,7 @@ func copyReadReplicaCons(datasource *module_model.DataSource, datasourceClone *m
 		}
 		datasource.ReadDbConfigs[i].Con = datasourceClone.ReadDbConfigs[i].Con
 		datasource.ReadDbConfigs[i].ConStatus = datasourceClone.ReadDbConfigs[i].ConStatus
+		datasource.ReadDbConfigs[i].ResolvedDbConfig = datasourceClone.ReadDbConfigs[i].DbConfig
 	}
 }
 
@@ -362,6 +364,7 @@ func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, dat
 		} else {
 			datasource.Con = datasourceClone.Con
 			datasource.ConStatus = datasourceClone.ConStatus
+			datasource.ResolvedDbConfig = datasourceClone.DbConfig
 			copyReadReplicaCons(datasource, datasourceClone)
 		}
 	}
