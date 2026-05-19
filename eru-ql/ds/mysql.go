@@ -73,7 +73,12 @@ func (mr *MysqlSqlMaker) CreateConn(ctx context.Context, dataSource *module_mode
 	dataSource.ConStatus = true
 
 	for i := range dataSource.ReadDbConfigs {
-		if dataSource.ReadDbConfigs[i].Disabled {
+		if dataSource.ReadPolicy.Disabled || dataSource.ReadDbConfigs[i].Disabled {
+			if dataSource.ReadDbConfigs[i].Con != nil {
+				_ = dataSource.ReadDbConfigs[i].Con.Close()
+				dataSource.ReadDbConfigs[i].Con = nil
+			}
+			dataSource.ReadDbConfigs[i].ConStatus = false
 			continue
 		}
 		if rerr := mr.ConnectReadReplica(ctx, dataSource, i); rerr != nil {

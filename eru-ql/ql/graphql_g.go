@@ -31,6 +31,7 @@ type SQLObjectQ struct {
 	HasAggregate    bool
 	Limit           int
 	Skip            int
+	UseWriter       bool
 	Columns         SQLCols
 	tables          [][]module_model.Tables
 	tableNames      map[string]string
@@ -103,6 +104,13 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(ctx context.Context, sel ast.Selection,
 			}
 			//v, e := ParseAstValue(ff.Value, vars)
 			sqlObj.Skip = v.(int)
+		case "use_writer":
+			if ff.Value.GetKind() != kinds.BooleanValue {
+				err = errors.New("Non Boolean value received - use_writer clause need boolean value")
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			sqlObj.UseWriter = v.(bool)
 		default:
 		}
 	}
