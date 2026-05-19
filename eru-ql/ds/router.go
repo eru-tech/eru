@@ -66,7 +66,7 @@ func ReadCon(ctx context.Context, ds *module_model.DataSource, hint RouterHint) 
 		hint = hintFromCtx(ctx)
 	}
 	policy := ds.ReadPolicy
-	if hint.UseWriter || len(ds.ReadDbConfigs) == 0 || policy.Strategy == "" || policy.Strategy == StrategyMainOnly {
+	if hint.UseWriter || policy.Disabled || len(ds.ReadDbConfigs) == 0 || policy.Strategy == "" || policy.Strategy == StrategyMainOnly {
 		if ds.Con == nil {
 			return nil, nil, errors.New("main connection not available")
 		}
@@ -82,6 +82,9 @@ func ReadCon(ctx context.Context, ds *module_model.DataSource, hint RouterHint) 
 	var sm SqlMakerI
 	var candidates []candidate
 	for i, replica := range ds.ReadDbConfigs {
+		if replica.Disabled {
+			continue
+		}
 		if !replica.ConStatus || replica.Con == nil {
 			if sm == nil {
 				sm = GetSqlMaker(ds.DbName)

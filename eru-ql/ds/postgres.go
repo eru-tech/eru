@@ -297,6 +297,9 @@ func (pr *PostgresSqlMaker) CreateConn(ctx context.Context, dataSource *module_m
 	dataSource.ConStatus = true
 
 	for i := range dataSource.ReadDbConfigs {
+		if dataSource.ReadDbConfigs[i].Disabled {
+			continue
+		}
 		if rerr := pr.ConnectReadReplica(ctx, dataSource, i); rerr != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("read replica ", dataSource.ReadDbConfigs[i].Name, " connect failed: ", rerr.Error()))
 		}

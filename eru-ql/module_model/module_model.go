@@ -141,7 +141,7 @@ type DataSource struct {
 	DbType                     string                                               `json:"db_type" eru:"required"`
 	DbName                     string                                               `json:"db_name" eru:"required"`
 	DbConfig                   DbConfig                                             `json:"db_config" eru:"optional"`
-	ResolvedDbConfig           DbConfig                                             `json:"-"`
+	ResolvedDbConfig           DbConfig                                             `json:"-" eru:"optional"`
 	IcebergConfig              IcebergConfig                                        `json:"iceberg_config" eru:"optional"`
 	SqlEngine                  sqlengine.SQLEngineI                                 `json:"sql_engine"`
 	SchemaTables               map[string]map[string]common_types.TableColsMetaData `json:"schema_tables"` //tableName is the key
@@ -163,8 +163,9 @@ type DataSource struct {
 type ReadDbConfig struct {
 	Name             string   `json:"name" eru:"required"`
 	DbConfig         DbConfig `json:"db_config" eru:"required"`
-	ResolvedDbConfig DbConfig `json:"-"`
+	ResolvedDbConfig DbConfig `json:"-" eru:"optional"`
 	Weight           int      `json:"weight"`
+	Disabled         bool     `json:"disabled"`
 	Con              *sqlx.DB `json:"-"`
 	ConStatus        bool     `json:"con_status"`
 }
@@ -174,6 +175,7 @@ type ReadPolicy struct {
 	IncludeMainInReads bool   `json:"include_main_in_reads"`
 	MainWeight         int    `json:"main_weight"`
 	FailoverToMain     bool   `json:"failover_to_main"`
+	Disabled           bool   `json:"disabled"`
 }
 
 type TableJoins struct {

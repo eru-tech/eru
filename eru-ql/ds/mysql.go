@@ -73,6 +73,9 @@ func (mr *MysqlSqlMaker) CreateConn(ctx context.Context, dataSource *module_mode
 	dataSource.ConStatus = true
 
 	for i := range dataSource.ReadDbConfigs {
+		if dataSource.ReadDbConfigs[i].Disabled {
+			continue
+		}
 		if rerr := mr.ConnectReadReplica(ctx, dataSource, i); rerr != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("read replica ", dataSource.ReadDbConfigs[i].Name, " connect failed: ", rerr.Error()))
 		}
