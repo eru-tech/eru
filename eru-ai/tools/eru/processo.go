@@ -30,14 +30,50 @@ type ProcessoExecuteApiParams struct {
 	Body      map[string]interface{} `json:"body" desc:"additional key value pairs required by the api" default:"{}"`
 }
 
+type ProcessoGetApiParams struct {
+	OrgId     string `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId string `json:"process_id" eru:"required" desc:"process id"`
+	ApiId     string `json:"api_id" desc:"api id to fetch (either api_id or api_name must be provided)"`
+	ApiName   string `json:"api_name" desc:"api name to fetch (either api_id or api_name must be provided)"`
+}
+
+type ProcessoExecuteQueryParams struct {
+	OrgId     string                 `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId string                 `json:"process_id" eru:"required" desc:"process id"`
+	QueryName string                 `json:"query_name" eru:"required" desc:"name of the query to execute"`
+	Body      map[string]interface{} `json:"body" desc:"additional key value pairs (query variables) required by the query" default:"{}"`
+}
+
+type ProcessoSaveQueryParams struct {
+	QueryId     string `json:"query_id" desc:"query id (provided when updating an existing query)"`
+	OrgId       string `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId   string `json:"process_id" eru:"required" desc:"process id"`
+	QueryName   string `json:"query_name" eru:"required" desc:"name of the query"`
+	QueryString string `json:"query_string" eru:"required" desc:"the query string to save"`
+	DbAlias     string `json:"db_alias" eru:"required" desc:"database alias to execute the query against"`
+	QueryVars   string `json:"query_vars" desc:"query variables as a json string" default:"{}"`
+	QueryType   string `json:"query_type" eru:"required" desc:"type of the query (e.g. sql)"`
+}
+
+type ProcessoGetQueryParams struct {
+	OrgId     string `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId string `json:"process_id" eru:"required" desc:"process id"`
+	QueryId   string `json:"query_id" desc:"query id to fetch (either query_id or query_name must be provided)"`
+	QueryName string `json:"query_name" desc:"query name to fetch (either query_id or query_name must be provided)"`
+}
+
 type ProcessoTool struct {
 	tools.Tool
 	ProjectId string `json:"project_id" desc:"processo project id used in the url path" default:"processo"`
 }
 
 const (
-	SaveApi    = "save_api"
-	ExecuteApi = "execute_api"
+	SaveApi             = "save_api"
+	ExecuteApi          = "execute_api"
+	GetApi              = "get_api"
+	ProcessoExecQuery   = "execute_query"
+	ProcessoSaveQueryGr = "save_query"
+	ProcessoGetQuery    = "get_query"
 )
 
 var processoToolActions = []tools.ToolAction{
@@ -59,6 +95,46 @@ var processoToolActions = []tools.ToolAction{
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
 			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoExecuteApiParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   GetApi,
+		Description:  "Fetch a saved api definition for an org and process by api_id or api_name",
+		SystemPrompt: "This tool fetches a saved api definition for an org and process. Pass org_id, process_id and either api_id or api_name.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoGetApiParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoExecQuery,
+		Description:  "Execute a saved processo query by name for an org and process",
+		SystemPrompt: "This tool executes a saved processo query by name. Pass org_id, process_id, query_name and any query variables via the body attribute.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoExecuteQueryParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoSaveQueryGr,
+		Description:  "Save a query (query group) under processo for an org and process",
+		SystemPrompt: "This tool saves a query under processo for an org and process. Pass query_name, query_string, db_alias, query_type and optionally query_id and query_vars.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoSaveQueryParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoGetQuery,
+		Description:  "Fetch a saved query for an org and process by query_id or query_name",
+		SystemPrompt: "This tool fetches a saved query for an org and process. Pass org_id, process_id and either query_id or query_name.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoGetQueryParams{}), []string{})
 		},
 	},
 }
@@ -176,6 +252,21 @@ func (processoTool *ProcessoTool) getEruFuncBaseUrl(ctx context.Context) (string
 	return efurlString, nil
 }
 
+func (processoTool *ProcessoTool) getEruqlBaseUrl(ctx context.Context) (string, error) {
+	v := ctx.Value("eruqlbaseurl")
+	if v == nil {
+		return "", errors.New("eruqlbaseurl not found in context")
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", errors.New("eruqlbaseurl is not a string")
+	}
+	if s == "" {
+		return "", errors.New("eruqlbaseurl is not set")
+	}
+	return s, nil
+}
+
 func (processoTool *ProcessoTool) buildHeaders(ctx context.Context) http.Header {
 	headers := http.Header{}
 	claims := ctx.Value("claims")
@@ -213,6 +304,14 @@ func (processoTool *ProcessoTool) Execute(ctx context.Context, projectId string,
 		toolResult, toolRequest, persistStore, err = processoTool.SaveApi(ctx, projectId, tenantId, params)
 	case ExecuteApi:
 		toolResult, toolRequest, persistStore, err = processoTool.ExecuteApi(ctx, projectId, tenantId, params)
+	case GetApi:
+		toolResult, toolRequest, persistStore, err = processoTool.GetApi(ctx, projectId, tenantId, params)
+	case ProcessoExecQuery:
+		toolResult, toolRequest, persistStore, err = processoTool.ExecuteQuery(ctx, projectId, tenantId, params)
+	case ProcessoSaveQueryGr:
+		toolResult, toolRequest, persistStore, err = processoTool.SaveQuery(ctx, projectId, tenantId, params)
+	case ProcessoGetQuery:
+		toolResult, toolRequest, persistStore, err = processoTool.GetQuery(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -308,6 +407,135 @@ func (processoTool *ProcessoTool) ExecuteApi(ctx context.Context, projectId stri
 			continue
 		}
 		body[k] = v
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, true, nil
+}
+
+func (processoTool *ProcessoTool) GetApi(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool GetApi - Start")
+	p := ProcessoGetApiParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	if p.ApiId == "" && p.ApiName == "" {
+		return nil, nil, false, errors.New("either api_id or api_name must be provided")
+	}
+	baseUrl, err := processoTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/fetch_api")
+	body := map[string]interface{}{
+		"org_id":     p.OrgId,
+		"process_id": p.ProcessId,
+	}
+	if p.ApiId != "" {
+		body["api_id"] = p.ApiId
+	}
+	if p.ApiName != "" {
+		body["api_name"] = p.ApiName
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, true, nil
+}
+
+func (processoTool *ProcessoTool) ExecuteQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool ExecuteQuery - Start")
+	p := ProcessoExecuteQueryParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	baseUrl, err := processoTool.getEruFuncBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/", processoTool.projectIdSegment(), "/func/exec_queries")
+	body := map[string]interface{}{
+		"org_id":     p.OrgId,
+		"process_id": p.ProcessId,
+		"query_name": p.QueryName,
+	}
+	for k, v := range p.Body {
+		if _, exists := body[k]; exists {
+			continue
+		}
+		body[k] = v
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, true, nil
+}
+
+func (processoTool *ProcessoTool) SaveQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool SaveQuery - Start")
+	p := ProcessoSaveQueryParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	baseUrl, err := processoTool.getEruFuncBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/", processoTool.projectIdSegment(), "/func/save_queries_grp")
+	body := map[string]interface{}{
+		"org_id":       p.OrgId,
+		"process_id":   p.ProcessId,
+		"query_name":   p.QueryName,
+		"query_string": p.QueryString,
+		"db_alias":     p.DbAlias,
+		"query_vars":   p.QueryVars,
+		"query_type":   p.QueryType,
+	}
+	if p.QueryId != "" {
+		body["query_id"] = p.QueryId
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, true, nil
+}
+
+func (processoTool *ProcessoTool) GetQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool GetQuery - Start")
+	p := ProcessoGetQueryParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	if p.QueryId == "" && p.QueryName == "" {
+		return nil, nil, false, errors.New("either query_id or query_name must be provided")
+	}
+	baseUrl, err := processoTool.getEruFuncBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/", processoTool.projectIdSegment(), "/func/get_queries_def")
+	body := map[string]interface{}{
+		"org_id":     p.OrgId,
+		"process_id": p.ProcessId,
+	}
+	if p.QueryId != "" {
+		body["query_id"] = p.QueryId
+	}
+	if p.QueryName != "" {
+		body["query_name"] = p.QueryName
 	}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
 	if err != nil {
