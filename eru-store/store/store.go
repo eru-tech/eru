@@ -43,6 +43,9 @@ type StoreI interface {
 	GetStoreByteArray(fp string) (b []byte, err error)
 	SaveStore(ctx context.Context, projectId string, fp string, ms StoreI) (err error)
 	SaveTenantStore(ctx context.Context, projectId string, tenantId string, fp string, tenantConfig interface{}) (err error)
+	SaveTenantObject(ctx context.Context, tableName string, idColumn string, nameColumn string, projectId string, tenantId string, name string, config interface{}, ms StoreI) (err error)
+	RemoveTenantObject(ctx context.Context, tableName string, idColumn string, nameColumn string, projectId string, tenantId string, name string, ms StoreI) (err error)
+	SetStoreTenantLoadQuery(query string)
 	SetDbType(dbtype string)
 	CreateConn() error
 	GetConn() *sqlx.DB
@@ -253,6 +256,16 @@ func (store *Store) SaveStore(ctx context.Context, projectId string, fp string, 
 	return
 }
 func (store *Store) SaveTenantStore(ctx context.Context, projectId string, tenantId string, fp string, tenantConfig interface{}) (err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(context.Background()).Error(err.Error())
+	return
+}
+func (store *Store) SaveTenantObject(ctx context.Context, tableName string, idColumn string, nameColumn string, projectId string, tenantId string, name string, config interface{}, ms StoreI) (err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(context.Background()).Error(err.Error())
+	return
+}
+func (store *Store) RemoveTenantObject(ctx context.Context, tableName string, idColumn string, nameColumn string, projectId string, tenantId string, name string, ms StoreI) (err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(context.Background()).Error(err.Error())
 	return
@@ -558,6 +571,10 @@ func (store *Store) GetStoreTableName() (tablename string) {
 }
 
 func (store *Store) SetStoreTenantTableName(tablename string) {
+	//do nothing
+}
+
+func (store *Store) SetStoreTenantLoadQuery(query string) {
 	//do nothing
 }
 

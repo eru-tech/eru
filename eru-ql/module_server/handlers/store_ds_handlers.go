@@ -68,7 +68,7 @@ func ProjectDataSourceConfigHandler(sh *module_store.StoreHolder) http.HandlerFu
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		dbAlias := vars["dbalias"]
-		datasource, err := sh.Store.GetDataSource(r.Context(), projectId, dbAlias)
+		datasource, err := sh.Store.GetDataSource(r.Context(), projectId, vars["tenantId"], dbAlias)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -125,7 +125,7 @@ func ProjectDataSourceSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc
 				return
 			}
 		}
-		err = sh.Store.SaveDataSource(r.Context(), projectId, &datasource, sh.Store)
+		err = sh.Store.SaveDataSource(r.Context(), projectId, vars["tenantId"], &datasource, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -146,7 +146,7 @@ func ProjectDataSourceRemoveHandler(sh *module_store.StoreHolder) http.HandlerFu
 		projectId := vars["project"]
 		dbAlias := vars["dbalias"]
 
-		err := sh.Store.RemoveDataSource(r.Context(), projectId, dbAlias, sh.Store)
+		err := sh.Store.RemoveDataSource(r.Context(), projectId, vars["tenantId"], dbAlias, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -164,7 +164,7 @@ func ProjectDataSourceListHandler(sh *module_store.StoreHolder) http.HandlerFunc
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 
-		datasources, err := sh.Store.GetDataSources(r.Context(), projectId)
+		datasources, err := sh.Store.GetDataSources(r.Context(), projectId, vars["tenantId"])
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -185,7 +185,7 @@ func ProjectDataSourceTableCheckHandler(sh *module_store.StoreHolder) http.Handl
 		dbAlias := vars["dbalias"]
 		tableName := vars["tablename"]
 
-		columns, schema, err := sh.Store.CheckTableExists(r.Context(), projectId, dbAlias, tableName, sh.Store)
+		columns, schema, err := sh.Store.CheckTableExists(r.Context(), projectId, vars["tenantId"], dbAlias, tableName, sh.Store)
 		if err != nil && schema == "" {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -206,7 +206,7 @@ func ProjectDataSourceSchemaHandler(sh *module_store.StoreHolder) http.HandlerFu
 		dbAlias := vars["dbalias"]
 		tableName := vars["tablename"]
 
-		datasource, err := sh.Store.UpdateSchemaTables(r.Context(), projectId, dbAlias, tableName, sh.Store)
+		datasource, err := sh.Store.UpdateSchemaTables(r.Context(), projectId, vars["tenantId"], dbAlias, tableName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -228,7 +228,7 @@ func ProjectDataSourceSchemaAddTableHandler(sh *module_store.StoreHolder) http.H
 		dbAlias := vars["dbalias"]
 		tableName := vars["tablename"]
 
-		res, err := sh.Store.AddSchemaTable(r.Context(), projectId, dbAlias, tableName, sh.Store)
+		res, err := sh.Store.AddSchemaTable(r.Context(), projectId, vars["tenantId"], dbAlias, tableName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -250,7 +250,7 @@ func ProjectDataSourceSchemaRemoveTableHandler(sh *module_store.StoreHolder) htt
 		dbAlias := vars["dbalias"]
 		tableName := vars["tablename"]
 
-		res, err := sh.Store.RemoveSchemaTable(r.Context(), projectId, dbAlias, tableName, sh.Store)
+		res, err := sh.Store.RemoveSchemaTable(r.Context(), projectId, vars["tenantId"], dbAlias, tableName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -278,7 +278,7 @@ func ProjectDataSourceSchemaAddJoinHandler(sh *module_store.StoreHolder) http.Ha
 			return
 		}
 
-		res, err := sh.Store.AddSchemaJoin(r.Context(), projectId, dbAlias, &tj, sh.Store)
+		res, err := sh.Store.AddSchemaJoin(r.Context(), projectId, vars["tenantId"], dbAlias, &tj, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -306,7 +306,7 @@ func ProjectDataSourceSchemaRemoveJoinHandler(sh *module_store.StoreHolder) http
 			return
 		}
 
-		res, err := sh.Store.RemoveSchemaJoin(r.Context(), projectId, dbAlias, &tj, sh.Store)
+		res, err := sh.Store.RemoveSchemaJoin(r.Context(), projectId, vars["tenantId"], dbAlias, &tj, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -397,7 +397,7 @@ func ProjectDataSourceSchemaTransformTableHandler(sh *module_store.StoreHolder) 
 				return
 			}
 		}
-		err := sh.Store.SaveTableTransformation(r.Context(), projectId, dbAlias, tableName, transformRules, sh.Store)
+		err := sh.Store.SaveTableTransformation(r.Context(), projectId, vars["tenantId"], dbAlias, tableName, transformRules, sh.Store)
 
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
@@ -442,7 +442,7 @@ func ProjectDataSourceSchemaMasColumnHandler(sh *module_store.StoreHolder) http.
 				return
 			}
 		}
-		err := sh.Store.SaveColumnMasking(r.Context(), projectId, dbAlias, tableName, colName, columnMasking, sh.Store)
+		err := sh.Store.SaveColumnMasking(r.Context(), projectId, vars["tenantId"], dbAlias, tableName, colName, columnMasking, sh.Store)
 
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
@@ -470,7 +470,7 @@ func ProjectDataSourceRemoveSecureTableHandler(sh *module_store.StoreHolder) htt
 		securityRulesFromReq := json.NewDecoder(r.Body)
 		securityRulesFromReq.DisallowUnknownFields()
 
-		err := sh.Store.RemoveTableSecurity(r.Context(), projectId, dbAlias, tableName, sh.Store)
+		err := sh.Store.RemoveTableSecurity(r.Context(), projectId, vars["tenantId"], dbAlias, tableName, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -496,7 +496,7 @@ func ProjectDataSourceGetSecureTableHandler(sh *module_store.StoreHolder) http.H
 		securityRulesFromReq := json.NewDecoder(r.Body)
 		securityRulesFromReq.DisallowUnknownFields()
 
-		sr, err := sh.Store.GetTableSecurity(r.Context(), projectId, dbAlias, tableName)
+		sr, err := sh.Store.GetTableSecurity(r.Context(), projectId, vars["tenantId"], dbAlias, tableName)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -538,7 +538,7 @@ func ProjectDataSourceSchemaSecureTableHandler(sh *module_store.StoreHolder) htt
 				return
 			}
 		}
-		err := sh.Store.SaveTableSecurity(r.Context(), projectId, dbAlias, tableName, securityRules, sh.Store)
+		err := sh.Store.SaveTableSecurity(r.Context(), projectId, vars["tenantId"], dbAlias, tableName, securityRules, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -562,7 +562,7 @@ func ProjectDataSourceSchemaDropTableHandler(sh *module_store.StoreHolder) http.
 		tableName := vars["tablename"]
 		tableName = strings.Replace(tableName, "___", ".", 1)
 
-		err := sh.Store.DropSchemaTable(r.Context(), projectId, dbAlias, tableName, sh.Store)
+		err := sh.Store.DropSchemaTable(r.Context(), projectId, vars["tenantId"], dbAlias, tableName, sh.Store)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)

@@ -197,7 +197,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 					}
 					return r, names, nil
 				}
-				result, err = qlcache.ServeOrLoad(ctx, datasource, sqd.Query, sr.DefaultSchemaName(), loader, qlcache.Options{
+				result, err = qlcache.ServeOrLoad(ctx, datasource, sqd.TenantId, sqd.Query, sr.DefaultSchemaName(), loader, qlcache.Options{
 					TTLSec:    sqd.CacheTTL,
 					SkipCache: sqd.CacheSkip,
 					LockHot:   sqd.CacheLock,

@@ -214,12 +214,12 @@ func (agent *Agent) ExecuteAgentFunction(ctx context.Context, agentMessage Agent
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
-	err = fms.SaveFunc(ctx, agent.Function, projectId, fms, false)
+	err = fms.SaveFunc(ctx, agent.Function, projectId, "", fms, false)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
-	cloneFuncGroup, err := fms.ValidateFunc(ctx, agent.Function, projectId, "host", "url", "method", headers, reqBody, fms, true, "")
+	cloneFuncGroup, err := fms.ValidateFunc(ctx, agent.Function, projectId, "", "host", "url", "method", headers, reqBody, fms, true, "")
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err

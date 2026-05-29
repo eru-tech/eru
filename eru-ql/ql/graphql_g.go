@@ -20,6 +20,7 @@ import (
 
 type SQLObjectQ struct {
 	ProjectId       string
+	TenantId        string
 	FinalVariables  map[string]interface{}
 	MainTableName   string
 	MainAliasName   string
@@ -387,7 +388,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)
 				}
-				sqlObj.SecurityClause[colTableName], _, e = getTableSecurityRule(ctx, sqlObj.ProjectId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables, colTableName)
+				sqlObj.SecurityClause[colTableName], _, e = getTableSecurityRule(ctx, sqlObj.ProjectId, sqlObj.TenantId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables, colTableName)
 				if e != nil {
 					logs.WithContext(ctx).Error(e.Error())
 					//ignoring error if security rule not defined - simply execute without security rule
