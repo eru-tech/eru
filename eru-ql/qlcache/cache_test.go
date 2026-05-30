@@ -53,29 +53,42 @@ func TestNormalizeSQL(t *testing.T) {
 }
 
 func TestBuildKey_Determinism(t *testing.T) {
-	if BuildKey("p1", "primary", "select * from t") != BuildKey("p1", "primary", "select  *   from  t") {
+	if BuildKey("p1", "", "primary", "select * from t") != BuildKey("p1", "", "primary", "select  *   from  t") {
 		t.Fatalf("whitespace variations should collide")
 	}
 }
 
 func TestBuildKey_DsAliasSeparation(t *testing.T) {
 	sql := "select * from users"
-	if BuildKey("p1", "primary", sql) == BuildKey("p1", "analytics", sql) {
+	if BuildKey("p1", "", "primary", sql) == BuildKey("p1", "", "analytics", sql) {
 		t.Fatalf("different datasources must produce different keys")
 	}
 }
 
 func TestBuildKey_ProjectSeparation(t *testing.T) {
 	sql := "select * from users"
-	if BuildKey("pA", "primary", sql) == BuildKey("pB", "primary", sql) {
+	if BuildKey("pA", "", "primary", sql) == BuildKey("pB", "", "primary", sql) {
 		t.Fatalf("different projects must produce different keys (same ds alias, same SQL)")
+	}
+}
+
+func TestBuildKey_TenantSeparation(t *testing.T) {
+	sql := "select * from users"
+	if BuildKey("p1", "t1", "primary", sql) == BuildKey("p1", "t2", "primary", sql) {
+		t.Fatalf("different tenants must produce different keys")
+	}
+	if BuildKey("p1", "t1", "primary", sql) == BuildKey("p1", "", "primary", sql) {
+		t.Fatalf("tenant-scoped key must differ from project-level key")
+	}
+	if BuildKey("p1", "", "primary", sql) != BuildKey("p1", "", "primary", sql) {
+		t.Fatalf("project-level key must be stable")
 	}
 }
 
 func TestServe_BypassWhenNoCache(t *testing.T) {
 	ds := &module_model.DataSource{DbAlias: "x"}
 	ds.QueryCacheConfig.Enabled = true
-	hit, _, _ := Serve(context.Background(), ds, "select 1")
+	hit, _, _ := Serve(context.Background(), ds, "", "select 1")
 	if hit {
 		t.Fatalf("expected miss/bypass when QueryCache nil")
 	}
@@ -85,14 +98,14 @@ func TestServe_BypassWhenDisabled(t *testing.T) {
 	ds := &module_model.DataSource{DbAlias: "x"}
 	ds.QueryCache = cache.NewInMemoryCache()
 	ds.QueryCacheConfig.Enabled = false
-	hit, _, key := Serve(context.Background(), ds, "select 1")
+	hit, _, key := Serve(context.Background(), ds, "", "select 1")
 	if hit || key != "" {
 		t.Fatalf("expected bypass with empty key when disabled")
 	}
 }
 
 func TestServe_NilDataSource(t *testing.T) {
-	hit, _, _ := Serve(context.Background(), nil, "select 1")
+	hit, _, _ := Serve(context.Background(), nil, "", "select 1")
 	if hit {
 		t.Fatalf("nil ds should not hit")
 	}
@@ -104,7 +117,7 @@ func TestPopulateAndServe_RoundTrip(t *testing.T) {
 	sql := "select id, name from users where id=1"
 
 	// first Serve: miss with non-empty key
-	hit, _, key := Serve(ctx, ds, sql)
+	hit, _, key := Serve(ctx, ds, "", sql)
 	if hit {
 		t.Fatalf("first call should miss")
 	}
@@ -122,7 +135,7 @@ func TestPopulateAndServe_RoundTrip(t *testing.T) {
 		t.Fatalf("populate did not land in cache")
 	}
 
-	hit2, got, key2 := Serve(ctx, ds, sql)
+	hit2, got, key2 := Serve(ctx, ds, "", sql)
 	if !hit2 {
 		t.Fatalf("expected hit after populate")
 	}
@@ -140,7 +153,7 @@ func TestPopulate_SkipsWhenOversize(t *testing.T) {
 	ds := newEnabledDS()
 	ds.QueryCacheConfig.MaxValueBytes = 10 // tiny
 
-	_, _, key := Serve(ctx, ds, "select 1")
+	_, _, key := Serve(ctx, ds, "", "select 1")
 	result := map[string]interface{}{
 		"padding": "this string is definitely more than ten bytes long",
 	}

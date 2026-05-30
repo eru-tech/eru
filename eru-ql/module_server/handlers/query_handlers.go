@@ -65,7 +65,7 @@ func ProjectMyQuerySaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				_ = json.NewEncoder(w).Encode(map[string]string{"message": "Query Introspection not implemented"})
 				return
 			}
-			err = sh.Store.SaveMyQuery(r.Context(), projectID, queryName, queryType, "", gqd.Query, gqd.Variables, sh.Store, "", gqd.SecurityRule, 0, false, false)
+			err = sh.Store.SaveMyQuery(r.Context(), projectID, vars["tenantId"], queryName, queryType, "", gqd.Query, gqd.Variables, sh.Store, "", gqd.SecurityRule, 0, false, false)
 		} else if queryType == "sql" {
 			var sqd ql.SQLData
 			if err := json.NewDecoder(r.Body).Decode(&sqd); err != nil {
@@ -75,7 +75,7 @@ func ProjectMyQuerySaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				return
 			}
 
-			err = sh.Store.SaveMyQuery(r.Context(), projectID, queryName, queryType, sqd.DBAlias, sqd.Query, sqd.Variables, sh.Store, sqd.Cols, sqd.SecurityRule, sqd.CacheTTL, sqd.CacheSkip, sqd.CacheLock)
+			err = sh.Store.SaveMyQuery(r.Context(), projectID, vars["tenantId"], queryName, queryType, sqd.DBAlias, sqd.Query, sqd.Variables, sh.Store, sqd.Cols, sqd.SecurityRule, sqd.CacheTTL, sqd.CacheSkip, sqd.CacheLock)
 		} else {
 			err = errors.New("Incorrect query type")
 		}
@@ -100,7 +100,7 @@ func ProjectMyQueryRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc 
 		projectID := vars["project"]
 		queryName := vars["queryname"]
 
-		err := sh.Store.RemoveMyQuery(r.Context(), projectID, queryName, sh.Store)
+		err := sh.Store.RemoveMyQuery(r.Context(), projectID, vars["tenantId"], queryName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -119,7 +119,7 @@ func ProjectMyQueryListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		projectID := vars["project"]
 		queryType := vars["querytype"]
 
-		myqueries, err := sh.Store.GetMyQueries(r.Context(), projectID, queryType)
+		myqueries, err := sh.Store.GetMyQueries(r.Context(), projectID, vars["tenantId"], queryType)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -137,7 +137,7 @@ func ProjectMyQueryListNamesHandler(sh *module_store.StoreHolder) http.HandlerFu
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 
-		myqueries, err := sh.Store.GetMyQueriesNames(r.Context(), projectID)
+		myqueries, err := sh.Store.GetMyQueriesNames(r.Context(), projectID, vars["tenantId"])
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -156,7 +156,7 @@ func ProjectMyQueryConfigHandler(sh *module_store.StoreHolder) http.HandlerFunc 
 		projectID := vars["project"]
 		queryName := vars["queryname"]
 
-		myquery, err := sh.Store.GetMyQuery(r.Context(), projectID, queryName)
+		myquery, err := sh.Store.GetMyQuery(r.Context(), projectID, vars["tenantId"], queryName)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -202,7 +202,7 @@ func ProjectMyQueryASTHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			return
 		}
 
-		datasources, err := sh.Store.GetDataSources(r.Context(), projectID)
+		datasources, err := sh.Store.GetDataSources(r.Context(), projectID, vars["tenantId"])
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -211,7 +211,7 @@ func ProjectMyQueryASTHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		}
 		var res []map[string]interface{}
 		//var queries []string
-		myQuery, err := sh.Store.GetMyQuery(r.Context(), projectID, queryName)
+		myQuery, err := sh.Store.GetMyQuery(r.Context(), projectID, vars["tenantId"], queryName)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -234,6 +234,7 @@ func ProjectMyQueryASTHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				// do nothing - silently execute with is_public as false
 			}
 			qlInterface.SetQLData(r.Context(), myQuery, postBody, false, tokenObj, isPublic, "ast")
+			qlInterface.SetTenantId(vars["tenantId"])
 			res, _, err = qlInterface.Execute(r.Context(), projectID, datasources, sh.Store, "ast")
 			/*
 				if err != nil {
@@ -303,7 +304,7 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			return
 		}
 
-		datasources, err := sh.Store.GetDataSources(r.Context(), projectID)
+		datasources, err := sh.Store.GetDataSources(r.Context(), projectID, vars["tenantId"])
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, 400)
@@ -312,7 +313,7 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 		}
 		var res []map[string]interface{}
 		//var queries []string
-		myQuery, err := sh.Store.GetMyQuery(r.Context(), projectID, queryName)
+		myQuery, err := sh.Store.GetMyQuery(r.Context(), projectID, vars["tenantId"], queryName)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -377,6 +378,7 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			}
 
 			qlInterface.SetQLData(r.Context(), myQuery, postBody, true, tokenObj, isPublic, outputType)
+			qlInterface.SetTenantId(vars["tenantId"])
 			res, qobjs, err = qlInterface.Execute(r.Context(), projectID, datasources, sh.Store, outputType)
 			/*
 				if err != nil {
@@ -619,7 +621,7 @@ func GraphqlExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				return
 			}
 		}
-		datasources, err := sh.Store.GetDataSources(r.Context(), projectID)
+		datasources, err := sh.Store.GetDataSources(r.Context(), projectID, vars["tenantId"])
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -646,6 +648,7 @@ func GraphqlExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		gqd.Variables[module_model.RULEPREFIX_TOKEN] = tokenObj
 		gqd.FinalVariables = gqd.Variables
 		gqd.ExecuteFlag = true
+		gqd.TenantId = vars["tenantId"]
 
 		res, queryObjs, err := gqd.Execute(r.Context(), projectID, datasources, sh.Store, outputType)
 		_ = queryObjs
@@ -687,7 +690,7 @@ func SqlExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			}
 		}
 
-		datasources, err := sh.Store.GetDataSources(r.Context(), projectID)
+		datasources, err := sh.Store.GetDataSources(r.Context(), projectID, vars["tenantId"])
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -714,6 +717,7 @@ func SqlExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		sqd.Variables[module_model.RULEPREFIX_TOKEN] = tokenObj
 		sqd.FinalVariables = sqd.Variables
 		sqd.ExecuteFlag = true
+		sqd.TenantId = vars["tenantId"]
 		res, queryObjs, err := sqd.Execute(r.Context(), projectID, datasources, sh.Store, outputType)
 		_ = queryObjs
 		if err != nil {

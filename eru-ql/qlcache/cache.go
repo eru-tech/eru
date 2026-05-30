@@ -70,9 +70,17 @@ func NormalizeSQL(sql string) string {
 // BuildKey constructs the canonical cache key for a query. projectId and
 // dsAlias are folded into both the hash and the key prefix so two projects
 // that happen to share a datasource alias (and the same SQL) never collide.
-func BuildKey(projectId, dsAlias, finalSQL string) string {
-	h := sha256.Sum256([]byte(projectId + "::" + dsAlias + "::" + NormalizeSQL(finalSQL)))
-	return keyPrefix + projectId + ":" + dsAlias + ":" + hex.EncodeToString(h[:])
+// When tenantId is non-empty the key is additionally tenant-scoped so the same
+// query executed for different tenants (or at project level) never shares a
+// cache entry. A project-level execution (tenantId == "") produces the same
+// key as before, keeping existing entries valid.
+func BuildKey(projectId, tenantId, dsAlias, finalSQL string) string {
+	if tenantId == "" {
+		h := sha256.Sum256([]byte(projectId + "::" + dsAlias + "::" + NormalizeSQL(finalSQL)))
+		return keyPrefix + projectId + ":" + dsAlias + ":" + hex.EncodeToString(h[:])
+	}
+	h := sha256.Sum256([]byte(projectId + "::" + tenantId + "::" + dsAlias + "::" + NormalizeSQL(finalSQL)))
+	return keyPrefix + projectId + ":" + tenantId + ":" + dsAlias + ":" + hex.EncodeToString(h[:])
 }
 
 // enabled returns the active cache store if caching is configured and enabled
@@ -93,12 +101,12 @@ func enabled(ds *module_model.DataSource) bool {
 // Serve checks the cache for a matching result. On hit it deserializes and
 // returns the cached map. On miss/bypass/error it returns hit=false; the
 // caller then runs the DB query as usual. Never panics, never errors out.
-func Serve(ctx context.Context, ds *module_model.DataSource, finalSQL string) (hit bool, res map[string]interface{}, key string) {
+func Serve(ctx context.Context, ds *module_model.DataSource, tenantId string, finalSQL string) (hit bool, res map[string]interface{}, key string) {
 	if !enabled(ds) {
 		globalCounters.bypass.Add(1)
 		return false, nil, ""
 	}
-	key = BuildKey(ds.ProjectId, ds.DbAlias, finalSQL)
+	key = BuildKey(ds.ProjectId, tenantId, ds.DbAlias, finalSQL)
 	return lookupRaw(ctx, ds, key)
 }
 

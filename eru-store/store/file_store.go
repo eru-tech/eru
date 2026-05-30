@@ -83,3 +83,13 @@ func (store *FileStore) SaveStore(ctx context.Context, projectId string, fp stri
 	}
 	return err
 }
+
+func (store *FileStore) SaveTenantObject(ctx context.Context, tableName string, idColumn string, nameColumn string, projectId string, tenantId string, name string, config interface{}, ms StoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveTenantObject - Start")
+	return store.SaveStore(ctx, projectId, "", ms)
+}
+
+func (store *FileStore) RemoveTenantObject(ctx context.Context, tableName string, idColumn string, nameColumn string, projectId string, tenantId string, name string, ms StoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveTenantObject - Start")
+	return store.SaveStore(ctx, projectId, "", ms)
+}
