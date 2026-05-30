@@ -124,7 +124,8 @@ func stringifyParam(v any) string {
 
 // allowedComponentTypes mirrors the union of all entries in
 // eru-studio/src/lib/services/component-definitions.ts (BASIC + LAYOUT +
-// FORM + ERU + NAVIGATION + DATA + LOADING).
+// FORM + ERU + NAVIGATION + DATA + LOADING) plus the `widget` type
+// registered in component-registry.service.ts.
 var allowedComponentTypes = []any{
 	// basic
 	"text", "button", "image", "button_toggle", "badge", "chips",
@@ -132,6 +133,7 @@ var allowedComponentTypes = []any{
 	// layout
 	"flex_container", "grid_container", "card", "divider", "expansion_panel",
 	"list", "stepper", "sidebar_stepper", "tree", "grid_list", "page_ref",
+	"widget",
 	// form (general)
 	"radio", "slider", "slide_toggle", "autocomplete",
 	// eru form components
@@ -140,7 +142,7 @@ var allowedComponentTypes = []any{
 	"attachment", "location", "people", "priority", "progress", "rating",
 	"status", "tag",
 	// navigation
-	"toolbar", "menu", "sidenav", "tabs",
+	"toolbar", "menu", "sidenav", "tabs", "nav_menu", "nav_outlet",
 	// data
 	"grid", "eru_page", "line_chart", "bar_chart", "pie_chart",
 	// loading
@@ -156,6 +158,8 @@ var allowedEventActions = []any{
 	"start-timer", "stop-timer", "set-field", "enable-component",
 	"disable-component", "refresh-grid", "step-forward", "step-back",
 	"emit-to-parent",
+	"toggle-side-panel", "open-side-panel", "close-side-panel",
+	"navigate-to-page", "clear-page-data", "clear-all-page-data",
 }
 
 var allowedValidationTypes = []any{
@@ -164,7 +168,7 @@ var allowedValidationTypes = []any{
 
 var allowedDisplayModes = []any{"inline", "popup", "side_panel"}
 
-var allowedNestingTypes = []any{"object", "array", "nested_object", "nested_array"}
+var allowedNestingTypes = []any{"none", "object", "array", "nested_object", "nested_array"}
 
 func buildEruPageOutputSchema() eru_models.JSONSchema {
 	breakpointObject := eru_models.JSONSchema{
@@ -232,18 +236,21 @@ func buildEruPageOutputSchema() eru_models.JSONSchema {
 		Description: "ComponentEventSubscription wiring an emitted event to a runtime action.",
 		Properties: map[string]eru_models.JSONSchema{
 			"id":                     {Type: "string"},
-			"event":                  {Type: "string", Description: "DOM/component event (click, valueChange, focus, blur, mouseenter, buttonpress, ...)."},
+			"event":                  {Type: "string", Description: "DOM/component/page event (click, valueChange, focus, blur, mouseenter, buttonpress, on_load, timeout, timer_start, ...)."},
 			"action":                 {Type: "string", Enum: allowedEventActions},
 			"apiName":                {Type: "string", Description: "REQUIRED when action is `call-api`."},
-			"fieldNames":             {Type: "array", Items: &eru_models.JSONSchema{Type: "string"}},
-			"page_id":                {Type: "string"},
+			"fieldNames":             {Type: "array", Items: &eru_models.JSONSchema{Type: "string"}, Description: "Target field/component ids. Use [page_ref_id] for *-side-panel actions, [timer_id] for *-timer actions, [grid_id] for refresh-grid, [component_id] for hide/show/enable/disable-component and start/stop-loading."},
+			"page_id":                {Type: "string", Description: "Target page id for `navigate-to-page`."},
 			"payload":                {Type: "object", AdditionalProperties: true},
 			"state_key":              {Type: "string"},
-			"state_formula":          {Type: "object", AdditionalProperties: true, Description: "{ fn: set|increment|decrement|toggle|set-from-field|reset|expr, value?, by?, values?, field?, expr? }"},
+			"state_formula":          {Type: "object", AdditionalProperties: true, Description: "UpdateStateFormula { fn: set|increment|decrement|toggle|set-from-field|set-from-payload|reset|expr, value?, by?, values?, field?, expr?, payload_path? }"},
 			"value":                  {},
 			"on_success":             {Type: "array", Items: &eru_models.JSONSchema{Type: "object", AdditionalProperties: true}},
 			"on_error":               {Type: "array", Items: &eru_models.JSONSchema{Type: "object", AdditionalProperties: true}},
+			"error_field":            {Type: "string"},
+			"error_state_key":        {Type: "string"},
 			"validate_before_action": {Type: "boolean"},
+			"validate_field_names":   {Type: "array", Items: &eru_models.JSONSchema{Type: "string"}},
 		},
 		Required:             []string{"id", "event", "action"},
 		AdditionalProperties: false,
@@ -288,7 +295,7 @@ func buildEruPageOutputSchema() eru_models.JSONSchema {
 			"styles":           stylesSchema,
 			"events":           {Type: "array", Items: &eventSchema},
 			"validation_rules": {Type: "array", Items: &validationRuleSchema},
-			"children":         {Type: "array", Items: &componentChildSchema, Description: "Only allowed for container types (flex_container, grid_container, card, expansion_panel, stepper, sidebar_stepper, sidenav, toolbar, tabs)."},
+			"children":         {Type: "array", Items: &componentChildSchema, Description: "Only allowed for container types (flex_container, grid_container, card, expansion_panel, stepper, sidebar_stepper, sidenav, toolbar, tabs). page_ref and widget MUST NOT use children — they embed another page/widget by id."},
 			"parent_id":        {Type: "string"},
 			"created_at":       {Type: "string"},
 			"updated_at":       {Type: "string"},

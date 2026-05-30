@@ -149,6 +149,7 @@ type DataSource struct {
 	DbType                     string                                               `json:"db_type" eru:"required"`
 	DbName                     string                                               `json:"db_name" eru:"required"`
 	DbConfig                   DbConfig                                             `json:"db_config" eru:"optional"`
+	ResolvedDbConfig           DbConfig                                             `json:"-" eru:"optional"`
 	IcebergConfig              IcebergConfig                                        `json:"iceberg_config" eru:"optional"`
 	SqlEngine                  sqlengine.SQLEngineI                                 `json:"sql_engine"`
 	SchemaTables               map[string]map[string]common_types.TableColsMetaData `json:"schema_tables"` //tableName is the key
@@ -168,11 +169,13 @@ type DataSource struct {
 }
 
 type ReadDbConfig struct {
-	Name      string   `json:"name" eru:"required"`
-	DbConfig  DbConfig `json:"db_config" eru:"required"`
-	Weight    int      `json:"weight"`
-	Con       *sqlx.DB `json:"-"`
-	ConStatus bool     `json:"con_status"`
+	Name             string   `json:"name" eru:"required"`
+	DbConfig         DbConfig `json:"db_config" eru:"required"`
+	ResolvedDbConfig DbConfig `json:"-" eru:"optional"`
+	Weight           int      `json:"weight"`
+	Disabled         bool     `json:"disabled"`
+	Con              *sqlx.DB `json:"-"`
+	ConStatus        bool     `json:"con_status"`
 }
 
 type ReadPolicy struct {
@@ -180,6 +183,7 @@ type ReadPolicy struct {
 	IncludeMainInReads bool   `json:"include_main_in_reads"`
 	MainWeight         int    `json:"main_weight"`
 	FailoverToMain     bool   `json:"failover_to_main"`
+	Disabled           bool   `json:"disabled"`
 }
 
 type TableJoins struct {
@@ -588,7 +592,7 @@ func (prj *ExtendedProject) CompareProject(ctx context.Context, compareProject E
 		for _, cd := range compareProject.DataSources {
 			if md.DbAlias == cd.DbAlias {
 				dsFound = true
-				if !cmp.Equal(md, cd, cmpopts.IgnoreFields(DataSource{}, "Con", "ReadCounter", "SchemaTables", "SchemaTablesTransformation", "TableJoins"), cmpopts.IgnoreFields(ReadDbConfig{}, "Con", "ConStatus"), cmpopts.IgnoreFields(common_types.TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
+				if !cmp.Equal(md, cd, cmpopts.IgnoreFields(DataSource{}, "Con", "ReadCounter", "ResolvedDbConfig", "SchemaTables", "SchemaTablesTransformation", "TableJoins"), cmpopts.IgnoreFields(ReadDbConfig{}, "Con", "ConStatus", "ResolvedDbConfig"), cmpopts.IgnoreFields(common_types.TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
 					if storeCompare.MismatchDataSources == nil {
 						storeCompare.MismatchDataSources = make(map[string]interface{})
 					}

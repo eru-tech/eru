@@ -458,6 +458,26 @@ func (c *CkycTool) ExecuteDownload(ctx context.Context, params map[string]interf
 	result := map[string]interface{}{}
 	result["header"] = parseWireHeader(respStr)
 	result["request_id"] = requestId
+
+	encPid := extractTagValue(respStr, "PID")
+	encSk := extractTagValue(respStr, "SESSION_KEY")
+	if encPid != "" && encSk != "" {
+		decryptedPid, decErr := c.DecryptPidData(ctx, encPid, encSk)
+		if decErr != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("error decrypting response PID: %v", decErr))
+			result["decrypt_error"] = decErr.Error()
+		} else {
+			logs.WithContext(ctx).Info(fmt.Sprintf("CKYC Decrypted PID: %s", decryptedPid))
+			record, parseErr := parseDownloadPid(decryptedPid)
+			if parseErr != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("error parsing decrypted PID: %v", parseErr))
+				result["parse_error"] = parseErr.Error()
+			} else {
+				result["record"] = record
+			}
+		}
+	}
+
 	if msg := extractTagValue(respStr, "ERROR"); msg != "" {
 		result["message"] = msg
 	}

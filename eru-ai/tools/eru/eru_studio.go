@@ -26,11 +26,11 @@ type EruStudioFetchPageParams struct {
 }
 
 type EruStudioSavePageParams struct {
-	OrgId     string `json:"org_id" eru:"required" desc:"organization id"`
-	ProcessId string `json:"process_id" eru:"required" desc:"process id"`
-	PageId    string `json:"page_id" eru:"required" desc:"page id to save"`
-	PageName  string `json:"page_name" eru:"required" desc:"page name"`
-	PageDef   string `json:"page_def" eru:"required" desc:"page definition as JSON string"`
+	OrgId     string                 `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId string                 `json:"process_id" eru:"required" desc:"process id"`
+	PageId    string                 `json:"page_id" eru:"required" desc:"page id to save"`
+	PageName  string                 `json:"page_name" eru:"required" desc:"page name"`
+	PageDef   map[string]interface{} `json:"page_def" eru:"required" desc:"page definition as JSON string"`
 }
 
 type EruStudioTool struct {

@@ -614,7 +614,7 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 	}
 	rows, e := con.Queryx(query)
 	if e != nil {
-		MarkReadFailed(ctx, replica)
+		MarkReadFailed(ctx, replica, e)
 		e = logs.Err(ctx, e, "")
 		return nil, e
 	}
@@ -769,7 +769,7 @@ func (sqr *SqlMaker) ExecutePreparedQuery(ctx context.Context, query string, dat
 	}
 	rows, e := con.Queryx(query)
 	if e != nil {
-		MarkReadFailed(ctx, replica)
+		MarkReadFailed(ctx, replica, e)
 		e = logs.Err(ctx, e, "")
 		return nil, e
 	}
@@ -1139,7 +1139,7 @@ func (sqr *SqlMaker) ExecuteQuery(ctx context.Context, datasource *module_model.
 	}
 	rows, e := con.Queryx(qrm.SQLQuery)
 	if e != nil {
-		MarkReadFailed(ctx, replica)
+		MarkReadFailed(ctx, replica, e)
 		e = logs.Err(ctx, e, "")
 		return nil, e
 	}

@@ -74,13 +74,35 @@ func TestInvalidateBlocking_ReturnsDeletedCount(t *testing.T) {
 
 func TestIsDML(t *testing.T) {
 	cases := map[string]bool{
-		"INSERT INTO x VALUES(1)":   true,
-		" update x set y=1":         true,
-		"DELETE FROM x":             true,
-		"truncate table x":          true,
-		"select * from x":           false,
+		"INSERT INTO x VALUES(1)":                  true,
+		" update x set y=1":                        true,
+		"DELETE FROM x":                            true,
+		"truncate table x":                         true,
+		"select * from x":                          false,
 		"with cte as (select 1) select * from cte": false,
-		"":                          false,
+		"": false,
+
+		"-- audit\nINSERT INTO x VALUES(1)":                              true,
+		"/* hint */ UPDATE x SET y=1":                                    true,
+		"/* a */ /* b */ DELETE FROM x":                                  true,
+		"INSERT\nINTO x VALUES(1)":                                       true,
+		"INSERT  INTO x VALUES(1)":                                       true,
+		"WITH x AS (INSERT INTO t DEFAULT VALUES RETURNING *) SELECT *":  true,
+		"WITH x AS (UPDATE t SET y=1 RETURNING *) SELECT * FROM x":       true,
+		"WITH d AS (DELETE FROM t WHERE id=1 RETURNING *) SELECT id":     true,
+		"with x as (select 1), y as (insert into t values(1) returning *) select * from y": true,
+		"CREATE TABLE foo (id int)":                                      true,
+		"alter table foo add column c int":                               true,
+		"DROP TABLE foo":                                                 true,
+		"GRANT SELECT ON foo TO bob":                                     true,
+		"REVOKE ALL ON foo FROM bob":                                     true,
+		"COPY foo FROM stdin":                                            true,
+		"CALL my_proc()":                                                 true,
+		"VACUUM ANALYZE foo":                                             true,
+
+		"-- harmless\nSELECT 1":          false,
+		"/* harmless */ SELECT * FROM x": false,
+		"WITH x AS (SELECT 1) SELECT * FROM x where name='delete me'": true,
 	}
 	for sql, want := range cases {
 		if got := IsDML(sql); got != want {

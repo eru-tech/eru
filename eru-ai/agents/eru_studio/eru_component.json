@@ -23,6 +23,29 @@
             "type": "boolean",
             "description": "Indicates if the component is nested."
         },
+        "nesting_type": {
+            "type": "string",
+            "enum": [
+                "none",
+                "object",
+                "array",
+                "nested_object",
+                "nested_array"
+            ],
+            "description": "Nesting strategy used by container components like page_ref."
+        },
+        "pageId": {
+            "type": "string",
+            "description": "Parent page id when the component lives inside a nested page."
+        },
+        "index": {
+            "type": "integer",
+            "description": "Index of the component when rendered inside an array loop."
+        },
+        "entityName": {
+            "type": "string",
+            "description": "Entity name the component is bound to."
+        },
         "properties": {
             "$ref": "#/$defs/ResponsiveEruComponentProperties",
             "description": "Component properties; supports known fields plus arbitrary component-specific keys.",
@@ -285,11 +308,81 @@
                     "enum": [
                         "no-action",
                         "call-api",
-                        "fetch-page-data"
+                        "fetch-page-data",
+                        "save-page-data",
+                        "clear-page-data",
+                        "clear-all-page-data",
+                        "hide-fields",
+                        "unhide-fields",
+                        "disable-field",
+                        "enable-field",
+                        "set-field",
+                        "hide-component",
+                        "show-component",
+                        "disable-component",
+                        "enable-component",
+                        "start-loading",
+                        "stop-loading",
+                        "start-timer",
+                        "stop-timer",
+                        "refresh-grid",
+                        "update-state",
+                        "step-forward",
+                        "step-back",
+                        "emit-to-parent",
+                        "toggle-side-panel",
+                        "open-side-panel",
+                        "close-side-panel",
+                        "navigate-to-page"
                     ]
                 },
                 "apiName": {
                     "type": "string"
+                },
+                "fieldNames": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "page_id": {
+                    "type": "string"
+                },
+                "payload": {},
+                "state_key": {
+                    "type": "string"
+                },
+                "state_formula": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "value": {},
+                "on_success": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/ComponentEventSubscription"
+                    }
+                },
+                "on_error": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/ComponentEventSubscription"
+                    }
+                },
+                "error_field": {
+                    "type": "string"
+                },
+                "error_state_key": {
+                    "type": "string"
+                },
+                "validate_before_action": {
+                    "type": "boolean"
+                },
+                "validate_field_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             },
             "allOf": [

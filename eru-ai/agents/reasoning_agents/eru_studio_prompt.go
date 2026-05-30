@@ -89,16 +89,16 @@ ALLOWED COMPONENT TYPES (USE EXACTLY THESE STRINGS)
 BASIC:
   text, button, image, button_toggle, badge, chips, icon, progress_bar, progress_spinner, tile, timer
 
-LAYOUT (containers — may have children):
-  flex_container, grid_container, card, divider, expansion_panel, list, stepper, sidebar_stepper, tree, grid_list, page_ref
+LAYOUT (containers — may have children, EXCEPT page_ref and widget which embed by id):
+  flex_container, grid_container, card, divider, expansion_panel, list, stepper, sidebar_stepper, tree, grid_list, page_ref, widget
 
 INPUT/FORM:
   textbox, textarea, email, phone, number, currency, date, datetime, time-picker, duration, website,
   checkbox-eru, select-eru, attachment, location, people, priority, progress, rating, status, tag,
   radio, slider, slide_toggle, autocomplete
 
-NAVIGATION (may have children):
-  toolbar, menu, sidenav, tabs
+NAVIGATION (may have children — except nav_menu/nav_outlet which are leaves):
+  toolbar, menu, sidenav, tabs, nav_menu, nav_outlet
 
 DATA:
   grid, eru_page, line_chart, bar_chart, pie_chart
@@ -110,6 +110,8 @@ CONTAINER vs LEAF
 - Container types (allow children): flex_container, grid_container, card, expansion_panel, stepper, sidebar_stepper, sidenav, toolbar, tabs.
 - Other types are leaves and MUST NOT include "children".
 - list, tree, grid_list, grid render their items from data, not children.
+- page_ref and widget embed another page/widget by id — they MUST NOT carry children either.
+- Type identifiers are case-sensitive: use "checkbox-eru" (NOT "checkbox"), "select-eru" (NOT "select"), "time-picker" (with hyphen).
 
 ============================================================
 COMPONENT SELECTION POLICY
@@ -258,6 +260,42 @@ pie_chart:
 eru_page:
   targetPageId, displayMode ("popup"|"side_panel"|"inline"), buttonText, buttonIcon, autoOpen
 
+page_ref (embeds another EruPage — primary mechanism for nested pages, drill-ins, repeated sections):
+  display_type ("inline"|"popup"|"side_panel"; default "inline"),
+    inline      = render nested page directly in layout
+    popup       = open in MatDialog (80vw x 80vh, max 900px wide)
+    side_panel  = right-side overlay (420px wide, full height)
+  auto_open (bool; only meaningful when display_type="side_panel"):
+    true        = panel pinned open, no backdrop, no click-to-dismiss
+    false       = panel closed by default, opened via an event (open-side-panel / toggle-side-panel) with fieldNames=[page_ref_id]
+  page (string, required) — id of target EruPage,
+  nesting_type ("none"|"object"|"array"|"nested_object"|"nested_array"; default "object"):
+    none           = simple page reference
+    object         = single child record of an entity
+    array          = list of child records of an entity
+    nested_object  = nested object stored inside an entity field
+    nested_array   = nested array — repeats the page for each element
+  entity (string) — bound entity name (required when nesting_type != "none"),
+  data_source ("auto"|"api"; default "auto"; only when nesting_type is "object" or "array"):
+    auto = embedded page receives data automatically by parent entity_id
+    api  = embedded page calls api_name to fetch its data
+  api_name (string; when data_source="api"),
+  api_payload_fields (string[]; each entry is "state:<key>" or "page:<field>" — assembled into the API payload; only when data_source="api"),
+  loop_source ("data"|"static"|"api"|"field"; default "data"; only when nesting_type="nested_array"):
+    data    = iterate over bound child entity rows
+    static  = iterate over loop_static_data
+    api     = iterate over loop_api response
+    field   = iterate over options of loop_field
+  loop_static_data (stringified JSON array; when loop_source="static"; default "[]"),
+  loop_api (api name; when loop_source="api"),
+  loop_field (entity field name; when loop_source="field"),
+  loop_match_fields (string[]; field names used to deduplicate non-data loops),
+  description (string)
+
+widget (embeds a previously saved reusable widget by id):
+  widget (string, required) — id of the saved widget (no children allowed),
+  description (string)
+
 NOTE on data properties:
 - For chart components, the "data" property always holds STRINGIFIED JSON, not an object.
 - Provide sensible defaults when no DATA CONTEXT is supplied; otherwise derive shape from the supplied data.
@@ -278,6 +316,34 @@ COMMON BEHAVIOR PROPERTIES (apply to most components)
   disabled_conditions:    expression (only when disabled_behavior="conditionally")
 
 ============================================================
+PAGE-LEVEL STATE (EruPage.state)
+============================================================
+
+EruPage may declare reactive state variables on the page itself. Only emit when the user actually needs cross-component state (counters, running totals, computed flags, selected ids, etc.). Omit for simple widgets.
+
+Each EruPage.state[] entry is a PageStateVariable:
+
+  {
+    "key":      "<identifier>",                 // referenced as @state.<key>
+    "initial":  <any>,                          // initial value (string|number|bool|null|array|object)
+    "formula":  {                               // OPTIONAL — declarative auto-recompute
+      "fn":       "count" | "sum" | "avg" | "min" | "max" | "expr",
+      "source":   "pageDataArray"?,             // typically the page data rows
+      "field":    "<row field name>"?,          // operand for count/sum/avg/min/max
+      "filter":   <StateFilter | StateFilter[]>?,
+      "value":    "<expression string>"?        // only when fn="expr"
+    }
+  }
+
+StateFilter:
+  { "field": "<field>", "equals": <any>?, "not_empty": <bool>?, "in": [<...>]?, "not_in": [<...>]? }
+
+Guidelines:
+- Use formula for derived values (totals/counts) so the runtime keeps them in sync. Use plain "initial" for editable flags.
+- Counters: initial=0. Boolean flags: initial=false. Arrays: initial=[].
+- Reference state from components with "@state.<key>" inside expression-bearing properties.
+
+============================================================
 EVENTS & ACTIONS
 ============================================================
 
@@ -287,27 +353,41 @@ Each component may have an "events" array. Each item is a ComponentEventSubscrip
 
 Event names by component:
   - All: click, dblclick, mouseenter, mouseleave, mouseover, mouseout, mousedown, mouseup, focus, blur, keydown, keyup
-  - Form fields with identifier=true: valueChange
+  - Form fields with identifier=true: valueChange (alias: value_change)
   - Button: buttonpress, buttonrelease, buttonhover, buttonfocus, buttonblur, api_success, api_error
   - Charts: chart_click, datapoint_click
+  - Timer: timeout, timer_start
+  - Page-level (EruPage.events, NOT EruComponent.events): on_load — fired by parent page_ref once nested data has arrived.
 
 Allowed actions (pick the most specific one):
-  no-action, call-api, fetch-page-data, hide-fields, unhide-fields, save-page-data,
-  start-loading, stop-loading, hide-component, show-component,
-  disable-field, enable-field, update-state, start-timer, stop-timer, set-field,
-  enable-component, disable-component, refresh-grid, step-forward, step-back, emit-to-parent
+  no-action, call-api, fetch-page-data, save-page-data, clear-page-data, clear-all-page-data,
+  hide-fields, unhide-fields, disable-field, enable-field, set-field,
+  hide-component, show-component, disable-component, enable-component,
+  start-loading, stop-loading, start-timer, stop-timer, refresh-grid,
+  update-state, step-forward, step-back, emit-to-parent,
+  toggle-side-panel, open-side-panel, close-side-panel, navigate-to-page
 
 Action-specific keys:
-  - call-api          REQUIRES "apiName". Optional: payload, on_success[], on_error[], validate_before_action.
-  - fetch-page-data   page_id, payload.
-  - hide-fields/unhide-fields/disable-field/enable-field   fieldNames: [...]
-  - hide-component/show-component/disable-component/enable-component/start-timer/stop-timer/refresh-grid/step-forward/step-back   fieldNames: [<component id or name>]
-  - update-state      state_key, state_formula: { fn: "set"|"increment"|"decrement"|"toggle"|"set-from-field"|"reset"|"expr", value?, by?, field?, expr? }
-  - set-field         state_key (the field name), value
-  - emit-to-parent    state_key (event name to emit)
-  - save-page-data    payload (optional)
+  - call-api                   REQUIRES "apiName". Optional: payload, on_success[], on_error[], validate_before_action, validate_field_names[], error_field, error_state_key.
+  - fetch-page-data            page_id, payload.
+  - save-page-data             payload (optional).
+  - clear-page-data            page_id (optional).
+  - clear-all-page-data        (no extra keys).
+  - hide-fields/unhide-fields/disable-field/enable-field   fieldNames: [<field name>...]
+  - set-field                  fieldNames: [<field name>] AND value (or state_key+state_formula).
+  - hide-component/show-component/disable-component/enable-component/start-loading/stop-loading/start-timer/stop-timer/refresh-grid   fieldNames: [<component id>]
+  - update-state               state_key + state_formula. UpdateStateFormula shape:
+                                 { fn: "set"|"increment"|"decrement"|"toggle"|"set-from-field"|"set-from-payload"|"reset"|"expr",
+                                   value?, by?, values?, field?, expr?, payload_path? }
+                                 Use "set-from-payload" with payload_path like "entity_data.amount" to copy a value from an event payload (e.g. on_load).
+  - step-forward / step-back   fieldNames: [<stepper id>] (optional).
+  - emit-to-parent             state_key (event name to emit), payload (optional).
+  - toggle-side-panel / open-side-panel / close-side-panel   fieldNames: [<page_ref component id>].
+  - navigate-to-page           page_id (required).
 
-A submit button on a form should typically subscribe to "click" with action "call-api" and "validate_before_action": true.
+A submit button on a form should typically subscribe to "click" with action "call-api", "validate_before_action": true, and optionally "validate_field_names": [...] to restrict which fields gate the call.
+
+Page-level event "on_load" is fired by a parent page_ref AFTER the nested page's data arrives. Use it on the EruPage.events array (NOT on a component) to drive cross-page reactions. Payload supplied to the action: { entity_id, entity_data, entity_name }. Combine "on_load" with action "update-state" + state_formula { fn: "set-from-payload", payload_path: "entity_data.<field>" } to lift values from the nested record into outer page state.
 
 ============================================================
 VALIDATION RULES (for input/form components)

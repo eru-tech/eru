@@ -73,6 +73,14 @@ func (mr *MysqlSqlMaker) CreateConn(ctx context.Context, dataSource *module_mode
 	dataSource.ConStatus = true
 
 	for i := range dataSource.ReadDbConfigs {
+		if dataSource.ReadPolicy.Disabled || dataSource.ReadDbConfigs[i].Disabled {
+			if dataSource.ReadDbConfigs[i].Con != nil {
+				_ = dataSource.ReadDbConfigs[i].Con.Close()
+				dataSource.ReadDbConfigs[i].Con = nil
+			}
+			dataSource.ReadDbConfigs[i].ConStatus = false
+			continue
+		}
 		if rerr := mr.ConnectReadReplica(ctx, dataSource, i); rerr != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("read replica ", dataSource.ReadDbConfigs[i].Name, " connect failed: ", rerr.Error()))
 		}
@@ -85,7 +93,11 @@ func (mr *MysqlSqlMaker) ConnectReadReplica(ctx context.Context, dataSource *mod
 		return errors.New("read replica index out of range")
 	}
 	replica := dataSource.ReadDbConfigs[idx]
-	db, err := dialMysql(ctx, replica.DbConfig)
+	cfg := replica.DbConfig
+	if replica.ResolvedDbConfig.Host != "" {
+		cfg = replica.ResolvedDbConfig
+	}
+	db, err := dialMysql(ctx, cfg)
 	if err != nil {
 		replica.ConStatus = false
 		replica.Con = nil

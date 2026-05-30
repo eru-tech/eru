@@ -297,6 +297,14 @@ func (pr *PostgresSqlMaker) CreateConn(ctx context.Context, dataSource *module_m
 	dataSource.ConStatus = true
 
 	for i := range dataSource.ReadDbConfigs {
+		if dataSource.ReadPolicy.Disabled || dataSource.ReadDbConfigs[i].Disabled {
+			if dataSource.ReadDbConfigs[i].Con != nil {
+				_ = dataSource.ReadDbConfigs[i].Con.Close()
+				dataSource.ReadDbConfigs[i].Con = nil
+			}
+			dataSource.ReadDbConfigs[i].ConStatus = false
+			continue
+		}
 		if rerr := pr.ConnectReadReplica(ctx, dataSource, i); rerr != nil {
 			logs.WithContext(ctx).Error(fmt.Sprint("read replica ", dataSource.ReadDbConfigs[i].Name, " connect failed: ", rerr.Error()))
 		}
@@ -309,7 +317,11 @@ func (pr *PostgresSqlMaker) ConnectReadReplica(ctx context.Context, dataSource *
 		return errors.New("read replica index out of range")
 	}
 	replica := dataSource.ReadDbConfigs[idx]
-	db, err := dialPostgres(ctx, replica.DbConfig)
+	cfg := replica.DbConfig
+	if replica.ResolvedDbConfig.Host != "" {
+		cfg = replica.ResolvedDbConfig
+	}
+	db, err := dialPostgres(ctx, cfg)
 	if err != nil {
 		replica.ConStatus = false
 		replica.Con = nil

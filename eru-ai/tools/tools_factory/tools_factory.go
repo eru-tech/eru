@@ -56,6 +56,10 @@ func GetTool(toolType string) tools.Tooling {
 		return new(eru.ErufunctionsTool)
 	case "ERUSTUDIO":
 		return new(eru.EruStudioTool)
+	case "ERUFILES":
+		return new(eru.ErufilesTool)
+	case "PROCESSO":
+		return new(eru.ProcessoTool)
 	case "NDMLKYC":
 		return new(ndml_kyc.NdmlTool)
 	case "CKYC":
