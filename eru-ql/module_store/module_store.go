@@ -32,6 +32,11 @@ const (
 	StoreTenantQueryTableName = "eruql_tenant_queries"
 )
 
+type MyQueryListItem struct {
+	QueryName string `json:"query_name"`
+	QueryType string `json:"query_type"`
+}
+
 // resolveDataSource returns the datasource for (projectId, tenantId, dbAlias), resolving
 // the tenant's datasources first and falling back to project-level datasources.
 func (ms *ModuleStore) resolveDataSource(projectId string, tenantId string, dbAlias string) (datasource *module_model.DataSource, isTenant bool, found bool) {
@@ -120,6 +125,7 @@ type ModuleStoreI interface {
 	RemoveDataSource(ctx context.Context, projectId string, tenantId string, dbAlias string, realStore ModuleStoreI) error
 	GetDataSource(ctx context.Context, projectId string, tenantId string, dbAlias string) (datasource *module_model.DataSource, err error)
 	GetDataSources(ctx context.Context, projectId string, tenantId string) (datasources map[string]*module_model.DataSource, err error)
+	GetDataSourcesList(ctx context.Context, projectId string, tenantId string) (datasources map[string]*module_model.DataSource, err error)
 	UpdateSchemaTables(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string, realStore ModuleStoreI) (datasource *module_model.DataSource, err error)
 	CheckTableExists(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string, realStore ModuleStoreI) (columns map[string]common_types.TableColsMetaData, schema string, err error)
 	AddSchemaTable(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error)
@@ -136,7 +142,7 @@ type ModuleStoreI interface {
 	RemoveMyQuery(ctx context.Context, projectId string, tenantId string, queryName string, realStore ModuleStoreI) error
 	GetMyQuery(ctx context.Context, projectId string, tenantId string, queryName string) (myquery module_model.MyQuery, err error)
 	GetMyQueries(ctx context.Context, projectId string, tenantId string, queryType string) (myqueries map[string]module_model.MyQuery, err error)
-	GetMyQueriesNames(ctx context.Context, projectId string, tenantId string) (myqueries []string, err error)
+	GetMyQueriesNames(ctx context.Context, projectId string, tenantId string) (myqueries []MyQueryListItem, err error)
 	AddSchemaJoin(ctx context.Context, projectId string, tenantId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error)
 	RemoveSchemaJoin(ctx context.Context, projectId string, tenantId string, dbAlias string, tj *module_model.TableJoins, realStore ModuleStoreI) (tables map[string]interface{}, err error)
 }
@@ -529,6 +535,29 @@ func (ms *ModuleStore) GetDataSources(ctx context.Context, projectId string, ten
 	}
 	return datasources, nil
 }
+
+func (ms *ModuleStore) GetDataSourcesList(ctx context.Context, projectId string, tenantId string) (datasources map[string]*module_model.DataSource, err error) {
+	logs.WithContext(ctx).Debug("GetDataSourcesList - Start")
+	err = ms.checkProjectExists(ctx, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	datasources = make(map[string]*module_model.DataSource)
+	if tenantId != "" {
+		if tc, ok := ms.Projects[projectId].Tenants[tenantId]; ok {
+			for k, v := range tc.DataSources {
+				datasources[k] = v
+			}
+		}
+		return datasources, nil
+	}
+	for k, v := range ms.Projects[projectId].DataSources {
+		datasources[k] = v
+	}
+	return datasources, nil
+}
+
 func (ms *ModuleStore) CheckTableExists(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string, realStore ModuleStoreI) (columns map[string]common_types.TableColsMetaData, schema string, err error) {
 	logs.WithContext(ctx).Debug("CheckTableExists - Start")
 	realStore.GetMutex().Lock()
@@ -906,18 +935,17 @@ func (ms *ModuleStore) GetMyQueries(ctx context.Context, projectId string, tenan
 	logs.WithContext(ctx).Debug("GetMyQueries - Start")
 	if _, ok := ms.Projects[projectId]; ok {
 		queriesToReturn := make(map[string]module_model.MyQuery)
-		for k, mq := range ms.Projects[projectId].MyQueries {
-			if strings.EqualFold(mq.QueryType, queryType) {
-				queriesToReturn[k] = *mq
-			}
-		}
+		queries := ms.Projects[projectId].MyQueries
 		if tenantId != "" {
 			if tc, tcOk := ms.Projects[projectId].Tenants[tenantId]; tcOk {
-				for k, mq := range tc.MyQueries {
-					if strings.EqualFold(mq.QueryType, queryType) {
-						queriesToReturn[k] = *mq
-					}
-				}
+				queries = tc.MyQueries
+			} else {
+				queries = nil
+			}
+		}
+		for k, mq := range queries {
+			if strings.EqualFold(mq.QueryType, queryType) {
+				queriesToReturn[k] = *mq
 			}
 		}
 		return queriesToReturn, nil
@@ -930,18 +958,19 @@ func (ms *ModuleStore) GetMyQueries(ctx context.Context, projectId string, tenan
 	}
 }
 
-func (ms *ModuleStore) GetMyQueriesNames(ctx context.Context, projectId string, tenantId string) (myqueries []string, err error) {
+func (ms *ModuleStore) GetMyQueriesNames(ctx context.Context, projectId string, tenantId string) (myqueries []MyQueryListItem, err error) {
 	logs.WithContext(ctx).Debug("GetMyQueriesNames - Start")
 	if _, ok := ms.Projects[projectId]; ok {
-		for k := range ms.Projects[projectId].MyQueries {
-			myqueries = append(myqueries, k)
-		}
+		queries := ms.Projects[projectId].MyQueries
 		if tenantId != "" {
 			if tc, tcOk := ms.Projects[projectId].Tenants[tenantId]; tcOk {
-				for k := range tc.MyQueries {
-					myqueries = append(myqueries, k)
-				}
+				queries = tc.MyQueries
+			} else {
+				queries = nil
 			}
+		}
+		for k, mq := range queries {
+			myqueries = append(myqueries, MyQueryListItem{QueryName: k, QueryType: mq.QueryType})
 		}
 		return
 	} else {

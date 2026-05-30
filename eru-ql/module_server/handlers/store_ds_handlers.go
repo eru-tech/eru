@@ -164,7 +164,7 @@ func ProjectDataSourceListHandler(sh *module_store.StoreHolder) http.HandlerFunc
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 
-		datasources, err := sh.Store.GetDataSources(r.Context(), projectId, vars["tenantId"])
+		datasources, err := sh.Store.GetDataSourcesList(r.Context(), projectId, vars["tenantId"])
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

@@ -29,8 +29,11 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodPost).Path("/func/validate").HandlerFunc(module_handlers.FuncValidateHandler(sh))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/{tenant}/func/remove/{funcname}").HandlerFunc(module_handlers.FuncRemoveHandler(sh))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/func/remove/{funcname}").HandlerFunc(module_handlers.FuncRemoveHandler(sh))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/func/run/{funcstepname}/{endfuncstepname}").HandlerFunc(module_handlers.SFuncRunHandler(sh))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run/{funcstepname}/{endfuncstepname}").HandlerFunc(module_handlers.SFuncRunHandler(sh))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/func/run/{funcstepname}").HandlerFunc(module_handlers.SFuncRunHandler(sh))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run/{funcstepname}").HandlerFunc(module_handlers.SFuncRunHandler(sh))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/{tenant}/func/run").HandlerFunc(module_handlers.FuncRunHandler(sh))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/func/run").HandlerFunc(module_handlers.FuncRunHandler(sh))
 
 	//storeRouter.Methods(http.MethodGet).Path("/{project}/func/{funcname}/request/list").HandlerFunc(module_handlers.FuncRequestListHandler(sh))
