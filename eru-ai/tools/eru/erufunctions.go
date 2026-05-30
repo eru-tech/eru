@@ -415,7 +415,7 @@ func (erufuncTool *ErufunctionsTool) SaveFunc(ctx context.Context, projectId str
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, "/func/save")
+	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/func/save")
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, p.FuncGroup)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -455,7 +455,7 @@ func (erufuncTool *ErufunctionsTool) RemoveFunc(ctx context.Context, projectId s
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, "/func/remove/", p.FuncName)
+	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/func/remove/", p.FuncName)
 	reqBody := map[string]interface{}{"project_id": projectId, "func_name": p.FuncName}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodDelete, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -476,7 +476,7 @@ func (erufuncTool *ErufunctionsTool) FetchFunc(ctx context.Context, projectId st
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, "/func/fetch/", p.FuncName)
+	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/func/fetch/", p.FuncName)
 	reqBody := map[string]interface{}{"project_id": projectId, "func_name": p.FuncName}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -504,7 +504,7 @@ func (erufuncTool *ErufunctionsTool) RunFunc(ctx context.Context, projectId stri
 		return nil, nil, false, err
 	}
 
-	pathParts := []string{baseUrl, "/store/", projectId, "/func/run"}
+	pathParts := []string{baseUrl, "/store/", projectId, "/", tenantId, "/func/run"}
 	if p.FuncStepName != "" {
 		pathParts = append(pathParts, "/", p.FuncStepName)
 	}
@@ -540,7 +540,7 @@ func (erufuncTool *ErufunctionsTool) ExecuteFunc(ctx context.Context, projectId 
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/", projectId, "/func/", p.FuncName)
+	url := fmt.Sprint(baseUrl, "/", projectId, "/", tenantId, "/func/", p.FuncName)
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, p.Body)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -581,7 +581,7 @@ func (erufuncTool *ErufunctionsTool) ListMyQueries(ctx context.Context, projectI
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, "/myquery/list")
+	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/myquery/list")
 	reqBody := map[string]interface{}{"project_id": projectId}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -598,7 +598,7 @@ func (erufuncTool *ErufunctionsTool) ListFuncs(ctx context.Context, projectId st
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, "/func/list")
+	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/func/list")
 	reqBody := map[string]interface{}{"project_id": projectId}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -615,11 +615,7 @@ func (erufuncTool *ErufunctionsTool) ListAgents(ctx context.Context, projectId s
 	if err != nil {
 		return nil, nil, false, err
 	}
-	tenantSegment := ""
-	if tenantId != "" {
-		tenantSegment = fmt.Sprint("/", tenantId)
-	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, tenantSegment, "/agent/list")
+	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/agent/list")
 	reqBody := map[string]interface{}{"project_id": projectId, "tenant_id": tenantId}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -636,11 +632,7 @@ func (erufuncTool *ErufunctionsTool) ListTools(ctx context.Context, projectId st
 	if err != nil {
 		return nil, nil, false, err
 	}
-	tenantSegment := ""
-	if tenantId != "" {
-		tenantSegment = fmt.Sprint("/", tenantId)
-	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, tenantSegment, "/tool/list")
+	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/tool/list")
 	reqBody := map[string]interface{}{"project_id": projectId, "tenant_id": tenantId}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -661,7 +653,7 @@ func (erufuncTool *ErufunctionsTool) ScheduleFunc(ctx context.Context, projectId
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/", projectId, "/schedule/func/", p.FuncName)
+	url := fmt.Sprint(baseUrl, "/", projectId, "/", tenantId, "/schedule/func/", p.FuncName)
 	body := map[string]interface{}{"schedule": p.Schedule}
 	for k, v := range p.Body {
 		if k == "schedule" {
@@ -688,7 +680,7 @@ func (erufuncTool *ErufunctionsTool) UnScheduleFunc(ctx context.Context, project
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/", projectId, "/unschedule/func/", p.JobId)
+	url := fmt.Sprint(baseUrl, "/", projectId, "/", tenantId, "/unschedule/func/", p.JobId)
 	reqBody := map[string]interface{}{"project_id": projectId, "job_id": p.JobId}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodDelete, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
