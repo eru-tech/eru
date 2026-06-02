@@ -740,6 +740,8 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 				innerResultRow = append(innerResultRow, val)
 			} else if mapping[colType.Name()] == nil {
 				innerResultRow = append(innerResultRow, "")
+			} else if mapBytes, mapErr := json.Marshal(mapping[colType.Name()]); mapErr == nil {
+				innerResultRow = append(innerResultRow, string(mapBytes))
 			} else {
 				err = errors.New(fmt.Sprint("value of ", colType.Name(), " is not a string"))
 				err = logs.Err(ctx, err, "")

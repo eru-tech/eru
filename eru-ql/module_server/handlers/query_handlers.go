@@ -348,6 +348,19 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			}
 			delete(postBody, "columns")
 		}
+		var excludeColumns []string
+		if excludeColumnsData, excludeColumnsOk := postBody["exclude_columns"]; excludeColumnsOk {
+			excludeColumnsBytes, err := json.Marshal(excludeColumnsData)
+			if err == nil {
+				err = json.Unmarshal(excludeColumnsBytes, &excludeColumns)
+				if err != nil {
+					logs.WithContext(r.Context()).Error(err.Error())
+				}
+			} else {
+				logs.WithContext(r.Context()).Error(err.Error())
+			}
+			delete(postBody, "exclude_columns")
+		}
 		pivotConfig := make(map[string]eru_writes.PivotTableConfig)
 		if pivotConfigData, pivotConfigOk := postBody["pivot_config"]; pivotConfigOk {
 			pivotConfigBytes, err := json.Marshal(pivotConfigData)
@@ -404,10 +417,14 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			columns = eru_writes.MergeColumnarSettings(columns, myQuery.Columns)
 			excelStyles = eru_writes.MergeCellFormattersMap(excelStyles, myQuery.ExcelStyles)
 			pivotConfig = eru_writes.MergePivotConfigs(pivotConfig, myQuery.PivotConfig)
+			if len(excludeColumns) == 0 {
+				excludeColumns = myQuery.ExcludeColumns
+			}
 
 			ewd := eru_writes.ExcelWriteData{
 				WriteData: eru_writes.WriteData{
 					ColumnarSettings: columns,
+					ExcludeColumns:   excludeColumns,
 					FileName:         fmt.Sprintf("%s.xlsx", queryName),
 				},
 				CellFormat:  excelStyles,
@@ -493,6 +510,9 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			w.WriteHeader(http.StatusOK)
 			return
 		} else if outputType == eru_writes.OutputTypeCsv {
+			if len(excludeColumns) == 0 {
+				excludeColumns = myQuery.ExcludeColumns
+			}
 			b := &bytes.Buffer{} // creates IO Writer
 			ww := csv.NewWriter(b)
 			for _, v := range res {
@@ -512,7 +532,21 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 								server_handlers.FormatResponse(w, 400)
 								_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 							}
-							ww.WriteAll(csvStrData)
+							excludedCols := eru_writes.ExcludedColumnIndices(records[0], excludeColumns)
+							if excludedCols == nil {
+								ww.WriteAll(csvStrData)
+							} else {
+								for _, row := range csvStrData {
+									outRow := make([]string, 0, len(row))
+									for ci, c := range row {
+										if excludedCols[ci] {
+											continue
+										}
+										outRow = append(outRow, c)
+									}
+									ww.Write(outRow)
+								}
+							}
 						}
 					} else {
 						err = errors.New(fmt.Sprint("inccorect csv data format"))
