@@ -310,7 +310,14 @@ func (m *mockModuleStore) SaveStore(_ context.Context, _, _ string, _ store.Stor
 func (m *mockModuleStore) SaveTenantStore(_ context.Context, _, _, _ string, _ interface{}) error {
 	return nil
 }
-func (m *mockModuleStore) SetDbType(_ string) {}
+func (m *mockModuleStore) SaveTenantObject(_ context.Context, _, _, _, _, _, _ string, _ interface{}, _ store.StoreI) error {
+	return nil
+}
+func (m *mockModuleStore) RemoveTenantObject(_ context.Context, _, _, _, _, _, _ string, _ store.StoreI) error {
+	return nil
+}
+func (m *mockModuleStore) SetStoreTenantLoadQuery(_ string) {}
+func (m *mockModuleStore) SetDbType(_ string)               {}
 func (m *mockModuleStore) CreateConn() error  { return nil }
 func (m *mockModuleStore) GetConn() *sqlx.DB  { return nil }
 func (m *mockModuleStore) GetDbType() string  { return "STANDALONE" }

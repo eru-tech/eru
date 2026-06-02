@@ -42,7 +42,7 @@ func CacheInvalidateHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			return
 		}
 
-		datasources, err := sh.Store.GetDataSources(ctx, projectId)
+		datasources, err := sh.Store.GetDataSources(ctx, projectId, vars["tenantId"])
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

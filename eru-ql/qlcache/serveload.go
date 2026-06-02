@@ -42,6 +42,7 @@ var flightGroup singleflight.Group
 func ServeOrLoad(
 	ctx context.Context,
 	ds *module_model.DataSource,
+	tenantId string,
 	sql string,
 	schemaPrefix string,
 	loader Loader,
@@ -56,7 +57,7 @@ func ServeOrLoad(
 		return res, err
 	}
 
-	key := BuildKey(ds.ProjectId, ds.DbAlias, sql)
+	key := BuildKey(ds.ProjectId, tenantId, ds.DbAlias, sql)
 	desc := opts.QueryName
 	if desc == "" {
 		desc = sql
