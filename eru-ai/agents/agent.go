@@ -51,8 +51,40 @@ type AgentMessage struct {
 }
 
 type AgentOutputAction struct {
+	ActionType string                 `json:"action_type,omitempty"`
 	ActionName string                 `json:"action_name,omitempty"`
 	Action     map[string]interface{} `json:"action,omitempty"`
+}
+
+const (
+	ActionTypeAnswer   = "answer"
+	ActionTypeQuestion = "question"
+)
+
+type ClarificationRequest struct {
+	Prompt    string                  `json:"prompt,omitempty"`
+	Questions []ClarificationQuestion `json:"questions"`
+}
+
+type ClarificationQuestion struct {
+	Id            string           `json:"id"`
+	Question      string           `json:"question"`
+	Options       []QuestionOption `json:"options,omitempty"`
+	MultiSelect   bool             `json:"multi_select,omitempty"`
+	AllowFreeText bool             `json:"allow_free_text"`
+	FreeTextLabel string           `json:"free_text_label,omitempty"`
+	Required      bool             `json:"required,omitempty"`
+}
+
+type QuestionOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+type ClarificationAnswer struct {
+	QuestionId string   `json:"question_id"`
+	Selected   []string `json:"selected,omitempty"`
+	FreeText   string   `json:"free_text,omitempty"`
 }
 
 type Conversation struct {
@@ -188,12 +220,22 @@ func (agent *Agent) SetSummaryModel(model models.ModelI) {
 	agent.ConversationManager.SummaryModel = model
 }
 func (agent *Agent) ExecuteAgentFunction(ctx context.Context, agentMessage AgentMessage, projectId string, tenantId string) (map[string]interface{}, error) {
-	logs.WithContext(ctx).Debug("ExecuteAgentFunction - Start")
+	responseContent, _, err := agent.ExecuteAgentFunctionResumable(ctx, agentMessage, projectId, tenantId, "", "", nil, nil)
+	return responseContent, err
+}
+
+// ExecuteAgentFunctionResumable runs the agent's FuncGroup with optional
+// start/end step bounds and pre-seeded reqVars/resVars, and returns the
+// per-step variables (funcVarsMap) alongside the response. This is what lets an
+// orchestration resume mid-plan after a human-in-the-loop pause: start at the
+// paused step, seed completed steps' outputs, and capture partial results.
+func (agent *Agent) ExecuteAgentFunctionResumable(ctx context.Context, agentMessage AgentMessage, projectId string, tenantId string, startStep string, endStep string, reqVars map[string]*functions.TemplateVars, resVars map[string]*functions.TemplateVars) (map[string]interface{}, map[string]functions.FuncTemplateVars, error) {
+	logs.WithContext(ctx).Debug("ExecuteAgentFunctionResumable - Start")
 
 	chatRequestJSON, err := json.Marshal(agentMessage)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return nil, nil, err
 	}
 	headers := http.Header{}
 	headers.Add("Content-Type", "application/json")
@@ -212,39 +254,42 @@ func (agent *Agent) ExecuteAgentFunction(ctx context.Context, agentMessage Agent
 	err = fms.SaveProject(ctx, projectId, fms, false)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return nil, nil, err
 	}
 	err = fms.SaveFunc(ctx, agent.Function, projectId, "", fms, false)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return nil, nil, err
 	}
 	cloneFuncGroup, err := fms.ValidateFunc(ctx, agent.Function, projectId, "", "host", "url", "method", headers, reqBody, fms, true, "")
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return nil, nil, err
 	}
-	reqVars := make(map[string]*functions.TemplateVars)
-	resVars := make(map[string]*functions.TemplateVars)
+	if reqVars == nil {
+		reqVars = make(map[string]*functions.TemplateVars)
+	}
+	if resVars == nil {
+		resVars = make(map[string]*functions.TemplateVars)
+	}
 
-	response, _, err := cloneFuncGroup.Execute(ctx, r, 1, 1, "", "", false, reqVars, resVars)
+	response, funcVarsMap, err := cloneFuncGroup.Execute(ctx, r, 1, 1, startStep, endStep, false, reqVars, resVars)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return nil, nil, err
 	}
 	responseContent := make(map[string]interface{})
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return nil, nil, err
 	}
 	err = json.Unmarshal(responseBody, &responseContent)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return nil, nil, err
 	}
-	return responseContent, nil
-
+	return responseContent, funcVarsMap, nil
 }
 func (agent *Agent) LoadConversations(ctx context.Context, conversationId string, agentMessage AgentMessage, projectId string, tenantId string) (chatRequest models.ChatRequest, conversation *Conversation, err error) {
 	conversation, err = agent.LoadConversationHistory(ctx, conversationId, projectId, tenantId)

@@ -92,6 +92,7 @@ func (req ClarificationRequest) ToAction(agentName string) AgentOutputAction {
 // a single text block so the model sees, on resume, what it asked and what was
 // chosen. When the original request is empty (questions not available) it falls
 // back to rendering the answers alone.
+
 func FormatAnswersForModel(req ClarificationRequest, answers []ClarificationAnswer) string {
 	questionById := make(map[string]ClarificationQuestion, len(req.Questions))
 	for _, q := range req.Questions {
