@@ -17,6 +17,7 @@ type WriteData struct {
 	//ColumnarDataHeader         []string
 	//ColumnarDataHeaderFirstRow bool
 	ColumnarSettings map[string]ColumnarSettings
+	ExcludeColumns   []string
 	FileName         string
 }
 
@@ -57,6 +58,29 @@ func extractHeaders(records []interface{}) (headers []string, validRecords []map
 		headers = append(headers, key)
 	}
 	return
+}
+
+// ExcludedColumnIndices returns the set of column indices that should be skipped,
+// matching excludeColumns against the header row. It returns nil when nothing is
+// excluded so callers can take the unmodified fast path without an extra pass.
+func ExcludedColumnIndices(headerRow []interface{}, excludeColumns []string) map[int]bool {
+	if len(excludeColumns) == 0 || len(headerRow) == 0 {
+		return nil
+	}
+	excludeSet := make(map[string]struct{}, len(excludeColumns))
+	for _, c := range excludeColumns {
+		excludeSet[c] = struct{}{}
+	}
+	excluded := make(map[int]bool)
+	for i, h := range headerRow {
+		if _, ok := excludeSet[fmt.Sprint(h)]; ok {
+			excluded[i] = true
+		}
+	}
+	if len(excluded) == 0 {
+		return nil
+	}
+	return excluded
 }
 
 // buildRow constructs a row for the given record based on the headers

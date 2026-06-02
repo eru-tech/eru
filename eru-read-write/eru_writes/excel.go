@@ -208,16 +208,9 @@ func calculateOptimalColumnWidth(data [][]interface{}, columnIndex int) float64 
 }
 
 // Helper function to calculate data range from sheet data
-func calculateDataRange(sheetName string, data [][]interface{}, hasHeader bool) string {
-	if len(data) == 0 {
+func calculateDataRange(sheetName string, rows int, cols int) string {
+	if rows == 0 {
 		return fmt.Sprintf("%s!A1:A1", sheetName)
-	}
-
-	// Calculate dimensions
-	rows := len(data)
-	cols := 0
-	if rows > 0 {
-		cols = len(data[0])
 	}
 
 	// Convert to Excel range format
@@ -672,19 +665,54 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 			}
 		} */
 
+		// Determine columns to exclude (matched against the header row) and the
+		// resulting output-column mapping. excludedCols is nil when nothing is
+		// excluded so the existing loops behave exactly as before.
+		var excludedCols map[int]bool
+		if sheetSettings.HeaderFirstRow && len(v) > 0 {
+			excludedCols = ExcludedColumnIndices(v[0], ewd.ExcludeColumns)
+		}
+		keptColCount := 0
+		if len(v) > 0 {
+			keptColCount = len(v[0]) - len(excludedCols)
+		}
+		var outColOf map[int]int
+		if excludedCols != nil && len(v) > 0 {
+			outColOf = make(map[int]int, len(v[0]))
+			oc := 0
+			for i := 0; i < len(v[0]); i++ {
+				if excludedCols[i] {
+					continue
+				}
+				outColOf[i] = oc
+				oc++
+			}
+		}
+		mapCol := func(orig int) (int, bool) {
+			if outColOf == nil {
+				return orig, true
+			}
+			o, ok := outColOf[orig]
+			return o, ok
+		}
+
 		// Process data rows
 		var headerRow []interface{}
 		for rNo, row := range v {
 			if sheetSettings.HeaderFirstRow && rNo == 0 {
 				headerRow = row
 			}
+			outCol := 0
 			for cNo, colV := range row {
+				if excludedCols[cNo] {
+					continue
+				}
 				col := colV
 				if sheetSettings.HeaderFirstRow && rNo == 0 {
 					colHeaderKey := fmt.Sprint(colV)
 					col = sheetSettings.Headers[colHeaderKey].HeaderLabel
 				}
-				cellRef := fmt.Sprint(columnToLetter(cNo+1), rNo+1)
+				cellRef := fmt.Sprint(columnToLetter(outCol+1), rNo+1)
 
 				// Determine data type - use provided type or auto-detect
 				colKey := fmt.Sprint(cNo)
@@ -734,7 +762,7 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 					logs.WithContext(ctx).Warn(fmt.Sprintf("Failed to set cell %s: %v", cellRef, setErr))
 					f.SetCellStr(k, cellRef, safeString(col))
 				}
-
+				outCol++
 			}
 			//	}
 		}
@@ -765,7 +793,7 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 			// Merge with existing header style
 			mergedHeaderStyle := mergeCellStyles(ewd.CellFormat[k].HeaderStyle, headerAlignmentStyle)
 			if styleID, styleErr := createStyle(f, mergedHeaderStyle); styleErr == nil {
-				f.SetCellStyle(k, fmt.Sprint(columnToLetter(1), 1), fmt.Sprint(columnToLetter(len(v[0])), 1), styleID)
+				f.SetCellStyle(k, fmt.Sprint(columnToLetter(1), 1), fmt.Sprint(columnToLetter(keptColCount), 1), styleID)
 			}
 		}
 
@@ -773,6 +801,10 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 		for _, h := range sheetSettings.Headers {
 			i := getColumnNumber(headerRow, h.HeaderName)
 			if i >= 0 {
+				outc, ok := mapCol(i)
+				if !ok {
+					continue
+				}
 				dataAlignmentStyle := CellStyle{
 					Alignment: &AlignmentStyle{
 						Horizontal: getDefaultHorizontalAlignment(h.DataType),
@@ -781,7 +813,7 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 				// Merge with existing data style
 				mergedDataStyle := mergeCellStyles(ewd.CellFormat[k].DataStyle, dataAlignmentStyle)
 				if styleID, styleErr := createStyle(f, mergedDataStyle); styleErr == nil {
-					f.SetCellStyle(k, fmt.Sprint(columnToLetter(i+1), startRow), fmt.Sprint(columnToLetter(i+1), len(v)), styleID)
+					f.SetCellStyle(k, fmt.Sprint(columnToLetter(outc+1), startRow), fmt.Sprint(columnToLetter(outc+1), len(v)), styleID)
 				}
 			}
 		}
@@ -790,7 +822,7 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 		if ewd.PivotConfig != nil {
 			pivotConfig, pivotConfigOk := ewd.PivotConfig[k]
 			if pivotConfigOk {
-				pivotConfig.DataRange = calculateDataRange(k, v, sheetSettings.HeaderFirstRow)
+				pivotConfig.DataRange = calculateDataRange(k, len(v), keptColCount)
 
 				if pivotConfig.SheetName == "" {
 					pivotConfig.SheetName = fmt.Sprintf("%s_pivot", k)
@@ -892,6 +924,9 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 		// Set column widths with auto-fit and max width constraints
 		if len(v) > 0 {
 			for cNo := 0; cNo < len(v[0]); cNo++ {
+				if excludedCols[cNo] {
+					continue
+				}
 				colKey := fmt.Sprint(cNo)
 				if headerRow != nil {
 					colKey = headerRow[cNo].(string)
@@ -900,7 +935,8 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 				if maxWidthConstraint == 0 {
 					maxWidthConstraint = DefaultMaxColumnWidth
 				}
-				colLetter := columnToLetter(cNo + 1)
+				outc, _ := mapCol(cNo)
+				colLetter := columnToLetter(outc + 1)
 
 				// Calculate optimal width based on content (auto-fit)
 				optimalWidth := calculateOptimalColumnWidth(v, cNo)
