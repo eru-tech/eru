@@ -466,6 +466,13 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 		signalStep(ctx, funcStep.FuncKey, funcVarsMap, funcVarsMap)
 	}()
 
+	if funcStep.WaitFor != "" && (funcStep.FuncKey == funcStepName || started || funcStepName == "") && varsHaveQuestion(resVars[funcStep.WaitFor]) {
+		logs.WithContext(ctx).Info(fmt.Sprint(funcStep.FuncKey, " skipped: wait_for dependency ", funcStep.WaitFor, " raised a clarification question"))
+		safeSetVar(resVars, funcStep.FuncKey, resVars[funcStep.WaitFor])
+		funcVarsMap = map[string]FuncTemplateVars{funcStep.FuncKey: {ResVars: resVars, ReqVars: reqVars}}
+		return
+	}
+
 	if funcStep.FuncKey == funcStepName || started || funcStepName == "" {
 		//started = true
 
@@ -1030,7 +1037,7 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 		}
 	}
 
-	if len(funcStep.FuncSteps) > 0 && funcStep.FuncKey != endFuncStepName {
+	if len(funcStep.FuncSteps) > 0 && funcStep.FuncKey != endFuncStepName && !varsHaveQuestion(resVars[funcStep.FuncKey]) {
 		childFuncVarsMap := map[string]FuncTemplateVars{}
 
 		//remove unwanted fields from reqvars and resvars

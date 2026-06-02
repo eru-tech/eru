@@ -303,6 +303,17 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 				return Message{Content: string(resultBytes), Role: "assistant"}, traces, nil
 			}
 
+			if tu.Name == TerminalToolAskUser {
+				trace.ToolName = tu.Name
+				trace.ToolInput = inputMap
+				traces = append(traces, trace)
+				if len(inputMap) == 0 {
+					return Message{}, traces, fmt.Errorf("ask_user tool input was empty or truncated; raise model.max_tokens (current=%d) or lower thinking_budget", maxTokens)
+				}
+				resultBytes, _ := json.Marshal(inputMap)
+				return Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolAskUser}, traces, nil
+			}
+
 			trace.ToolName = tu.Name
 			trace.ToolInput = inputMap
 		}
@@ -478,6 +489,25 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 				}
 				resultBytes, _ := json.Marshal(inputMap)
 				return Message{Content: string(resultBytes), Role: "assistant"}, traces, nil
+			}
+
+			if tu.Name == TerminalToolAskUser {
+				trace.ToolName = tu.Name
+				trace.ToolInput = inputMap
+				traces = append(traces, trace)
+				if len(inputMap) == 0 {
+					return Message{}, traces, fmt.Errorf("ask_user tool input was empty or truncated; raise model.max_tokens (current=%d) or lower thinking_budget", maxTokens)
+				}
+				if streamCb != nil {
+					streamCb(ModelStreamEvent{
+						Type:      StreamQuestion,
+						ToolName:  tu.Name,
+						ToolInput: inputMap,
+						Iteration: iteration,
+					})
+				}
+				resultBytes, _ := json.Marshal(inputMap)
+				return Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolAskUser}, traces, nil
 			}
 
 			if streamCb != nil {
