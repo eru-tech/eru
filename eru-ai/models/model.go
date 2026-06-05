@@ -31,7 +31,10 @@ const (
 	StreamToolResult StreamEventType = "tool_result"
 	StreamTextDelta  StreamEventType = "text_delta"
 	StreamDone       StreamEventType = "done"
+	StreamQuestion   StreamEventType = "question"
 )
+
+const TerminalToolAskUser = "ask_user"
 
 type ModelStreamEvent struct {
 	Type      StreamEventType        `json:"type"`
@@ -85,11 +88,12 @@ type TokenUsage struct {
 }
 
 type Message struct {
-	Role    string        `json:"role"`
-	Content string        `json:"content,omitempty"`
-	Name    string        `json:"name"`
-	Files   []FileMessage `json:"files,omitempty"`
-	Usage   *TokenUsage   `json:"usage,omitempty"`
+	Role         string        `json:"role"`
+	Content      string        `json:"content,omitempty"`
+	Name         string        `json:"name"`
+	Files        []FileMessage `json:"files,omitempty"`
+	Usage        *TokenUsage   `json:"usage,omitempty"`
+	TerminalTool string        `json:"terminal_tool,omitempty"`
 }
 type FileMessage struct {
 	FileData  string `json:"file_data,omitempty"`

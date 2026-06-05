@@ -81,15 +81,23 @@ type StoreCompare struct {
 
 type ExtendedProject struct {
 	Project
-	Variables     store.Variables `json:"variables"`
-	SecretManager sm.SmStoreI     `json:"secret_manager"`
+	Variables       store.Variables            `json:"variables"`
+	SecretManager   sm.SmStoreI                `json:"secret_manager"`
+	TenantVariables map[string]store.Variables `json:"tenant_variables"`
 }
 
 type Project struct {
-	ProjectId       string                 `json:"project_id" eru:"required"`
-	DataSources     map[string]*DataSource `json:"data_sources"` //DB alias is the key
-	MyQueries       map[string]*MyQuery    `json:"my_queries"`   //queryName is key
-	ProjectSettings ProjectSettings        `json:"project_settings"`
+	ProjectId       string                  `json:"project_id" eru:"required"`
+	DataSources     map[string]*DataSource  `json:"data_sources"` //DB alias is the key
+	MyQueries       map[string]*MyQuery     `json:"my_queries"`   //queryName is key
+	Tenants         map[string]TenantConfig `json:"tenants"`      //tenantId is the key
+	ProjectSettings ProjectSettings         `json:"project_settings"`
+}
+
+type TenantConfig struct {
+	TenantId    string                  `json:"tenant_id" eru:"required"`
+	DataSources map[string]*DataSource  `json:"data_sources"` //DB alias is the key
+	MyQueries   map[string]*MyQuery     `json:"my_queries"`   //queryName is key
 }
 type ProjectSettings struct {
 	ClaimsKey string `json:"claims_key" eru:"required"`
@@ -122,6 +130,7 @@ type MyQuery struct {
 	ExcelStyles  map[string]eru_writes.CellFormatter    `json:"excel_styles"`
 	Columns      map[string]eru_writes.ColumnarSettings `json:"columns"`
 	PivotConfig  map[string]eru_writes.PivotTableConfig `json:"pivot_config"`
+	ExcludeColumns []string                             `json:"exclude_columns"`
 	CacheTTL     int                                    `json:"cache_ttl,omitempty"`
 	CacheSkip    bool                                   `json:"cache_skip,omitempty"`
 	CacheLock    bool                                   `json:"cache_lock,omitempty"`

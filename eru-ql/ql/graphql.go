@@ -54,7 +54,7 @@ func (gqd *GraphQLData) parseGraphQL(ctx context.Context) (d *ast.Document, err 
 
 func (gqd *GraphQLData) getSqlForQuery(ctx context.Context, projectId string, datasources map[string]*module_model.DataSource, query string, s module_store.ModuleStoreI, tokenObj map[string]interface{}, isPublic bool) (err error) {
 	logs.WithContext(ctx).Debug("getSqlForQuery - Start")
-	mq, err := s.GetMyQuery(ctx, projectId, query)
+	mq, err := s.GetMyQuery(ctx, projectId, gqd.TenantId, query)
 	if err != nil {
 		return err
 	}
@@ -158,6 +158,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 			case "query":
 				sqlObj := SQLObjectQ{}
 				sqlObj.ProjectId = projectId
+				sqlObj.TenantId = gqd.TenantId
 				sqlObj.FinalVariables = gqd.QLData.FinalVariables
 				field := v.(*ast.Field)
 				sqlObj.MainTableName = strings.Replace(field.Name.Value, "___", ".", -1) //replacing schema___tablename with schema.tablename
@@ -190,7 +191,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)
 				}
-				sqlObj.SecurityClause[sqlObj.MainTableName], _, err = getTableSecurityRule(ctx, projectId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.FinalVariables, sqlObj.MainTableName)
+				sqlObj.SecurityClause[sqlObj.MainTableName], _, err = getTableSecurityRule(ctx, projectId, gqd.TenantId, dbAlias, sqlObj.MainTableName, s, op.Operation, gqd.FinalVariables, sqlObj.MainTableName)
 				if err != nil {
 					if !strings.Contains(err.Error(), "TableSecurityRule not defined for") {
 						return nil, nil, err
@@ -240,7 +241,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 							}
 							return r, names, nil
 						}
-						result, err = qlcache.ServeOrLoad(ctx, datasource, qrm.SQLQuery, graphQLs[i].DefaultSchemaName(), loader, qlcache.Options{})
+						result, err = qlcache.ServeOrLoad(ctx, datasource, gqd.TenantId, qrm.SQLQuery, graphQLs[i].DefaultSchemaName(), loader, qlcache.Options{})
 					}
 					if err != nil {
 						err = logs.Err(ctx, err, "")
@@ -612,7 +613,7 @@ func adjustObjectKey(key string) string {
 
 func (gqd *GraphQLData) setOverwriteDoc(ctx context.Context, projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, queryType string, docs interface{}) (overwriteDoc map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("setOverwriteDoc - Start")
-	tr, err := s.GetTableTransformation(ctx, projectId, dbAlias, tableName)
+	tr, err := s.GetTableTransformation(ctx, projectId, gqd.TenantId, dbAlias, tableName)
 	if err != nil {
 		err = errors.New(fmt.Sprint("error from GetTableTransformation = ", err.Error()))
 		logs.WithContext(ctx).Error(err.Error())
@@ -678,11 +679,11 @@ func (gqd *GraphQLData) setOverwriteDoc(ctx context.Context, projectId string, d
 	return
 }
 
-func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, vars map[string]interface{}, mainTableName string) (ruleOutput string, ruleJoinTables []string, err error) {
+func getTableSecurityRule(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string, s module_store.ModuleStoreI, op string, vars map[string]interface{}, mainTableName string) (ruleOutput string, ruleJoinTables []string, err error) {
 	logs.WithContext(ctx).Debug("getTableSecurityRule - Start")
 	var templates []string
 	var ruleJoinChildTables []string
-	sr, err := s.GetTableSecurity(ctx, projectId, dbAlias, tableName)
+	sr, err := s.GetTableSecurity(ctx, projectId, tenantId, dbAlias, tableName)
 	if err != nil {
 		logs.WithContext(ctx).Info(err.Error())
 		err = errors.New(fmt.Sprint("TableSecurityRule not defined for ", tableName))
@@ -759,7 +760,7 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 			}
 		}
 
-		ds, dsErr := s.GetDataSource(ctx, projectId, dbAlias)
+		ds, dsErr := s.GetDataSource(ctx, projectId, tenantId, dbAlias)
 		if dsErr != nil {
 			dsErr = logs.Err(ctx, dsErr, "")
 			return "", nil, dsErr
@@ -783,7 +784,7 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 		ruleOutput, templates, ptables, err = processSecurityRule(ctx, sr.Select, vars, mainTableName, ctjObjMap)
 
 		for _, t := range templates {
-			ro, rj, rerr := getTableSecurityRule(ctx, projectId, dbAlias, t, s, op, vars, tableName)
+			ro, rj, rerr := getTableSecurityRule(ctx, projectId, tenantId, dbAlias, t, s, op, vars, tableName)
 			if rerr != nil {
 				if !strings.Contains(rerr.Error(), "TableSecurityRule not defined for") {
 					return "", nil, rerr
@@ -797,7 +798,7 @@ func getTableSecurityRule(ctx context.Context, projectId string, dbAlias string,
 		}
 
 		for _, p := range ptables {
-			ro, rjt, roerr := getTableSecurityRule(ctx, projectId, dbAlias, p, s, op, vars, p)
+			ro, rjt, roerr := getTableSecurityRule(ctx, projectId, tenantId, dbAlias, p, s, op, vars, p)
 			q := fmt.Sprint("select  ", p, ".* from ", p)
 			if roerr == nil && ro != "" {
 				for _, srJoin := range rjt {

@@ -20,6 +20,7 @@ import (
 type QLData struct {
 	Query          string                     `json:"query"`
 	QueryName      string                     `json:"-"`
+	TenantId       string                     `json:"-"`
 	Variables      map[string]interface{}     `json:"variables"`
 	FinalVariables map[string]interface{}     `json:"-"`
 	ExecuteFlag    bool                       `json:"-"`
@@ -51,7 +52,12 @@ type QueryObject struct {
 type QL interface {
 	Execute(ctx context.Context, projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error)
 	SetQLData(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string)
+	SetTenantId(tenantId string)
 	ProcessTransformRule(ctx context.Context, tr module_model.TransformRule, docs interface{}) (outputObj map[string]interface{}, err error)
+}
+
+func (qld *QLData) SetTenantId(tenantId string) {
+	qld.TenantId = tenantId
 }
 
 func (qld *QLData) SetQLDataCommon(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) (err error) {
@@ -265,7 +271,7 @@ func (qld *QLData) secureSQL(ctx context.Context, query string, projectId string
 			if !(strings.Contains(table.TableName, ".")) {
 				table.TableName = fmt.Sprint(sr.DefaultSchemaName(), table.TableName)
 			}
-			sRulesStr, srJoins, srErr := getTableSecurityRule(ctx, projectId, datasource.DbAlias, table.TableName, s, "query", qld.FinalVariables, table.TableName)
+			sRulesStr, srJoins, srErr := getTableSecurityRule(ctx, projectId, qld.TenantId, datasource.DbAlias, table.TableName, s, "query", qld.FinalVariables, table.TableName)
 			if srErr != nil {
 				logs.WithContext(ctx).Info(srErr.Error())
 				if !strings.HasPrefix(srErr.Error(), "TableSecurityRule not defined for "+table.TableName) {
