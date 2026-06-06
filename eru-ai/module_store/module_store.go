@@ -345,18 +345,27 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 		return
 	}
 	var toolObj tools.Tooling
-	if _, ok := prj.Tenants[tenantId]; !ok {
-		err = errors.New("tenant " + tenantId + " not found")
-		logs.WithContext(ctx).Error(err.Error())
-		return
-	} else if toolObj, ok = prj.Tenants[tenantId].Tools[toolName]; !ok {
-		if projectToolObj, ok := prj.Tenants[projectId].Tools[toolName]; ok {
-			toolObj = projectToolObj
+	var ok bool
+	tenant, tenantExists := prj.Tenants[tenantId]
+	if tenantExists {
+		toolObj, ok = tenant.Tools[toolName]
+	}
+	if !ok {
+		if projectTenant, projectTenantExists := prj.Tenants[projectId]; projectTenantExists {
+			if projectToolObj, projectToolOk := projectTenant.Tools[toolName]; projectToolOk {
+				toolObj = projectToolObj
+				ok = true
+			}
+		}
+	}
+	if !ok {
+		if !tenantExists {
+			err = errors.New("tenant " + tenantId + " not found")
 		} else {
 			err = errors.New("tool " + toolName + " not found")
-			logs.WithContext(ctx).Error(err.Error())
-			return
 		}
+		logs.WithContext(ctx).Error(err.Error())
+		return
 	}
 	if actionName != "" {
 		err = toolObj.ValidateAction(ctx, actionName, toolObj)
