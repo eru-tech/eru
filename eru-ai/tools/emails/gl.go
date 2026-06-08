@@ -1059,20 +1059,20 @@ func (glEmailTool *GlEmailTool) Login(ctx context.Context, projectId string, ten
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, false, err
 	}
-	err = glEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(glEmailTool.AuthName, "_access_token"), glTokens.AccessToken)
+	err = glEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(glEmailTool.ToolName, "_access_token"), glTokens.AccessToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, false, err
 	}
 	if glTokens.RefreshToken != "" {
-		err = glEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(glEmailTool.AuthName, "_refresh_token"), glTokens.RefreshToken)
+		err = glEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(glEmailTool.ToolName, "_refresh_token"), glTokens.RefreshToken)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, nil, false, err
 		}
 	}
 	if glTokens.IdToken != "" {
-		err = glEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(glEmailTool.AuthName, "_id_token"), glTokens.IdToken)
+		err = glEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(glEmailTool.ToolName, "_id_token"), glTokens.IdToken)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, nil, false, err
@@ -1123,8 +1123,8 @@ func (glEmailTool *GlEmailTool) Login(ctx context.Context, projectId string, ten
 }
 
 func (glEmailTool *GlEmailTool) SetPrivateAttributes(ctx context.Context, realTool tools.Tooling) (err error) {
-	glEmailTool.EmailAccount.AccessToken = "$SECRET_glmail_access_token"
-	glEmailTool.EmailAccount.RefreshToken = "$SECRET_glmail_refresh_token"
+	glEmailTool.EmailAccount.AccessToken = fmt.Sprint("$SECRET_", glEmailTool.ToolName, "_access_token")
+	glEmailTool.EmailAccount.RefreshToken = fmt.Sprint("$SECRET_", glEmailTool.ToolName, "_refresh_token")
 	return nil
 }
 
