@@ -113,7 +113,8 @@ func (msAuth *MsAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 
 	if msAuth.MsConfig.PersistToken {
 		if at, rt, ei, ok := parseIdpTokens(loginRes); ok {
-			if perr := persistIdpTokens(ctx, s, projectId, msAuth.AuthName, at, rt, ei); perr != nil {
+			keyName := resolveTokenKeyPrefix(loginPostBody.TokenKeyPrefix, msAuth.AuthName)
+			if perr := persistIdpTokens(ctx, s, projectId, keyName, at, rt, ei); perr != nil {
 				logs.WithContext(ctx).Error(fmt.Sprint("persistIdpTokens: ", perr.Error()))
 			}
 		}
@@ -378,7 +379,8 @@ func (msAuth *MsAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody,
 	}
 	if msAuth.MsConfig.PersistToken {
 		if at, rt, ei, ok := parseIdpTokens(loginRes); ok {
-			if perr := persistIdpTokens(ctx, s, projectId, msAuth.AuthName, at, rt, ei); perr != nil {
+			keyName := resolveTokenKeyPrefix(loginPostBody.TokenKeyPrefix, msAuth.AuthName)
+			if perr := persistIdpTokens(ctx, s, projectId, keyName, at, rt, ei); perr != nil {
 				logs.WithContext(ctx).Error(fmt.Sprint("persistIdpTokens: ", perr.Error()))
 			}
 		}
@@ -386,26 +388,27 @@ func (msAuth *MsAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody,
 	return loginRes, nil
 }
 
-func (msAuth *MsAuth) GetToken(ctx context.Context, projectId string, s storepkg.StoreI) (accessToken string, err error) {
+func (msAuth *MsAuth) GetToken(ctx context.Context, projectId string, tokenKeyPrefix string, s storepkg.StoreI) (accessToken string, err error) {
 	logs.WithContext(ctx).Debug("GetToken - Start")
 	if !msAuth.MsConfig.PersistToken {
 		err = errors.New("persist_token not enabled for this auth config")
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	mu := tokenLockFor(projectId, msAuth.AuthName)
+	keyName := resolveTokenKeyPrefix(tokenKeyPrefix, msAuth.AuthName)
+	mu := tokenLockFor(projectId, keyName)
 	mu.Lock()
 	defer mu.Unlock()
 
-	if at, ok := cachedAccessTokenIfValid(ctx, s, projectId, msAuth.AuthName); ok {
+	if at, ok := cachedAccessTokenIfValid(ctx, s, projectId, keyName); ok {
 		return at, nil
 	}
-	rt, rerr := storedRefreshToken(ctx, s, projectId, msAuth.AuthName)
+	rt, rerr := storedRefreshToken(ctx, s, projectId, keyName)
 	if rerr != nil {
 		err = rerr
 		return
 	}
-	res, ierr := msAuth.IdpToken(ctx, LoginPostBody{RefreshToken: rt}, projectId, false, true, s)
+	res, ierr := msAuth.IdpToken(ctx, LoginPostBody{RefreshToken: rt, TokenKeyPrefix: tokenKeyPrefix}, projectId, false, true, s)
 	if ierr != nil {
 		err = ierr
 		return

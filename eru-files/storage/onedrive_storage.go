@@ -77,7 +77,11 @@ func (o *OneDriveStorage) getAccessToken(ctx context.Context) (string, error) {
 	getUrl := fmt.Sprintf("%s/%s/%s/gettoken", strings.TrimRight(baseUrl, "/"), projectId, o.AuthName)
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
-	res, _, _, statusCode, err := utils.CallHttp(ctx, http.MethodGet, getUrl, headers, map[string]string{}, nil, map[string]string{}, nil)
+	qParams := map[string]string{}
+	if prefix, _ := ctx.Value("tokenkeyprefix").(string); prefix != "" {
+		qParams["token_key_prefix"] = prefix
+	}
+	res, _, _, statusCode, err := utils.CallHttp(ctx, http.MethodGet, getUrl, headers, map[string]string{}, nil, qParams, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("gettoken call failed (status %d): %s", statusCode, err.Error()))
 		return "", err

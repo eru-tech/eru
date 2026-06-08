@@ -556,7 +556,8 @@ func GetTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
 		}
 
-		accessToken, err := authObjI.GetToken(ctx, projectId, sh.Store)
+		tokenKeyPrefix := r.URL.Query().Get("token_key_prefix")
+		accessToken, err := authObjI.GetToken(ctx, projectId, tokenKeyPrefix, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
