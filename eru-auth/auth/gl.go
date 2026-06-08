@@ -111,7 +111,8 @@ func (glAuth *GlAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody,
 	}
 	if glAuth.GlConfig.PersistToken {
 		if at, rt, ei, ok := parseIdpTokens(loginRes); ok {
-			if perr := persistIdpTokens(ctx, s, projectId, glAuth.AuthName, at, rt, ei); perr != nil {
+			keyName := resolveTokenKeyPrefix(loginPostBody.TokenKeyPrefix, glAuth.AuthName)
+			if perr := persistIdpTokens(ctx, s, projectId, keyName, at, rt, ei); perr != nil {
 				logs.WithContext(ctx).Error(fmt.Sprint("persistIdpTokens: ", perr.Error()))
 			}
 		}
@@ -119,26 +120,27 @@ func (glAuth *GlAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody,
 	return loginRes, nil
 }
 
-func (glAuth *GlAuth) GetToken(ctx context.Context, projectId string, s storepkg.StoreI) (accessToken string, err error) {
+func (glAuth *GlAuth) GetToken(ctx context.Context, projectId string, tokenKeyPrefix string, s storepkg.StoreI) (accessToken string, err error) {
 	logs.WithContext(ctx).Debug("GetToken - Start")
 	if !glAuth.GlConfig.PersistToken {
 		err = errors.New("persist_token not enabled for this auth config")
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
-	mu := tokenLockFor(projectId, glAuth.AuthName)
+	keyName := resolveTokenKeyPrefix(tokenKeyPrefix, glAuth.AuthName)
+	mu := tokenLockFor(projectId, keyName)
 	mu.Lock()
 	defer mu.Unlock()
 
-	if at, ok := cachedAccessTokenIfValid(ctx, s, projectId, glAuth.AuthName); ok {
+	if at, ok := cachedAccessTokenIfValid(ctx, s, projectId, keyName); ok {
 		return at, nil
 	}
-	rt, rerr := storedRefreshToken(ctx, s, projectId, glAuth.AuthName)
+	rt, rerr := storedRefreshToken(ctx, s, projectId, keyName)
 	if rerr != nil {
 		err = rerr
 		return
 	}
-	res, ierr := glAuth.IdpToken(ctx, LoginPostBody{RefreshToken: rt}, projectId, false, true, s)
+	res, ierr := glAuth.IdpToken(ctx, LoginPostBody{RefreshToken: rt, TokenKeyPrefix: tokenKeyPrefix}, projectId, false, true, s)
 	if ierr != nil {
 		err = ierr
 		return
@@ -174,7 +176,8 @@ func (glAuth *GlAuth) Login(ctx context.Context, loginPostBody LoginPostBody, pr
 
 	if glAuth.GlConfig.PersistToken {
 		if at, rt, ei, ok := parseIdpTokens(loginRes); ok {
-			if perr := persistIdpTokens(ctx, s, projectId, glAuth.AuthName, at, rt, ei); perr != nil {
+			keyName := resolveTokenKeyPrefix(loginPostBody.TokenKeyPrefix, glAuth.AuthName)
+			if perr := persistIdpTokens(ctx, s, projectId, keyName, at, rt, ei); perr != nil {
 				logs.WithContext(ctx).Error(fmt.Sprint("persistIdpTokens: ", perr.Error()))
 			}
 		}

@@ -651,7 +651,11 @@ func GetStorageTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		url := fmt.Sprintf("%s/%s/%s/gettoken", strings.TrimRight(baseUrl, "/"), projectId, authName)
 		headers := http.Header{}
 		headers.Set("Content-Type", "application/json")
-		res, _, _, status, err := utils.CallHttp(r.Context(), http.MethodGet, url, headers, map[string]string{}, nil, map[string]string{}, nil)
+		qParams := map[string]string{}
+		if prefix, _ := r.Context().Value("tokenkeyprefix").(string); prefix != "" {
+			qParams["token_key_prefix"] = prefix
+		}
+		res, _, _, status, err := utils.CallHttp(r.Context(), http.MethodGet, url, headers, map[string]string{}, nil, qParams, nil)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(fmt.Sprintf("eruauth gettoken failed (status %d): %s", status, err.Error()))
 			server_handlers.FormatResponse(w, http.StatusBadGateway)

@@ -307,6 +307,9 @@ func (t *ErufilesTool) buildHeaders(ctx context.Context) http.Header {
 	if claims := ctx.Value("claims"); claims != nil {
 		h.Set("claims", fmt.Sprint(claims))
 	}
+	if t.ToolName != "" {
+		h.Set("X-Token-Key-Prefix", t.ToolName)
+	}
 	h.Set("Content-Type", "application/json")
 	h.Set("Accept", "application/json")
 	return h
@@ -457,6 +460,12 @@ func (t *ErufilesTool) Login(ctx context.Context, projectId string, tenantId str
 		return nil, nil, false, err
 	}
 	idpUrl := fmt.Sprint(base, "/", projectId, "/", t.AuthName, "/idptoken", renewStr)
+	if params == nil {
+		params = map[string]interface{}{}
+	}
+	if t.ToolName != "" {
+		params["token_key_prefix"] = t.ToolName
+	}
 	res, _, _, status, callErr := utils.CallHttp(ctx, http.MethodPost, idpUrl, t.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, params)
 	if callErr != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("erufiles idptoken failed (status %d): %s", status, callErr.Error()))

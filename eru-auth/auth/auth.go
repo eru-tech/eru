@@ -30,7 +30,7 @@ type AuthI interface {
 	GetAuthDb() (authDbI AuthDbI)
 	Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, s storepkg.StoreI) (identity Identity, loginSuccess LoginSuccess, err error)
 	IdpToken(ctx context.Context, idpToken LoginPostBody, projectId string, withTokens bool, renewFlag bool, s storepkg.StoreI) (loginResI interface{}, err error)
-	GetToken(ctx context.Context, projectId string, s storepkg.StoreI) (accessToken string, err error)
+	GetToken(ctx context.Context, projectId string, tokenKeyPrefix string, s storepkg.StoreI) (accessToken string, err error)
 	Register(ctx context.Context, registerUser RegisterUser, projectId string) (identity Identity, loginSuccess LoginSuccess, err error)
 	RemoveUser(ctx context.Context, removeUser RemoveUser) (err error)
 	Logout(ctx context.Context, req *http.Request) (res interface{}, resStatusCode int, err error)
@@ -97,13 +97,14 @@ type ChangePassword struct {
 }
 
 type LoginPostBody struct {
-	Username     string `json:"username"`
-	Password     string `json:"password"`
-	IdpCode      string `json:"code"`
-	IdpRequestId string `json:"request_id"`
-	CodeVerifier string `json:"-"`
-	Nonce        string `json:"-"`
-	RefreshToken string `json:"refresh_token"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	IdpCode        string `json:"code"`
+	IdpRequestId   string `json:"request_id"`
+	CodeVerifier   string `json:"-"`
+	Nonce          string `json:"-"`
+	RefreshToken   string `json:"refresh_token"`
+	TokenKeyPrefix string `json:"token_key_prefix,omitempty"`
 }
 
 type RecoveryPostBody struct {
@@ -698,7 +699,7 @@ func (auth *Auth) SetKms(ctx context.Context, kmsObj kms.KmsStoreI) (err error) 
 	return
 }
 
-func (auth *Auth) GetToken(ctx context.Context, projectId string, s storepkg.StoreI) (accessToken string, err error) {
+func (auth *Auth) GetToken(ctx context.Context, projectId string, tokenKeyPrefix string, s storepkg.StoreI) (accessToken string, err error) {
 	err = errors.New("GetToken Method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
@@ -743,8 +744,15 @@ func parseIdpTokens(res interface{}) (accessToken string, refreshToken string, e
 	return
 }
 
-func tokenSecretKeys(authName string) (accessKey, refreshKey, expiryKey string) {
-	return authName + "_access_token", authName + "_refresh_token", authName + "_token_expiry"
+func tokenSecretKeys(name string) (accessKey, refreshKey, expiryKey string) {
+	return name + "_access_token", name + "_refresh_token", name + "_token_expiry"
+}
+
+func resolveTokenKeyPrefix(tokenKeyPrefix, authName string) string {
+	if tokenKeyPrefix != "" {
+		return tokenKeyPrefix
+	}
+	return authName
 }
 
 func persistIdpTokens(ctx context.Context, s storepkg.StoreI, projectId string, authName string, accessToken string, refreshToken string, expiresIn int64) (err error) {
