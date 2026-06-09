@@ -48,6 +48,13 @@ type FileDownloadRequest struct {
 	ExcelSheets     map[string]map[string]eru_reads.FileReadData `json:"excel_sheets"`
 	LowerCaseHeader bool                                         `json:"lower_case_header"`
 	MimeLimit       uint32                                       `json:"mime_limit"`
+	FileId          string                                       `json:"file_id"`
+	SharedWithMe    bool                                         `json:"shared_with_me"`
+	OwnerEmail      string                                       `json:"owner_email"`
+	ModifiedAfter   string                                       `json:"modified_after"`
+	MimeType        string                                       `json:"mime_type"`
+	ExportMimeType  string                                       `json:"export_mime_type"`
+	MaxResults      int                                          `json:"max_results"`
 }
 
 const (
@@ -72,6 +79,11 @@ type ModuleStoreI interface {
 	UploadFileB64(ctx context.Context, projectId string, storageName string, file []byte, fileName string, docType string, fodlerPath string, s ModuleStoreI) (docId string, err error)
 	UploadFileFromUrl(ctx context.Context, projectId string, storageName string, urlStr string, fileName string, docType string, fodlerPath string, fileType string, s ModuleStoreI) (docId string, err error)
 	DownloadFile(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (file []byte, mimeType string, err error)
+	DownloadFileSmart(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, fileName string, fileId string, candidates []map[string]interface{}, err error)
+	GdriveWatchChanges(ctx context.Context, projectId string, storageName string, channelId string, pushEndpoint string, expirationMs int64, s ModuleStoreI) (resourceId string, startPageToken string, expiration string, err error)
+	GdriveWatchFile(ctx context.Context, projectId string, storageName string, fileId string, channelId string, pushEndpoint string, expirationMs int64, s ModuleStoreI) (resourceId string, expiration string, err error)
+	GdriveStopWatch(ctx context.Context, projectId string, storageName string, channelId string, resourceId string, s ModuleStoreI) error
+	GdriveListChanges(ctx context.Context, projectId string, storageName string, pageToken string, s ModuleStoreI) (changes []map[string]interface{}, newStartPageToken string, nextPageToken string, err error)
 	DownloadFileAsJson(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (jsonData []map[string]interface{}, err error)
 	DownloadFileB64(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, err error)
 	DownloadFileUnzip(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (files map[string]FileObj, err error)
@@ -340,6 +352,121 @@ func (ms *ModuleStore) DownloadFileB64(ctx context.Context, projectId string, st
 	f, mt, e := ms.DownloadFile(ctx, projectId, storageName, fileDownloadRequest, s)
 	return base64.StdEncoding.EncodeToString(f), mt, e
 }
+
+func (ms *ModuleStore) DownloadFileSmart(ctx context.Context, projectId string, storageName string, req FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, fileName string, fileId string, candidates []map[string]interface{}, err error) {
+	logs.WithContext(ctx).Debug("DownloadFileSmart - Start")
+	ctx = context.WithValue(ctx, "projectId", projectId)
+	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
+	storageObj, _, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
+	if sErr != nil {
+		err = sErr
+		return
+	}
+	gd, ok := storageObj.(*storage.GdriveStorage)
+	if !ok {
+		err = errors.New("smart download is only supported for GDRIVE storage")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+
+	if req.FileId != "" {
+		var data []byte
+		data, mimeType, fileName, err = gd.DownloadById(ctx, req.FileId, req.ExportMimeType)
+		if err != nil {
+			return
+		}
+		fileB64 = base64.StdEncoding.EncodeToString(data)
+		fileId = req.FileId
+		return
+	}
+
+	if req.FileName == "" {
+		err = errors.New("file_name or file_id is required")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+
+	matches, sErr2 := gd.SearchFiles(ctx, storage.GdriveSearchFilters{
+		FileName:      req.FileName,
+		SharedWithMe:  req.SharedWithMe,
+		OwnerEmail:    req.OwnerEmail,
+		ModifiedAfter: req.ModifiedAfter,
+		MimeType:      req.MimeType,
+		MaxResults:    req.MaxResults,
+	})
+	if sErr2 != nil {
+		err = sErr2
+		return
+	}
+	if len(matches) == 0 {
+		err = fmt.Errorf("no file matches name %q with given filters", req.FileName)
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if len(matches) > 1 {
+		candidates = matches
+		return
+	}
+	only := matches[0]
+	fid, _ := only["id"].(string)
+	data, mt, nm, dErr := gd.DownloadById(ctx, fid, req.ExportMimeType)
+	if dErr != nil {
+		err = dErr
+		return
+	}
+	fileB64 = base64.StdEncoding.EncodeToString(data)
+	mimeType = mt
+	fileName = nm
+	fileId = fid
+	return
+}
+
+func (ms *ModuleStore) gdriveFromStorage(ctx context.Context, projectId string, storageName string, s ModuleStoreI) (*storage.GdriveStorage, error) {
+	ctx = context.WithValue(ctx, "projectId", projectId)
+	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
+	storageObj, _, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
+	if sErr != nil {
+		return nil, sErr
+	}
+	gd, ok := storageObj.(*storage.GdriveStorage)
+	if !ok {
+		return nil, errors.New("storage is not GDRIVE")
+	}
+	return gd, nil
+}
+
+func (ms *ModuleStore) GdriveWatchChanges(ctx context.Context, projectId string, storageName string, channelId string, pushEndpoint string, expirationMs int64, s ModuleStoreI) (resourceId string, startPageToken string, expiration string, err error) {
+	gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
+	if gErr != nil {
+		return "", "", "", gErr
+	}
+	return gd.WatchChanges(ctx, channelId, pushEndpoint, expirationMs)
+}
+
+func (ms *ModuleStore) GdriveWatchFile(ctx context.Context, projectId string, storageName string, fileId string, channelId string, pushEndpoint string, expirationMs int64, s ModuleStoreI) (resourceId string, expiration string, err error) {
+	gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
+	if gErr != nil {
+		return "", "", gErr
+	}
+	return gd.WatchFile(ctx, fileId, channelId, pushEndpoint, expirationMs)
+}
+
+func (ms *ModuleStore) GdriveStopWatch(ctx context.Context, projectId string, storageName string, channelId string, resourceId string, s ModuleStoreI) error {
+	gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
+	if gErr != nil {
+		return gErr
+	}
+	return gd.StopWatch(ctx, channelId, resourceId)
+}
+
+func (ms *ModuleStore) GdriveListChanges(ctx context.Context, projectId string, storageName string, pageToken string, s ModuleStoreI) (changes []map[string]interface{}, newStartPageToken string, nextPageToken string, err error) {
+	gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
+	if gErr != nil {
+		return nil, "", "", gErr
+	}
+	return gd.ListChanges(ctx, pageToken)
+}
+
 func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (files map[string]FileObj, err error) {
 	logs.WithContext(ctx).Debug("DownloadFileUnzip - Start")
 	f, _, e := ms.DownloadFile(ctx, projectId, storageName, fileDownloadRequest, s)

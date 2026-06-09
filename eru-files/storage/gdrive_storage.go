@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 
 	eruaes "github.com/eru-tech/eru/eru-crypto/aes"
@@ -343,23 +344,172 @@ func (g *GdriveStorage) DownloadFile(ctx context.Context, folderPath string, fil
 	if err != nil {
 		return nil, err
 	}
-	dlUrl := fmt.Sprintf("%s/files/%s?alt=media&supportsAllDrives=true", gdriveApiBase, fileId)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, dlUrl, nil)
-	if err != nil {
-		return nil, err
+	data, _, _, err := g.downloadByDriveId(ctx, tok, fileId, "")
+	return data, err
+}
+
+type GdriveSearchFilters struct {
+	FileName      string
+	SharedWithMe  bool
+	OwnerEmail    string
+	ModifiedAfter string
+	MimeType      string
+	MaxResults    int
+}
+
+func gdriveBuildSearchQuery(f GdriveSearchFilters) string {
+	parts := []string{"trashed = false"}
+	if f.FileName != "" {
+		parts = append(parts, fmt.Sprintf("name = '%s'", escapeDriveQ(f.FileName)))
 	}
-	req.Header.Set("Authorization", "Bearer "+tok)
-	resp, err := http.DefaultClient.Do(req)
+	if f.SharedWithMe {
+		parts = append(parts, "sharedWithMe = true")
+	}
+	if f.OwnerEmail != "" {
+		parts = append(parts, fmt.Sprintf("'%s' in owners", escapeDriveQ(f.OwnerEmail)))
+	}
+	if f.ModifiedAfter != "" {
+		parts = append(parts, fmt.Sprintf("modifiedTime > '%s'", escapeDriveQ(f.ModifiedAfter)))
+	}
+	if f.MimeType != "" {
+		parts = append(parts, fmt.Sprintf("mimeType = '%s'", escapeDriveQ(f.MimeType)))
+	}
+	return strings.Join(parts, " and ")
+}
+
+func (g *GdriveStorage) SearchFiles(ctx context.Context, f GdriveSearchFilters) ([]map[string]interface{}, error) {
+	pageSize := f.MaxResults
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+	params := map[string]string{
+		"q":                         gdriveBuildSearchQuery(f),
+		"fields":                    "files(id,name,mimeType,owners(emailAddress,displayName),parents,sharedWithMeTime,modifiedTime,size)",
+		"pageSize":                  fmt.Sprint(pageSize),
+		"spaces":                    "drive",
+		"includeItemsFromAllDrives": "true",
+		"supportsAllDrives":         "true",
+	}
+	res, _, status, err := g.driveCall(ctx, http.MethodGet, gdriveApiBase+"/files", http.Header{}, params, nil)
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, err
+		return nil, fmt.Errorf("drive search failed (status %d): %w", status, err)
+	}
+	rm, ok := res.(map[string]interface{})
+	if !ok {
+		return nil, errors.New("drive search response not an object")
+	}
+	filesArr, _ := rm["files"].([]interface{})
+	out := make([]map[string]interface{}, 0, len(filesArr))
+	for _, fi := range filesArr {
+		if fm, ok := fi.(map[string]interface{}); ok {
+			out = append(out, fm)
+		}
+	}
+	return out, nil
+}
+
+func gdriveDefaultExportMime(googleMime string) string {
+	switch googleMime {
+	case "application/vnd.google-apps.document":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case "application/vnd.google-apps.spreadsheet":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case "application/vnd.google-apps.presentation":
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	case "application/vnd.google-apps.drawing":
+		return "application/pdf"
+	case "application/vnd.google-apps.script":
+		return "application/vnd.google-apps.script+json"
+	default:
+		return "application/pdf"
+	}
+}
+
+func gdriveResolveExportMime(googleMime, requested string) string {
+	if requested == "" {
+		return gdriveDefaultExportMime(googleMime)
+	}
+	switch strings.ToLower(requested) {
+	case "pdf":
+		return "application/pdf"
+	case "docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case "xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case "pptx":
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	case "odt":
+		return "application/vnd.oasis.opendocument.text"
+	case "ods":
+		return "application/vnd.oasis.opendocument.spreadsheet"
+	case "csv":
+		return "text/csv"
+	case "txt":
+		return "text/plain"
+	case "html":
+		return "text/html"
+	case "png":
+		return "image/png"
+	case "jpeg", "jpg":
+		return "image/jpeg"
+	case "svg":
+		return "image/svg+xml"
+	default:
+		return requested
+	}
+}
+
+func (g *GdriveStorage) downloadByDriveId(ctx context.Context, accessToken, fileId, exportMime string) (data []byte, mime string, name string, err error) {
+	metaParams := map[string]string{
+		"fields":            "id,name,mimeType,size",
+		"supportsAllDrives": "true",
+	}
+	h := http.Header{}
+	h.Set("Authorization", "Bearer "+accessToken)
+	h.Set("Content-Type", "application/json")
+	metaRes, _, _, mStatus, mErr := utils.CallHttp(ctx, http.MethodGet, fmt.Sprintf("%s/files/%s", gdriveApiBase, fileId), h, map[string]string{}, nil, metaParams, nil)
+	if mErr != nil {
+		return nil, "", "", fmt.Errorf("drive metadata failed (status %d): %w", mStatus, mErr)
+	}
+	srcMime := ""
+	if mm, ok := metaRes.(map[string]interface{}); ok {
+		name, _ = mm["name"].(string)
+		srcMime, _ = mm["mimeType"].(string)
+	}
+
+	var dlUrl string
+	if strings.HasPrefix(srcMime, "application/vnd.google-apps.") {
+		targetMime := gdriveResolveExportMime(srcMime, exportMime)
+		dlUrl = fmt.Sprintf("%s/files/%s/export?mimeType=%s", gdriveApiBase, fileId, url.QueryEscape(targetMime))
+		mime = targetMime
+	} else {
+		dlUrl = fmt.Sprintf("%s/files/%s?alt=media&supportsAllDrives=true", gdriveApiBase, fileId)
+		mime = srcMime
+	}
+
+	req, rErr := http.NewRequestWithContext(ctx, http.MethodGet, dlUrl, nil)
+	if rErr != nil {
+		return nil, "", "", rErr
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, rErr := http.DefaultClient.Do(req)
+	if rErr != nil {
+		return nil, "", "", rErr
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("drive download failed: status %d body %s", resp.StatusCode, string(b))
+		return nil, "", "", fmt.Errorf("drive download failed: status %d body %s", resp.StatusCode, string(body))
 	}
-	return io.ReadAll(resp.Body)
+	return body, mime, name, nil
+}
+
+func (g *GdriveStorage) DownloadById(ctx context.Context, fileId, exportMime string) (data []byte, mime string, name string, err error) {
+	tok, err := g.getAccessToken(ctx)
+	if err != nil {
+		return nil, "", "", err
+	}
+	return g.downloadByDriveId(ctx, tok, fileId, exportMime)
 }
 
 func (g *GdriveStorage) BucketExists(ctx context.Context) (bool, error) {
@@ -466,4 +616,120 @@ func (g *GdriveStorage) EmptyBucket(ctx context.Context) error {
 		}
 		pageToken = nt
 	}
+}
+
+func (g *GdriveStorage) StartPageToken(ctx context.Context) (string, error) {
+	tok, err := g.getAccessToken(ctx)
+	if err != nil {
+		return "", err
+	}
+	h := http.Header{}
+	h.Set("Authorization", "Bearer "+tok)
+	h.Set("Content-Type", "application/json")
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, gdriveApiBase+"/changes/startPageToken", h, map[string]string{}, nil, map[string]string{"supportsAllDrives": "true"}, nil)
+	if err != nil {
+		return "", err
+	}
+	m, ok := res.(map[string]interface{})
+	if !ok {
+		return "", errors.New("startPageToken response not an object")
+	}
+	out, _ := m["startPageToken"].(string)
+	if out == "" {
+		return "", errors.New("startPageToken response missing token")
+	}
+	return out, nil
+}
+
+func (g *GdriveStorage) WatchChanges(ctx context.Context, channelId, pushEndpoint string, expirationMs int64) (resourceId, startPageToken, expiration string, err error) {
+	startPageToken, err = g.StartPageToken(ctx)
+	if err != nil {
+		return
+	}
+	body := map[string]interface{}{
+		"id":      channelId,
+		"type":    "web_hook",
+		"address": pushEndpoint,
+	}
+	if expirationMs > 0 {
+		body["expiration"] = fmt.Sprint(expirationMs)
+	}
+	watchUrl := fmt.Sprintf("%s/changes/watch?pageToken=%s&supportsAllDrives=true", gdriveApiBase, url.QueryEscape(startPageToken))
+	res, _, status, cErr := g.driveCall(ctx, http.MethodPost, watchUrl, http.Header{}, map[string]string{}, body)
+	if cErr != nil {
+		err = fmt.Errorf("drive changes.watch failed (status %d): %w", status, cErr)
+		return
+	}
+	m, _ := res.(map[string]interface{})
+	resourceId, _ = m["resourceId"].(string)
+	expiration, _ = m["expiration"].(string)
+	return
+}
+
+func (g *GdriveStorage) WatchFile(ctx context.Context, fileId, channelId, pushEndpoint string, expirationMs int64) (resourceId, expiration string, err error) {
+	if fileId == "" {
+		err = errors.New("file_id is required")
+		return
+	}
+	body := map[string]interface{}{
+		"id":      channelId,
+		"type":    "web_hook",
+		"address": pushEndpoint,
+	}
+	if expirationMs > 0 {
+		body["expiration"] = fmt.Sprint(expirationMs)
+	}
+	watchUrl := fmt.Sprintf("%s/files/%s/watch?supportsAllDrives=true", gdriveApiBase, fileId)
+	res, _, status, cErr := g.driveCall(ctx, http.MethodPost, watchUrl, http.Header{}, map[string]string{}, body)
+	if cErr != nil {
+		err = fmt.Errorf("drive files.watch failed (status %d): %w", status, cErr)
+		return
+	}
+	m, _ := res.(map[string]interface{})
+	resourceId, _ = m["resourceId"].(string)
+	expiration, _ = m["expiration"].(string)
+	return
+}
+
+func (g *GdriveStorage) StopWatch(ctx context.Context, channelId, resourceId string) error {
+	if channelId == "" || resourceId == "" {
+		return errors.New("channel_id and resource_id are required")
+	}
+	body := map[string]interface{}{"id": channelId, "resourceId": resourceId}
+	_, _, status, err := g.driveCall(ctx, http.MethodPost, gdriveApiBase+"/channels/stop", http.Header{}, map[string]string{}, body)
+	if err != nil && status != http.StatusNotFound {
+		return fmt.Errorf("drive channels.stop failed (status %d): %w", status, err)
+	}
+	return nil
+}
+
+func (g *GdriveStorage) ListChanges(ctx context.Context, pageToken string) (changes []map[string]interface{}, newStartPageToken, nextPageToken string, err error) {
+	if pageToken == "" {
+		err = errors.New("page_token is required")
+		return
+	}
+	params := map[string]string{
+		"pageToken":                 pageToken,
+		"includeRemoved":            "true",
+		"includeItemsFromAllDrives": "true",
+		"supportsAllDrives":         "true",
+		"fields":                    "newStartPageToken,nextPageToken,changes(fileId,removed,file(id,name,parents,mimeType,modifiedTime))",
+	}
+	res, _, status, cErr := g.driveCall(ctx, http.MethodGet, gdriveApiBase+"/changes", http.Header{}, params, nil)
+	if cErr != nil {
+		err = fmt.Errorf("drive changes list failed (status %d): %w", status, cErr)
+		return
+	}
+	m, _ := res.(map[string]interface{})
+	if arr, ok := m["changes"].([]interface{}); ok {
+		changes = make([]map[string]interface{}, 0, len(arr))
+		for _, c := range arr {
+			if cm, ok := c.(map[string]interface{}); ok {
+				changes = append(changes, cm)
+			}
+		}
+	}
+	newStartPageToken, _ = m["newStartPageToken"].(string)
+	nextPageToken, _ = m["nextPageToken"].(string)
+	return
 }

@@ -147,6 +147,27 @@ func FileDownloadHandlerB64(sh *module_store.StoreHolder) http.HandlerFunc {
 			}
 		}
 
+		if dfFromObj.FileId != "" || dfFromObj.SharedWithMe || dfFromObj.OwnerEmail != "" || dfFromObj.ModifiedAfter != "" || dfFromObj.MimeType != "" || dfFromObj.ExportMimeType != "" {
+			fileB64, mimeType, fileName, fileId, candidates, sErr := sh.Store.DownloadFileSmart(r.Context(), projectId, storageName, dfFromObj, sh.Store)
+			if sErr != nil {
+				server_handlers.FormatResponse(w, 400)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": sErr.Error()})
+				return
+			}
+			if len(candidates) > 0 {
+				server_handlers.FormatResponse(w, http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"status":     "multiple_matches",
+					"message":    "more than one file matches; call again with file_id from candidates",
+					"candidates": candidates,
+				})
+				return
+			}
+			server_handlers.FormatResponse(w, http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{"file": fileB64, "file_type": mimeType, "file_name": fileName, "file_id": fileId})
+			return
+		}
+
 		fileB64, mimeType, err := sh.Store.DownloadFileB64(r.Context(), projectId, storageName, dfFromObj, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -664,5 +685,147 @@ func GetStorageTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		}
 		server_handlers.FormatResponse(w, http.StatusOK)
 		_ = json.NewEncoder(w).Encode(res)
+	}
+}
+
+type gdriveWatchChangesBody struct {
+	ChannelId     string `json:"channel_id"`
+	PushEndpoint  string `json:"push_endpoint"`
+	ExpirationMs  int64  `json:"expiration_ms"`
+}
+
+type gdriveWatchFileBody struct {
+	ChannelId    string `json:"channel_id"`
+	PushEndpoint string `json:"push_endpoint"`
+	ExpirationMs int64  `json:"expiration_ms"`
+}
+
+type gdriveStopWatchBody struct {
+	ChannelId  string `json:"channel_id"`
+	ResourceId string `json:"resource_id"`
+}
+
+type gdriveListChangesBody struct {
+	PageToken string `json:"page_token"`
+}
+
+func GdriveWatchChangesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		storageName := vars["storagename"]
+		body := gdriveWatchChangesBody{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if body.ChannelId == "" || body.PushEndpoint == "" {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "channel_id and push_endpoint are required"})
+			return
+		}
+		resourceId, startPageToken, expiration, err := sh.Store.GdriveWatchChanges(r.Context(), projectId, storageName, body.ChannelId, body.PushEndpoint, body.ExpirationMs, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"channel_id":       body.ChannelId,
+			"resource_id":      resourceId,
+			"start_page_token": startPageToken,
+			"expiration":       expiration,
+		})
+	}
+}
+
+func GdriveWatchFileHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		storageName := vars["storagename"]
+		fileId := vars["file_id"]
+		body := gdriveWatchFileBody{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if body.ChannelId == "" || body.PushEndpoint == "" || fileId == "" {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "file_id, channel_id and push_endpoint are required"})
+			return
+		}
+		resourceId, expiration, err := sh.Store.GdriveWatchFile(r.Context(), projectId, storageName, fileId, body.ChannelId, body.PushEndpoint, body.ExpirationMs, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"channel_id":  body.ChannelId,
+			"resource_id": resourceId,
+			"file_id":     fileId,
+			"expiration":  expiration,
+		})
+	}
+}
+
+func GdriveStopWatchHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		storageName := vars["storagename"]
+		body := gdriveStopWatchBody{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if err := sh.Store.GdriveStopWatch(r.Context(), projectId, storageName, body.ChannelId, body.ResourceId, sh.Store); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+	}
+}
+
+func GdriveListChangesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		storageName := vars["storagename"]
+		body := gdriveListChangesBody{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if body.PageToken == "" {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "page_token is required"})
+			return
+		}
+		changes, newStartPageToken, nextPageToken, err := sh.Store.GdriveListChanges(r.Context(), projectId, storageName, body.PageToken, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"changes":               changes,
+			"new_start_page_token":  newStartPageToken,
+			"next_page_token":       nextPageToken,
+		})
 	}
 }

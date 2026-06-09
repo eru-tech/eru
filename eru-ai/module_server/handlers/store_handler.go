@@ -831,6 +831,7 @@ func ToolCallbackHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("ToolCallbackHandler - Start")
 		ctx := context.WithValue(r.Context(), tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
 		ctx = context.WithValue(ctx, tools.RequestAuthorizationKey, r.Header.Get("Authorization"))
+		ctx = context.WithValue(ctx, tools.RequestHeadersKey, r.Header)
 		ctx = context.WithValue(ctx, "erufilesbaseurl", module_store.Erufilesbaseurl)
 		ctx = context.WithValue(ctx, "eruauthbaseurl", module_store.Eruauthbaseurl)
 		vars := mux.Vars(r)
