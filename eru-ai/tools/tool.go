@@ -77,6 +77,7 @@ const (
 	EruFuncBaseUrlKey       contextKey = "Erufuncbaseurl"
 	eruFuncBaseUrlKey                  = EruFuncBaseUrlKey
 	RequestAuthorizationKey contextKey = "RequestAuthorization"
+	RequestHeadersKey       contextKey = "RequestHeaders"
 )
 
 type Tooling interface {

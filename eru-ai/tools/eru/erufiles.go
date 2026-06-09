@@ -26,10 +26,13 @@ import (
 )
 
 const (
+	INSERT_FUNC_ASYNC_ERUFILES = "insert into eruai_cb_erufiles (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
+
 	ErufilesUpload            = "upload"
 	ErufilesUploadB64         = "upload_b64"
 	ErufilesDownload          = "download"
 	ErufilesSubscribe         = "subscribe"
+	ErufilesSubscribeFile     = "subscribe_file"
 	ErufilesRenewSubscription = "renew_subscription"
 	ErufilesStopSubscription  = "stop_subscription"
 	ErufilesStopAutoRenew     = "stop_auto_renew"
@@ -55,12 +58,20 @@ type ErufilesUploadParams struct {
 }
 
 type ErufilesDownloadParams struct {
-	FolderPath string `json:"folder_path" desc:"folder path inside the storage"`
-	FileName   string `json:"file_name" eru:"required" desc:"file name to download"`
+	FolderPath     string `json:"folder_path" desc:"folder path inside the storage (root-folder traversal mode)"`
+	FileName       string `json:"file_name" desc:"file name to download or search for"`
+	FileId         string `json:"file_id" desc:"direct provider file id; if set, skips search"`
+	SharedWithMe   bool   `json:"shared_with_me" desc:"narrow GDrive search to Shared with me only"`
+	OwnerEmail     string `json:"owner_email" desc:"narrow by owner email (GDrive)"`
+	ModifiedAfter  string `json:"modified_after" desc:"RFC3339 timestamp; only files modified after"`
+	MimeType       string `json:"mime_type" desc:"narrow by mime type"`
+	ExportMimeType string `json:"export_mime_type" desc:"target export mime for Google Docs Editors files (pdf, docx, xlsx, etc.)"`
+	MaxResults     int    `json:"max_results" desc:"cap candidates returned (default 20)"`
 }
 
 type ErufilesSubscribeParams struct {
 	TargetPath string `json:"target_path" desc:"optional folder/file path to scope the subscription"`
+	FileId     string `json:"file_id" desc:"GDrive file id to watch (subscribe_file action)"`
 }
 
 type ErufilesUnsubscribeParams struct {
@@ -79,6 +90,7 @@ type ErufilesTool struct {
 	StartPageToken                 string `json:"start_page_token,omitempty"`
 	DeltaLink                      string `json:"delta_link,omitempty"`
 	TopicName                      string `json:"topic_name,omitempty"`
+	WatchedFileId                  string `json:"watched_file_id,omitempty"`
 	OidcAudience                   string `json:"oidc_audience,omitempty"`
 	OidcServiceAccount             string `json:"oidc_service_account,omitempty"`
 }
@@ -115,6 +127,15 @@ var erufilesToolActions = []tools.ToolAction{
 		ActionName:   ErufilesSubscribe,
 		Description:  "Subscribe to changes on a file or folder in the configured storage. Triggers callbacks via the tool's CLBK hook on change.",
 		SystemPrompt: "Subscribe to a file or folder in the storage and receive change notifications.",
+		OutputSchema: eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ErufilesSubscribeParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ErufilesSubscribeFile,
+		Description:  "Subscribe to changes on a single GDrive file by file_id (including Shared-with-me files).",
+		SystemPrompt: "Subscribe to a single Drive file and receive change notifications.",
 		OutputSchema: eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
 			return utils.StructToJSONSchema(reflect.TypeOf(ErufilesSubscribeParams{}), []string{})
@@ -349,10 +370,20 @@ func (t *ErufilesTool) Execute(ctx context.Context, projectId string, tenantId s
 		toolResult, toolRequest, persistStore, err = t.Download(ctx, projectId, params)
 	case ErufilesSubscribe:
 		toolResult, toolRequest, persistStore, err = t.Subscribe(ctx, projectId, tenantId, params, false)
+	case ErufilesSubscribeFile:
+		toolResult, toolRequest, persistStore, err = t.SubscribeFile(ctx, projectId, tenantId, params, false)
 	case ErufilesRenewSubscription:
-		toolResult, toolRequest, persistStore, err = t.Subscribe(ctx, projectId, tenantId, params, false)
+		if t.WatchedFileId != "" {
+			toolResult, toolRequest, persistStore, err = t.SubscribeFile(ctx, projectId, tenantId, params, false)
+		} else {
+			toolResult, toolRequest, persistStore, err = t.Subscribe(ctx, projectId, tenantId, params, false)
+		}
 	case ErufilesStopSubscription:
-		toolResult, toolRequest, persistStore, err = t.Subscribe(ctx, projectId, tenantId, params, true)
+		if t.WatchedFileId != "" {
+			toolResult, toolRequest, persistStore, err = t.SubscribeFile(ctx, projectId, tenantId, params, true)
+		} else {
+			toolResult, toolRequest, persistStore, err = t.Subscribe(ctx, projectId, tenantId, params, true)
+		}
 	case ErufilesStopAutoRenew:
 		toolResult, toolRequest, persistStore, err = t.StopAutoRenew(ctx, projectId, tenantId, params)
 	case ErufilesGetSsoUrl:
@@ -578,8 +609,8 @@ func (t *ErufilesTool) Download(ctx context.Context, projectId string, params ma
 	if err = unmarshalParams(ctx, params, &p); err != nil {
 		return nil, nil, false, err
 	}
-	if p.FileName == "" {
-		err = errors.New("file_name is required")
+	if p.FileName == "" && p.FileId == "" {
+		err = errors.New("file_name or file_id is required")
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, false, err
 	}
@@ -587,8 +618,19 @@ func (t *ErufilesTool) Download(ctx context.Context, projectId string, params ma
 	if err != nil {
 		return nil, nil, false, err
 	}
-	dlUrl := fmt.Sprintf("%s/files/%s/%s/downloadb64/%s/%s", base, projectId, t.StorageName, url.PathEscape(p.FolderPath), url.PathEscape(p.FileName))
-	res, _, _, status, callErr := utils.CallHttp(ctx, http.MethodGet, dlUrl, t.buildHeaders(ctx), map[string]string{}, nil, map[string]string{}, nil)
+	dlUrl := fmt.Sprintf("%s/files/%s/%s/downloadb64", base, projectId, t.StorageName)
+	body := map[string]interface{}{
+		"file_name":        p.FileName,
+		"folder_path":      p.FolderPath,
+		"file_id":          p.FileId,
+		"shared_with_me":   p.SharedWithMe,
+		"owner_email":      p.OwnerEmail,
+		"modified_after":   p.ModifiedAfter,
+		"mime_type":        p.MimeType,
+		"export_mime_type": p.ExportMimeType,
+		"max_results":      p.MaxResults,
+	}
+	res, _, _, status, callErr := utils.CallHttp(ctx, http.MethodPost, dlUrl, t.buildHeaders(ctx), map[string]string{}, nil, map[string]string{}, body)
 	if callErr != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("erufiles downloadb64 failed (status %d): %s", status, callErr.Error()))
 		return nil, nil, false, callErr
@@ -597,7 +639,42 @@ func (t *ErufilesTool) Download(ctx context.Context, projectId string, params ma
 	if rm == nil {
 		rm = map[string]interface{}{"raw": res}
 	}
-	return rm, map[string]interface{}{"folder_path": p.FolderPath, "file_name": p.FileName}, false, nil
+	return rm, body, false, nil
+}
+
+func (t *ErufilesTool) SubscribeFile(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, unsubscribe bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("ErufilesTool SubscribeFile - Start")
+	if t.StorageType != erufilesGdrive {
+		err = fmt.Errorf("subscribe_file is only supported for GDRIVE storage")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	p := ErufilesSubscribeParams{}
+	_ = unmarshalParams(ctx, params, &p)
+	toolResult, toolRequest, persistStore, err = t.subscribeGdriveFile(ctx, projectId, tenantId, p.FileId, unsubscribe)
+	if err != nil || unsubscribe {
+		return
+	}
+	if t.Hooks.ARSU != "" && t.Scheduler != nil {
+		hookBody := map[string]interface{}{
+			"Vars":    map[string]interface{}{"Body": map[string]interface{}{"tool_name": t.ToolName, "tenant_id": tenantId}, "OrgBody": map[string]interface{}{"tool_name": t.ToolName, "tenant_id": tenantId}},
+			"ReqVars": map[string]interface{}{},
+			"ResVars": map[string]interface{}{},
+		}
+		hookBodyBytes, mErr := json.Marshal(hookBody)
+		if mErr != nil {
+			return toolResult, toolRequest, persistStore, mErr
+		}
+		jobName := fmt.Sprint(t.ToolName, "_", t.Hooks.ARSU, "_", tenantId)
+		_ = t.Scheduler.Unschedule(ctx, "", jobName)
+		schedulerCommand := fmt.Sprint("CALL schedule_procedure('", t.Hooks.ARSU, "','", string(hookBodyBytes), "','", t.Scheduler.GetSchedulerName(), "')")
+		cronStr := utils.GetCronStr(ctx, time.Now().UTC().Add(24*time.Hour))
+		_, sErr := t.Scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
+		if sErr != nil {
+			return toolResult, toolRequest, persistStore, sErr
+		}
+	}
+	return
 }
 
 func (t *ErufilesTool) Subscribe(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, unsubscribe bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -708,6 +785,26 @@ func gdriveCallEventUnsubscribe(ctx context.Context, projectId string, eventName
 	return err
 }
 
+func (t *ErufilesTool) erufilesGdriveWatch(ctx context.Context, projectId, subPath string, body map[string]interface{}) (map[string]interface{}, error) {
+	base, err := erufilesBaseUrl(ctx)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/files/%s/%s/gdrive/%s", base, projectId, t.StorageName, subPath)
+	res, _, _, status, callErr := utils.CallHttp(ctx, http.MethodPost, url, t.buildHeaders(ctx), map[string]string{}, nil, map[string]string{}, body)
+	if callErr != nil {
+		return nil, fmt.Errorf("erufiles %s failed (status %d): %w", subPath, status, callErr)
+	}
+	rm, ok := res.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("erufiles %s response not a map", subPath)
+	}
+	if e, ok := rm["error"].(string); ok && e != "" {
+		return nil, errors.New(e)
+	}
+	return rm, nil
+}
+
 func (t *ErufilesTool) subscribeGdrive(ctx context.Context, projectId string, tenantId string, unsubscribe bool) (map[string]interface{}, interface{}, bool, error) {
 	if t.EventName == "" {
 		err := errors.New("event_name is required for GDRIVE subscribe (must point to a GCP_PUBSUB event)")
@@ -721,14 +818,11 @@ func (t *ErufilesTool) subscribeGdrive(ctx context.Context, projectId string, te
 			logs.WithContext(ctx).Error(err.Error())
 		}
 		if t.SubscriptionId != "" {
-			tok, terr := t.getAccessToken(ctx, projectId)
-			if terr == nil {
-				stopUrl := fmt.Sprint(gdriveApiBase, "/channels/stop")
-				h := http.Header{}
-				h.Set("Authorization", "Bearer "+tok)
-				h.Set("Content-Type", "application/json")
-				body := map[string]interface{}{"id": t.SubscriptionId, "resourceId": t.TopicName}
-				_, _, _, _, _ = utils.CallHttp(ctx, http.MethodPost, stopUrl, h, map[string]string{}, nil, map[string]string{}, body)
+			if _, sErr := t.erufilesGdriveWatch(ctx, projectId, "watch/stop", map[string]interface{}{
+				"channel_id":  t.SubscriptionId,
+				"resource_id": t.TopicName,
+			}); sErr != nil {
+				logs.WithContext(ctx).Error(sErr.Error())
 			}
 		}
 		jobName := fmt.Sprint(t.ToolName, "_", t.Hooks.ARSU, "_", tenantId)
@@ -764,37 +858,21 @@ func (t *ErufilesTool) subscribeGdrive(ctx context.Context, projectId string, te
 		t.OidcServiceAccount = v
 	}
 
-	tok, err := t.getAccessToken(ctx, projectId)
-	if err != nil {
-		return nil, nil, false, err
-	}
-
-	startTok, sptErr := gdriveStartPageToken(ctx, tok)
-	if sptErr != nil {
-		logs.WithContext(ctx).Error(sptErr.Error())
-		return nil, nil, false, sptErr
-	}
-	t.StartPageToken = startTok
-
 	channelId := subscriptionId
 	expirationMs := time.Now().UTC().Add(7 * 24 * time.Hour).UnixMilli()
 	watchBody := map[string]interface{}{
-		"id":         channelId,
-		"type":       "web_hook",
-		"address":    pushEndpoint,
-		"expiration": fmt.Sprint(expirationMs),
+		"channel_id":    channelId,
+		"push_endpoint": pushEndpoint,
+		"expiration_ms": expirationMs,
 	}
-	watchUrl := fmt.Sprintf("%s/changes/watch?pageToken=%s&supportsAllDrives=true", gdriveApiBase, url.QueryEscape(startTok))
-	wh := http.Header{}
-	wh.Set("Authorization", "Bearer "+tok)
-	wh.Set("Content-Type", "application/json")
-	wRes, _, _, status, err := utils.CallHttp(ctx, http.MethodPost, watchUrl, wh, map[string]string{}, nil, map[string]string{}, watchBody)
-	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprintf("drive changes.watch failed (status %d): %s", status, err.Error()))
-		return nil, nil, false, err
+	wm, wErr := t.erufilesGdriveWatch(ctx, projectId, "watch/changes", watchBody)
+	if wErr != nil {
+		return nil, nil, false, wErr
 	}
-	wm, _ := wRes.(map[string]interface{})
 	t.SubscriptionId = channelId
+	if v, ok := wm["start_page_token"].(string); ok {
+		t.StartPageToken = v
+	}
 	if exp, ok := wm["expiration"].(string); ok {
 		if expMs, perr := strconv.ParseInt(exp, 10, 64); perr == nil {
 			t.SubscriptionExpirationDateTime = time.Unix(0, expMs*int64(time.Millisecond)).UTC().Format(time.RFC3339)
@@ -808,23 +886,89 @@ func (t *ErufilesTool) subscribeGdrive(ctx context.Context, projectId string, te
 	}, watchBody, true, nil
 }
 
-func gdriveStartPageToken(ctx context.Context, accessToken string) (string, error) {
-	h := http.Header{}
-	h.Set("Authorization", "Bearer "+accessToken)
-	h.Set("Content-Type", "application/json")
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, gdriveApiBase+"/changes/startPageToken", h, map[string]string{}, nil, map[string]string{"supportsAllDrives": "true"}, nil)
+func (t *ErufilesTool) subscribeGdriveFile(ctx context.Context, projectId string, tenantId string, fileId string, unsubscribe bool) (map[string]interface{}, interface{}, bool, error) {
+	if t.EventName == "" {
+		err := errors.New("event_name is required for GDRIVE file subscribe (must point to a GCP_PUBSUB event)")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	if fileId == "" {
+		fileId = t.WatchedFileId
+	}
+	if fileId == "" && !unsubscribe {
+		err := errors.New("file_id is required for GDRIVE file subscribe")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	subscriptionId := gdriveGcpSubscriptionId(projectId, tenantId, t.ToolName)
+
+	if unsubscribe {
+		if err := gdriveCallEventUnsubscribe(ctx, projectId, t.EventName, subscriptionId); err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+		}
+		if t.SubscriptionId != "" {
+			if _, sErr := t.erufilesGdriveWatch(ctx, projectId, "watch/stop", map[string]interface{}{
+				"channel_id":  t.SubscriptionId,
+				"resource_id": t.TopicName,
+			}); sErr != nil {
+				logs.WithContext(ctx).Error(sErr.Error())
+			}
+		}
+		jobName := fmt.Sprint(t.ToolName, "_", t.Hooks.ARSU, "_", tenantId)
+		if t.Scheduler != nil {
+			_ = t.Scheduler.Unschedule(ctx, "", jobName)
+		}
+		t.SubscriptionId = ""
+		t.SubscriptionExpirationDateTime = ""
+		t.TopicName = ""
+		t.WatchedFileId = ""
+		t.OidcAudience = ""
+		t.OidcServiceAccount = ""
+		return map[string]interface{}{"unsubscription_status": "success"}, nil, true, nil
+	}
+
+	pushEndpoint := t.GetToolCbUrl(projectId, tenantId)
+	subRes, err := gdriveCallEventSubscribe(ctx, projectId, t.EventName, subscriptionId, pushEndpoint)
 	if err != nil {
-		return "", err
+		return nil, nil, false, err
 	}
-	m, ok := res.(map[string]interface{})
-	if !ok {
-		return "", errors.New("startPageToken response not an object")
+	topicName, _ := subRes["topic_name"].(string)
+	if topicName == "" {
+		err = errors.New("topic_name not returned from event subscribe")
+		return nil, nil, false, err
 	}
-	tok, _ := m["startPageToken"].(string)
-	if tok == "" {
-		return "", errors.New("startPageToken response missing token")
+	t.TopicName = topicName
+	if v, ok := subRes["oidc_audience"].(string); ok {
+		t.OidcAudience = v
 	}
-	return tok, nil
+	if v, ok := subRes["oidc_service_account"].(string); ok {
+		t.OidcServiceAccount = v
+	}
+
+	channelId := subscriptionId
+	expirationMs := time.Now().UTC().Add(7 * 24 * time.Hour).UnixMilli()
+	watchBody := map[string]interface{}{
+		"channel_id":    channelId,
+		"push_endpoint": pushEndpoint,
+		"expiration_ms": expirationMs,
+	}
+	wm, wErr := t.erufilesGdriveWatch(ctx, projectId, "watch/file/"+url.PathEscape(fileId), watchBody)
+	if wErr != nil {
+		return nil, nil, false, wErr
+	}
+	t.SubscriptionId = channelId
+	t.WatchedFileId = fileId
+	if exp, ok := wm["expiration"].(string); ok {
+		if expMs, perr := strconv.ParseInt(exp, 10, 64); perr == nil {
+			t.SubscriptionExpirationDateTime = time.Unix(0, expMs*int64(time.Millisecond)).UTC().Format(time.RFC3339)
+		}
+	}
+	return map[string]interface{}{
+		"subscription_status":              "success",
+		"subscription_id":                  t.SubscriptionId,
+		"file_id":                          t.WatchedFileId,
+		"subscription_expiration_datetime": t.SubscriptionExpirationDateTime,
+	}, watchBody, true, nil
 }
 
 func (t *ErufilesTool) subscribeOneDrive(ctx context.Context, projectId string, tenantId string, unsubscribe bool) (map[string]interface{}, interface{}, bool, error) {
@@ -958,6 +1102,21 @@ func (t *ErufilesTool) Callback(ctx context.Context, projectId string, tenantId 
 }
 
 func (t *ErufilesTool) callbackGdrive(ctx context.Context, projectId string, tenantId string, body map[string]interface{}, params map[string][]string) (callbackResult interface{}, persistStore bool, err error) {
+	resourceState := ""
+	changedFields := ""
+	resourceId := ""
+	channelId := ""
+	if hdrs, ok := ctx.Value(tools.RequestHeadersKey).(http.Header); ok && hdrs != nil {
+		resourceState = hdrs.Get("X-Goog-Resource-State")
+		changedFields = hdrs.Get("X-Goog-Changed")
+		resourceId = hdrs.Get("X-Goog-Resource-Id")
+		channelId = hdrs.Get("X-Goog-Channel-Id")
+	}
+	if resourceState == "sync" {
+		logs.WithContext(ctx).Info("erufiles gdrive callback: ignoring sync handshake")
+		return "", false, nil
+	}
+
 	if verr := t.verifyGdriveOidcPush(ctx); verr != nil {
 		logs.WithContext(ctx).Error(fmt.Sprint("oidc verify failed: ", verr.Error()))
 		return "", false, nil
@@ -973,6 +1132,37 @@ func (t *ErufilesTool) callbackGdrive(ctx context.Context, projectId string, ten
 				bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, s)
 			}
 		}
+
+		dbBody := map[string]interface{}{
+			"body":           body,
+			"resource_state": resourceState,
+			"changed_fields": changedFields,
+			"resource_id":    resourceId,
+			"channel_id":     channelId,
+		}
+		dbBodyBytes, dbBodyErr := json.Marshal(dbBody)
+		if dbBodyErr != nil {
+			logs.WithContext(bgCtx).Error(dbBodyErr.Error())
+			return
+		}
+		dbParamsBytes, dbParamsErr := json.Marshal(params)
+		if dbParamsErr != nil {
+			logs.WithContext(bgCtx).Error(dbParamsErr.Error())
+			return
+		}
+		if t.ToolDb != nil {
+			insertQuery := &eru_models.Queries{
+				Query: t.ToolDb.GetDbQuery(bgCtx, INSERT_FUNC_ASYNC_ERUFILES),
+				Vals:  []interface{}{projectId, tenantId, string(dbBodyBytes), string(dbParamsBytes)},
+				Rank:  1,
+			}
+			if _, insErr := utils.ExecuteDbSave(bgCtx, t.ToolDb.GetConn(), []*eru_models.Queries{insertQuery}); insErr != nil {
+				logs.WithContext(bgCtx).Error(insErr.Error())
+			}
+		} else {
+			logs.WithContext(bgCtx).Warn("erufiles tool has no ToolDb; skipping callback persistence")
+		}
+
 		bodyBytes, mErr := json.Marshal(body)
 		if mErr != nil {
 			logs.WithContext(bgCtx).Error(mErr.Error())
@@ -983,40 +1173,44 @@ func (t *ErufilesTool) callbackGdrive(ctx context.Context, projectId string, ten
 			logs.WithContext(bgCtx).Error(uErr.Error())
 			return
 		}
-		tok, tErr := t.getAccessToken(bgCtx, projectId)
-		if tErr != nil {
-			logs.WithContext(bgCtx).Error(tErr.Error())
-			return
-		}
 		pageToken := t.StartPageToken
 		if pageToken == "" {
+			if t.WatchedFileId != "" {
+				hookBody := map[string]interface{}{
+					"file_id":        t.WatchedFileId,
+					"storage_name":   t.StorageName,
+					"tenant_id":      tenantId,
+					"resource_state": resourceState,
+					"changed_fields": changedFields,
+					"resource_id":    resourceId,
+					"channel_id":     channelId,
+				}
+				if hookRes, hErr := t.ExecuteHook(bgCtx, "clbk", "", projectId, tenantId, hookBody, params); hErr != nil {
+					logs.WithContext(bgCtx).Error(hErr.Error())
+				} else {
+					logs.WithContext(bgCtx).Info(fmt.Sprint(hookRes))
+				}
+				return
+			}
 			logs.WithContext(bgCtx).Info("erufiles gdrive callback: no startPageToken stored, skipping change fetch")
 			return
 		}
-		listUrl := gdriveApiBase + "/changes"
-		h := http.Header{}
-		h.Set("Authorization", "Bearer "+tok)
-		h.Set("Content-Type", "application/json")
-		listParams := map[string]string{
-			"pageToken":                 pageToken,
-			"includeRemoved":            "true",
-			"includeItemsFromAllDrives": "true",
-			"supportsAllDrives":         "true",
-			"fields":                    "newStartPageToken,nextPageToken,changes(fileId,removed,file(id,name,parents,mimeType,modifiedTime))",
-		}
-		res, _, _, _, lErr := utils.CallHttp(bgCtx, http.MethodGet, listUrl, h, map[string]string{}, nil, listParams, nil)
+		rm, lErr := t.erufilesGdriveWatch(bgCtx, projectId, "changes", map[string]interface{}{"page_token": pageToken})
 		if lErr != nil {
 			logs.WithContext(bgCtx).Error(lErr.Error())
 			return
 		}
-		rm, _ := res.(map[string]interface{})
 		changes, _ := rm["changes"].([]interface{})
 		for _, c := range changes {
 			cm, _ := c.(map[string]interface{})
 			hookBody := map[string]interface{}{
-				"change":       cm,
-				"storage_name": t.StorageName,
-				"tenant_id":    tenantId,
+				"change":         cm,
+				"storage_name":   t.StorageName,
+				"tenant_id":      tenantId,
+				"resource_state": resourceState,
+				"changed_fields": changedFields,
+				"resource_id":    resourceId,
+				"channel_id":     channelId,
 			}
 			if hookRes, hErr := t.ExecuteHook(bgCtx, "clbk", "", projectId, tenantId, hookBody, params); hErr != nil {
 				logs.WithContext(bgCtx).Error(hErr.Error())
@@ -1024,9 +1218,9 @@ func (t *ErufilesTool) callbackGdrive(ctx context.Context, projectId string, ten
 				logs.WithContext(bgCtx).Info(fmt.Sprint(hookRes))
 			}
 		}
-		if newTok, ok := rm["newStartPageToken"].(string); ok && newTok != "" {
+		if newTok, ok := rm["new_start_page_token"].(string); ok && newTok != "" {
 			t.StartPageToken = newTok
-		} else if next, ok := rm["nextPageToken"].(string); ok && next != "" {
+		} else if next, ok := rm["next_page_token"].(string); ok && next != "" {
 			t.StartPageToken = next
 		}
 	}, server.ContinueOnMaxRetries)
@@ -1048,6 +1242,22 @@ func (t *ErufilesTool) callbackOneDrive(ctx context.Context, projectId string, t
 				bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, s)
 			}
 		}
+
+		dbBodyBytes, dbBodyErr := json.Marshal(body)
+		dbParamsBytes, dbParamsErr := json.Marshal(params)
+		if dbBodyErr == nil && dbParamsErr == nil && t.ToolDb != nil {
+			insertQuery := &eru_models.Queries{
+				Query: t.ToolDb.GetDbQuery(bgCtx, INSERT_FUNC_ASYNC_ERUFILES),
+				Vals:  []interface{}{projectId, tenantId, string(dbBodyBytes), string(dbParamsBytes)},
+				Rank:  1,
+			}
+			if _, insErr := utils.ExecuteDbSave(bgCtx, t.ToolDb.GetConn(), []*eru_models.Queries{insertQuery}); insErr != nil {
+				logs.WithContext(bgCtx).Error(insErr.Error())
+			}
+		} else if t.ToolDb == nil {
+			logs.WithContext(bgCtx).Warn("erufiles tool has no ToolDb; skipping callback persistence")
+		}
+
 		tok, tErr := t.getAccessToken(bgCtx, projectId)
 		if tErr != nil {
 			logs.WithContext(bgCtx).Error(tErr.Error())
