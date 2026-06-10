@@ -62,13 +62,12 @@ func (o *OneDriveStorage) Init(ctx context.Context) error {
 	return nil
 }
 
-func (o *OneDriveStorage) getAccessToken(ctx context.Context) (string, error) {
+func (o *OneDriveStorage) getAccessToken(ctx context.Context, projectId string) (string, error) {
 	if o.AuthName == "" {
 		return "", errors.New("auth_name is required for ONEDRIVE storage")
 	}
-	projectId, _ := ctx.Value("projectId").(string)
 	if projectId == "" {
-		return "", errors.New("projectId not found in context")
+		return "", errors.New("projectId is required for ONEDRIVE getAccessToken")
 	}
 	baseUrl, _ := ctx.Value("eruauthbaseurl").(string)
 	if baseUrl == "" {
@@ -97,8 +96,8 @@ func (o *OneDriveStorage) getAccessToken(ctx context.Context) (string, error) {
 	return at, nil
 }
 
-func (o *OneDriveStorage) graphCall(ctx context.Context, method, fullUrl string, headers http.Header, params map[string]string, postBody interface{}) (interface{}, http.Header, int, error) {
-	tok, err := o.getAccessToken(ctx)
+func (o *OneDriveStorage) graphCall(ctx context.Context, projectId, method, fullUrl string, headers http.Header, params map[string]string, postBody interface{}) (interface{}, http.Header, int, error) {
+	tok, err := o.getAccessToken(ctx, projectId)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -121,10 +120,10 @@ func (o *OneDriveStorage) rootSegment() string {
 	return o.parentSegment(o.RootFolderId)
 }
 
-func (o *OneDriveStorage) findChild(ctx context.Context, parentId, name string) (id string, isFolder bool, err error) {
+func (o *OneDriveStorage) findChild(ctx context.Context, projectId, parentId, name string) (id string, isFolder bool, err error) {
 	seg := o.parentSegment(parentId)
 	itemUrl := fmt.Sprintf("%s/%s:/%s", graphDriveBase, seg, url.PathEscape(name))
-	res, _, status, callErr := o.graphCall(ctx, http.MethodGet, itemUrl, nil, map[string]string{"$select": "id,name,folder,file"}, nil)
+	res, _, status, callErr := o.graphCall(ctx, projectId, http.MethodGet, itemUrl, nil, map[string]string{"$select": "id,name,folder,file"}, nil)
 	if status == http.StatusNotFound {
 		return "", false, nil
 	}
@@ -143,8 +142,8 @@ func (o *OneDriveStorage) findChild(ctx context.Context, parentId, name string) 
 	return
 }
 
-func (o *OneDriveStorage) ensureFolder(ctx context.Context, parentId, name string) (string, error) {
-	id, isFolder, err := o.findChild(ctx, parentId, name)
+func (o *OneDriveStorage) ensureFolder(ctx context.Context, projectId, parentId, name string) (string, error) {
+	id, isFolder, err := o.findChild(ctx, projectId, parentId, name)
 	if err != nil {
 		return "", err
 	}
@@ -163,7 +162,7 @@ func (o *OneDriveStorage) ensureFolder(ctx context.Context, parentId, name strin
 		"folder":                            map[string]interface{}{},
 		"@microsoft.graph.conflictBehavior": "fail",
 	}
-	res, _, status, err := o.graphCall(ctx, http.MethodPost, createUrl, headers, nil, body)
+	res, _, status, err := o.graphCall(ctx, projectId, http.MethodPost, createUrl, headers, nil, body)
 	if err != nil {
 		return "", err
 	}
@@ -178,7 +177,7 @@ func (o *OneDriveStorage) ensureFolder(ctx context.Context, parentId, name strin
 	return id, nil
 }
 
-func (o *OneDriveStorage) resolveFolderPath(ctx context.Context, folderPath string, createIfMissing bool) (string, error) {
+func (o *OneDriveStorage) resolveFolderPath(ctx context.Context, projectId, folderPath string, createIfMissing bool) (string, error) {
 	parent := o.RootFolderId
 	if parent == "" {
 		parent = "root"
@@ -194,10 +193,10 @@ func (o *OneDriveStorage) resolveFolderPath(ctx context.Context, folderPath stri
 		var id string
 		var err error
 		if createIfMissing {
-			id, err = o.ensureFolder(ctx, parent, part)
+			id, err = o.ensureFolder(ctx, projectId, parent, part)
 		} else {
 			var isFolder bool
-			id, isFolder, err = o.findChild(ctx, parent, part)
+			id, isFolder, err = o.findChild(ctx, projectId, parent, part)
 			if err == nil && id == "" {
 				err = fmt.Errorf("folder not found: %s", part)
 			}
@@ -221,8 +220,8 @@ func buildOneDriveFileName(docType, baseName string) string {
 	return fmt.Sprint(id, "_", baseName)
 }
 
-func (o *OneDriveStorage) uploadBytes(ctx context.Context, parentId, fileName string, data []byte, contentType string) (string, error) {
-	tok, err := o.getAccessToken(ctx)
+func (o *OneDriveStorage) uploadBytes(ctx context.Context, projectId, parentId, fileName string, data []byte, contentType string) (string, error) {
+	tok, err := o.getAccessToken(ctx, projectId)
 	if err != nil {
 		return "", err
 	}
@@ -258,7 +257,7 @@ func (o *OneDriveStorage) uploadBytes(ctx context.Context, parentId, fileName st
 	return id, nil
 }
 
-func (o *OneDriveStorage) UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+func (o *OneDriveStorage) UploadFile(ctx context.Context, projectId string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
 	logs.WithContext(ctx).Debug("UploadFile - Start (ONEDRIVE)")
 	if o.EncryptFiles {
 		logs.WithContext(ctx).Warn("encrypt_files ignored for ONEDRIVE")
@@ -269,39 +268,39 @@ func (o *OneDriveStorage) UploadFile(ctx context.Context, file multipart.File, h
 		return
 	}
 	finalFileName := buildOneDriveFileName(docType, header.Filename)
-	parentId, err := o.resolveFolderPath(ctx, folderPath, true)
+	parentId, err := o.resolveFolderPath(ctx, projectId, folderPath, true)
 	if err != nil {
 		return "", err
 	}
-	if _, err = o.uploadBytes(ctx, parentId, finalFileName, byteContainer, header.Header.Get("Content-Type")); err != nil {
+	if _, err = o.uploadBytes(ctx, projectId, parentId, finalFileName, byteContainer, header.Header.Get("Content-Type")); err != nil {
 		return "", err
 	}
 	return joinDocId(folderPath, finalFileName), nil
 }
 
-func (o *OneDriveStorage) UploadFileB64(ctx context.Context, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+func (o *OneDriveStorage) UploadFileB64(ctx context.Context, projectId string, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
 	logs.WithContext(ctx).Debug("UploadFileB64 - Start (ONEDRIVE)")
 	if o.EncryptFiles {
 		logs.WithContext(ctx).Warn("encrypt_files ignored for ONEDRIVE")
 	}
 	finalFileName := buildOneDriveFileName(docType, fileName)
-	parentId, err := o.resolveFolderPath(ctx, folderPath, true)
+	parentId, err := o.resolveFolderPath(ctx, projectId, folderPath, true)
 	if err != nil {
 		return "", err
 	}
-	if _, err = o.uploadBytes(ctx, parentId, finalFileName, file, ""); err != nil {
+	if _, err = o.uploadBytes(ctx, projectId, parentId, finalFileName, file, ""); err != nil {
 		return "", err
 	}
 	return joinDocId(folderPath, finalFileName), nil
 }
 
-func (o *OneDriveStorage) DownloadFile(ctx context.Context, folderPath string, fileName string, keyName eruaes.AesKey) ([]byte, error) {
+func (o *OneDriveStorage) DownloadFile(ctx context.Context, projectId string, folderPath string, fileName string, keyName eruaes.AesKey) ([]byte, error) {
 	logs.WithContext(ctx).Debug("DownloadFile - Start (ONEDRIVE)")
-	parentId, err := o.resolveFolderPath(ctx, folderPath, false)
+	parentId, err := o.resolveFolderPath(ctx, projectId, folderPath, false)
 	if err != nil {
 		return nil, err
 	}
-	fileId, isFolder, err := o.findChild(ctx, parentId, fileName)
+	fileId, isFolder, err := o.findChild(ctx, projectId, parentId, fileName)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +310,7 @@ func (o *OneDriveStorage) DownloadFile(ctx context.Context, folderPath string, f
 	if isFolder {
 		return nil, fmt.Errorf("path is a folder, not a file: %s", joinDocId(folderPath, fileName))
 	}
-	tok, err := o.getAccessToken(ctx)
+	tok, err := o.getAccessToken(ctx, projectId)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +337,7 @@ func (o *OneDriveStorage) BucketExists(ctx context.Context) (bool, error) {
 	return o.RootFolderId != "", nil
 }
 
-func (o *OneDriveStorage) CreateStorage(ctx context.Context, cloneStorage StorageI, persist bool) error {
+func (o *OneDriveStorage) CreateStorage(ctx context.Context, projectId string, cloneStorage StorageI, persist bool) error {
 	if !persist {
 		return nil
 	}
@@ -355,7 +354,7 @@ func (o *OneDriveStorage) CreateStorage(ctx context.Context, cloneStorage Storag
 	if name == "" {
 		return errors.New("storage_name required to create OneDrive folder")
 	}
-	id, err := o.ensureFolder(ctx, "root", name)
+	id, err := o.ensureFolder(ctx, projectId, "root", name)
 	if err != nil {
 		return err
 	}
@@ -367,7 +366,7 @@ func (o *OneDriveStorage) CreateStorage(ctx context.Context, cloneStorage Storag
 	return nil
 }
 
-func (o *OneDriveStorage) DeleteStorage(ctx context.Context, forceDelete bool, cloneStorage StorageI) error {
+func (o *OneDriveStorage) DeleteStorage(ctx context.Context, projectId string, forceDelete bool, cloneStorage StorageI) error {
 	cloneO, ok := cloneStorage.(*OneDriveStorage)
 	if !ok {
 		return errors.New("clone is not OneDriveStorage")
@@ -377,12 +376,12 @@ func (o *OneDriveStorage) DeleteStorage(ctx context.Context, forceDelete bool, c
 		return nil
 	}
 	if forceDelete {
-		if err := cloneStorage.EmptyBucket(ctx); err != nil {
+		if err := cloneStorage.EmptyBucket(ctx, projectId); err != nil {
 			return err
 		}
 	}
 	delUrl := fmt.Sprintf("%s/items/%s", graphDriveBase, cloneO.RootFolderId)
-	_, _, status, err := cloneO.graphCall(ctx, http.MethodDelete, delUrl, http.Header{}, nil, nil)
+	_, _, status, err := cloneO.graphCall(ctx, projectId, http.MethodDelete, delUrl, http.Header{}, nil, nil)
 	if err != nil && status != http.StatusNotFound {
 		return err
 	}
@@ -392,13 +391,13 @@ func (o *OneDriveStorage) DeleteStorage(ctx context.Context, forceDelete bool, c
 	return nil
 }
 
-func (o *OneDriveStorage) EmptyBucket(ctx context.Context) error {
+func (o *OneDriveStorage) EmptyBucket(ctx context.Context, projectId string) error {
 	if o.RootFolderId == "" {
 		return errors.New("EmptyBucket refused: root_folder_id is not set (refusing to empty entire OneDrive)")
 	}
 	listUrl := fmt.Sprintf("%s/items/%s/children", graphDriveBase, o.RootFolderId)
 	for listUrl != "" {
-		res, _, status, err := o.graphCall(ctx, http.MethodGet, listUrl, http.Header{}, map[string]string{"$select": "id,name", "$top": "200"}, nil)
+		res, _, status, err := o.graphCall(ctx, projectId, http.MethodGet, listUrl, http.Header{}, map[string]string{"$select": "id,name", "$top": "200"}, nil)
 		if err != nil {
 			return err
 		}
@@ -414,7 +413,7 @@ func (o *OneDriveStorage) EmptyBucket(ctx context.Context) error {
 				continue
 			}
 			delUrl := fmt.Sprintf("%s/items/%s", graphDriveBase, id)
-			_, _, dStatus, dErr := o.graphCall(ctx, http.MethodDelete, delUrl, http.Header{}, nil, nil)
+			_, _, dStatus, dErr := o.graphCall(ctx, projectId, http.MethodDelete, delUrl, http.Header{}, nil, nil)
 			if dErr != nil && dStatus != http.StatusNotFound {
 				return dErr
 			}

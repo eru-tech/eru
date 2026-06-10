@@ -65,13 +65,12 @@ func (g *GdriveStorage) Init(ctx context.Context) error {
 	return nil
 }
 
-func (g *GdriveStorage) getAccessToken(ctx context.Context) (string, error) {
+func (g *GdriveStorage) getAccessToken(ctx context.Context, projectId string) (string, error) {
 	if g.AuthName == "" {
 		return "", errors.New("auth_name is required for GDRIVE storage")
 	}
-	projectId, _ := ctx.Value("projectId").(string)
 	if projectId == "" {
-		return "", errors.New("projectId not found in context")
+		return "", errors.New("projectId is required for GDRIVE getAccessToken")
 	}
 	baseUrl, _ := ctx.Value("eruauthbaseurl").(string)
 	if baseUrl == "" {
@@ -100,8 +99,8 @@ func (g *GdriveStorage) getAccessToken(ctx context.Context) (string, error) {
 	return at, nil
 }
 
-func (g *GdriveStorage) driveCall(ctx context.Context, method, fullUrl string, headers http.Header, params map[string]string, postBody interface{}) (interface{}, http.Header, int, error) {
-	tok, err := g.getAccessToken(ctx)
+func (g *GdriveStorage) driveCall(ctx context.Context, projectId, method, fullUrl string, headers http.Header, params map[string]string, postBody interface{}) (interface{}, http.Header, int, error) {
+	tok, err := g.getAccessToken(ctx, projectId)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -127,7 +126,7 @@ func escapeDriveQ(s string) string {
 	return s
 }
 
-func (g *GdriveStorage) findChild(ctx context.Context, parentId, name string, folderOnly bool) (string, error) {
+func (g *GdriveStorage) findChild(ctx context.Context, projectId, parentId, name string, folderOnly bool) (string, error) {
 	q := fmt.Sprintf("name = '%s' and '%s' in parents and trashed = false", escapeDriveQ(name), escapeDriveQ(parentId))
 	if folderOnly {
 		q += " and mimeType = '" + gdriveFolderMime + "'"
@@ -142,7 +141,7 @@ func (g *GdriveStorage) findChild(ctx context.Context, parentId, name string, fo
 		"includeItemsFromAllDrives": "true",
 		"supportsAllDrives":         "true",
 	}
-	res, _, status, err := g.driveCall(ctx, http.MethodGet, gdriveApiBase+"/files", http.Header{}, params, nil)
+	res, _, status, err := g.driveCall(ctx, projectId, http.MethodGet, gdriveApiBase+"/files", http.Header{}, params, nil)
 	if err != nil {
 		return "", err
 	}
@@ -165,8 +164,8 @@ func (g *GdriveStorage) findChild(ctx context.Context, parentId, name string, fo
 	return id, nil
 }
 
-func (g *GdriveStorage) ensureFolder(ctx context.Context, parentId, name string) (string, error) {
-	id, err := g.findChild(ctx, parentId, name, true)
+func (g *GdriveStorage) ensureFolder(ctx context.Context, projectId, parentId, name string) (string, error) {
+	id, err := g.findChild(ctx, projectId, parentId, name, true)
 	if err != nil {
 		return "", err
 	}
@@ -180,7 +179,7 @@ func (g *GdriveStorage) ensureFolder(ctx context.Context, parentId, name string)
 		"mimeType": gdriveFolderMime,
 		"parents":  []string{parentId},
 	}
-	res, _, status, err := g.driveCall(ctx, http.MethodPost, gdriveApiBase+"/files", headers, map[string]string{"supportsAllDrives": "true"}, body)
+	res, _, status, err := g.driveCall(ctx, projectId, http.MethodPost, gdriveApiBase+"/files", headers, map[string]string{"supportsAllDrives": "true"}, body)
 	if err != nil {
 		return "", err
 	}
@@ -195,7 +194,7 @@ func (g *GdriveStorage) ensureFolder(ctx context.Context, parentId, name string)
 	return id, nil
 }
 
-func (g *GdriveStorage) resolveFolderPath(ctx context.Context, folderPath string, createIfMissing bool) (string, error) {
+func (g *GdriveStorage) resolveFolderPath(ctx context.Context, projectId, folderPath string, createIfMissing bool) (string, error) {
 	parent := g.parentFolderId()
 	folderPath = strings.Trim(folderPath, "/")
 	if folderPath == "" {
@@ -208,9 +207,9 @@ func (g *GdriveStorage) resolveFolderPath(ctx context.Context, folderPath string
 		var id string
 		var err error
 		if createIfMissing {
-			id, err = g.ensureFolder(ctx, parent, part)
+			id, err = g.ensureFolder(ctx, projectId, parent, part)
 		} else {
-			id, err = g.findChild(ctx, parent, part, true)
+			id, err = g.findChild(ctx, projectId, parent, part, true)
 			if err == nil && id == "" {
 				err = fmt.Errorf("folder not found: %s", part)
 			}
@@ -239,8 +238,8 @@ func joinDocId(folderPath, fileName string) string {
 	return folderPath + "/" + fileName
 }
 
-func (g *GdriveStorage) uploadBytes(ctx context.Context, parentId, fileName string, data []byte, contentType string) (string, error) {
-	tok, err := g.getAccessToken(ctx)
+func (g *GdriveStorage) uploadBytes(ctx context.Context, projectId, parentId, fileName string, data []byte, contentType string) (string, error) {
+	tok, err := g.getAccessToken(ctx, projectId)
 	if err != nil {
 		return "", err
 	}
@@ -290,7 +289,7 @@ func (g *GdriveStorage) uploadBytes(ctx context.Context, parentId, fileName stri
 	return id, nil
 }
 
-func (g *GdriveStorage) UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+func (g *GdriveStorage) UploadFile(ctx context.Context, projectId string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
 	logs.WithContext(ctx).Debug("UploadFile - Start (GDRIVE)")
 	if g.EncryptFiles {
 		logs.WithContext(ctx).Warn("encrypt_files ignored for GDRIVE")
@@ -301,46 +300,46 @@ func (g *GdriveStorage) UploadFile(ctx context.Context, file multipart.File, hea
 		return
 	}
 	finalFileName := buildGdriveFileName(docType, header.Filename)
-	parentId, err := g.resolveFolderPath(ctx, folderPath, true)
+	parentId, err := g.resolveFolderPath(ctx, projectId, folderPath, true)
 	if err != nil {
 		return "", err
 	}
-	if _, err = g.uploadBytes(ctx, parentId, finalFileName, byteContainer, header.Header.Get("Content-Type")); err != nil {
+	if _, err = g.uploadBytes(ctx, projectId, parentId, finalFileName, byteContainer, header.Header.Get("Content-Type")); err != nil {
 		return "", err
 	}
 	return joinDocId(folderPath, finalFileName), nil
 }
 
-func (g *GdriveStorage) UploadFileB64(ctx context.Context, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+func (g *GdriveStorage) UploadFileB64(ctx context.Context, projectId string, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
 	logs.WithContext(ctx).Debug("UploadFileB64 - Start (GDRIVE)")
 	if g.EncryptFiles {
 		logs.WithContext(ctx).Warn("encrypt_files ignored for GDRIVE")
 	}
 	finalFileName := buildGdriveFileName(docType, fileName)
-	parentId, err := g.resolveFolderPath(ctx, folderPath, true)
+	parentId, err := g.resolveFolderPath(ctx, projectId, folderPath, true)
 	if err != nil {
 		return "", err
 	}
-	if _, err = g.uploadBytes(ctx, parentId, finalFileName, file, ""); err != nil {
+	if _, err = g.uploadBytes(ctx, projectId, parentId, finalFileName, file, ""); err != nil {
 		return "", err
 	}
 	return joinDocId(folderPath, finalFileName), nil
 }
 
-func (g *GdriveStorage) DownloadFile(ctx context.Context, folderPath string, fileName string, keyName eruaes.AesKey) ([]byte, error) {
+func (g *GdriveStorage) DownloadFile(ctx context.Context, projectId string, folderPath string, fileName string, keyName eruaes.AesKey) ([]byte, error) {
 	logs.WithContext(ctx).Debug("DownloadFile - Start (GDRIVE)")
-	parentId, err := g.resolveFolderPath(ctx, folderPath, false)
+	parentId, err := g.resolveFolderPath(ctx, projectId, folderPath, false)
 	if err != nil {
 		return nil, err
 	}
-	fileId, err := g.findChild(ctx, parentId, fileName, false)
+	fileId, err := g.findChild(ctx, projectId, parentId, fileName, false)
 	if err != nil {
 		return nil, err
 	}
 	if fileId == "" {
 		return nil, fmt.Errorf("file not found: %s", joinDocId(folderPath, fileName))
 	}
-	tok, err := g.getAccessToken(ctx)
+	tok, err := g.getAccessToken(ctx, projectId)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +376,7 @@ func gdriveBuildSearchQuery(f GdriveSearchFilters) string {
 	return strings.Join(parts, " and ")
 }
 
-func (g *GdriveStorage) SearchFiles(ctx context.Context, f GdriveSearchFilters) ([]map[string]interface{}, error) {
+func (g *GdriveStorage) SearchFiles(ctx context.Context, projectId string, f GdriveSearchFilters) ([]map[string]interface{}, error) {
 	pageSize := f.MaxResults
 	if pageSize <= 0 || pageSize > 100 {
 		pageSize = 20
@@ -390,7 +389,7 @@ func (g *GdriveStorage) SearchFiles(ctx context.Context, f GdriveSearchFilters) 
 		"includeItemsFromAllDrives": "true",
 		"supportsAllDrives":         "true",
 	}
-	res, _, status, err := g.driveCall(ctx, http.MethodGet, gdriveApiBase+"/files", http.Header{}, params, nil)
+	res, _, status, err := g.driveCall(ctx, projectId, http.MethodGet, gdriveApiBase+"/files", http.Header{}, params, nil)
 	if err != nil {
 		return nil, fmt.Errorf("drive search failed (status %d): %w", status, err)
 	}
@@ -504,8 +503,8 @@ func (g *GdriveStorage) downloadByDriveId(ctx context.Context, accessToken, file
 	return body, mime, name, nil
 }
 
-func (g *GdriveStorage) DownloadById(ctx context.Context, fileId, exportMime string) (data []byte, mime string, name string, err error) {
-	tok, err := g.getAccessToken(ctx)
+func (g *GdriveStorage) DownloadById(ctx context.Context, projectId, fileId, exportMime string) (data []byte, mime string, name string, err error) {
+	tok, err := g.getAccessToken(ctx, projectId)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -516,7 +515,7 @@ func (g *GdriveStorage) BucketExists(ctx context.Context) (bool, error) {
 	return g.RootFolderId != "", nil
 }
 
-func (g *GdriveStorage) CreateStorage(ctx context.Context, cloneStorage StorageI, persist bool) error {
+func (g *GdriveStorage) CreateStorage(ctx context.Context, projectId string, cloneStorage StorageI, persist bool) error {
 	if !persist {
 		return nil
 	}
@@ -533,7 +532,7 @@ func (g *GdriveStorage) CreateStorage(ctx context.Context, cloneStorage StorageI
 	if name == "" {
 		return errors.New("storage_name required to create GDrive folder")
 	}
-	id, err := g.ensureFolder(ctx, "root", name)
+	id, err := g.ensureFolder(ctx, projectId, "root", name)
 	if err != nil {
 		return err
 	}
@@ -545,7 +544,7 @@ func (g *GdriveStorage) CreateStorage(ctx context.Context, cloneStorage StorageI
 	return nil
 }
 
-func (g *GdriveStorage) DeleteStorage(ctx context.Context, forceDelete bool, cloneStorage StorageI) error {
+func (g *GdriveStorage) DeleteStorage(ctx context.Context, projectId string, forceDelete bool, cloneStorage StorageI) error {
 	cloneG, ok := cloneStorage.(*GdriveStorage)
 	if !ok {
 		return errors.New("clone is not GdriveStorage")
@@ -555,11 +554,11 @@ func (g *GdriveStorage) DeleteStorage(ctx context.Context, forceDelete bool, clo
 		return nil
 	}
 	if forceDelete {
-		if err := cloneStorage.EmptyBucket(ctx); err != nil {
+		if err := cloneStorage.EmptyBucket(ctx, projectId); err != nil {
 			return err
 		}
 	}
-	_, _, status, err := cloneG.driveCall(ctx, http.MethodDelete, fmt.Sprintf("%s/files/%s", gdriveApiBase, cloneG.RootFolderId), http.Header{}, map[string]string{"supportsAllDrives": "true"}, nil)
+	_, _, status, err := cloneG.driveCall(ctx, projectId, http.MethodDelete, fmt.Sprintf("%s/files/%s", gdriveApiBase, cloneG.RootFolderId), http.Header{}, map[string]string{"supportsAllDrives": "true"}, nil)
 	if err != nil && status != http.StatusNotFound {
 		return err
 	}
@@ -569,7 +568,7 @@ func (g *GdriveStorage) DeleteStorage(ctx context.Context, forceDelete bool, clo
 	return nil
 }
 
-func (g *GdriveStorage) EmptyBucket(ctx context.Context) error {
+func (g *GdriveStorage) EmptyBucket(ctx context.Context, projectId string) error {
 	if g.RootFolderId == "" {
 		return errors.New("EmptyBucket refused: root_folder_id is not set (refusing to empty entire Drive)")
 	}
@@ -587,7 +586,7 @@ func (g *GdriveStorage) EmptyBucket(ctx context.Context) error {
 		if pageToken != "" {
 			params["pageToken"] = pageToken
 		}
-		res, _, status, err := g.driveCall(ctx, http.MethodGet, gdriveApiBase+"/files", http.Header{}, params, nil)
+		res, _, status, err := g.driveCall(ctx, projectId, http.MethodGet, gdriveApiBase+"/files", http.Header{}, params, nil)
 		if err != nil {
 			return err
 		}
@@ -602,7 +601,7 @@ func (g *GdriveStorage) EmptyBucket(ctx context.Context) error {
 			if id == "" {
 				continue
 			}
-			_, _, dStatus, dErr := g.driveCall(ctx, http.MethodDelete, fmt.Sprintf("%s/files/%s", gdriveApiBase, id), http.Header{}, map[string]string{"supportsAllDrives": "true"}, nil)
+			_, _, dStatus, dErr := g.driveCall(ctx, projectId, http.MethodDelete, fmt.Sprintf("%s/files/%s", gdriveApiBase, id), http.Header{}, map[string]string{"supportsAllDrives": "true"}, nil)
 			if dErr != nil && dStatus != http.StatusNotFound {
 				return dErr
 			}
@@ -618,8 +617,8 @@ func (g *GdriveStorage) EmptyBucket(ctx context.Context) error {
 	}
 }
 
-func (g *GdriveStorage) StartPageToken(ctx context.Context) (string, error) {
-	tok, err := g.getAccessToken(ctx)
+func (g *GdriveStorage) StartPageToken(ctx context.Context, projectId string) (string, error) {
+	tok, err := g.getAccessToken(ctx, projectId)
 	if err != nil {
 		return "", err
 	}
@@ -641,8 +640,8 @@ func (g *GdriveStorage) StartPageToken(ctx context.Context) (string, error) {
 	return out, nil
 }
 
-func (g *GdriveStorage) WatchChanges(ctx context.Context, channelId, pushEndpoint string, expirationMs int64) (resourceId, startPageToken, expiration string, err error) {
-	startPageToken, err = g.StartPageToken(ctx)
+func (g *GdriveStorage) WatchChanges(ctx context.Context, projectId, channelId, pushEndpoint string, expirationMs int64) (resourceId, startPageToken, expiration string, err error) {
+	startPageToken, err = g.StartPageToken(ctx, projectId)
 	if err != nil {
 		return
 	}
@@ -655,7 +654,7 @@ func (g *GdriveStorage) WatchChanges(ctx context.Context, channelId, pushEndpoin
 		body["expiration"] = fmt.Sprint(expirationMs)
 	}
 	watchUrl := fmt.Sprintf("%s/changes/watch?pageToken=%s&supportsAllDrives=true", gdriveApiBase, url.QueryEscape(startPageToken))
-	res, _, status, cErr := g.driveCall(ctx, http.MethodPost, watchUrl, http.Header{}, map[string]string{}, body)
+	res, _, status, cErr := g.driveCall(ctx, projectId, http.MethodPost, watchUrl, http.Header{}, map[string]string{}, body)
 	if cErr != nil {
 		err = fmt.Errorf("drive changes.watch failed (status %d): %w", status, cErr)
 		return
@@ -666,7 +665,7 @@ func (g *GdriveStorage) WatchChanges(ctx context.Context, channelId, pushEndpoin
 	return
 }
 
-func (g *GdriveStorage) WatchFile(ctx context.Context, fileId, channelId, pushEndpoint string, expirationMs int64) (resourceId, expiration string, err error) {
+func (g *GdriveStorage) WatchFile(ctx context.Context, projectId, fileId, channelId, pushEndpoint string, expirationMs int64) (resourceId, expiration string, err error) {
 	if fileId == "" {
 		err = errors.New("file_id is required")
 		return
@@ -680,7 +679,7 @@ func (g *GdriveStorage) WatchFile(ctx context.Context, fileId, channelId, pushEn
 		body["expiration"] = fmt.Sprint(expirationMs)
 	}
 	watchUrl := fmt.Sprintf("%s/files/%s/watch?supportsAllDrives=true", gdriveApiBase, fileId)
-	res, _, status, cErr := g.driveCall(ctx, http.MethodPost, watchUrl, http.Header{}, map[string]string{}, body)
+	res, _, status, cErr := g.driveCall(ctx, projectId, http.MethodPost, watchUrl, http.Header{}, map[string]string{}, body)
 	if cErr != nil {
 		err = fmt.Errorf("drive files.watch failed (status %d): %w", status, cErr)
 		return
@@ -691,19 +690,19 @@ func (g *GdriveStorage) WatchFile(ctx context.Context, fileId, channelId, pushEn
 	return
 }
 
-func (g *GdriveStorage) StopWatch(ctx context.Context, channelId, resourceId string) error {
+func (g *GdriveStorage) StopWatch(ctx context.Context, projectId, channelId, resourceId string) error {
 	if channelId == "" || resourceId == "" {
 		return errors.New("channel_id and resource_id are required")
 	}
 	body := map[string]interface{}{"id": channelId, "resourceId": resourceId}
-	_, _, status, err := g.driveCall(ctx, http.MethodPost, gdriveApiBase+"/channels/stop", http.Header{}, map[string]string{}, body)
+	_, _, status, err := g.driveCall(ctx, projectId, http.MethodPost, gdriveApiBase+"/channels/stop", http.Header{}, map[string]string{}, body)
 	if err != nil && status != http.StatusNotFound {
 		return fmt.Errorf("drive channels.stop failed (status %d): %w", status, err)
 	}
 	return nil
 }
 
-func (g *GdriveStorage) ListChanges(ctx context.Context, pageToken string) (changes []map[string]interface{}, newStartPageToken, nextPageToken string, err error) {
+func (g *GdriveStorage) ListChanges(ctx context.Context, projectId, pageToken string) (changes []map[string]interface{}, newStartPageToken, nextPageToken string, err error) {
 	if pageToken == "" {
 		err = errors.New("page_token is required")
 		return
@@ -715,7 +714,7 @@ func (g *GdriveStorage) ListChanges(ctx context.Context, pageToken string) (chan
 		"supportsAllDrives":         "true",
 		"fields":                    "newStartPageToken,nextPageToken,changes(fileId,removed,file(id,name,parents,mimeType,modifiedTime))",
 	}
-	res, _, status, cErr := g.driveCall(ctx, http.MethodGet, gdriveApiBase+"/changes", http.Header{}, params, nil)
+	res, _, status, cErr := g.driveCall(ctx, projectId, http.MethodGet, gdriveApiBase+"/changes", http.Header{}, params, nil)
 	if cErr != nil {
 		err = fmt.Errorf("drive changes list failed (status %d): %w", status, cErr)
 		return
