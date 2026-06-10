@@ -147,7 +147,6 @@ func (ms *ModuleStore) GenerateAesKey(ctx context.Context, projectId string, key
 
 func (ms *ModuleStore) SaveStorage(ctx context.Context, storageObj storage.StorageI, projectId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug("SaveStorage - Start")
-	ctx = context.WithValue(ctx, "projectId", projectId)
 	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	if persist {
 		realStore.GetMutex().Lock()
@@ -185,7 +184,7 @@ func (ms *ModuleStore) SaveStorage(ctx context.Context, storageObj storage.Stora
 			return err
 		}
 
-		err = storageObj.CreateStorage(ctx, storageObjClone, persist)
+		err = storageObj.CreateStorage(ctx, projectId, storageObjClone, persist)
 		//  TODO to create bucket here instead of createstorage
 		if err != nil {
 			return err
@@ -261,7 +260,6 @@ func (ms *ModuleStore) GetStorageObjClone(ctx context.Context, projectId string,
 
 func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storageName string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, s ModuleStoreI) (docId string, err error) {
 	logs.WithContext(ctx).Info("UploadFile - Start")
-	ctx = context.WithValue(ctx, "projectId", projectId)
 	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
@@ -285,13 +283,12 @@ func (ms *ModuleStore) UploadFile(ctx context.Context, projectId string, storage
 	} else {
 		storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
 	}
-	docId, err = storageObjClone.UploadFile(ctx, file, header, docType, folderPath, prj.AesKeys[keyName.(string)])
+	docId, err = storageObjClone.UploadFile(ctx, projectId, file, header, docType, folderPath, prj.AesKeys[keyName.(string)])
 	return
 }
 
 func (ms *ModuleStore) UploadFileB64(ctx context.Context, projectId string, storageName string, file []byte, fileName string, docType string, folderPath string, s ModuleStoreI) (docId string, err error) {
 	logs.WithContext(ctx).Debug("UploadFileB64 - Start")
-	ctx = context.WithValue(ctx, "projectId", projectId)
 	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
@@ -315,7 +312,7 @@ func (ms *ModuleStore) UploadFileB64(ctx context.Context, projectId string, stor
 	} else {
 		storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
 	}
-	docId, err = storageObjClone.UploadFileB64(ctx, file, fileName, docType, folderPath, prj.AesKeys[keyName.(string)])
+	docId, err = storageObjClone.UploadFileB64(ctx, projectId, file, fileName, docType, folderPath, prj.AesKeys[keyName.(string)])
 	return
 }
 
@@ -355,7 +352,6 @@ func (ms *ModuleStore) DownloadFileB64(ctx context.Context, projectId string, st
 
 func (ms *ModuleStore) DownloadFileSmart(ctx context.Context, projectId string, storageName string, req FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, fileName string, fileId string, candidates []map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("DownloadFileSmart - Start")
-	ctx = context.WithValue(ctx, "projectId", projectId)
 	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	storageObj, _, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
@@ -371,7 +367,7 @@ func (ms *ModuleStore) DownloadFileSmart(ctx context.Context, projectId string, 
 
 	if req.FileId != "" {
 		var data []byte
-		data, mimeType, fileName, err = gd.DownloadById(ctx, req.FileId, req.ExportMimeType)
+		data, mimeType, fileName, err = gd.DownloadById(ctx, projectId, req.FileId, req.ExportMimeType)
 		if err != nil {
 			return
 		}
@@ -386,7 +382,7 @@ func (ms *ModuleStore) DownloadFileSmart(ctx context.Context, projectId string, 
 		return
 	}
 
-	matches, sErr2 := gd.SearchFiles(ctx, storage.GdriveSearchFilters{
+	matches, sErr2 := gd.SearchFiles(ctx, projectId, storage.GdriveSearchFilters{
 		FileName:      req.FileName,
 		SharedWithMe:  req.SharedWithMe,
 		OwnerEmail:    req.OwnerEmail,
@@ -409,7 +405,7 @@ func (ms *ModuleStore) DownloadFileSmart(ctx context.Context, projectId string, 
 	}
 	only := matches[0]
 	fid, _ := only["id"].(string)
-	data, mt, nm, dErr := gd.DownloadById(ctx, fid, req.ExportMimeType)
+	data, mt, nm, dErr := gd.DownloadById(ctx, projectId, fid, req.ExportMimeType)
 	if dErr != nil {
 		err = dErr
 		return
@@ -421,50 +417,49 @@ func (ms *ModuleStore) DownloadFileSmart(ctx context.Context, projectId string, 
 	return
 }
 
-func (ms *ModuleStore) gdriveFromStorage(ctx context.Context, projectId string, storageName string, s ModuleStoreI) (*storage.GdriveStorage, error) {
-	ctx = context.WithValue(ctx, "projectId", projectId)
+func (ms *ModuleStore) gdriveFromStorage(ctx context.Context, projectId string, storageName string, s ModuleStoreI) (context.Context, *storage.GdriveStorage, error) {
 	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	storageObj, _, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
-		return nil, sErr
+		return ctx, nil, sErr
 	}
 	gd, ok := storageObj.(*storage.GdriveStorage)
 	if !ok {
-		return nil, errors.New("storage is not GDRIVE")
+		return ctx, nil, errors.New("storage is not GDRIVE")
 	}
-	return gd, nil
+	return ctx, gd, nil
 }
 
 func (ms *ModuleStore) GdriveWatchChanges(ctx context.Context, projectId string, storageName string, channelId string, pushEndpoint string, expirationMs int64, s ModuleStoreI) (resourceId string, startPageToken string, expiration string, err error) {
-	gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
+	ctx, gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
 	if gErr != nil {
 		return "", "", "", gErr
 	}
-	return gd.WatchChanges(ctx, channelId, pushEndpoint, expirationMs)
+	return gd.WatchChanges(ctx, projectId, channelId, pushEndpoint, expirationMs)
 }
 
 func (ms *ModuleStore) GdriveWatchFile(ctx context.Context, projectId string, storageName string, fileId string, channelId string, pushEndpoint string, expirationMs int64, s ModuleStoreI) (resourceId string, expiration string, err error) {
-	gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
+	ctx, gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
 	if gErr != nil {
 		return "", "", gErr
 	}
-	return gd.WatchFile(ctx, fileId, channelId, pushEndpoint, expirationMs)
+	return gd.WatchFile(ctx, projectId, fileId, channelId, pushEndpoint, expirationMs)
 }
 
 func (ms *ModuleStore) GdriveStopWatch(ctx context.Context, projectId string, storageName string, channelId string, resourceId string, s ModuleStoreI) error {
-	gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
+	ctx, gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
 	if gErr != nil {
 		return gErr
 	}
-	return gd.StopWatch(ctx, channelId, resourceId)
+	return gd.StopWatch(ctx, projectId, channelId, resourceId)
 }
 
 func (ms *ModuleStore) GdriveListChanges(ctx context.Context, projectId string, storageName string, pageToken string, s ModuleStoreI) (changes []map[string]interface{}, newStartPageToken string, nextPageToken string, err error) {
-	gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
+	ctx, gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
 	if gErr != nil {
 		return nil, "", "", gErr
 	}
-	return gd.ListChanges(ctx, pageToken)
+	return gd.ListChanges(ctx, projectId, pageToken)
 }
 
 func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (files map[string]FileObj, err error) {
@@ -544,7 +539,6 @@ func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, 
 }
 func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (file []byte, mimeType string, err error) {
 	logs.WithContext(ctx).Debug("DownloadFile - Start")
-	ctx = context.WithValue(ctx, "projectId", projectId)
 	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	storageObjClone, prj, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
 	if sErr != nil {
@@ -569,7 +563,7 @@ func (ms *ModuleStore) DownloadFile(ctx context.Context, projectId string, stora
 		storageObjClone.SetKms(ctx, kmsMap[kmsName.(string)])
 	}
 
-	file, err = storageObjClone.DownloadFile(ctx, fileDownloadRequest.FolderPath, fileDownloadRequest.FileName, prj.AesKeys[keyName.(string)])
+	file, err = storageObjClone.DownloadFile(ctx, projectId, fileDownloadRequest.FolderPath, fileDownloadRequest.FileName, prj.AesKeys[keyName.(string)])
 	mimetype.SetLimit(2000)
 	return file, mimetype.Detect(file).String(), err
 }
@@ -651,7 +645,6 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 
 func (ms *ModuleStore) RemoveStorage(ctx context.Context, storageName string, projectId string, cloudDelete bool, forceDelete bool, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("RemoveStorage - Start")
-	ctx = context.WithValue(ctx, "projectId", projectId)
 	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
@@ -669,7 +662,7 @@ func (ms *ModuleStore) RemoveStorage(ctx context.Context, storageName string, pr
 					return err
 				}
 
-				err = prg.Storages[storageName].DeleteStorage(ctx, forceDelete, storageObjClone)
+				err = prg.Storages[storageName].DeleteStorage(ctx, projectId, forceDelete, storageObjClone)
 				if err != nil {
 					return err
 				}
