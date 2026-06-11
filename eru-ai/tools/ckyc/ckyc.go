@@ -29,6 +29,12 @@ import (
 
 const CKYC_VERSION = "1.3"
 
+var ckycIST = time.FixedZone("IST", 5*3600+1800)
+
+func ckycTimestamp() string {
+	return time.Now().In(ckycIST).Format("02-01-2006 15:04:05")
+}
+
 type CkycVerifyParams struct {
 	IdNo   string `json:"id_no" eru:"required" desc:"ID number for search"`
 	IdType string `json:"id_type" eru:"required" desc:"ID type (A-Aadhaar, B-PAN, C-Voter ID, D-Passport, E-Driving License, G-MGNREGA Job Card)"`
@@ -211,7 +217,7 @@ func (c *CkycTool) ExecuteVerify(ctx context.Context, params map[string]interfac
 	}
 
 	// 1 & 2. Generate PID_DATA XML with Timestamp
-	timestamp := time.Now().Format("02-01-2006 15:04:05")
+	timestamp := ckycTimestamp()
 	pidData := PidData{
 		DateTime: timestamp,
 		IdNo:     verifyParams.IdNo,
@@ -429,7 +435,7 @@ func (c *CkycTool) ExecuteDownload(ctx context.Context, params map[string]interf
 		return nil, nil, false, fmt.Errorf("error unmarshalling params: %w", err)
 	}
 
-	timestamp := time.Now().Format("02-01-2006 15:04:05")
+	timestamp := ckycTimestamp()
 	pidData := DownloadPidData{
 		DateTime:       timestamp,
 		CkycNo:         downloadParams.CkycNo,
@@ -499,7 +505,7 @@ func (c *CkycTool) ExecuteValidateOtp(ctx context.Context, params map[string]int
 		return nil, nil, false, fmt.Errorf("request_id is required (use the value returned by the download action)")
 	}
 
-	timestamp := time.Now().Format("02-01-2006 15:04:05")
+	timestamp := ckycTimestamp()
 	validate := otpParams.Validate
 	if validate == "" {
 		validate = "Y"
