@@ -16,6 +16,7 @@ import (
 	"github.com/eru-tech/eru/eru-crypto/jwt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
+	storepkg "github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 )
@@ -53,7 +54,7 @@ func (oAuth *OAuth) PerformPreSaveTask(ctx context.Context) (err error) {
 	return
 }
 
-func (oAuth *OAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
+/* func (oAuth *OAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
 	logs.WithContext(ctx).Debug("PerformPreDeleteTask - Start")
 	for _, v := range oAuth.Hydra.HydraClients {
 		err = oAuth.Hydra.RemoveHydraClient(ctx, v.ClientId)
@@ -62,7 +63,7 @@ func (oAuth *OAuth) PerformPreDeleteTask(ctx context.Context) (err error) {
 		}
 	}
 	return
-}
+} */
 
 func (oAuth *OAuth) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
 	logs.WithContext(ctx).Debug("MakeFromJson - Start")
@@ -101,7 +102,7 @@ func (oAuth *OAuth) GetUrl(ctx context.Context, state string) (urlStr string, oA
 	return
 }
 
-func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool) (identity Identity, loginSuccess LoginSuccess, err error) {
+func (oAuth *OAuth) Login(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, s storepkg.StoreI) (identity Identity, loginSuccess LoginSuccess, err error) {
 	logs.WithContext(ctx).Debug("Login - Start")
 
 	idToken := ""
@@ -550,7 +551,7 @@ func (oAuth *OAuth) GenerateTempCode(ctx context.Context, id string, tokens map[
 	}
 	return
 }
-func (oAuth *OAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, renewFlag bool) (loginResI interface{}, err error) {
+func (oAuth *OAuth) IdpToken(ctx context.Context, loginPostBody LoginPostBody, projectId string, withTokens bool, renewFlag bool, s storepkg.StoreI) (loginResI interface{}, err error) {
 	logs.WithContext(ctx).Debug("IdpToken - Start")
 
 	headers := http.Header{}

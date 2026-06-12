@@ -32,8 +32,12 @@ func GetTool(toolType string) tools.Tooling {
 		return new(web_scraping.PlaywrightTool)
 	case "STRUCTURED_OUTPUT":
 		return new(utiltiy.StructuredOutputTool)
+	case "ASK_USER":
+		return new(utiltiy.AskUserTool)
 	case "MS_EMAIL":
 		return new(emails.MsEmailTool)
+	case "GL_EMAIL":
+		return new(emails.GlEmailTool)
 	case "AMAZON":
 		return new(ecomm.AmazonTool)
 	/* case "MCP":
@@ -54,6 +58,10 @@ func GetTool(toolType string) tools.Tooling {
 		return new(eru.ErufunctionsTool)
 	case "ERUSTUDIO":
 		return new(eru.EruStudioTool)
+	case "ERUFILES":
+		return new(eru.ErufilesTool)
+	case "PROCESSO":
+		return new(eru.ProcessoTool)
 	case "NDMLKYC":
 		return new(ndml_kyc.NdmlTool)
 	case "CKYC":

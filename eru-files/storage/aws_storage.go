@@ -56,7 +56,8 @@ func (awsStorage *AwsStorage) GetAttribute(attributeName string) (attributeValue
 	}
 }
 
-func (awsStorage *AwsStorage) DownloadFile(ctx context.Context, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error) {
+func (awsStorage *AwsStorage) DownloadFile(ctx context.Context, projectId string, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error) {
+	_ = projectId
 	logs.WithContext(ctx).Debug("DownloadFile - Start")
 	if awsStorage.session == nil {
 		err = awsStorage.Init(ctx)
@@ -96,7 +97,8 @@ func (awsStorage *AwsStorage) DownloadFile(ctx context.Context, folderPath strin
 	return byteContainer, nil
 }
 
-func (awsStorage *AwsStorage) UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+func (awsStorage *AwsStorage) UploadFile(ctx context.Context, projectId string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+	_ = projectId
 	logs.WithContext(ctx).Debug("UploadFile - Start")
 	if awsStorage.session == nil {
 		logs.WithContext(ctx).Info("creating AWS session")
@@ -141,7 +143,8 @@ func (awsStorage *AwsStorage) UploadFile(ctx context.Context, file multipart.Fil
 	return
 }
 
-func (awsStorage *AwsStorage) UploadFileB64(ctx context.Context, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+func (awsStorage *AwsStorage) UploadFileB64(ctx context.Context, projectId string, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+	_ = projectId
 	logs.WithContext(ctx).Debug("UploadFileB64 - Start")
 	if awsStorage.session == nil {
 		logs.WithContext(ctx).Info("creating AWS session")
@@ -217,7 +220,8 @@ func (awsStorage *AwsStorage) MakeFromJson(ctx context.Context, rj *json.RawMess
 	return nil
 }
 
-func (awsStorage *AwsStorage) CreateStorage(ctx context.Context, cloneStorage StorageI, persist bool) (err error) {
+func (awsStorage *AwsStorage) CreateStorage(ctx context.Context, projectId string, cloneStorage StorageI, persist bool) (err error) {
+	_ = projectId
 
 	if awsStorage.session == nil {
 		logs.WithContext(ctx).Info("creating AWS session")
@@ -286,7 +290,8 @@ func (awsStorage *AwsStorage) BucketExists(ctx context.Context) (exists bool, er
 	}
 	return true, err // Bucket exists
 }
-func (awsStorage *AwsStorage) DeleteStorage(ctx context.Context, forceDelete bool, cloneStorage StorageI) (err error) {
+func (awsStorage *AwsStorage) DeleteStorage(ctx context.Context, projectId string, forceDelete bool, cloneStorage StorageI) (err error) {
+	_ = projectId
 
 	if awsStorage.session == nil {
 		logs.WithContext(ctx).Info("creating AWS session")
@@ -296,7 +301,7 @@ func (awsStorage *AwsStorage) DeleteStorage(ctx context.Context, forceDelete boo
 		}
 	}
 	if forceDelete {
-		err = cloneStorage.EmptyBucket(ctx)
+		err = cloneStorage.EmptyBucket(ctx, projectId)
 		if err != nil {
 			return
 		}
@@ -317,7 +322,8 @@ func (awsStorage *AwsStorage) DeleteStorage(ctx context.Context, forceDelete boo
 	return
 }
 
-func (awsStorage *AwsStorage) EmptyBucket(ctx context.Context) (err error) {
+func (awsStorage *AwsStorage) EmptyBucket(ctx context.Context, projectId string) (err error) {
+	_ = projectId
 	paginator := s3.NewListObjectsV2Paginator(awsStorage.session, &s3.ListObjectsV2Input{
 		Bucket: aws.String(awsStorage.BucketName),
 	})

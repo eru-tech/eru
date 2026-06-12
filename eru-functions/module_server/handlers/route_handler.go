@@ -159,7 +159,7 @@ func NotifyHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 
 		var eventIs []events.EventI
 		if projectId != "" {
-			event, err := sh.Store.FetchEvent(ctx, projectId, channel)
+			event, err := sh.Store.FetchEvent(ctx, projectId, channel, sh.Store)
 			if err == nil {
 				eventType, _ := event.GetAttribute("event_type")
 				if eventType == "DB" {
@@ -172,7 +172,7 @@ func NotifyHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			projects := sh.Store.GetProjectList(ctx)
 			for _, p := range projects {
 				if pid, ok := p["ProjectId"].(string); ok {
-					event, err := sh.Store.FetchEvent(ctx, pid, channel)
+					event, err := sh.Store.FetchEvent(ctx, pid, channel, sh.Store)
 					if err == nil {
 						eventType, _ := event.GetAttribute("event_type")
 						if eventType == "DB" {

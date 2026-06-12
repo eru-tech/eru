@@ -160,6 +160,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 	if sqd.ExecuteFlag {
 		sqd.Query = sqd.secureSQL(ctx, sqd.Query, projectId, datasource, s, sr)
 		logs.WithContext(ctx).Info(sqd.Query)
+		ctx = ds.WithUseWriter(ctx, sqd.UseWriter || qlcache.IsDML(sqd.Query))
 		if sqd.OutputType == eru_writes.OutputTypeCsv || sqd.OutputType == eru_writes.OutputTypeExcel {
 			result, err = sr.ExecuteQueryForCsv(ctx, sqd.Query, datasource, "Results", sr)
 			if err != nil {
@@ -196,7 +197,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 					}
 					return r, names, nil
 				}
-				result, err = qlcache.ServeOrLoad(ctx, datasource, sqd.Query, sr.DefaultSchemaName(), loader, qlcache.Options{
+				result, err = qlcache.ServeOrLoad(ctx, datasource, sqd.TenantId, sqd.Query, sr.DefaultSchemaName(), loader, qlcache.Options{
 					TTLSec:    sqd.CacheTTL,
 					SkipCache: sqd.CacheSkip,
 					LockHot:   sqd.CacheLock,

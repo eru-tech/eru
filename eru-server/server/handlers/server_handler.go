@@ -769,18 +769,51 @@ func SubscribeEventHandler(s store.StoreI) http.HandlerFunc {
 		eventJson.DisallowUnknownFields()
 
 		subscription := make(map[string]interface{})
-		eventI := events.GetEvent(eventName)
-		if err := eventJson.Decode(&subscription); err == nil {
-			err = eventI.Subscribe(r.Context(), subscription)
-			if err != nil {
-				FormatResponse(w, 400)
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-				return
-			}
+		if err := eventJson.Decode(&subscription); err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		eventI, err := s.FetchEvent(r.Context(), projectId, eventName, s)
+		if err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if err = eventI.Subscribe(r.Context(), subscription); err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if err = s.SaveEvent(r.Context(), projectId, eventI, s, false); err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if err = s.SaveStore(r.Context(), projectId, "", s); err != nil {
+			FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		response := map[string]interface{}{
+			"msg": fmt.Sprint("subscription for event ", eventName, " for project ", projectId, " subscribed successfully."),
+		}
+		if topicName, attrErr := eventI.GetAttribute("topic_name"); attrErr == nil {
+			response["topic_name"] = topicName
+		}
+		if oidcAud, attrErr := eventI.GetAttribute("oidc_audience"); attrErr == nil {
+			response["oidc_audience"] = oidcAud
+		}
+		if oidcSa, attrErr := eventI.GetAttribute("oidc_service_account"); attrErr == nil {
+			response["oidc_service_account"] = oidcSa
+		}
+		if subId, ok := subscription["subscription_id"]; ok {
+			response["subscription_id"] = subId
 		}
 
 		FormatResponse(w, 200)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("subscription for event ", eventName, " for project ", projectId, " subscribed successfully.")})
+		_ = json.NewEncoder(w).Encode(response)
 	}
 }
 
@@ -796,7 +829,7 @@ func UnsubscribeEventHandler(s store.StoreI) http.HandlerFunc {
 		subscriptionId := vars["subscriptionid"]
 		logs.WithContext(r.Context()).Info(fmt.Sprintf("eventname: %s", eventName))
 		logs.WithContext(r.Context()).Info(fmt.Sprintf("subscriptionid: %s", subscriptionId))
-		eventI, err := s.FetchEvent(r.Context(), projectId, eventName)
+		eventI, err := s.FetchEvent(r.Context(), projectId, eventName, s)
 		if err != nil {
 			FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -865,7 +898,7 @@ func RemoveEventHandler(s store.StoreI) http.HandlerFunc {
 			return
 		}
 		FormatResponse(w, 200)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("event for project ", projectId, " removed successfully.")})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("event ", eventName, "for project ", projectId, " removed successfully.")})
 	}
 }
 

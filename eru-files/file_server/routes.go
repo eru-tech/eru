@@ -1,6 +1,7 @@
 package file_server
 
 import (
+	"context"
 	"net/http"
 
 	file_handlers "github.com/eru-tech/eru/eru-files/file_server/handlers"
@@ -8,6 +9,19 @@ import (
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/gorilla/mux"
 )
+
+func tokenKeyPrefixMw(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		prefix := r.URL.Query().Get("token_key_prefix")
+		if prefix == "" {
+			prefix = r.Header.Get("X-Token-Key-Prefix")
+		}
+		if prefix != "" {
+			r = r.WithContext(context.WithValue(r.Context(), "tokenkeyprefix", prefix))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func SetServiceName() {
 	server_handlers.ServerName = "eru-files"
@@ -17,6 +31,7 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	//store functions specific to files
 	serverRouter.Methods(http.MethodPost).Path("/{event_name}").HandlerFunc(file_handlers.ConfigSyncHandler(sh))
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
+	storeRouter.Use(tokenKeyPrefixMw)
 	storeRouter.Methods(http.MethodGet).Path("/load").HandlerFunc(file_handlers.StoreLoadHandler(sh))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/compare").HandlerFunc(file_handlers.StoreCompareHandler(sh))
 
@@ -36,6 +51,8 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	// functions for file events
 	fileRouter := serverRouter.PathPrefix("/files/{project}").Subrouter()
+	fileRouter.Use(tokenKeyPrefixMw)
+	fileRouter.Methods(http.MethodGet).Path("/{storagename}/gettoken").HandlerFunc(file_handlers.GetStorageTokenHandler(sh))
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/upload").HandlerFunc(file_handlers.FileUploadHandler(sh))
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/uploadb64").HandlerFunc(file_handlers.FileUploadHandlerB64(sh))
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/uploadfromurl").HandlerFunc(file_handlers.FileUploadHandlerFromUrl(sh))
@@ -44,6 +61,10 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/{storagename}/downloadb64/{folderpath}/{filename}").HandlerFunc(file_handlers.FileDownloadHandlerB64(sh))
 	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/{storagename}/downloadb64").HandlerFunc(file_handlers.FileDownloadHandlerB64(sh))
 	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/{storagename}/downloadunzip").HandlerFunc(file_handlers.FileDownloadHandlerUnzip(sh))
+	fileRouter.Methods(http.MethodPost).Path("/{storagename}/gdrive/watch/changes").HandlerFunc(file_handlers.GdriveWatchChangesHandler(sh))
+	fileRouter.Methods(http.MethodPost).Path("/{storagename}/gdrive/watch/file/{file_id}").HandlerFunc(file_handlers.GdriveWatchFileHandler(sh))
+	fileRouter.Methods(http.MethodPost).Path("/{storagename}/gdrive/watch/stop").HandlerFunc(file_handlers.GdriveStopWatchHandler(sh))
+	fileRouter.Methods(http.MethodPost).Path("/{storagename}/gdrive/changes").HandlerFunc(file_handlers.GdriveListChangesHandler(sh))
 	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/stringtofile").HandlerFunc(file_handlers.StringToFileHandler(sh))
 	fileRouter.Methods(http.MethodPost).Path("/exceltojson").HandlerFunc(file_handlers.ExcelToJsonHandler(sh))
 	fileRouter.Methods(http.MethodPost).Path("/exceltojsonb64").HandlerFunc(file_handlers.ExcelToJsonB64Handler(sh))

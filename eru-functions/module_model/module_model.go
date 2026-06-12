@@ -3,6 +3,8 @@ package module_model
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"github.com/eru-tech/eru/eru-functions/functions"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -57,8 +59,45 @@ type Project struct {
 	Routes          map[string]functions.Route     `json:"routes" eru:"required"`
 	FuncGroups      map[string]functions.FuncGroup `json:"func_groups" eru:"required"`
 	Workflows       map[string]functions.Workflow  `json:"workflows" eru:"required"`
+	Tenants         map[string]TenantConfig        `json:"tenants"`
 	ProjectSettings ProjectSettings                `json:"project_settings"`
 	//Authorizers   map[string]functions.Authorizer
+}
+
+type TenantConfig struct {
+	TenantId   string                         `json:"tenant_id" eru:"required"`
+	FuncGroups map[string]functions.FuncGroup `json:"func_groups"`
+}
+
+func (prj *Project) AddTenantFunc(ctx context.Context, tenantId string, funcObj functions.FuncGroup) error {
+	logs.WithContext(ctx).Debug("AddTenantFunc - Start")
+	if prj.Tenants == nil {
+		prj.Tenants = make(map[string]TenantConfig)
+	}
+	tc, ok := prj.Tenants[tenantId]
+	if !ok {
+		tc = TenantConfig{TenantId: tenantId}
+	}
+	if tc.FuncGroups == nil {
+		tc.FuncGroups = make(map[string]functions.FuncGroup)
+	}
+	tc.FuncGroups[funcObj.FuncGroupName] = funcObj
+	prj.Tenants[tenantId] = tc
+	return nil
+}
+
+func (prj *Project) RemoveTenantFunc(ctx context.Context, tenantId string, funcName string) error {
+	logs.WithContext(ctx).Debug("RemoveTenantFunc - Start")
+	tc, ok := prj.Tenants[tenantId]
+	if !ok {
+		return errors.New(fmt.Sprint("tenant ", tenantId, " does not exists"))
+	}
+	if _, ok := tc.FuncGroups[funcName]; !ok {
+		return errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
+	}
+	delete(tc.FuncGroups, funcName)
+	prj.Tenants[tenantId] = tc
+	return nil
 }
 
 func (prj *Project) AddRoute(ctx context.Context, routeObj functions.Route) error {

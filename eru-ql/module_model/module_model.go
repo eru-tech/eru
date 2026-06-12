@@ -81,15 +81,23 @@ type StoreCompare struct {
 
 type ExtendedProject struct {
 	Project
-	Variables     store.Variables `json:"variables"`
-	SecretManager sm.SmStoreI     `json:"secret_manager"`
+	Variables       store.Variables            `json:"variables"`
+	SecretManager   sm.SmStoreI                `json:"secret_manager"`
+	TenantVariables map[string]store.Variables `json:"tenant_variables"`
 }
 
 type Project struct {
-	ProjectId       string                 `json:"project_id" eru:"required"`
-	DataSources     map[string]*DataSource `json:"data_sources"` //DB alias is the key
-	MyQueries       map[string]*MyQuery    `json:"my_queries"`   //queryName is key
-	ProjectSettings ProjectSettings        `json:"project_settings"`
+	ProjectId       string                  `json:"project_id" eru:"required"`
+	DataSources     map[string]*DataSource  `json:"data_sources"` //DB alias is the key
+	MyQueries       map[string]*MyQuery     `json:"my_queries"`   //queryName is key
+	Tenants         map[string]TenantConfig `json:"tenants"`      //tenantId is the key
+	ProjectSettings ProjectSettings         `json:"project_settings"`
+}
+
+type TenantConfig struct {
+	TenantId    string                  `json:"tenant_id" eru:"required"`
+	DataSources map[string]*DataSource  `json:"data_sources"` //DB alias is the key
+	MyQueries   map[string]*MyQuery     `json:"my_queries"`   //queryName is key
 }
 type ProjectSettings struct {
 	ClaimsKey string `json:"claims_key" eru:"required"`
@@ -122,6 +130,7 @@ type MyQuery struct {
 	ExcelStyles  map[string]eru_writes.CellFormatter    `json:"excel_styles"`
 	Columns      map[string]eru_writes.ColumnarSettings `json:"columns"`
 	PivotConfig  map[string]eru_writes.PivotTableConfig `json:"pivot_config"`
+	ExcludeColumns []string                             `json:"exclude_columns"`
 	CacheTTL     int                                    `json:"cache_ttl,omitempty"`
 	CacheSkip    bool                                   `json:"cache_skip,omitempty"`
 	CacheLock    bool                                   `json:"cache_lock,omitempty"`
@@ -141,6 +150,7 @@ type DataSource struct {
 	DbType                     string                                               `json:"db_type" eru:"required"`
 	DbName                     string                                               `json:"db_name" eru:"required"`
 	DbConfig                   DbConfig                                             `json:"db_config" eru:"optional"`
+	ResolvedDbConfig           DbConfig                                             `json:"-" eru:"optional"`
 	IcebergConfig              IcebergConfig                                        `json:"iceberg_config" eru:"optional"`
 	SqlEngine                  sqlengine.SQLEngineI                                 `json:"sql_engine"`
 	SchemaTables               map[string]map[string]common_types.TableColsMetaData `json:"schema_tables"` //tableName is the key
@@ -150,10 +160,31 @@ type DataSource struct {
 	TableJoins                 map[string]*TableJoins                               `json:"table_joins"`
 	Con                        *sqlx.DB                                             `json:"-"`
 	ConStatus                  bool                                                 `json:"con_status"`
+	ReadDbConfigs              []*ReadDbConfig                                      `json:"read_db_configs" eru:"optional"`
+	ReadPolicy                 ReadPolicy                                           `json:"read_policy" eru:"optional"`
+	ReadCounter                uint64                                               `json:"-"`
 	DbSecurityRules            SecurityRules                                        `json:"db_security_rules"`
 	QueryCache                 cache.CacheStoreI                                    `json:"query_cache"`
 	QueryCacheClone            cache.CacheStoreI                                    `json:"-"`
 	QueryCacheConfig           QueryCacheConfig                                     `json:"query_cache_config"`
+}
+
+type ReadDbConfig struct {
+	Name             string   `json:"name" eru:"required"`
+	DbConfig         DbConfig `json:"db_config" eru:"required"`
+	ResolvedDbConfig DbConfig `json:"-" eru:"optional"`
+	Weight           int      `json:"weight"`
+	Disabled         bool     `json:"disabled"`
+	Con              *sqlx.DB `json:"-"`
+	ConStatus        bool     `json:"con_status"`
+}
+
+type ReadPolicy struct {
+	Strategy           string `json:"strategy"`
+	IncludeMainInReads bool   `json:"include_main_in_reads"`
+	MainWeight         int    `json:"main_weight"`
+	FailoverToMain     bool   `json:"failover_to_main"`
+	Disabled           bool   `json:"disabled"`
 }
 
 type TableJoins struct {
@@ -265,6 +296,7 @@ type QueryResultMaker struct {
 	MainAliasName string
 	Tables        [][]Tables
 	SQLQuery      string
+	UseWriter     bool
 }
 
 type MutationResultMaker struct {
@@ -561,7 +593,7 @@ func (prj *ExtendedProject) CompareProject(ctx context.Context, compareProject E
 		for _, cd := range compareProject.DataSources {
 			if md.DbAlias == cd.DbAlias {
 				dsFound = true
-				if !cmp.Equal(md, cd, cmpopts.IgnoreFields(DataSource{}, "Con", "SchemaTables", "SchemaTablesTransformation", "TableJoins"), cmpopts.IgnoreFields(common_types.TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
+				if !cmp.Equal(md, cd, cmpopts.IgnoreFields(DataSource{}, "Con", "ReadCounter", "ResolvedDbConfig", "SchemaTables", "SchemaTablesTransformation", "TableJoins"), cmpopts.IgnoreFields(ReadDbConfig{}, "Con", "ConStatus", "ResolvedDbConfig"), cmpopts.IgnoreFields(common_types.TableColsMetaData{}, "ColPosition"), cmp.Reporter(&diffR)) {
 					if storeCompare.MismatchDataSources == nil {
 						storeCompare.MismatchDataSources = make(map[string]interface{})
 					}
@@ -754,6 +786,8 @@ func (ds *DataSource) UnmarshalJSON(b []byte) error {
 		SchemaTablesTransformation map[string]TransformRules                            `json:"schema_tables_transformation"`
 		TableJoins                 map[string]*TableJoins                               `json:"table_joins"`
 		ConStatus                  bool                                                 `json:"con_status"`
+		ReadDbConfigs              []*ReadDbConfig                                      `json:"read_db_configs"`
+		ReadPolicy                 ReadPolicy                                           `json:"read_policy"`
 		DbSecurityRules            SecurityRules                                        `json:"db_security_rules"`
 		QueryCacheConfig           QueryCacheConfig                                     `json:"query_cache_config"`
 	}
@@ -773,6 +807,8 @@ func (ds *DataSource) UnmarshalJSON(b []byte) error {
 	ds.SchemaTablesTransformation = tempDs.SchemaTablesTransformation
 	ds.TableJoins = tempDs.TableJoins
 	ds.ConStatus = tempDs.ConStatus
+	ds.ReadDbConfigs = tempDs.ReadDbConfigs
+	ds.ReadPolicy = tempDs.ReadPolicy
 	ds.DbSecurityRules = tempDs.DbSecurityRules
 	ds.QueryCacheConfig = tempDs.QueryCacheConfig
 

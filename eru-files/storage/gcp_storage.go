@@ -13,15 +13,18 @@ type GcpStorage struct {
 	Storage
 }
 
-func (gcpStorage *GcpStorage) UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+func (gcpStorage *GcpStorage) UploadFile(ctx context.Context, projectId string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+	_ = projectId
 	return docId, err
 }
 
-func (gcpStorage *GcpStorage) UploadFileB64(ctx context.Context, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+func (gcpStorage *GcpStorage) UploadFileB64(ctx context.Context, projectId string, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+	_ = projectId
 	return docId, err
 }
 
-func (gcpStorage *GcpStorage) DownloadFile(ctx context.Context, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error) {
+func (gcpStorage *GcpStorage) DownloadFile(ctx context.Context, projectId string, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error) {
+	_ = projectId
 	return
 }
 

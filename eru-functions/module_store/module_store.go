@@ -103,15 +103,15 @@ type ModuleStoreI interface {
 	SaveRoute(ctx context.Context, routeObj functions.Route, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveRoute(ctx context.Context, routeName string, projectId string, realStore ModuleStoreI) error
 	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route functions.Route, err error)
-	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
-	GetFunc(ctx context.Context, funcName string, projectId string, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
+	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, tenantId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
+	GetFunc(ctx context.Context, funcName string, projectId string, tenantId string, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
 	ScheduleFunc(ctx context.Context, funcSchedule scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) error
 	UnScheduleFunc(ctx context.Context, projectId string, jobId string, realStore ModuleStoreI) error
 	GetWf(ctx context.Context, wfName string, projectId string, s ModuleStoreI) (wfObj functions.Workflow, err error)
-	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
-	SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error
-	RemoveFunc(ctx context.Context, funcName string, projectId string, realStore ModuleStoreI) error
-	GetFunctionNames(ctx context.Context, projectId string) (functions []string, err error)
+	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, tenantId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
+	SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
+	RemoveFunc(ctx context.Context, funcName string, projectId string, tenantId string, realStore ModuleStoreI) error
+	GetFunctionNames(ctx context.Context, projectId string, tenantId string) (functions []string, err error)
 	GetRouteNames(ctx context.Context, projectId string) (routes []string, err error)
 	SaveWf(ctx context.Context, wfObj functions.Workflow, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveWf(ctx context.Context, wfName string, projectId string, realStore ModuleStoreI) error
@@ -156,6 +156,9 @@ func (ms *ModuleStore) SaveProject(ctx context.Context, projectId string, realSt
 		}
 		if project.FuncGroups == nil {
 			project.FuncGroups = make(map[string]functions.FuncGroup)
+		}
+		if project.Tenants == nil {
+			project.Tenants = make(map[string]module_model.TenantConfig)
 		}
 		//if project.Authorizers == nil {
 		//	project.Authorizers = make(map[string]functions.Authorizer)
@@ -387,30 +390,46 @@ func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string
 	return cloneRoute, nil
 }
 
-func (ms *ModuleStore) GetFunc(ctx context.Context, funcName string, projectId string, s ModuleStoreI) (cloneFunc functions.FuncGroup, err error) {
+func (ms *ModuleStore) resolveFunc(projectId string, tenantId string, funcName string) (funcGroup functions.FuncGroup, found bool) {
+	prg, ok := ms.Projects[projectId]
+	if !ok {
+		return
+	}
+	if tenantId != "" {
+		if tc, tcOk := prg.Tenants[tenantId]; tcOk {
+			if fg, fgOk := tc.FuncGroups[funcName]; fgOk {
+				return fg, true
+			}
+		}
+	}
+	funcGroup, found = prg.FuncGroups[funcName]
+	return
+}
+
+func (ms *ModuleStore) GetFunc(ctx context.Context, funcName string, projectId string, tenantId string, s ModuleStoreI) (cloneFunc functions.FuncGroup, err error) {
 	logs.WithContext(ctx).Debug("GetFunc - Start")
-	funcGroup := functions.FuncGroup{}
-	if prg, ok := ms.Projects[projectId]; ok {
-		if funcGroup, ok = prg.FuncGroups[funcName]; !ok {
+	if _, ok := ms.Projects[projectId]; ok {
+		funcGroup, found := ms.resolveFunc(projectId, tenantId, funcName)
+		if !found {
 			return funcGroup, errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
 		}
 		return funcGroup, nil
 	}
 	return
 }
-func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (cloneFunc functions.FuncGroup, err error) {
+func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, projectId string, tenantId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (cloneFunc functions.FuncGroup, err error) {
 	logs.WithContext(ctx).Debug("GetAndValidateFunc - Start")
-	funcGroup := functions.FuncGroup{}
-	if prg, ok := ms.Projects[projectId]; ok {
-		if funcGroup, ok = prg.FuncGroups[funcName]; !ok {
+	if _, ok := ms.Projects[projectId]; ok {
+		funcGroup, found := ms.resolveFunc(projectId, tenantId, funcName)
+		if !found {
 			return funcGroup, errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
 		}
-		return ms.ValidateFunc(ctx, funcGroup, projectId, host, url, method, headers, reqBody, s, fromAsync, eventName)
+		return ms.ValidateFunc(ctx, funcGroup, projectId, tenantId, host, url, method, headers, reqBody, s, fromAsync, eventName)
 	}
 	return
 }
 
-func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.FuncGroup, projectId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (cloneFunc functions.FuncGroup, err error) {
+func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.FuncGroup, projectId string, tenantId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (cloneFunc functions.FuncGroup, err error) {
 	logs.WithContext(ctx).Debug("ValidateFunc - Start")
 	if prg, ok := ms.Projects[projectId]; ok {
 		FuncI, jmErr := json.Marshal(funcGroup)
@@ -418,6 +437,9 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.Fun
 			err = errors.New("funcGroup marshal failed")
 			logs.WithContext(ctx).Error(fmt.Sprint(err.Error(), " : ", jmErr.Error()))
 			return cloneFunc, err
+		}
+		if tenantId != "" {
+			FuncI = s.ReplaceTenantVariables(ctx, projectId, tenantId, "", FuncI)
 		}
 		FuncI = s.ReplaceVariables(ctx, projectId, FuncI, reqBody)
 		jmErr = json.Unmarshal(FuncI, &cloneFunc)
@@ -443,7 +465,7 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.Fun
 			fs.Async = true
 			fs.AsyncMessage = fmt.Sprintf("{\"event_name\":\"%s\"}", eventName)
 		}
-		err = ms.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, host, v.Path, method, headers, s, cloneFunc.TokenSecretKey, reqBody, fromAsync)
+		err = ms.LoadRoutesForFunction(ctx, fs, v.RouteName, projectId, tenantId, host, v.Path, method, headers, s, cloneFunc.TokenSecretKey, reqBody, fromAsync)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			errArray = append(errArray, err.Error())
@@ -457,7 +479,7 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.Fun
 	return
 }
 
-func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *functions.FuncStep, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI, tokenHeaderKey string, reqBody map[string]interface{}, fromAsync bool) (err error) {
+func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *functions.FuncStep, routeName string, projectId string, tenantId string, host string, url string, method string, headers http.Header, s ModuleStoreI, tokenHeaderKey string, reqBody map[string]interface{}, fromAsync bool) (err error) {
 	logs.WithContext(ctx).Debug(fmt.Sprint("loadRoutesForFunction - Start : ", funcStep.GetRouteName()))
 	var errArray []string
 	r := functions.Route{}
@@ -466,7 +488,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	funcStep.FsDb.SetConn(s.GetConn())
 	if funcStep.AsyncEventName != "" {
 		var eventI events.EventI
-		eventI, err = s.FetchEvent(ctx, projectId, funcStep.AsyncEventName)
+		eventI, err = s.FetchEvent(ctx, projectId, funcStep.AsyncEventName, s)
 		if err != nil {
 			return
 		}
@@ -474,7 +496,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	}
 
 	if funcStep.FunctionName != "" {
-		funcGroup, fgErr := ms.GetAndValidateFunc(ctx, funcStep.FunctionName, projectId, host, url, method, headers, reqBody, s, fromAsync, "")
+		funcGroup, fgErr := ms.GetAndValidateFunc(ctx, funcStep.FunctionName, projectId, tenantId, host, url, method, headers, reqBody, s, fromAsync, "")
 		if fgErr != nil {
 			err = fgErr
 			return
@@ -510,7 +532,19 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 				encode = "/encode"
 			}
 
-			r.RewriteUrl = fmt.Sprint("/store/", projectId, "/myquery/execute/", funcStep.QueryName, output, encode)
+			// scope the query to a tenant when the step explicitly configures a
+			// tenant_id, or when the function itself was invoked for a tenant.
+			// funcStep.TenantId (which may be a {{template}}) takes precedence and
+			// is left in the URL so the runtime tenant substitution can resolve it.
+			qTenantId := funcStep.TenantId
+			if qTenantId == "" {
+				qTenantId = tenantId
+			}
+			tenantSeg := ""
+			if qTenantId != "" {
+				tenantSeg = fmt.Sprint("/", qTenantId)
+			}
+			r.RewriteUrl = fmt.Sprint("/store/", projectId, tenantSeg, "/myquery/execute/", funcStep.QueryName, output, encode)
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
 			eruqlbaseurl := getEruqlbaseurl(ctx)
@@ -593,7 +627,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	for ck, cv := range funcStep.FuncSteps {
 		fs := funcStep.FuncSteps[ck]
 		fs.ParentFuncGroupName = funcStep.ParentFuncGroupName
-		err = ms.LoadRoutesForFunction(ctx, fs, cv.RouteName, projectId, host, cv.Path, method, headers, s, tokenHeaderKey, reqBody, fromAsync)
+		err = ms.LoadRoutesForFunction(ctx, fs, cv.RouteName, projectId, tenantId, host, cv.Path, method, headers, s, tokenHeaderKey, reqBody, fromAsync)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			errArray = append(errArray, err.Error())
@@ -608,7 +642,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	return
 }
 
-func (ms *ModuleStore) SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, realStore ModuleStoreI, persist bool) error {
+func (ms *ModuleStore) SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error {
 	logs.WithContext(ctx).Debug(fmt.Sprint("SaveFunc - Start"))
 	if persist {
 		realStore.GetMutex().Lock()
@@ -619,6 +653,17 @@ func (ms *ModuleStore) SaveFunc(ctx context.Context, funcObj functions.FuncGroup
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
+	if tenantId != "" {
+		err = prj.AddTenantFunc(ctx, tenantId, funcObj)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+		if persist == true {
+			return realStore.SaveTenantObject(ctx, realStore.GetStoreTenantTableName(), "func_id", "func_name", projectId, tenantId, funcObj.FuncGroupName, funcObj, realStore)
+		}
+		return nil
+	}
 	err = prj.AddFunc(ctx, funcObj)
 	if persist == true {
 		return realStore.SaveStore(ctx, projectId, "", realStore)
@@ -626,22 +671,31 @@ func (ms *ModuleStore) SaveFunc(ctx context.Context, funcObj functions.FuncGroup
 	return nil
 }
 
-func (ms *ModuleStore) RemoveFunc(ctx context.Context, funcName string, projectId string, realStore ModuleStoreI) error {
+func (ms *ModuleStore) RemoveFunc(ctx context.Context, funcName string, projectId string, tenantId string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug(fmt.Sprint("RemoveFunc - Start"))
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
-	if prg, ok := ms.Projects[projectId]; ok {
-		if _, ok := prg.FuncGroups[funcName]; ok {
-			delete(prg.FuncGroups, funcName)
-			logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from RemoveFunc"))
-			return realStore.SaveStore(ctx, projectId, "", realStore)
-		} else {
-			err := errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
+	prg, ok := ms.Projects[projectId]
+	if !ok {
+		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	if tenantId != "" {
+		err := prg.RemoveTenantFunc(ctx, tenantId, funcName)
+		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return err
 		}
+		logs.WithContext(ctx).Info(fmt.Sprint("RemoveTenantObject called from RemoveFunc"))
+		return realStore.RemoveTenantObject(ctx, realStore.GetStoreTenantTableName(), "func_id", "func_name", projectId, tenantId, funcName, realStore)
+	}
+	if _, ok := prg.FuncGroups[funcName]; ok {
+		delete(prg.FuncGroups, funcName)
+		logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from RemoveFunc"))
+		return realStore.SaveStore(ctx, projectId, "", realStore)
 	} else {
-		err := errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
+		err := errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
@@ -682,24 +736,26 @@ func (ms *ModuleStore) checkProjectExists(ctx context.Context, projectId string)
 	return nil
 }
 
-func (ms *ModuleStore) GetFunctionNames(ctx context.Context, projectId string) (functions []string, err error) {
+func (ms *ModuleStore) GetFunctionNames(ctx context.Context, projectId string, tenantId string) (functions []string, err error) {
 	logs.WithContext(ctx).Debug("GetFunctionNames - Start")
-	if _, ok := ms.Projects[projectId]; ok {
-		if ms.Projects[projectId].FuncGroups == nil {
-			return
-		} else {
-			for k, _ := range ms.Projects[projectId].FuncGroups {
-				functions = append(functions, k)
-			}
-			return
-		}
-	} else {
+	prg, ok := ms.Projects[projectId]
+	if !ok {
 		err = errors.New(fmt.Sprint("Project ", projectId, " not found"))
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-		}
+		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
 	}
+	if tenantId != "" {
+		if tc, tcOk := prg.Tenants[tenantId]; tcOk {
+			for k := range tc.FuncGroups {
+				functions = append(functions, k)
+			}
+		}
+		return
+	}
+	for k := range prg.FuncGroups {
+		functions = append(functions, k)
+	}
+	return
 }
 
 func (ms *ModuleStore) GetRouteNames(ctx context.Context, projectId string) (routes []string, err error) {
@@ -1028,7 +1084,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 					if asyncStatus != "FAILED" {
 						eventReq = eventReq.WithContext(logs.NewContext(ctx, zap.String(server_handlers.RequestIdKey, async_id)))
 
-						funcGroup, err := ms.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, strings.Split(eventReq.Host, ":")[0], eventReq.URL.Path, eventReq.Method, eventReq.Header, bodyMap, s, true, "")
+						funcGroup, err := ms.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, "", strings.Split(eventReq.Host, ":")[0], eventReq.URL.Path, eventReq.Method, eventReq.Header, bodyMap, s, true, "")
 						if err != nil {
 							failedCount = failedCount + 1
 							asyncStatus = "FAILED"
@@ -1115,6 +1171,43 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 	return
 }
 
+func (ms *ModuleStore) GetStoreWithoutTenants(ctx context.Context, realStore store.StoreI) (b []byte, err error) {
+	logs.WithContext(ctx).Debug("GetStoreWithoutTenants - Start")
+	realStoreJson, err := json.Marshal(realStore)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	// strip the per-tenant config from the project blob without reconstructing
+	// the typed store (interface fields like repos.RepoI cannot be unmarshaled)
+	var storeMap map[string]interface{}
+	if err = json.Unmarshal(realStoreJson, &storeMap); err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	if projects, ok := storeMap["projects"].(map[string]interface{}); ok {
+		for _, p := range projects {
+			if pm, ok := p.(map[string]interface{}); ok {
+				delete(pm, "tenants")
+			}
+		}
+	}
+	b, err = json.Marshal(storeMap)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return
+}
+
+func getTenantLoadQuery(storeTableName string, storeTenantTableName string) string {
+	return fmt.Sprint("with prj as (select b.* from ", storeTableName, " a, jsonb_each(config->'projects') b), ",
+		"tc as (select project_id, tenant_id, jsonb_build_object('func_groups', jsonb_object_agg(func_name, config)) tenant_config, max(update_date) update_date from ", storeTenantTableName, " group by project_id, tenant_id), ",
+		"pt as (select project_id, max(update_date) create_date, jsonb_object_agg(tenant_id, tenant_config) tenant_config from tc group by project_id), ",
+		"fpt as (select max(create_date) create_date, jsonb_object_agg(a.key, a.value||jsonb_build_object('tenants', coalesce(b.tenant_config,'{}'::jsonb))) project_config from prj a left join pt b on a.key=b.project_id) ",
+		"select a.config||jsonb_build_object('projects', coalesce(b.project_config,'{}'::jsonb)) config, greatest(a.create_date, b.create_date) create_date from ", storeTableName, " a left join fpt b on 1=1")
+}
+
 func LoadStore(ctx context.Context, StoreTableName string, StoreTenantTableName string) (ModuleStoreI, error) {
 	logs.WithContext(ctx).Info("Loading store")
 	storeType := strings.ToUpper(os.Getenv("STORE_TYPE"))
@@ -1129,7 +1222,8 @@ func LoadStore(ctx context.Context, StoreTableName string, StoreTenantTableName 
 		myStore = new(ModuleDbStore)
 		myStore.SetDbType(storeType)
 		myStore.SetStoreTableName(StoreTableName)
-		//myStore.SetStoreTenantTableName(StoreTenantTableName)
+		myStore.SetStoreTenantTableName(StoreTenantTableName)
+		myStore.SetStoreTenantLoadQuery(getTenantLoadQuery(StoreTableName, StoreTenantTableName))
 		myStore.CreateConn()
 	case "STANDALONE":
 		// myStore, err = store.LoadStoreFromFile()

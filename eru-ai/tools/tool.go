@@ -74,8 +74,10 @@ type ToolInputFields struct {
 type contextKey string
 
 const (
-	EruFuncBaseUrlKey contextKey = "Erufuncbaseurl"
-	eruFuncBaseUrlKey            = EruFuncBaseUrlKey
+	EruFuncBaseUrlKey       contextKey = "Erufuncbaseurl"
+	eruFuncBaseUrlKey                  = EruFuncBaseUrlKey
+	RequestAuthorizationKey contextKey = "RequestAuthorization"
+	RequestHeadersKey       contextKey = "RequestHeaders"
 )
 
 type Tooling interface {

@@ -13,6 +13,7 @@ const (
 	StreamEventTextDelta  = "text_delta"
 	StreamEventDone       = "done"
 	StreamEventError      = "error"
+	StreamEventQuestion   = "question"
 )
 
 type StreamEvent struct {

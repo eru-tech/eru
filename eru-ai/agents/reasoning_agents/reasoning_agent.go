@@ -20,9 +20,21 @@ import (
 
 type ReasoningAgent struct {
 	agents.Agent
-	MaxIterations  int `json:"max_iterations"`
-	ThinkingBudget int `json:"thinking_budget"`
+	MaxIterations      int  `json:"max_iterations"`
+	ThinkingBudget     int  `json:"thinking_budget"`
+	EnableClarification bool `json:"enable_clarification"`
 }
+
+const clarificationGuidance = `
+
+HUMAN-IN-THE-LOOP CLARIFICATION:
+You may ask the user for clarification using the ask_user tool. Use it ONLY when the request is genuinely ambiguous or missing information you cannot infer or reasonably default — never to offload reasoning you can do yourself.
+When you ask:
+- Keep it to the fewest questions needed (ideally one).
+- For each question provide 2-4 concrete, mutually exclusive options (value + human label).
+- Set allow_free_text=true whenever the options may not be exhaustive, so the user can type their own answer.
+- Set multi_select=true only when more than one option can legitimately be chosen.
+Calling ask_user ends your turn; the user's answers will arrive as a follow-up message in the same conversation, after which you continue.`
 
 func (ra *ReasoningAgent) GetSpec() agents.AgentI {
 	return ra
@@ -33,8 +45,9 @@ func (ra *ReasoningAgent) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	type reasoningFields struct {
-		MaxIterations  int `json:"max_iterations"`
-		ThinkingBudget int `json:"thinking_budget"`
+		MaxIterations      int  `json:"max_iterations"`
+		ThinkingBudget     int  `json:"thinking_budget"`
+		EnableClarification bool `json:"enable_clarification"`
 	}
 	var rf reasoningFields
 	if err := json.Unmarshal(b, &rf); err != nil {
@@ -42,6 +55,7 @@ func (ra *ReasoningAgent) UnmarshalJSON(b []byte) error {
 	}
 	ra.MaxIterations = rf.MaxIterations
 	ra.ThinkingBudget = rf.ThinkingBudget
+	ra.EnableClarification = rf.EnableClarification
 	return nil
 }
 
@@ -68,6 +82,21 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	)
 	defer span.End()
 	startTime := time.Now()
+
+	if answers, ok := agentMessage.ClarificationAnswers(); ok {
+		var req agents.ClarificationRequest
+		if priorConv, lerr := ra.LoadConversationHistory(ctx, conversationId, projectId, tenantId); lerr == nil && priorConv != nil {
+			if _, qa, found := agents.PendingQuestion(priorConv); found {
+				req, _ = agents.ParseClarificationRequest(qa.Action)
+			}
+		}
+		answerText := agents.FormatAnswersForModel(req, answers)
+		if strings.TrimSpace(agentMessage.Content) != "" {
+			agentMessage.Content = agentMessage.Content + "\n\n" + answerText
+		} else {
+			agentMessage.Content = answerText
+		}
+	}
 
 	chatRequest, conversation, err := ra.LoadConversations(ctx, conversationId, agentMessage, projectId, tenantId)
 	if err != nil {
@@ -101,6 +130,17 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		toolsMap["structured_output"] = outputTool
 	}
 
+	if ra.EnableClarification {
+		askTool := &utility.AskUserTool{}
+		askTool.SetAttribute(ctx, "parameters", utility.AskUserToolSchema())
+		askTool.SetAttribute(ctx, "description", "Ask the user clarifying questions when the request is ambiguous or missing information needed to proceed. Provide 2-4 concrete, mutually exclusive options per question and allow free text when the options may not be exhaustive.")
+		askTool.SetAttribute(ctx, "system_prompt", "")
+		askTool.SetAttribute(ctx, "tool_name", utility.AskUserToolName)
+		askTool.SetAttribute(ctx, "tool_type", "ASK_USER")
+		askTool.SetToolAction(utility.AskUserToolName)
+		toolsMap[utility.AskUserToolName] = askTool
+	}
+
 	toolExecutor := func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error) {
 		for _, at := range ra.AgentTools {
 			if at.Tool == nil {
@@ -118,6 +158,9 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	sp := ra.SystemPrompt
 	if ra.GetProvider() != nil {
 		sp = ra.GetProvider().GetSystemPrompt() + "\n" + sp
+	}
+	if ra.EnableClarification {
+		sp = sp + clarificationGuidance
 	}
 
 	var response models.Message
@@ -149,9 +192,15 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 
 	metrics := agents.BuildMetrics(traces, startTime, response.Usage)
 
+	actionType := agents.ActionTypeAnswer
+	if response.TerminalTool == models.TerminalToolAskUser {
+		actionType = agents.ActionTypeQuestion
+	}
+
 	agentOutput := agents.AgentMessage{
 		Role: "assistant",
 		Actions: []agents.AgentOutputAction{{
+			ActionType: actionType,
 			ActionName: ra.AgentName,
 			Action:     agentResponse,
 		}},

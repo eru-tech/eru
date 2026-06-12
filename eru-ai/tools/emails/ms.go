@@ -523,17 +523,17 @@ func (msEmailTool *MsEmailTool) Login(ctx context.Context, projectId string, ten
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, false, err
 	}
-	err = msEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.AuthName, "_access_token"), msTokens.AccessToken)
+	err = msEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.ToolName, "_access_token"), msTokens.AccessToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, false, err
 	}
-	err = msEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.AuthName, "_refresh_token"), msTokens.RefreshToken)
+	err = msEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.ToolName, "_refresh_token"), msTokens.RefreshToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, false, err
 	}
-	err = msEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.AuthName, "_id_token"), msTokens.IdToken)
+	err = msEmailTool.SaveTenantSecret(ctx, projectId, tenantId, fmt.Sprint(msEmailTool.ToolName, "_id_token"), msTokens.IdToken)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, false, err
@@ -584,8 +584,8 @@ func (msEmailTool *MsEmailTool) Login(ctx context.Context, projectId string, ten
 }
 
 func (msEmailTool *MsEmailTool) SetPrivateAttributes(ctx context.Context, realTool tools.Tooling) (err error) {
-	msEmailTool.EmailAccount.AccessToken = "$SECRET_msmail_access_token"
-	msEmailTool.EmailAccount.RefreshToken = "$SECRET_msmail_refresh_token"
+	msEmailTool.EmailAccount.AccessToken = fmt.Sprint("$SECRET_", msEmailTool.ToolName, "_access_token")
+	msEmailTool.EmailAccount.RefreshToken = fmt.Sprint("$SECRET_", msEmailTool.ToolName, "_refresh_token")
 	return nil
 }
 

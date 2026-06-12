@@ -43,6 +43,9 @@ type StoreI interface {
 	GetStoreByteArray(fp string) (b []byte, err error)
 	SaveStore(ctx context.Context, projectId string, fp string, ms StoreI) (err error)
 	SaveTenantStore(ctx context.Context, projectId string, tenantId string, fp string, tenantConfig interface{}) (err error)
+	SaveTenantObject(ctx context.Context, tableName string, idColumn string, nameColumn string, projectId string, tenantId string, name string, config interface{}, ms StoreI) (err error)
+	RemoveTenantObject(ctx context.Context, tableName string, idColumn string, nameColumn string, projectId string, tenantId string, name string, ms StoreI) (err error)
+	SetStoreTenantLoadQuery(query string)
 	SetDbType(dbtype string)
 	CreateConn() error
 	GetConn() *sqlx.DB
@@ -79,6 +82,7 @@ type StoreI interface {
 	SetSmValue(ctx context.Context, projectId string, secretName string, secretValue map[string]string) (err error)
 	UnsetSmValue(ctx context.Context, projectId string, secretName string, secretKey string) (err error)
 	GetSmValue(ctx context.Context, projectId string, secretName string, secretKey string, force_delete bool) (secret_Value interface{}, err error)
+	GetProjectSecret(ctx context.Context, projectId string, key string) (value string, err error)
 	LoadEnvValue(ctx context.Context, projectId string) (err error)
 	SetStoreFromBytes(ctx context.Context, storeBytes []byte, msi StoreI) (err error)
 	GetMutex() *sync.RWMutex
@@ -89,8 +93,9 @@ type StoreI interface {
 	SetCacheValue(ctx context.Context, projectId string, key string, value interface{}) (err error)
 	ValidateJSON(ctx context.Context, schema validator.Schema, data []interface{}) (records []interface{}, errRecords []interface{})
 	FetchEvents(ctx context.Context, projectId string) (events map[string]events.EventI, err error)
-	FetchEvent(ctx context.Context, projectId string, eventName string) (event events.EventI, err error)
+	FetchEvent(ctx context.Context, projectId string, eventName string, s StoreI) (event events.EventI, err error)
 	SaveEvent(ctx context.Context, projectId string, event events.EventI, s StoreI, persist bool) (err error)
+	CloneEvent(ctx context.Context, projectId string, event events.EventI, s StoreI) (eClone events.EventI, err error)
 	RemoveEvent(ctx context.Context, projectId string, eventName string, cloudDelete bool, s StoreI) (err error)
 	PublishEvent(ctx context.Context, projectId string, eventName string, msg interface{}, s StoreI) (msgId string, err error)
 	PollEvent(ctx context.Context, projectId string, eventName string, s StoreI) (err error)
@@ -251,6 +256,16 @@ func (store *Store) SaveStore(ctx context.Context, projectId string, fp string, 
 	return
 }
 func (store *Store) SaveTenantStore(ctx context.Context, projectId string, tenantId string, fp string, tenantConfig interface{}) (err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(context.Background()).Error(err.Error())
+	return
+}
+func (store *Store) SaveTenantObject(ctx context.Context, tableName string, idColumn string, nameColumn string, projectId string, tenantId string, name string, config interface{}, ms StoreI) (err error) {
+	err = errors.New("method not implemented")
+	logs.WithContext(context.Background()).Error(err.Error())
+	return
+}
+func (store *Store) RemoveTenantObject(ctx context.Context, tableName string, idColumn string, nameColumn string, projectId string, tenantId string, name string, ms StoreI) (err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(context.Background()).Error(err.Error())
 	return
@@ -502,12 +517,10 @@ func (store *Store) SaveTenantSecret(ctx context.Context, projectId string, tena
 
 	}
 	tv := store.TenantVariables[projectId][tenantId]
-	logs.WithContext(ctx).Info(fmt.Sprint(tv))
 
 	if tv.Secrets == nil {
 		tv.Secrets = make(map[string]Secrets)
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint(tv.Secrets))
 	tv.Secrets[newSecret.Key] = newSecret
 	store.TenantVariables[projectId][tenantId] = tv
 	err = s.SaveStore(ctx, projectId, "", s)
@@ -556,6 +569,10 @@ func (store *Store) GetStoreTableName() (tablename string) {
 }
 
 func (store *Store) SetStoreTenantTableName(tablename string) {
+	//do nothing
+}
+
+func (store *Store) SetStoreTenantLoadQuery(query string) {
 	//do nothing
 }
 
@@ -945,6 +962,34 @@ func (store *Store) GetSmValue(ctx context.Context, projectId string, secretName
 			}
 		}
 	}
+	return
+}
+
+func (store *Store) GetProjectSecret(ctx context.Context, projectId string, key string) (value string, err error) {
+	logs.WithContext(ctx).Debug("GetProjectSecret - Start")
+	if store.SecretManager == nil {
+		err = errors.New("no secret manager defined in store")
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	smObj, ok := store.SecretManager[projectId]
+	if !ok || smObj == nil {
+		err = fmt.Errorf("Secret Manager not defined for project : %s", projectId)
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	v, err := store.GetSmValue(ctx, projectId, smObj.GetSecretName(), key, false)
+	if err != nil {
+		return
+	}
+	if v == nil {
+		return "", nil
+	}
+	if s, ok := v.(string); ok {
+		return s, nil
+	}
+	err = fmt.Errorf("secret value for key %s is not a string", key)
+	logs.WithContext(ctx).Error(err.Error())
 	return
 }
 
@@ -1393,7 +1438,7 @@ func (store *Store) RemoveKms(ctx context.Context, projectId string, kmsName str
 	return
 }
 
-func (store *Store) FetchEvent(ctx context.Context, projectId string, eventName string) (event events.EventI, err error) {
+func (store *Store) FetchEvent(ctx context.Context, projectId string, eventName string, s StoreI) (eventClone events.EventI, err error) {
 	logs.WithContext(ctx).Debug("FetchEvent - Start")
 	if store.Events == nil {
 		err = errors.New("no event defined in store")
@@ -1406,13 +1451,18 @@ func (store *Store) FetchEvent(ctx context.Context, projectId string, eventName 
 		return nil, err
 	} else {
 		ok = false
-		if event, ok = eventMap[eventName]; !ok {
+		if event, ok := eventMap[eventName]; !ok {
 			err = errors.New(fmt.Sprint("event ", eventName, " not found for project :", projectId))
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
+		} else {
+			eventClone, err = s.CloneEvent(ctx, projectId, event, s)
+			if err != nil {
+				logs.WithContext(ctx).Error(err.Error())
+				return nil, err
+			}
 		}
 	}
-
 	return
 }
 
@@ -1431,6 +1481,32 @@ func (store *Store) FetchEvents(ctx context.Context, projectId string) (event ma
 	}
 	return
 }
+func (store *Store) CloneEvent(ctx context.Context, projectId string, event events.EventI, s StoreI) (eClone events.EventI, err error) {
+	logs.WithContext(ctx).Debug("CloneEvent - Start")
+	eventJson, err := json.Marshal(event)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	eCloneBytes := s.ReplaceVariables(ctx, projectId, eventJson, nil)
+	eventType, err := event.GetAttribute("event_type")
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	eClone = events.GetEvent(eventType.(string))
+	if eClone == nil {
+		err = errors.New("unknown event_type: " + eventType.(string))
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	err = json.Unmarshal(eCloneBytes, eClone)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return
+}
 func (store *Store) SaveEvent(ctx context.Context, projectId string, e events.EventI, s StoreI, persist bool) (err error) {
 	logs.WithContext(ctx).Debug("SaveEvent - Start")
 	if persist {
@@ -1444,11 +1520,17 @@ func (store *Store) SaveEvent(ctx context.Context, projectId string, e events.Ev
 		store.Events[projectId] = make(map[string]events.EventI)
 	}
 	if persist {
-		err = e.CreateEvent(ctx)
+		eClone, cloneErr := s.CloneEvent(ctx, projectId, e, store)
+		if cloneErr != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		err = eClone.CreateEvent(ctx)
 		if err != nil {
 			return
 		}
 	}
+
 	eName, err := e.GetAttribute("event_name")
 	if err != nil {
 		return
@@ -1476,12 +1558,17 @@ func (store *Store) RemoveEvent(ctx context.Context, projectId string, eventName
 		return
 	}
 	if store.Events[projectId][eventName] == nil {
-		err = errors.New(fmt.Sprint("event not found"))
+		err = errors.New(fmt.Sprint("event ", eventName, " not found"))
 		logs.WithContext(ctx).Error(err.Error())
 		return
 	}
 	if cloudDelete {
-		err = store.Events[projectId][eventName].DeleteEvent(ctx)
+		eClone, cloneErr := s.CloneEvent(ctx, projectId, store.Events[projectId][eventName], store)
+		if cloneErr != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return
+		}
+		err = eClone.DeleteEvent(ctx)
 		if err != nil {
 			return
 		}

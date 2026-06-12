@@ -356,6 +356,7 @@ func (s *EruAIMCPServer) executeToolAction(ctx context.Context, conversationId, 
 	ctx = context.WithValue(ctx, "eruauthbaseurl", module_store.Eruauthbaseurl)
 	ctx = context.WithValue(ctx, "eruaiport", module_store.Eruaiport)
 	ctx = context.WithValue(ctx, "eruqlbaseurl", module_store.Eruqlbaseurl)
+	ctx = context.WithValue(ctx, "erufilesbaseurl", module_store.Erufilesbaseurl)
 	ctx = context.WithValue(ctx, tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
 
 	toolParams := map[string]interface{}{}

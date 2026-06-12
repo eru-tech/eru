@@ -12,6 +12,7 @@ import (
 	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 )
@@ -20,8 +21,9 @@ type DbStore struct {
 	Store
 	DbType               string    `json:"db_type"`
 	UpdateTime           time.Time `json:"update_time"`
-	StoreTableName       string    `json:"store_table_name"`
-	StoreTenantTableName string    `json:"store_tenant_table_name"`
+	StoreTableName       string    `json:"-"`
+	StoreTenantTableName string    `json:"-"`
+	StoreTenantLoadQuery string    `json:"-"`
 	storeType            string
 	conStr               string
 	Con                  *sqlx.DB `json:"-"`
@@ -53,6 +55,9 @@ func (store *DbStore) SetStoreTableName(tablename string) {
 }
 func (store *DbStore) SetStoreTenantTableName(tablename string) {
 	store.StoreTenantTableName = strings.ToLower(tablename)
+}
+func (store *DbStore) SetStoreTenantLoadQuery(query string) {
+	store.StoreTenantLoadQuery = query
 }
 
 func (store *DbStore) GetStoreTableName() (tablename string) {
@@ -86,7 +91,11 @@ func (store *DbStore) GetStoreByteArray(dbString string) (b []byte, err error) {
 	logs.Logger.Info(fmt.Sprint("db connection succesfull - fetch config from ", store.StoreTableName))
 	loadQuery := fmt.Sprint("select config, create_date from ", store.StoreTableName, " limit 1")
 	if store.StoreTenantTableName != "" {
-		loadQuery = fmt.Sprint("with prj as (select b.*  from ", store.StoreTableName, " a, jsonb_each(config->'projects') b), pt as (select project_id, max(update_date) create_date, jsonb_object_agg(tenant_id,config) tenant_config from ", store.StoreTenantTableName, " group by project_id), fpt as (select max(create_date) create_date, jsonb_object_agg(a.key , a.value||jsonb_build_object('tenants',coalesce(b.tenant_config,'{}'::jsonb))) project_config from prj a left join pt b on a.key=b.project_id) select a.config||jsonb_build_object('projects',coalesce(b.project_config,'{}'::jsonb)) config, greatest(a.create_date,b.create_date) create_date from eruai_config a left join fpt b on 1=1")
+		if store.StoreTenantLoadQuery != "" {
+			loadQuery = store.StoreTenantLoadQuery
+		} else {
+			loadQuery = fmt.Sprint("with prj as (select b.*  from ", store.StoreTableName, " a, jsonb_each(config->'projects') b), pt as (select project_id, max(update_date) create_date, jsonb_object_agg(tenant_id,config) tenant_config from ", store.StoreTenantTableName, " group by project_id), fpt as (select max(create_date) create_date, jsonb_object_agg(a.key , a.value||jsonb_build_object('tenants',coalesce(b.tenant_config,'{}'::jsonb))) project_config from prj a left join pt b on a.key=b.project_id) select a.config||jsonb_build_object('projects',coalesce(b.project_config,'{}'::jsonb)) config, greatest(a.create_date,b.create_date) create_date from ", store.StoreTableName, " a left join fpt b on 1=1")
+		}
 	}
 	logs.Logger.Info(loadQuery)
 	rows, err := db.Queryx(loadQuery)
@@ -131,7 +140,11 @@ func (store *DbStore) LoadStore(dbString string, ms StoreI) (err error) {
 	defer db.Close()
 	loadQuery := fmt.Sprint("select * from ", store.StoreTableName, " limit 1")
 	if store.StoreTenantTableName != "" {
-		loadQuery = fmt.Sprint("with prj as (select b.*  from ", store.StoreTableName, " a, jsonb_each(config->'projects') b), pt as (select project_id, max(update_date) create_date, jsonb_object_agg(tenant_id,config) tenant_config from ", store.StoreTenantTableName, " group by project_id), fpt as (select max(create_date) create_date, jsonb_object_agg(a.key , a.value||jsonb_build_object('tenants',coalesce(b.tenant_config,'{}'::jsonb))) project_config from prj a left join pt b on a.key=b.project_id) select a.config||jsonb_build_object('projects',coalesce(b.project_config,'{}'::jsonb)) config, greatest(a.create_date,b.create_date) create_date from eruai_config a left join fpt b on 1=1")
+		if store.StoreTenantLoadQuery != "" {
+			loadQuery = store.StoreTenantLoadQuery
+		} else {
+			loadQuery = fmt.Sprint("with prj as (select b.*  from ", store.StoreTableName, " a, jsonb_each(config->'projects') b), pt as (select project_id, max(update_date) create_date, jsonb_object_agg(tenant_id,config) tenant_config from ", store.StoreTenantTableName, " group by project_id), fpt as (select max(create_date) create_date, jsonb_object_agg(a.key , a.value||jsonb_build_object('tenants',coalesce(b.tenant_config,'{}'::jsonb))) project_config from prj a left join pt b on a.key=b.project_id) select a.config||jsonb_build_object('projects',coalesce(b.project_config,'{}'::jsonb)) config, greatest(a.create_date,b.create_date) create_date from ", store.StoreTableName, " a left join fpt b on 1=1")
+		}
 	}
 
 	logs.Logger.Info(loadQuery)
@@ -312,6 +325,81 @@ func (store *DbStore) SaveTenantStore(ctx context.Context, projectId string, ten
 	return nil
 }
 
+func (store *DbStore) SaveTenantObject(ctx context.Context, tableName string, idColumn string, nameColumn string, projectId string, tenantId string, name string, config interface{}, ms StoreI) (err error) {
+	logs.WithContext(ctx).Debug("SaveTenantObject - Start")
+	dbString := getStoreDbPath()
+	db, err := sqlx.Open(store.DbType, dbString)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	defer db.Close()
+
+	storeData, err := json.Marshal(config)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	strStoreData := strings.Replace(string(storeData), "'", "''", -1)
+
+	// surrogate uuid id, used only when inserting a new row; on conflict the existing
+	// row (matched on project_id+tenant_id+name) is updated in place, preserving its id.
+	id := uuid.New().String()
+
+	tx := db.MustBegin()
+	query := fmt.Sprint("INSERT INTO ", tableName, " (", idColumn, ",project_id,tenant_id,", nameColumn, ",config) VALUES ('", id, "','", projectId, "','", tenantId, "','", name, "','", strStoreData, "') ON CONFLICT (project_id,tenant_id,", nameColumn, ") DO UPDATE SET config = EXCLUDED.config, update_date=CURRENT_TIMESTAMP;")
+	_, err = tx.ExecContext(ctx, query)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.ExecContext : ", err.Error()))
+		tx.Rollback()
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.Commit : ", err.Error()))
+		tx.Rollback()
+		return err
+	}
+	err = store.publishConfig(ctx)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in publishConfig : ", err.Error()))
+		err = nil
+	}
+	return nil
+}
+
+func (store *DbStore) RemoveTenantObject(ctx context.Context, tableName string, idColumn string, nameColumn string, projectId string, tenantId string, name string, ms StoreI) (err error) {
+	logs.WithContext(ctx).Debug("RemoveTenantObject - Start")
+	dbString := getStoreDbPath()
+	db, err := sqlx.Open(store.DbType, dbString)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	defer db.Close()
+
+	tx := db.MustBegin()
+	query := fmt.Sprint("DELETE FROM ", tableName, " WHERE project_id='", projectId, "' AND tenant_id='", tenantId, "' AND ", nameColumn, "='", name, "';")
+	_, err = tx.ExecContext(ctx, query)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.ExecContext : ", err.Error()))
+		tx.Rollback()
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in tx.Commit : ", err.Error()))
+		tx.Rollback()
+		return err
+	}
+	err = store.publishConfig(ctx)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("Error in publishConfig : ", err.Error()))
+		err = nil
+	}
+	return nil
+}
+
 func (store *DbStore) getStoreDBConnStr() (string, error) {
 	logs.Logger.Debug("getStoreDBConnStr - Start")
 	dbConStr := os.Getenv("storedb")
@@ -469,7 +557,7 @@ func (store *DbStore) publishConfig(ctx context.Context) (err error) {
 			project_id = splitEventText[0]
 			event_name = splitEventText[1]
 		}
-		configEvent, err := store.FetchEvent(context.Background(), project_id, event_name)
+		configEvent, err := store.FetchEvent(context.Background(), project_id, event_name, store)
 		if err != nil {
 			logs.Logger.Error(fmt.Sprintf("Failed to fetch config event: %v", err))
 			err = nil

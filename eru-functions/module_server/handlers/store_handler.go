@@ -360,6 +360,7 @@ func FuncSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("FuncSaveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 
 		funcFromReq := json.NewDecoder(r.Body)
 		funcFromReq.DisallowUnknownFields()
@@ -379,12 +380,11 @@ func FuncSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			}
 		}
 		//err := storageObj.Save(s,projectId,storageName)
-		err := sh.Store.SaveFunc(r.Context(), funcObj, projectId, sh.Store, true)
+		err := sh.Store.SaveFunc(r.Context(), funcObj, projectId, tenantId, sh.Store, true)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			sh.Store.SaveStore(r.Context(), projectId, "", sh.Store)
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("function config for ", funcObj.FuncGroupName, " saved successfully")})
 		}
@@ -399,14 +399,14 @@ func FuncRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("FuncRemoveHandler - Start")
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		funcName := vars["funcname"]
 
-		err := sh.Store.RemoveFunc(r.Context(), funcName, projectId, sh.Store)
+		err := sh.Store.RemoveFunc(r.Context(), funcName, projectId, tenantId, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
-			sh.Store.SaveStore(r.Context(), projectId, "", sh.Store)
 			server_handlers.FormatResponse(w, 200)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("function ", funcName, " removed successfully")})
@@ -484,8 +484,9 @@ func ProjectFunctionListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		logs.WithContext(r.Context()).Debug("ProjectFunctionListHandler - Start")
 		vars := mux.Vars(r)
 		projectID := vars["project"]
+		tenantID := vars["tenant"]
 
-		functionNames, err := sh.Store.GetFunctionNames(r.Context(), projectID)
+		functionNames, err := sh.Store.GetFunctionNames(r.Context(), projectID, tenantID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -598,7 +599,7 @@ func ConfigSyncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		if err := tmplBodyFromReq.Decode(&tmplBody); err != nil {
 			logs.Logger.Error(err.Error())
 		}
-		configEvent, err := sh.Store.FetchEvent(r.Context(), project_id, event_name)
+		configEvent, err := sh.Store.FetchEvent(r.Context(), project_id, event_name, sh.Store)
 		if err != nil {
 			logs.Logger.Error(fmt.Sprintf("Failed to fetch config event: %v", err))
 		} else {

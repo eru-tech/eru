@@ -22,6 +22,11 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
+const orchestratorClarificationGuidance = `
+
+HUMAN-IN-THE-LOOP CLARIFICATION:
+If the task is too ambiguous or missing information you need to build a correct orchestration plan, call the ask_user tool instead of outputting a FuncGroup. Ask the fewest questions needed, give 2-4 concrete options per question, and allow free text when options may not be exhaustive. Calling ask_user ends your turn; the user's answers arrive as a follow-up message and you then produce the plan.`
+
 type AgentDescriptor struct {
 	AgentName    string   `json:"agent_name"`
 	AgentType    string   `json:"agent_type"`
@@ -107,10 +112,29 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		return agents.AgentMessage{}, err
 	}
 
+	if oa.EnableClarification {
+		if answers, ok := agentMessage.ClarificationAnswers(); ok {
+			pendingMsg, qa, found := agents.PendingQuestion(conversation)
+			if pr := loadPendingResume(pendingMsg); found && pr != nil && len(pr.PausedBranches) > 0 {
+				return oa.resumeOrchestration(ctx, pr, agentMessage, conversation, conversationId, projectId, tenantId)
+			}
+			var req agents.ClarificationRequest
+			if found {
+				req, _ = agents.ParseClarificationRequest(qa.Action)
+			}
+			answerText := agents.FormatAnswersForModel(req, answers)
+			if strings.TrimSpace(agentMessage.Content) != "" {
+				agentMessage.Content = agentMessage.Content + "\n\n" + answerText
+			} else {
+				agentMessage.Content = answerText
+			}
+		}
+	}
+
 	bb := NewBlackboard()
 	ctx = WithBlackboard(ctx, bb)
 
-	decompositionResult, traces, err := oa.decompose(ctx, agentMessage, projectId, tenantId)
+	decompositionResult, decompositionQuestion, traces, err := oa.decompose(ctx, agentMessage, projectId, tenantId)
 	if err != nil {
 		return agents.AgentMessage{}, err
 	}
@@ -118,11 +142,18 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	var allTraces []models.StepTrace
 	allTraces = append(allTraces, traces...)
 
+	if decompositionQuestion != nil {
+		return oa.emitClarification(ctx, *decompositionQuestion, nil, allTraces, agentMessage, conversation, projectId, tenantId)
+	}
+
+	assignStableConversationIds(decompositionResult, conversationId)
+
 	var executionResult map[string]interface{}
+	var funcVarsMap map[string]functions.FuncTemplateVars
 	var execErr error
 
 	for attempt := 0; attempt <= oa.MaxReplans; attempt++ {
-		executionResult, execErr = oa.executeFuncGroup(ctx, decompositionResult, agentMessage, projectId, tenantId)
+		executionResult, funcVarsMap, execErr = oa.executeFuncGroup(ctx, decompositionResult, agentMessage, projectId, tenantId, "", "", nil, nil)
 		if execErr == nil {
 			break
 		}
@@ -130,18 +161,28 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		logs.WithContext(ctx).Info(fmt.Sprintf("Execution failed (attempt %d/%d): %v", attempt+1, oa.MaxReplans+1, execErr))
 
 		if attempt < oa.MaxReplans {
-			replanResult, replanTraces, replanErr := oa.replan(ctx, agentMessage, decompositionResult, execErr, projectId, tenantId)
+			replanResult, replanQuestion, replanTraces, replanErr := oa.replan(ctx, agentMessage, decompositionResult, execErr, projectId, tenantId)
 			allTraces = append(allTraces, replanTraces...)
 			if replanErr != nil {
 				logs.WithContext(ctx).Error(fmt.Sprintf("Re-planning failed: %v", replanErr))
 				break
 			}
+			if replanQuestion != nil {
+				return oa.emitClarification(ctx, *replanQuestion, nil, allTraces, agentMessage, conversation, projectId, tenantId)
+			}
+			assignStableConversationIds(replanResult, conversationId)
 			decompositionResult = replanResult
 		}
 	}
 
 	if execErr != nil {
 		return agents.AgentMessage{}, fmt.Errorf("orchestration failed after %d attempts: %w", oa.MaxReplans+1, execErr)
+	}
+
+	if oa.EnableClarification {
+		if pr, merged, paused := buildPendingResume(decompositionResult, funcVarsMap, agentMessage.MessageId); paused {
+			return oa.emitClarification(ctx, merged, &pr, allTraces, agentMessage, conversation, projectId, tenantId)
+		}
 	}
 
 	synthesisResult, synthesisTraces, err := oa.synthesize(ctx, agentMessage, executionResult, projectId, tenantId)
@@ -153,6 +194,7 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	agentOutput := agents.AgentMessage{
 		Role: "assistant",
 		Actions: []agents.AgentOutputAction{{
+			ActionType: agents.ActionTypeAnswer,
 			ActionName: oa.AgentName,
 			Action:     synthesisResult,
 		}},
@@ -172,7 +214,131 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	return agentOutput, nil
 }
 
-func (oa *OrchestratorAgent) decompose(ctx context.Context, agentMessage agents.AgentMessage, projectId string, tenantId string) (map[string]interface{}, []models.StepTrace, error) {
+// emitClarification persists and returns a question action, pausing the
+// orchestration until the user answers in the same conversation. When pending
+// is non-nil the resume checkpoint is stored on the message so the next turn
+// can resume only the remaining steps.
+func (oa *OrchestratorAgent) emitClarification(ctx context.Context, req agents.ClarificationRequest, pending *PendingResume, traces []models.StepTrace, agentMessage agents.AgentMessage, conversation *agents.Conversation, projectId string, tenantId string) (agents.AgentMessage, error) {
+	streamCb := agents.GetStreamCallback(ctx)
+	if streamCb != nil {
+		action := req.ToAction(oa.AgentName)
+		streamCb(agents.StreamEvent{Event: agents.StreamEventQuestion, Data: action.Action})
+	}
+
+	agentOutput := agents.AgentMessage{
+		Role:             "assistant",
+		Actions:          []agents.AgentOutputAction{req.ToAction(oa.AgentName)},
+		Traces:           traces,
+		MessageId:        agentMessage.MessageId,
+		MessageTimestamp: time.Now(),
+	}
+	if pending != nil {
+		prBytes, _ := json.Marshal(pending)
+		var prMap map[string]interface{}
+		if json.Unmarshal(prBytes, &prMap) == nil {
+			agentOutput.Params = map[string]interface{}{PendingResumeParamKey: prMap}
+		}
+	}
+
+	conversation.Messages = append(conversation.Messages, agentOutput)
+	conversation.NewMessages = append(conversation.NewMessages, agentOutput)
+	if err := oa.SaveConversation(ctx, conversation, projectId, tenantId); err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
+		return agents.AgentMessage{}, err
+	}
+	return agentOutput, nil
+}
+
+// loadPendingResume reads a resume checkpoint persisted on a question message.
+func loadPendingResume(msg agents.AgentMessage) *PendingResume {
+	if msg.Params == nil {
+		return nil
+	}
+	raw, ok := msg.Params[PendingResumeParamKey]
+	if !ok {
+		return nil
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var pr PendingResume
+	if err := json.Unmarshal(b, &pr); err != nil {
+		return nil
+	}
+	return &pr
+}
+
+// resumeOrchestration resumes a paused plan: it re-runs each paused branch from
+// its own step (bounded so the join child does not run), seeded with the
+// completed steps' outputs, then runs the join step with the merged results.
+// Parallel siblings already finished on the original run, so branch-resumes are
+// independent; they are run sequentially here (oa.Function is mutated per call)
+// and their disjoint outputs merged. Re-pause is handled by the same path.
+func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *PendingResume, agentMessage agents.AgentMessage, conversation *agents.Conversation, conversationId string, projectId string, tenantId string) (agents.AgentMessage, error) {
+	logs.WithContext(ctx).Debug("OrchestratorAgent resumeOrchestration - Start")
+	bb := NewBlackboard()
+	ctx = WithBlackboard(ctx, bb)
+
+	reqVars := unmarshalVars(pr.ReqVarsJSON)
+	merged := unmarshalVars(pr.ResVarsJSON)
+	var allTraces []models.StepTrace
+
+	for _, branch := range pr.PausedBranches {
+		_, fvm, err := oa.executeFuncGroup(ctx, pr.Plan, agentMessage, projectId, tenantId, branch.StartStep, branch.EndStep, reqVars, merged)
+		if err != nil {
+			return agents.AgentMessage{}, fmt.Errorf("branch resume %s failed: %w", branch.StartStep, err)
+		}
+		for k, v := range extractResVars(fvm) {
+			merged[k] = v
+		}
+	}
+
+	var executionResult map[string]interface{}
+	if pr.JoinStep != "" {
+		res, fvm, err := oa.executeFuncGroup(ctx, pr.Plan, agentMessage, projectId, tenantId, pr.JoinStep, "", reqVars, merged)
+		if err != nil {
+			return agents.AgentMessage{}, fmt.Errorf("join resume %s failed: %w", pr.JoinStep, err)
+		}
+		for k, v := range extractResVars(fvm) {
+			merged[k] = v
+		}
+		executionResult = res
+	} else {
+		executionResult = resVarsToResult(merged)
+	}
+
+	if newPr, newMerged, paused := buildPendingResumeFromVars(pr.Plan, merged, agentMessage.MessageId); paused {
+		return oa.emitClarification(ctx, newMerged, &newPr, allTraces, agentMessage, conversation, projectId, tenantId)
+	}
+
+	synthesisResult, synthesisTraces, err := oa.synthesize(ctx, agentMessage, executionResult, projectId, tenantId)
+	allTraces = append(allTraces, synthesisTraces...)
+	if err != nil {
+		return agents.AgentMessage{}, err
+	}
+
+	agentOutput := agents.AgentMessage{
+		Role: "assistant",
+		Actions: []agents.AgentOutputAction{{
+			ActionType: agents.ActionTypeAnswer,
+			ActionName: oa.AgentName,
+			Action:     synthesisResult,
+		}},
+		Traces:           allTraces,
+		MessageId:        agentMessage.MessageId,
+		MessageTimestamp: time.Now(),
+	}
+	conversation.Messages = append(conversation.Messages, agentOutput)
+	conversation.NewMessages = append(conversation.NewMessages, agentOutput)
+	if err := oa.SaveConversation(ctx, conversation, projectId, tenantId); err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
+		return agents.AgentMessage{}, err
+	}
+	return agentOutput, nil
+}
+
+func (oa *OrchestratorAgent) decompose(ctx context.Context, agentMessage agents.AgentMessage, projectId string, tenantId string) (map[string]interface{}, *agents.ClarificationRequest, []models.StepTrace, error) {
 	logs.WithContext(ctx).Debug("OrchestratorAgent decompose - Start")
 	ctx, span := otel.Tracer("eru-ai").Start(ctx, "OrchestratorAgent.Decompose")
 	defer span.End()
@@ -194,6 +360,9 @@ func (oa *OrchestratorAgent) decompose(ctx context.Context, agentMessage agents.
 			sp = providerPrompt
 		}
 	}
+	if oa.EnableClarification {
+		sp = sp + orchestratorClarificationGuidance
+	}
 
 	toolExecutor := func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("tool %s not expected during decomposition", toolName)
@@ -201,43 +370,55 @@ func (oa *OrchestratorAgent) decompose(ctx context.Context, agentMessage agents.
 
 	response, traces, err := oa.Model.RunToolLoop(ctx, chatRequest, toolsMap, sp, oa.MaxIterations, oa.ThinkingBudget, toolExecutor)
 	if err != nil {
-		return nil, traces, err
+		return nil, nil, traces, err
+	}
+
+	if response.TerminalTool == models.TerminalToolAskUser {
+		var action map[string]interface{}
+		if err := json.Unmarshal([]byte(response.Content), &action); err != nil {
+			return nil, nil, traces, fmt.Errorf("failed to parse clarification request: %w", err)
+		}
+		req, err := agents.ParseClarificationRequest(action)
+		if err != nil {
+			return nil, nil, traces, err
+		}
+		return nil, &req, traces, nil
 	}
 
 	var result map[string]interface{}
 	if err := json.Unmarshal([]byte(response.Content), &result); err != nil {
-		return nil, traces, fmt.Errorf("failed to parse decomposition result: %w", err)
+		return nil, nil, traces, fmt.Errorf("failed to parse decomposition result: %w", err)
 	}
 
-	return result, traces, nil
+	return result, nil, traces, nil
 }
 
-func (oa *OrchestratorAgent) executeFuncGroup(ctx context.Context, funcGroupMap map[string]interface{}, agentMessage agents.AgentMessage, projectId string, tenantId string) (map[string]interface{}, error) {
+func (oa *OrchestratorAgent) executeFuncGroup(ctx context.Context, funcGroupMap map[string]interface{}, agentMessage agents.AgentMessage, projectId string, tenantId string, startStep string, endStep string, reqVars map[string]*functions.TemplateVars, resVars map[string]*functions.TemplateVars) (map[string]interface{}, map[string]functions.FuncTemplateVars, error) {
 	logs.WithContext(ctx).Debug("OrchestratorAgent executeFuncGroup - Start")
 	ctx, span := otel.Tracer("eru-ai").Start(ctx, "OrchestratorAgent.ExecuteFuncGroup")
 	defer span.End()
 
 	funcGroupJSON, err := json.Marshal(funcGroupMap)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal FuncGroup: %w", err)
+		return nil, nil, fmt.Errorf("failed to marshal FuncGroup: %w", err)
 	}
 
 	var funcGroup functions.FuncGroup
 	if err := json.Unmarshal(funcGroupJSON, &funcGroup); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal FuncGroup: %w", err)
+		return nil, nil, fmt.Errorf("failed to unmarshal FuncGroup: %w", err)
 	}
 
 	oa.Function = funcGroup
 
-	result, err := oa.ExecuteAgentFunction(ctx, agentMessage, projectId, tenantId)
+	result, funcVarsMap, err := oa.ExecuteAgentFunctionResumable(ctx, agentMessage, projectId, tenantId, startStep, endStep, reqVars, resVars)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return result, nil
+	return result, funcVarsMap, nil
 }
 
-func (oa *OrchestratorAgent) replan(ctx context.Context, agentMessage agents.AgentMessage, previousPlan map[string]interface{}, previousErr error, projectId string, tenantId string) (map[string]interface{}, []models.StepTrace, error) {
+func (oa *OrchestratorAgent) replan(ctx context.Context, agentMessage agents.AgentMessage, previousPlan map[string]interface{}, previousErr error, projectId string, tenantId string) (map[string]interface{}, *agents.ClarificationRequest, []models.StepTrace, error) {
 	logs.WithContext(ctx).Debug("OrchestratorAgent replan - Start")
 
 	previousPlanJSON, _ := json.Marshal(previousPlan)
@@ -272,15 +453,27 @@ func (oa *OrchestratorAgent) replan(ctx context.Context, agentMessage agents.Age
 
 	response, traces, err := oa.Model.RunToolLoop(ctx, chatRequest, toolsMap, sp, oa.MaxIterations, oa.ThinkingBudget, toolExecutor)
 	if err != nil {
-		return nil, traces, err
+		return nil, nil, traces, err
+	}
+
+	if response.TerminalTool == models.TerminalToolAskUser {
+		var action map[string]interface{}
+		if err := json.Unmarshal([]byte(response.Content), &action); err != nil {
+			return nil, nil, traces, fmt.Errorf("failed to parse clarification request: %w", err)
+		}
+		req, err := agents.ParseClarificationRequest(action)
+		if err != nil {
+			return nil, nil, traces, err
+		}
+		return nil, &req, traces, nil
 	}
 
 	var result map[string]interface{}
 	if err := json.Unmarshal([]byte(response.Content), &result); err != nil {
-		return nil, traces, fmt.Errorf("failed to parse replan result: %w", err)
+		return nil, nil, traces, fmt.Errorf("failed to parse replan result: %w", err)
 	}
 
-	return result, traces, nil
+	return result, nil, traces, nil
 }
 
 func (oa *OrchestratorAgent) synthesize(ctx context.Context, agentMessage agents.AgentMessage, executionResult map[string]interface{}, projectId string, tenantId string) (map[string]interface{}, []models.StepTrace, error) {
@@ -353,6 +546,16 @@ func (oa *OrchestratorAgent) buildDecompositionTools(ctx context.Context) map[st
 		outputTool.SetAttribute(ctx, "tool_type", "STRUCTURED_OUTPUT")
 		outputTool.SetToolAction("structured_output")
 		toolsMap["structured_output"] = outputTool
+	}
+	if oa.EnableClarification {
+		askTool := &utility.AskUserTool{}
+		askTool.SetAttribute(ctx, "parameters", utility.AskUserToolSchema())
+		askTool.SetAttribute(ctx, "description", "Ask the user clarifying questions when the task is ambiguous or missing information needed to plan the orchestration. Provide 2-4 concrete options per question and allow free text when options may not be exhaustive.")
+		askTool.SetAttribute(ctx, "system_prompt", "")
+		askTool.SetAttribute(ctx, "tool_name", utility.AskUserToolName)
+		askTool.SetAttribute(ctx, "tool_type", "ASK_USER")
+		askTool.SetToolAction(utility.AskUserToolName)
+		toolsMap[utility.AskUserToolName] = askTool
 	}
 	return toolsMap
 }

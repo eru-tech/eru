@@ -46,3 +46,4 @@ tasks.json
 .gitignore
 eru-ai/localhost-key.pem
 eru-ai/localhost.pem
+/home/alty/linuxcode/goworkspace/eru/eru-ai/tools/ckyc/input

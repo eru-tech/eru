@@ -118,8 +118,8 @@ func (azureStorage *AzureStorage) Init(ctx context.Context) (err error) {
 	return nil
 }
 
-func (azureStorage *AzureStorage) UploadFileB64(ctx context.Context, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
-
+func (azureStorage *AzureStorage) UploadFileB64(ctx context.Context, projectId string, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+	_ = projectId
 	logs.WithContext(ctx).Debug("UploadFileB64 - Start")
 
 
@@ -246,7 +246,8 @@ func (azureStorage *AzureStorage) UploadFileB64(ctx context.Context, file []byte
 	}
 }
 
-func (azureStorage *AzureStorage) UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+func (azureStorage *AzureStorage) UploadFile(ctx context.Context, projectId string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+	_ = projectId
 	logs.WithContext(ctx).Info("UploadFile - Start")
 	if _, err := azureStorage.BucketExists(ctx); err != nil {
 		logs.WithContext(ctx).Info("Bucket Not Exist")
@@ -345,7 +346,8 @@ func (azureStorage *AzureStorage) UploadFile(ctx context.Context, file multipart
 	}
 
 }
-func (azureStorage *AzureStorage) DownloadFile(ctx context.Context, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error) {
+func (azureStorage *AzureStorage) DownloadFile(ctx context.Context, projectId string, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error) {
+	_ = projectId
 	logs.WithContext(ctx).Info("Downloading File - Start")
 	if _, err := azureStorage.BucketExists(ctx); err != nil {
 		logs.WithContext(ctx).Info("Bucket Not Exist")
@@ -418,8 +420,8 @@ func (azureStorage *AzureStorage) MakeFromJson(ctx context.Context, rj *json.Raw
 	return nil
 }
 
-func (azureStorage *AzureStorage) DeleteStorage(ctx context.Context, forceDelete bool, cloneStorage StorageI) (err error) {
-
+func (azureStorage *AzureStorage) DeleteStorage(ctx context.Context, projectId string, forceDelete bool, cloneStorage StorageI) (err error) {
+	_ = projectId
 	logs.WithContext(ctx).Info("DeleteStorage - Start")
 	// Check if storage account exists
 	exists, err := azureStorage.BucketExists(ctx)
@@ -451,7 +453,8 @@ func (azureStorage *AzureStorage) DeleteStorage(ctx context.Context, forceDelete
 	return nil
 }
 
-func (azureStorage *AzureStorage) CreateStorage(ctx context.Context, cloneStorage StorageI, persist bool) (err error) {
+func (azureStorage *AzureStorage) CreateStorage(ctx context.Context, projectId string, cloneStorage StorageI, persist bool) (err error) {
+	_ = projectId
 	logs.WithContext(ctx).Info("creating Azure session")
 	err = cloneStorage.Init(ctx)
 	if err != nil {

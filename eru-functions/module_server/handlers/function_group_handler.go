@@ -38,6 +38,7 @@ func WfHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		host, url := extractHostUrl(r)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		wfName := vars["wfname"]
 
 		wfObj, err := sh.Store.GetWf(ctx, wfName, projectId, sh.Store)
@@ -52,7 +53,7 @@ func WfHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		for _, v := range wfObj.WfEvents {
 			fn = v.Function_Name
 		}
-		funcGroup, err := sh.Store.GetAndValidateFunc(ctx, fn, projectId, host, url, r.Method, r.Header, nil, sh.Store, false, "")
+		funcGroup, err := sh.Store.GetAndValidateFunc(ctx, fn, projectId, tenantId, host, url, r.Method, r.Header, nil, sh.Store, false, "")
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -104,9 +105,10 @@ func AsyncFuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		host, url := extractHostUrl(r)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		eventName := vars["eventname"]
 		eventId := vars["eventid"]
-		eventI, err := sh.Store.FetchEvent(r.Context(), projectId, eventName)
+		eventI, err := sh.Store.FetchEvent(r.Context(), projectId, eventName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "event not found"})
@@ -158,7 +160,7 @@ func AsyncFuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 						logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
 					}
 				}
-				funcGroup, err := sh.Store.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, host, url, r.Method, r.Header, bodyMap, sh.Store, true, "")
+				funcGroup, err := sh.Store.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, tenantId, host, url, r.Method, r.Header, bodyMap, sh.Store, true, "")
 				//	logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler for GetAndValidateFunc"))
 				if err != nil {
 					failedCount = failedCount + 1
@@ -380,6 +382,7 @@ func FuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		host, url := extractHostUrl(r)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		funcName := vars["funcname"]
 		funcStepName := vars["funcstepname"]
 		endfuncStepName := vars["endfuncstepname"]
@@ -411,7 +414,7 @@ func FuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			r.ContentLength = int64(len(body))
 		}
 
-		funcGroup, err := sh.Store.GetAndValidateFunc(ctx, funcName, projectId, host, url, r.Method, r.Header, bodyMap, sh.Store, false, eventName)
+		funcGroup, err := sh.Store.GetAndValidateFunc(ctx, funcName, projectId, tenantId, host, url, r.Method, r.Header, bodyMap, sh.Store, false, eventName)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -470,9 +473,10 @@ func FuncFetchHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		defer r.Body.Close()
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		funcName := vars["funcname"]
 
-		funcGroup, err := sh.Store.GetFunc(r.Context(), funcName, projectId, sh.Store)
+		funcGroup, err := sh.Store.GetFunc(r.Context(), funcName, projectId, tenantId, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -496,6 +500,7 @@ func SFuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		host, url := extractHostUrl(r)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		funcName := vars["funcname"]
 		funcStepName := vars["funcstepname"]
 		endfuncStepName := vars["endfuncstepname"]
@@ -550,7 +555,7 @@ func SFuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			r.ContentLength = int64(len(body))
 		}
 
-		funcGroup, err := sh.Store.GetAndValidateFunc(ctx, funcName, projectId, host, url, r.Method, r.Header, bodyMap.Body, sh.Store, false, "")
+		funcGroup, err := sh.Store.GetAndValidateFunc(ctx, funcName, projectId, tenantId, host, url, r.Method, r.Header, bodyMap.Body, sh.Store, false, "")
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -662,6 +667,7 @@ func FuncRunHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		host, url := extractHostUrl(r)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		funcStepName := vars["funcstepname"]
 		endFuncStepName := vars["endfuncstepname"]
 
@@ -713,7 +719,7 @@ func FuncRunHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 					}
 
-					funcGroup, err := sh.Store.ValidateFunc(ctx, funcObj, projectId, host, url, r.Method, r.Header, nil, sh.Store, false, "")
+					funcGroup, err := sh.Store.ValidateFunc(ctx, funcObj, projectId, tenantId, host, url, r.Method, r.Header, nil, sh.Store, false, "")
 					if err != nil {
 						server_handlers.FormatResponse(w, http.StatusBadRequest)
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -772,6 +778,7 @@ func SFuncRunHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		host, url := extractHostUrl(r)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		funcStepName := vars["funcstepname"]
 		endFuncStepName := vars["endfuncstepname"]
 
@@ -881,7 +888,7 @@ func SFuncRunHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 					}
 
-					funcGroup, err := sh.Store.ValidateFunc(ctx, funcObj, projectId, host, url, r.Method, r.Header, bodyNewMap, sh.Store, false, "")
+					funcGroup, err := sh.Store.ValidateFunc(ctx, funcObj, projectId, tenantId, host, url, r.Method, r.Header, bodyNewMap, sh.Store, false, "")
 					if err != nil {
 						server_handlers.FormatResponse(w, http.StatusBadRequest)
 						_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})

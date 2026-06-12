@@ -12,17 +12,17 @@ import (
 )
 
 type StorageI interface {
-	UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error)
-	UploadFileB64(ctx context.Context, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error)
-	DownloadFile(ctx context.Context, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error)
+	UploadFile(ctx context.Context, projectId string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error)
+	UploadFileB64(ctx context.Context, projectId string, file []byte, fileName string, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error)
+	DownloadFile(ctx context.Context, projectId string, folderPath string, fileName string, keyName eruaes.AesKey) (file []byte, err error)
 	GetAttribute(attributeName string) (attributeValue interface{}, err error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
-	CreateStorage(ctx context.Context, cloneStorage StorageI, persist bool) (err error)
-	DeleteStorage(ctx context.Context, forceDelete bool, cloneStorage StorageI) (err error)
+	CreateStorage(ctx context.Context, projectId string, cloneStorage StorageI, persist bool) (err error)
+	DeleteStorage(ctx context.Context, projectId string, forceDelete bool, cloneStorage StorageI) (err error)
 	Init(ctx context.Context) error
 	SetKms(ctx context.Context, kmsObj kms.KmsStoreI) (err error)
 	BucketExists(ctx context.Context) (exists bool, err error)
-	EmptyBucket(ctx context.Context) (err error)
+	EmptyBucket(ctx context.Context, projectId string) (err error)
 }
 
 type Storage struct {
@@ -57,6 +57,10 @@ func GetStorage(storageType string) StorageI {
 		return new(GcpStorage)
 	case "AZURE":
 		return new(AzureStorage)
+	case "GDRIVE":
+		return new(GdriveStorage)
+	case "ONEDRIVE":
+		return new(OneDriveStorage)
 
 	default:
 		return nil
@@ -64,7 +68,7 @@ func GetStorage(storageType string) StorageI {
 	return nil
 }
 
-func (storage *Storage) CreateStorage(ctx context.Context, cloneStorage StorageI, persist bool) (err error) {
+func (storage *Storage) CreateStorage(ctx context.Context, projectId string, cloneStorage StorageI, persist bool) (err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
@@ -76,13 +80,13 @@ func (storage *Storage) BucketExists(ctx context.Context) (exists bool, err erro
 	return
 }
 
-func (storage *Storage) EmptyBucket(ctx context.Context) (err error) {
+func (storage *Storage) EmptyBucket(ctx context.Context, projectId string) (err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
 }
 
-func (storage *Storage) DeleteStorage(ctx context.Context, forceDelete bool, cloneStorage StorageI) (err error) {
+func (storage *Storage) DeleteStorage(ctx context.Context, projectId string, forceDelete bool, cloneStorage StorageI) (err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return
@@ -93,7 +97,7 @@ func (storage *Storage) SetKms(ctx context.Context, kmsObj kms.KmsStoreI) (err e
 	return
 }
 
-func (storage *Storage) UploadFile(ctx context.Context, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
+func (storage *Storage) UploadFile(ctx context.Context, projectId string, file multipart.File, header *multipart.FileHeader, docType string, folderPath string, keyName eruaes.AesKey) (docId string, err error) {
 	err = errors.New("method not implemented")
 	logs.WithContext(ctx).Error(err.Error())
 	return

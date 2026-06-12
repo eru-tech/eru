@@ -45,9 +45,186 @@
         },
         "parent_page_id": {
             "type": "string"
+        },
+        "state": {
+            "type": "array",
+            "description": "Reactive page-level state variables, referenced from components via @state.<key>.",
+            "items": {
+                "$ref": "#/$defs/PageStateVariable"
+            }
+        },
+        "events": {
+            "type": "array",
+            "description": "Page-level event subscriptions (e.g. on_load fired after nested data arrives).",
+            "items": {
+                "$ref": "#/$defs/ComponentEventSubscription"
+            }
+        },
+        "master_detail_config": {
+            "$ref": "#/$defs/MasterDetailConfig"
         }
     },
     "$defs": {
+        "PageStateVariable": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "key",
+                "initial"
+            ],
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": "Identifier used to reference the state variable, e.g. @state.<key>."
+                },
+                "initial": {
+                    "description": "Initial value (string|number|boolean|null|array|object)."
+                },
+                "formula": {
+                    "$ref": "#/$defs/StateFormula"
+                }
+            }
+        },
+        "StateFormula": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "fn"
+            ],
+            "properties": {
+                "fn": {
+                    "type": "string",
+                    "enum": [
+                        "count",
+                        "sum",
+                        "avg",
+                        "min",
+                        "max",
+                        "expr"
+                    ]
+                },
+                "source": {
+                    "type": "string",
+                    "enum": [
+                        "pageDataArray"
+                    ]
+                },
+                "field": {
+                    "type": "string"
+                },
+                "filter": {
+                    "oneOf": [
+                        {
+                            "$ref": "#/$defs/StateFilter"
+                        },
+                        {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/$defs/StateFilter"
+                            }
+                        }
+                    ]
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "StateFilter": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "field"
+            ],
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "equals": {},
+                "not_empty": {
+                    "type": "boolean"
+                },
+                "in": {
+                    "type": "array"
+                },
+                "not_in": {
+                    "type": "array"
+                }
+            }
+        },
+        "UpdateStateFormula": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "fn"
+            ],
+            "properties": {
+                "fn": {
+                    "type": "string",
+                    "enum": [
+                        "set",
+                        "increment",
+                        "decrement",
+                        "toggle",
+                        "set-from-field",
+                        "set-from-payload",
+                        "reset",
+                        "expr"
+                    ]
+                },
+                "value": {},
+                "by": {
+                    "type": "number"
+                },
+                "values": {
+                    "type": "array"
+                },
+                "field": {
+                    "type": "string"
+                },
+                "expr": {
+                    "type": "string"
+                },
+                "payload_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "MasterDetailConfig": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "master_field",
+                "detail_field",
+                "relationship_type"
+            ],
+            "properties": {
+                "master_field": {
+                    "type": "string"
+                },
+                "detail_field": {
+                    "type": "string"
+                },
+                "relationship_type": {
+                    "type": "string",
+                    "enum": [
+                        "one-to-many",
+                        "many-to-one",
+                        "one-to-one"
+                    ]
+                },
+                "auto_open": {
+                    "type": "boolean"
+                },
+                "display_mode": {
+                    "type": "string",
+                    "enum": [
+                        "popup",
+                        "side_panel"
+                    ]
+                }
+            }
+        },
         "EruComponent": {
             "type": "object",
             "additionalProperties": false,
@@ -66,6 +243,25 @@
                 },
                 "isNested": {
                     "type": "boolean"
+                },
+                "nesting_type": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "object",
+                        "array",
+                        "nested_object",
+                        "nested_array"
+                    ]
+                },
+                "pageId": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "integer"
+                },
+                "entityName": {
+                    "type": "string"
                 },
                 "properties": {
                     "$ref": "#/$defs/ResponsiveEruComponentProperties"
@@ -313,11 +509,80 @@
                     "enum": [
                         "no-action",
                         "call-api",
-                        "fetch-page-data"
+                        "fetch-page-data",
+                        "save-page-data",
+                        "clear-page-data",
+                        "clear-all-page-data",
+                        "hide-fields",
+                        "unhide-fields",
+                        "disable-field",
+                        "enable-field",
+                        "set-field",
+                        "hide-component",
+                        "show-component",
+                        "disable-component",
+                        "enable-component",
+                        "start-loading",
+                        "stop-loading",
+                        "start-timer",
+                        "stop-timer",
+                        "refresh-grid",
+                        "update-state",
+                        "step-forward",
+                        "step-back",
+                        "emit-to-parent",
+                        "toggle-side-panel",
+                        "open-side-panel",
+                        "close-side-panel",
+                        "navigate-to-page"
                     ]
                 },
                 "apiName": {
                     "type": "string"
+                },
+                "fieldNames": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "page_id": {
+                    "type": "string"
+                },
+                "payload": {},
+                "state_key": {
+                    "type": "string"
+                },
+                "state_formula": {
+                    "$ref": "#/$defs/UpdateStateFormula"
+                },
+                "value": {},
+                "on_success": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/ComponentEventSubscription"
+                    }
+                },
+                "on_error": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/ComponentEventSubscription"
+                    }
+                },
+                "error_field": {
+                    "type": "string"
+                },
+                "error_state_key": {
+                    "type": "string"
+                },
+                "validate_before_action": {
+                    "type": "boolean"
+                },
+                "validate_field_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             },
             "allOf": [

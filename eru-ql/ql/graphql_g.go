@@ -20,6 +20,7 @@ import (
 
 type SQLObjectQ struct {
 	ProjectId       string
+	TenantId        string
 	FinalVariables  map[string]interface{}
 	MainTableName   string
 	MainAliasName   string
@@ -31,6 +32,7 @@ type SQLObjectQ struct {
 	HasAggregate    bool
 	Limit           int
 	Skip            int
+	UseWriter       bool
 	Columns         SQLCols
 	tables          [][]module_model.Tables
 	tableNames      map[string]string
@@ -103,6 +105,13 @@ func (sqlObj *SQLObjectQ) ProcessGraphQL(ctx context.Context, sel ast.Selection,
 			}
 			//v, e := ParseAstValue(ff.Value, vars)
 			sqlObj.Skip = v.(int)
+		case "use_writer":
+			if ff.Value.GetKind() != kinds.BooleanValue {
+				err = errors.New("Non Boolean value received - use_writer clause need boolean value")
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+			sqlObj.UseWriter = v.(bool)
 		default:
 		}
 	}
@@ -387,7 +396,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 				if sqlObj.SecurityClause == nil {
 					sqlObj.SecurityClause = make(map[string]string)
 				}
-				sqlObj.SecurityClause[colTableName], _, e = getTableSecurityRule(ctx, sqlObj.ProjectId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables, colTableName)
+				sqlObj.SecurityClause[colTableName], _, e = getTableSecurityRule(ctx, sqlObj.ProjectId, sqlObj.TenantId, datasource.DbAlias, colTableName, s, "query", sqlObj.FinalVariables, colTableName)
 				if e != nil {
 					logs.WithContext(ctx).Error(e.Error())
 					//ignoring error if security rule not defined - simply execute without security rule

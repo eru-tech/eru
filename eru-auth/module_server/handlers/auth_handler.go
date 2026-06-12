@@ -524,7 +524,7 @@ func IdpTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		loginPostBody.CodeVerifier = msParams.CodeVerifier
 		loginPostBody.Nonce = msParams.Nonce
 
-		res, err := authObjI.IdpToken(ctx, loginPostBody, projectId, true, renewFlag)
+		res, err := authObjI.IdpToken(ctx, loginPostBody, projectId, true, renewFlag, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -534,6 +534,37 @@ func IdpTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(res)
 			return
 		}
+	}
+}
+
+func GetTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Info("GetTokenHandler - Start")
+		ctx := r.Context()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		authObjI, err := sh.Store.GetAuth(ctx, projectId, authName, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
+		}
+
+		tokenKeyPrefix := r.URL.Query().Get("token_key_prefix")
+		accessToken, err := authObjI.GetToken(ctx, projectId, tokenKeyPrefix, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"access_token": accessToken})
 	}
 }
 
@@ -607,7 +638,7 @@ func LoginHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		loginPostBody.Nonce = msParams.Nonce
 		logs.WithContext(r.Context()).Info(fmt.Sprint("before login = ", loginPostBody))
 
-		res, tokens, err := authObjI.Login(ctx, loginPostBody, projectId, true)
+		res, tokens, err := authObjI.Login(ctx, loginPostBody, projectId, true, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -799,6 +830,59 @@ func CheckVerifyCodeHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		verifyCode.UserId = userId
 
 		res, err := authObjI.VerifyCode(r.Context(), verifyCode, tokenObj, true)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "not verified"})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		if res != nil {
+			_ = json.NewEncoder(w).Encode(res)
+		} else {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "verified"})
+		}
+		return
+	}
+}
+
+func VerifyCodeHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("VerifyCodeHandler - Start")
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		authName := vars["authname"]
+
+		authObjI, err := sh.Store.GetAuth(r.Context(), projectId, authName, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		if authObjI.GetAuthDb() != nil {
+			authObjI.GetAuthDb().SetConn(sh.Store.GetConn())
+		} else {
+			logs.WithContext(r.Context()).Error("authObjI.GetAuthDb() is nil")
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "Something went wrong, Please try again."})
+			return
+
+		}
+
+		verifyReq := json.NewDecoder(r.Body)
+		verifyReq.DisallowUnknownFields()
+
+		var verifyCode auth.VerifyCode
+
+		if err = verifyReq.Decode(&verifyCode); err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		res, err := authObjI.VerifyCodeNoUser(r.Context(), verifyCode)
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())
 			server_handlers.FormatResponse(w, http.StatusBadRequest)

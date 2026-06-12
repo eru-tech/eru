@@ -95,6 +95,12 @@ type GraphqlResult struct {
 
 var DefaultDriverConfig = module_model.DriverConfig{10, 2, time.Hour}
 var DefaultOtherConfig = module_model.OtherDbConfig{1000, 60}
+var DefaultReadPolicy = module_model.ReadPolicy{
+	Strategy:           StrategyRoundRobin,
+	IncludeMainInReads: false,
+	MainWeight:         0,
+	FailoverToMain:     true,
+}
 var emptyCustomRule = security_rule.CustomRule{}
 var DefaultDbSecurityRules = module_model.SecurityRules{security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Deny", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Deny", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, false}
 
@@ -109,6 +115,7 @@ type SqlMakerI interface {
 	//MakeMutationQuery(idx int, docs []MutationRecord, tableName string) (dbQuery string)
 	AddLimitSkipClause(ctx context.Context, query string, limit int, skip int, globalLimit int) (newQuery string)
 	CreateConn(ctx context.Context, dataSource *module_model.DataSource) error
+	ConnectReadReplica(ctx context.Context, dataSource *module_model.DataSource, idx int) error
 	ExecuteQuery(ctx context.Context, datasource *module_model.DataSource, qrm module_model.QueryResultMaker) (res map[string]interface{}, err error)
 	ExecuteMutationQuery(ctx context.Context, datasource *module_model.DataSource, myself SqlMakerI, mrm module_model.MutationResultMaker) (res []map[string]interface{}, err error)
 	ExecutePreparedQuery(ctx context.Context, query string, datasource *module_model.DataSource) (res map[string]interface{}, err error)
@@ -274,6 +281,10 @@ func (sqr *SqlMaker) GetSqlResult(ctx context.Context) map[string]interface{} {
 
 func (sqr *SqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
 	return errors.New("CreateConn not implemented")
+}
+
+func (sqr *SqlMaker) ConnectReadReplica(ctx context.Context, dataSource *module_model.DataSource, idx int) error {
+	return errors.New("ConnectReadReplica not implemented")
 
 }
 
@@ -597,8 +608,13 @@ func (sqr *SqlMaker) ProcessGraphQL(sel ast.Selection, vars map[string]interface
 
 func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datasource *module_model.DataSource, aliasName string, myself SqlMakerI) (res map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ExecuteQueryForCsv - Start")
-	rows, e := datasource.Con.Queryx(query)
+	con, replica, rerr := ReadCon(ctx, datasource, RouterHint{})
+	if rerr != nil {
+		return nil, logs.Err(ctx, rerr, "")
+	}
+	rows, e := con.Queryx(query)
 	if e != nil {
+		MarkReadFailed(ctx, replica, e)
 		e = logs.Err(ctx, e, "")
 		return nil, e
 	}
@@ -724,6 +740,8 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 				innerResultRow = append(innerResultRow, val)
 			} else if mapping[colType.Name()] == nil {
 				innerResultRow = append(innerResultRow, "")
+			} else if mapBytes, mapErr := json.Marshal(mapping[colType.Name()]); mapErr == nil {
+				innerResultRow = append(innerResultRow, string(mapBytes))
 			} else {
 				err = errors.New(fmt.Sprint("value of ", colType.Name(), " is not a string"))
 				err = logs.Err(ctx, err, "")
@@ -747,8 +765,13 @@ func (sqr *SqlMaker) ExecuteQueryForCsv(ctx context.Context, query string, datas
 func (sqr *SqlMaker) ExecutePreparedQuery(ctx context.Context, query string, datasource *module_model.DataSource) (res map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("ExecutePreparedQuery - Start")
 	logs.WithContext(ctx).Info(query)
-	rows, e := datasource.Con.Queryx(query)
+	con, replica, rerr := ReadCon(ctx, datasource, RouterHint{})
+	if rerr != nil {
+		return nil, logs.Err(ctx, rerr, "")
+	}
+	rows, e := con.Queryx(query)
 	if e != nil {
+		MarkReadFailed(ctx, replica, e)
 		e = logs.Err(ctx, e, "")
 		return nil, e
 	}
@@ -827,8 +850,12 @@ func (sqr *SqlMaker) ExecuteMutationQuery(ctx context.Context, datasource *modul
 	//ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond) //TODO: to get context as argument
 	//defer cancel()
 	if sqr.openTxn || (sqr.TxnFlag && !sqr.SingleTxn) {
+		writeCon, werr := WriteCon(ctx, datasource)
+		if werr != nil {
+			return nil, logs.Err(ctx, werr, "")
+		}
 		logs.WithContext(ctx).Debug("datasource.Con.MustBegin() called in ExecuteMutationQuery")
-		sqr.tx = datasource.Con.MustBegin() //begin txn only once for all queries OR begin txn outside for loop to insert all docs as single txn
+		sqr.tx = writeCon.MustBegin() //begin txn only once for all queries OR begin txn outside for loop to insert all docs as single txn
 	}
 	if len(sqr.MutationRecords) > 0 || sqr.QueryType == "insertselect" || sqr.QueryType == "delete" || sqr.PreparedQuery {
 		res, err = sqr.iterateDocsForMutation(ctx, sqr.MutationRecords, sqr.MainTableName, datasource, myself, false, -1)
@@ -990,8 +1017,12 @@ func (sqr *SqlMaker) executeMutationQueriesinDB(ctx context.Context, query strin
 	}
 	errFound := false
 	if !sqr.TxnFlag && !isNested {
+		writeCon, werr := WriteCon(ctx, datasource)
+		if werr != nil {
+			return nil, logs.Err(ctx, werr, "")
+		}
 		logs.WithContext(ctx).Info("datasource.Con.MustBegin() called")
-		sqr.tx = datasource.Con.MustBegin() // begin txn inside for loop to insert every doc as seperate txn
+		sqr.tx = writeCon.MustBegin() // begin txn inside for loop to insert every doc as seperate txn
 	}
 	stmt, err := sqr.tx.PreparexContext(ctx, query) // TODO: to fetch con after locking
 	if err != nil {
@@ -1104,8 +1135,13 @@ func (sqr *SqlMaker) ExecuteQuery(ctx context.Context, datasource *module_model.
 	sqr.MainAliasName = qrm.MainAliasName
 	sqr.MainTableName = qrm.MainTableName
 
-	rows, e := datasource.Con.Queryx(qrm.SQLQuery)
+	con, replica, rerr := ReadCon(ctx, datasource, RouterHint{UseWriter: qrm.UseWriter})
+	if rerr != nil {
+		return nil, logs.Err(ctx, rerr, "")
+	}
+	rows, e := con.Queryx(qrm.SQLQuery)
 	if e != nil {
+		MarkReadFailed(ctx, replica, e)
 		e = logs.Err(ctx, e, "")
 		return nil, e
 	}
@@ -1646,7 +1682,11 @@ func (sqr *SqlMaker) GetTableList(ctx context.Context, datasource *module_model.
 	logs.WithContext(ctx).Debug("GetTableList - Start")
 	tableList := make(map[string]map[string]common_types.TableColsMetaData)
 	query := myself.GetTableMetaDataSQL(ctx, tableName)
-	rows, e := datasource.Con.Queryx(query)
+	writeCon, werr := WriteCon(ctx, datasource)
+	if werr != nil {
+		return logs.Err(ctx, werr, "")
+	}
+	rows, e := writeCon.Queryx(query)
 	logs.WithContext(ctx).Info(fmt.Sprintf("GetTableList - query: %s", query))
 	if e != nil {
 		logs.WithContext(ctx).Error(e.Error())

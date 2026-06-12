@@ -26,6 +26,7 @@ var Erufuncbaseurl = "http://localhost:8083"
 var Eruauthbaseurl = "http://localhost:8085"
 var Eruqlbaseurl = "http://localhost:8087"
 var Eruaibaseurl = "http://localhost:8088"
+var Erufilesbaseurl = "http://localhost:8082"
 var Eruaiport = "8088"
 
 type StoreHolder struct {
@@ -344,18 +345,27 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 		return
 	}
 	var toolObj tools.Tooling
-	if _, ok := prj.Tenants[tenantId]; !ok {
-		err = errors.New("tenant " + tenantId + " not found")
-		logs.WithContext(ctx).Error(err.Error())
-		return
-	} else if toolObj, ok = prj.Tenants[tenantId].Tools[toolName]; !ok {
-		if projectToolObj, ok := prj.Tenants[projectId].Tools[toolName]; ok {
-			toolObj = projectToolObj
+	var ok bool
+	tenant, tenantExists := prj.Tenants[tenantId]
+	if tenantExists {
+		toolObj, ok = tenant.Tools[toolName]
+	}
+	if !ok {
+		if projectTenant, projectTenantExists := prj.Tenants[projectId]; projectTenantExists {
+			if projectToolObj, projectToolOk := projectTenant.Tools[toolName]; projectToolOk {
+				toolObj = projectToolObj
+				ok = true
+			}
+		}
+	}
+	if !ok {
+		if !tenantExists {
+			err = errors.New("tenant " + tenantId + " not found")
 		} else {
 			err = errors.New("tool " + toolName + " not found")
-			logs.WithContext(ctx).Error(err.Error())
-			return
 		}
+		logs.WithContext(ctx).Error(err.Error())
+		return
 	}
 	if actionName != "" {
 		err = toolObj.ValidateAction(ctx, actionName, toolObj)
@@ -725,7 +735,7 @@ func (ms *ModuleStore) GetAgentNames(ctx context.Context, projectId string, tena
 	logs.WithContext(ctx).Debug("GetAgentNames - Start")
 	if prj, ok := ms.Projects[projectId]; ok {
 		for _, tenant := range prj.Tenants {
-			if tenantId == "" || tenantId == tenant.TenantId {
+			if tenantId == "" || tenantId == tenant.TenantId || projectId == tenant.TenantId {
 				for agentName := range tenant.Agents {
 					agentNames = append(agentNames, agentName)
 				}
@@ -744,7 +754,7 @@ func (ms *ModuleStore) GetToolNames(ctx context.Context, projectId string, tenan
 
 	if prj, ok := ms.Projects[projectId]; ok {
 		for _, tenant := range prj.Tenants {
-			if tenantId == "" || tenantId == tenant.TenantId {
+			if tenantId == "" || tenantId == tenant.TenantId || projectId == tenant.TenantId {
 				for toolName := range tenant.Tools {
 					toolNames = append(toolNames, toolName)
 				}
@@ -839,9 +849,13 @@ func (ms *ModuleStore) GetVectorStore(ctx context.Context, projectId string, ten
 			return
 		}
 		if vs, ok := prj.Tenants[tenantId].VectorStores[vectorStoreName]; !ok {
-			err = errors.New("VectorStore " + vectorStoreName + " does not exists")
-			logs.WithContext(ctx).Info(err.Error())
-			return
+			if vs, ok = prj.Tenants[projectId].VectorStores[vectorStoreName]; !ok {
+				err = errors.New("VectorStore " + vectorStoreName + " does not exists")
+				logs.WithContext(ctx).Info(err.Error())
+				return
+			} else {
+				return vs, nil
+			}
 		} else {
 			return vs, nil
 		}

@@ -47,27 +47,64 @@ func (mr *MysqlSqlMaker) GetTableMetaDataSQL(ctx context.Context, tableName stri
 	return strings.Replace(mysqlTableMetaDataSQL, "$$tableCondition$$", fmt.Sprint("and c.table_name = '", tableName, "'"), 1)
 }
 
-func (mr *MysqlSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
-	logs.WithContext(ctx).Debug("CreateConn - Start")
-	connString := fmt.Sprint(dataSource.DbConfig.User, ":", dataSource.DbConfig.Password, "@tcp(", dataSource.DbConfig.Host, ":", dataSource.DbConfig.Port, ")/", dataSource.DbConfig.DefaultSchema)
-	//, "?parseTime=true"
-	fmt.Printf("connString = %s\n", connString)
-	logs.WithContext(ctx).Debug(connString)
+func dialMysql(ctx context.Context, cfg module_model.DbConfig) (*sqlx.DB, error) {
+	connString := fmt.Sprint(cfg.User, ":", cfg.Password, "@tcp(", cfg.Host, ":", cfg.Port, ")/", cfg.DefaultSchema)
 	db, err := sqlx.Open("mysql", connString)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return err
+		return nil, err
 	}
-	logs.WithContext(ctx).Info("db connection(mysql) was successfully done for fetch dummy query")
-	_, err = db.Queryx("select 1")
+	if _, err = db.Queryx("select 1"); err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	return db, nil
+}
+
+func (mr *MysqlSqlMaker) CreateConn(ctx context.Context, dataSource *module_model.DataSource) error {
+	logs.WithContext(ctx).Debug("CreateConn - Start")
+	db, err := dialMysql(ctx, dataSource.DbConfig)
 	if err != nil {
 		dataSource.ConStatus = false
-		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
 	logs.WithContext(ctx).Info("dummy query success - setting con as true")
 	dataSource.Con = db
 	dataSource.ConStatus = true
+
+	for i := range dataSource.ReadDbConfigs {
+		if dataSource.ReadPolicy.Disabled || dataSource.ReadDbConfigs[i].Disabled {
+			if dataSource.ReadDbConfigs[i].Con != nil {
+				_ = dataSource.ReadDbConfigs[i].Con.Close()
+				dataSource.ReadDbConfigs[i].Con = nil
+			}
+			dataSource.ReadDbConfigs[i].ConStatus = false
+			continue
+		}
+		if rerr := mr.ConnectReadReplica(ctx, dataSource, i); rerr != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("read replica ", dataSource.ReadDbConfigs[i].Name, " connect failed: ", rerr.Error()))
+		}
+	}
+	return nil
+}
+
+func (mr *MysqlSqlMaker) ConnectReadReplica(ctx context.Context, dataSource *module_model.DataSource, idx int) error {
+	if idx < 0 || idx >= len(dataSource.ReadDbConfigs) {
+		return errors.New("read replica index out of range")
+	}
+	replica := dataSource.ReadDbConfigs[idx]
+	cfg := replica.DbConfig
+	if replica.ResolvedDbConfig.Host != "" {
+		cfg = replica.ResolvedDbConfig
+	}
+	db, err := dialMysql(ctx, cfg)
+	if err != nil {
+		replica.ConStatus = false
+		replica.Con = nil
+		return err
+	}
+	replica.Con = db
+	replica.ConStatus = true
 	return nil
 }
 func (mr *MysqlSqlMaker) CheckMe(ctx context.Context) {

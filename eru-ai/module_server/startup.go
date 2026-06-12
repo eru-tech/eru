@@ -42,5 +42,12 @@ func StartUp(ctx context.Context) (module_store.ModuleStoreI, error) {
 	module_store.Eruaibaseurl = eruaibaseurl
 	logs.WithContext(ctx).Info(fmt.Sprintf("ERUAI_BASEURL: %s", module_store.Eruaibaseurl))
 
+	erufilesbaseurl := os.Getenv("ERUFILES_BASEURL")
+	if erufilesbaseurl == "" {
+		erufilesbaseurl = "http://localhost:8082"
+		logs.WithContext(ctx).Info("'ERUFILES_BASEURL' environment variable not found - setting default value as http://localhost:8082")
+	}
+	module_store.Erufilesbaseurl = erufilesbaseurl
+
 	return module_store.LoadStore(ctx, handlers.StoreTableName, handlers.StoreTenantTableName)
 }
