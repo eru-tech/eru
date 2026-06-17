@@ -661,6 +661,10 @@ func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId 
 	}
 	agent.SetModel(model)
 
+	if discoveryAgent, ok := agent.(agents.AgentDiscovery); ok {
+		discoveryAgent.SetDiscoveredAgents(ms.discoverAgents(ctx, projectId, tenantId, agentName, discoveryAgent.AllowedAgentNames(), s))
+	}
+
 	agent.InitializeConversationManager(ctx)
 	summaryModelNameI, err := agent.GetAttribute(ctx, "summary_model")
 	if err != nil {
@@ -682,6 +686,56 @@ func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId 
 		agent.SetSummaryModel(summaryModel)
 	}
 	return agent, nil
+}
+
+func (ms *ModuleStore) discoverAgents(ctx context.Context, projectId string, tenantId string, selfName string, allowedNames []string, s ModuleStoreI) []agents.DiscoveredAgent {
+	logs.WithContext(ctx).Debug("discoverAgents - Start")
+	allowSet := make(map[string]bool)
+	for _, n := range allowedNames {
+		allowSet[n] = true
+	}
+	agentNames, err := ms.GetAgentNames(ctx, projectId, tenantId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("discoverAgents - project=", projectId, " tenant=", tenantId, " allowed=", allowedNames, " found_in_tenant=", agentNames))
+	var discovered []agents.DiscoveredAgent
+	for _, agentName := range agentNames {
+		if agentName == selfName {
+			continue
+		}
+		if len(allowSet) > 0 && !allowSet[agentName] {
+			continue
+		}
+		agentObj, err := ms.GetAgentClone(ctx, projectId, tenantId, "", agentName, s)
+		if err != nil {
+			continue
+		}
+		description := ""
+		if desc, derr := agentObj.GetAttribute(ctx, "description"); derr == nil {
+			if descStr, ok := desc.(string); ok {
+				description = descStr
+			}
+		}
+		if description == "" {
+			description = fmt.Sprint("AI Agent: ", agentName)
+		}
+		agentType := ""
+		if at, aerr := agentObj.GetAttribute(ctx, "agent_type"); aerr == nil {
+			if atStr, ok := at.(string); ok {
+				agentType = atStr
+			}
+		}
+		discovered = append(discovered, agents.DiscoveredAgent{
+			AgentName:   agentName,
+			AgentType:   agentType,
+			Description: description,
+			TenantId:    tenantId,
+		})
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("discoverAgents - resolved ", len(discovered), " agent(s) for orchestrator ", selfName))
+	return discovered
 }
 
 func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error {

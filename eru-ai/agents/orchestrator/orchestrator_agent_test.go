@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	agents "github.com/eru-tech/eru/eru-ai/agents"
 )
 
 func makeTestJSON(t *testing.T) *json.RawMessage {
@@ -16,21 +18,7 @@ func makeTestJSON(t *testing.T) *json.RawMessage {
 		"system_prompt": "custom prompt",
 		"max_iterations":  5,
 		"thinking_budget": 8000,
-		"available_agents": []map[string]interface{}{
-			{
-				"agent_name":   "classifier",
-				"agent_type":   "REASONING",
-				"description":  "classifies documents",
-				"capabilities": []string{"classification", "tagging"},
-				"tenant_id":    "tenant1",
-			},
-			{
-				"agent_name":  "summarizer",
-				"agent_type":  "REASONING",
-				"description": "summarizes text",
-				"tenant_id":   "tenant1",
-			},
-		},
+		"available_agents": []string{"classifier", "summarizer"},
 		"delegation_strategy": "sequential",
 		"max_replans":         3,
 		"synthesis_prompt":    "combine all results",
@@ -52,9 +40,7 @@ func TestUnmarshalJSON(t *testing.T) {
 		"delegation_strategy": "parallel",
 		"max_replans":         4,
 		"synthesis_prompt":    "synth prompt",
-		"available_agents": []map[string]interface{}{
-			{"agent_name": "a1", "agent_type": "REASONING", "description": "desc1", "tenant_id": "t1"},
-		},
+		"available_agents": []string{"a1"},
 	}
 	b, _ := json.Marshal(data)
 
@@ -84,11 +70,11 @@ func TestUnmarshalJSON(t *testing.T) {
 	if oa.SynthesisPrompt != "synth prompt" {
 		t.Errorf("expected synthesis_prompt 'synth prompt', got %s", oa.SynthesisPrompt)
 	}
-	if len(oa.AvailableAgents) != 1 {
-		t.Fatalf("expected 1 available agent, got %d", len(oa.AvailableAgents))
+	if len(oa.AllowedAgents) != 1 {
+		t.Fatalf("expected 1 allowed agent, got %d", len(oa.AllowedAgents))
 	}
-	if oa.AvailableAgents[0].AgentName != "a1" {
-		t.Errorf("expected available agent a1, got %s", oa.AvailableAgents[0].AgentName)
+	if oa.AllowedAgents[0] != "a1" {
+		t.Errorf("expected allowed agent a1, got %s", oa.AllowedAgents[0])
 	}
 }
 
@@ -147,14 +133,11 @@ func TestMakeFromJsonFull(t *testing.T) {
 	if oa.SynthesisPrompt != "combine all results" {
 		t.Errorf("expected synthesis_prompt, got %s", oa.SynthesisPrompt)
 	}
-	if len(oa.AvailableAgents) != 2 {
-		t.Fatalf("expected 2 available agents, got %d", len(oa.AvailableAgents))
+	if len(oa.AllowedAgents) != 2 {
+		t.Fatalf("expected 2 allowed agents, got %d", len(oa.AllowedAgents))
 	}
-	if oa.AvailableAgents[0].AgentName != "classifier" {
-		t.Errorf("expected first agent classifier, got %s", oa.AvailableAgents[0].AgentName)
-	}
-	if len(oa.AvailableAgents[0].Capabilities) != 2 {
-		t.Errorf("expected 2 capabilities, got %d", len(oa.AvailableAgents[0].Capabilities))
+	if oa.AllowedAgents[0] != "classifier" {
+		t.Errorf("expected first allowed agent classifier, got %s", oa.AllowedAgents[0])
 	}
 }
 
@@ -221,23 +204,21 @@ func TestBuildDecompositionTools(t *testing.T) {
 }
 
 func TestSystemPromptContainsRequiredSections(t *testing.T) {
-	oa := &OrchestratorAgent{
-		AvailableAgents: []AgentDescriptor{
-			{
-				AgentName:    "data_extractor",
-				AgentType:    "REASONING",
-				Description:  "extracts structured data from documents",
-				Capabilities: []string{"extraction", "parsing"},
-				TenantId:     "t1",
-			},
-			{
-				AgentName:   "summarizer",
-				AgentType:   "REFLEX",
-				Description: "summarizes text content",
-				TenantId:    "t2",
-			},
+	oa := &OrchestratorAgent{}
+	oa.SetDiscoveredAgents([]agents.DiscoveredAgent{
+		{
+			AgentName:   "data_extractor",
+			AgentType:   "REASONING",
+			Description: "extracts structured data from documents",
+			TenantId:    "t1",
 		},
-	}
+		{
+			AgentName:   "summarizer",
+			AgentType:   "REFLEX",
+			Description: "summarizes text content",
+			TenantId:    "t2",
+		},
+	})
 
 	prompt := oa.GetSystemPrompt()
 
@@ -260,17 +241,15 @@ func TestSystemPromptContainsRequiredSections(t *testing.T) {
 }
 
 func TestSystemPromptContainsAgentDescriptors(t *testing.T) {
-	oa := &OrchestratorAgent{
-		AvailableAgents: []AgentDescriptor{
-			{
-				AgentName:    "classifier",
-				AgentType:    "REASONING",
-				Description:  "classifies input",
-				Capabilities: []string{"nlp", "classification"},
-				TenantId:     "tenant_a",
-			},
+	oa := &OrchestratorAgent{}
+	oa.SetDiscoveredAgents([]agents.DiscoveredAgent{
+		{
+			AgentName:   "classifier",
+			AgentType:   "REASONING",
+			Description: "classifies input",
+			TenantId:    "tenant_a",
 		},
-	}
+	})
 
 	prompt := oa.GetSystemPrompt()
 
@@ -279,7 +258,6 @@ func TestSystemPromptContainsAgentDescriptors(t *testing.T) {
 		"Type: REASONING",
 		"Tenant: tenant_a",
 		"Description: classifies input",
-		"Capabilities: nlp, classification",
 	}
 	for _, check := range checks {
 		if !strings.Contains(prompt, check) {
@@ -360,29 +338,10 @@ func TestSystemPromptChecklist(t *testing.T) {
 	}
 }
 
-func TestAgentDescriptorJSON(t *testing.T) {
-	ad := AgentDescriptor{
-		AgentName:    "test_agent",
-		AgentType:    "REASONING",
-		Description:  "does things",
-		Capabilities: []string{"cap1", "cap2"},
-		TenantId:     "t1",
-	}
-
-	b, err := json.Marshal(ad)
-	if err != nil {
-		t.Fatalf("failed to marshal: %v", err)
-	}
-
-	var ad2 AgentDescriptor
-	if err := json.Unmarshal(b, &ad2); err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if ad2.AgentName != "test_agent" || ad2.AgentType != "REASONING" || ad2.TenantId != "t1" {
-		t.Errorf("roundtrip mismatch: %+v", ad2)
-	}
-	if len(ad2.Capabilities) != 2 || ad2.Capabilities[0] != "cap1" {
-		t.Errorf("capabilities roundtrip mismatch: %v", ad2.Capabilities)
+func TestAllowedAgentNames(t *testing.T) {
+	oa := &OrchestratorAgent{AllowedAgents: []string{"a1", "a2"}}
+	names := oa.AllowedAgentNames()
+	if len(names) != 2 || names[0] != "a1" || names[1] != "a2" {
+		t.Errorf("unexpected allowed agent names: %v", names)
 	}
 }
