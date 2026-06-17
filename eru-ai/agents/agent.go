@@ -104,6 +104,18 @@ type AgentTools struct {
 	ToolOutputType string        `json:"tool_output_type"`
 	Tool           tools.Tooling `json:"-"`
 }
+type DiscoveredAgent struct {
+	AgentName   string `json:"agent_name"`
+	AgentType   string `json:"agent_type"`
+	Description string `json:"description"`
+	TenantId    string `json:"tenant_id"`
+}
+
+type AgentDiscovery interface {
+	AllowedAgentNames() []string
+	SetDiscoveredAgents(discovered []DiscoveredAgent)
+}
+
 type SystemPromptProvider interface {
 	GetSystemPrompt() string
 	GetOutputSchema(ctx context.Context) eru_models.JSONSchema

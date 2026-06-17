@@ -228,7 +228,7 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 			params.Temperature = anthropic.Float(m.Temprature)
 		}
 
-		msg, err := client.Messages.New(ctx, params)
+		msg, err := client.Messages.New(ctx, params, option.WithRequestTimeout(nonStreamingTimeout(maxTokens)))
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return Message{}, traces, err
@@ -706,4 +706,23 @@ func resolveMaxTokens(configured int64, thinkingBudget int) int64 {
 		return int64(thinkingBudget) + headroom
 	}
 	return defaultBase
+}
+
+// nonStreamingTimeout returns an explicit request timeout for non-streaming
+// Messages.New calls. Setting any request timeout bypasses the SDK guard that
+// otherwise rejects non-streaming requests whose max_tokens could take longer
+// than 10 minutes (anthropic-sdk-go CalculateNonStreamingTimeout). We scale the
+// timeout with max_tokens using the SDK's own 1h/128k token estimate, clamped
+// to the SDK's 1-hour ceiling and a 10-minute floor.
+func nonStreamingTimeout(maxTokens int64) time.Duration {
+	const maximumTime = time.Hour
+	const defaultTime = 10 * time.Minute
+	expected := time.Duration(float64(maximumTime) * float64(maxTokens) / 128000.0)
+	if expected < defaultTime {
+		return defaultTime
+	}
+	if expected > maximumTime {
+		return maximumTime
+	}
+	return expected
 }

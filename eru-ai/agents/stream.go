@@ -14,6 +14,7 @@ const (
 	StreamEventDone       = "done"
 	StreamEventError      = "error"
 	StreamEventQuestion   = "question"
+	StreamEventStatus     = "status"
 )
 
 type StreamEvent struct {

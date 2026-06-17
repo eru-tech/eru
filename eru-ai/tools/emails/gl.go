@@ -972,8 +972,9 @@ func (glEmailTool *GlEmailTool) Callback(ctx context.Context, projectId string, 
 		}
 		for _, mail := range mails {
 			hookBody := map[string]interface{}{
-				"mail":      mail,
-				"tenant_id": tenantId,
+				"mail":                  mail,
+				"tenant_id":             tenantId,
+				"subscription_email_id": notification.EmailAddress,
 			}
 			hookResult, hookErr := glEmailTool.ExecuteHook(bgCtx, "clbk", "", projectId, tenantId, hookBody, params)
 			if hookErr != nil {

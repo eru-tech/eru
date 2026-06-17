@@ -27,20 +27,21 @@ const orchestratorClarificationGuidance = `
 HUMAN-IN-THE-LOOP CLARIFICATION:
 If the task is too ambiguous or missing information you need to build a correct orchestration plan, call the ask_user tool instead of outputting a FuncGroup. Ask the fewest questions needed, give 2-4 concrete options per question, and allow free text when options may not be exhaustive. Calling ask_user ends your turn; the user's answers arrive as a follow-up message and you then produce the plan.`
 
-type AgentDescriptor struct {
-	AgentName    string   `json:"agent_name"`
-	AgentType    string   `json:"agent_type"`
-	Description  string   `json:"description"`
-	Capabilities []string `json:"capabilities"`
-	TenantId     string   `json:"tenant_id"`
-}
-
 type OrchestratorAgent struct {
 	reasoning_agents.ReasoningAgent
-	AvailableAgents    []AgentDescriptor `json:"available_agents"`
-	DelegationStrategy string            `json:"delegation_strategy"`
-	MaxReplans         int               `json:"max_replans"`
-	SynthesisPrompt    string            `json:"synthesis_prompt"`
+	AllowedAgents      []string `json:"available_agents"`
+	DelegationStrategy string   `json:"delegation_strategy"`
+	MaxReplans         int      `json:"max_replans"`
+	SynthesisPrompt    string   `json:"synthesis_prompt"`
+	discoveredAgents   []agents.DiscoveredAgent
+}
+
+func (oa *OrchestratorAgent) AllowedAgentNames() []string {
+	return oa.AllowedAgents
+}
+
+func (oa *OrchestratorAgent) SetDiscoveredAgents(discovered []agents.DiscoveredAgent) {
+	oa.discoveredAgents = discovered
 }
 
 func (oa *OrchestratorAgent) GetSpec() agents.AgentI {
@@ -52,16 +53,16 @@ func (oa *OrchestratorAgent) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	type orchestratorFields struct {
-		AvailableAgents    []AgentDescriptor `json:"available_agents"`
-		DelegationStrategy string            `json:"delegation_strategy"`
-		MaxReplans         int               `json:"max_replans"`
-		SynthesisPrompt    string            `json:"synthesis_prompt"`
+		AllowedAgents      []string `json:"available_agents"`
+		DelegationStrategy string   `json:"delegation_strategy"`
+		MaxReplans         int      `json:"max_replans"`
+		SynthesisPrompt    string   `json:"synthesis_prompt"`
 	}
 	var of orchestratorFields
 	if err := json.Unmarshal(b, &of); err != nil {
 		return err
 	}
-	oa.AvailableAgents = of.AvailableAgents
+	oa.AllowedAgents = of.AllowedAgents
 	oa.DelegationStrategy = of.DelegationStrategy
 	oa.MaxReplans = of.MaxReplans
 	oa.SynthesisPrompt = of.SynthesisPrompt
@@ -76,16 +77,16 @@ func (oa *OrchestratorAgent) MakeFromJson(ctx context.Context, rj *json.RawMessa
 	}
 
 	type orchestratorFields struct {
-		AvailableAgents    []AgentDescriptor `json:"available_agents"`
-		DelegationStrategy string            `json:"delegation_strategy"`
-		MaxReplans         int               `json:"max_replans"`
-		SynthesisPrompt    string            `json:"synthesis_prompt"`
+		AllowedAgents      []string `json:"available_agents"`
+		DelegationStrategy string   `json:"delegation_strategy"`
+		MaxReplans         int      `json:"max_replans"`
+		SynthesisPrompt    string   `json:"synthesis_prompt"`
 	}
 	var of orchestratorFields
 	if err := json.Unmarshal(*rj, &of); err != nil {
 		return err
 	}
-	oa.AvailableAgents = of.AvailableAgents
+	oa.AllowedAgents = of.AllowedAgents
 	oa.DelegationStrategy = of.DelegationStrategy
 	oa.MaxReplans = of.MaxReplans
 	oa.SynthesisPrompt = of.SynthesisPrompt
@@ -134,6 +135,14 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	bb := NewBlackboard()
 	ctx = WithBlackboard(ctx, bb)
 
+	streamCb := agents.GetStreamCallback(ctx)
+	emitStatus := func(stage string) {
+		if streamCb != nil {
+			streamCb(agents.StreamEvent{Event: agents.StreamEventStatus, Data: stage})
+		}
+	}
+
+	emitStatus("planning")
 	decompositionResult, decompositionQuestion, traces, err := oa.decompose(ctx, agentMessage, projectId, tenantId)
 	if err != nil {
 		return agents.AgentMessage{}, err
@@ -153,6 +162,7 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	var execErr error
 
 	for attempt := 0; attempt <= oa.MaxReplans; attempt++ {
+		emitStatus("executing")
 		executionResult, funcVarsMap, execErr = oa.executeFuncGroup(ctx, decompositionResult, agentMessage, projectId, tenantId, "", "", nil, nil)
 		if execErr == nil {
 			break
@@ -185,6 +195,7 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		}
 	}
 
+	emitStatus("synthesizing")
 	synthesisResult, synthesisTraces, err := oa.synthesize(ctx, agentMessage, executionResult, projectId, tenantId)
 	allTraces = append(allTraces, synthesisTraces...)
 	if err != nil {
@@ -512,7 +523,16 @@ func (oa *OrchestratorAgent) synthesize(ctx context.Context, agentMessage agents
 		}},
 	}
 
-	response, err := oa.Model.QueryModel(ctx, chatRequest)
+	var response models.Message
+	var err error
+	streamCb := agents.GetStreamCallback(ctx)
+	if streamingModel, ok := oa.Model.(models.StreamingModelI); ok && streamCb != nil {
+		response, err = streamingModel.QueryModelStreaming(ctx, chatRequest, func(chunk string) {
+			streamCb(agents.StreamEvent{Event: agents.StreamEventTextDelta, Data: chunk})
+		})
+	} else {
+		response, err = oa.Model.QueryModel(ctx, chatRequest)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -760,19 +780,16 @@ CHECKLIST (verify before outputting)
 }
 
 func (oa *OrchestratorAgent) buildAgentDescriptions() string {
-	if len(oa.AvailableAgents) == 0 {
+	if len(oa.discoveredAgents) == 0 {
 		return "No agents configured."
 	}
 
 	var sb strings.Builder
-	for _, ad := range oa.AvailableAgents {
+	for _, ad := range oa.discoveredAgents {
 		sb.WriteString(fmt.Sprintf("Agent: %s\n", ad.AgentName))
 		sb.WriteString(fmt.Sprintf("  Type: %s\n", ad.AgentType))
 		sb.WriteString(fmt.Sprintf("  Tenant: %s\n", ad.TenantId))
 		sb.WriteString(fmt.Sprintf("  Description: %s\n", ad.Description))
-		if len(ad.Capabilities) > 0 {
-			sb.WriteString(fmt.Sprintf("  Capabilities: %s\n", strings.Join(ad.Capabilities, ", ")))
-		}
 		sb.WriteString("\n")
 	}
 	return sb.String()
