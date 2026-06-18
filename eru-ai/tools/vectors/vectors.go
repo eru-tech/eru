@@ -82,7 +82,7 @@ func (vectorstoreAccount *VectorstoreAccount) Execute(ctx context.Context, proje
 	case SaveVectors:
 		toolResult, toolRequest, persistStore, err = vectorstoreAccount.SaveVectors(ctx, params)
 	case SearchVectors:
-		toolResult, toolRequest, persistStore, err = vectorstoreAccount.SearchVectors(ctx, params)
+		toolResult, toolRequest, persistStore, err = vectorstoreAccount.SearchVectors(ctx, projectId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -168,7 +168,7 @@ func (vectorstoreAccount *VectorstoreAccount) SaveVectors(ctx context.Context, p
 	}
 	return toolResult, map[string]interface{}{"body": params}, false, nil
 }
-func (vectorstoreAccount *VectorstoreAccount) SearchVectors(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+func (vectorstoreAccount *VectorstoreAccount) SearchVectors(ctx context.Context, projectId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("vectorstoreAccount Search - Start")
 	if vectorstoreAccount.VectorStore == nil {
 		return nil, nil, false, fmt.Errorf("vectorstore not found")
@@ -182,12 +182,44 @@ func (vectorstoreAccount *VectorstoreAccount) SearchVectors(ctx context.Context,
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("error unmarshalling vectorrecords: %w", err)
 	}
-	vectorResults, err := vectorstoreAccount.VectorStore.SearchVectors(ctx, vectorSearch)
-	if err != nil {
-		return nil, nil, false, fmt.Errorf("error searching vectors: %w", err)
+
+	combined := vectorstore.VectorResults{Records: []vectorstore.VectorResult{}}
+	anySuccess := false
+	var lastErr error
+
+	tenantNamespace := vectorSearch.Namespace
+	tenantResults, tErr := vectorstoreAccount.VectorStore.SearchVectors(ctx, vectorSearch)
+	if tErr != nil {
+		lastErr = tErr
+		logs.WithContext(ctx).Error(fmt.Sprintf("error searching vectors in namespace %s (ignored, trying project fallback): %v", tenantNamespace, tErr))
+	} else {
+		anySuccess = true
+		combined.Records = append(combined.Records, tenantResults.Records...)
+		combined.Usage = tenantResults.Usage
 	}
+
+	if projectId != "" && projectId != tenantNamespace {
+		projectSearch := vectorSearch
+		projectSearch.Namespace = projectId
+		projectResults, pErr := vectorstoreAccount.VectorStore.SearchVectors(ctx, projectSearch)
+		if pErr != nil {
+			lastErr = pErr
+			logs.WithContext(ctx).Error(fmt.Sprintf("error searching vectors in project namespace %s (ignored): %v", projectId, pErr))
+		} else {
+			anySuccess = true
+			combined.Records = append(combined.Records, projectResults.Records...)
+			if combined.Usage == nil {
+				combined.Usage = projectResults.Usage
+			}
+		}
+	}
+
+	if !anySuccess {
+		return nil, nil, false, fmt.Errorf("error searching vectors: %w", lastErr)
+	}
+
 	toolResult = map[string]interface{}{
-		"vector_search": vectorResults,
+		"vector_search": combined,
 	}
 
 	return toolResult, map[string]interface{}{"body": params}, false, nil

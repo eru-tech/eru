@@ -84,7 +84,7 @@ func (svs *S3VectorStore) SearchVectors(ctx context.Context, vectorRecordsSearch
 		strSearch := ""
 		if vectorRecordsSearch.Inputs != nil {
 			for key, value := range vectorRecordsSearch.Inputs {
-				if key == "text" {
+				if key == "##text##" || key == "text" {
 					strSearch = value
 					break
 				}
@@ -106,6 +106,11 @@ func (svs *S3VectorStore) SearchVectors(ctx context.Context, vectorRecordsSearch
 	float32Vector = make([]float32, len(vectorRecordsSearch.Vector))
 	for i, v := range vectorRecordsSearch.Vector {
 		float32Vector[i] = float32(v)
+	}
+	if len(float32Vector) == 0 {
+		err = fmt.Errorf("query vector is empty - provide 'vector' directly, or pass inputs {\"##text##\": \"<search text>\"} with embed model %q configured on the vectorstore", svs.Embed.ModelName)
+		logs.WithContext(ctx).Error(err.Error())
+		return vectorResults, err
 	}
 	filterAnd, filterAndOk := vectorRecordsSearch.Filter["$and"]
 	if !filterAndOk {
@@ -221,6 +226,11 @@ func (svs *S3VectorStore) SaveVectors(ctx context.Context, vectorRecords VectorR
 	var vectors []s3vt.PutInputVector
 
 	for _, vectorRecord := range vectorRecords.Vectors {
+		if len(vectorRecord.Values) == 0 {
+			err = fmt.Errorf("vector %s has no embedding values - provide 'values' directly, or set metadata field %q (the configured embed field) to the text to embed with embed model %q configured on the vectorstore", vectorRecord.Id, svs.Embed.Field, svs.Embed.ModelName)
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
 		// Convert []float64 to []float32 for AWS SDK
 		float32Values := make([]float32, len(vectorRecord.Values))
 		for i, v := range vectorRecord.Values {
