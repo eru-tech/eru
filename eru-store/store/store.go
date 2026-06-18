@@ -636,6 +636,11 @@ func (store *Store) ReplaceTenantVariables(ctx context.Context, projectId string
 				textStr = strings.Replace(textStr, fmt.Sprint("$SECRET_", k), v.Value, -1)
 			}
 		}
+		if _, prgTenantVarsOk := store.TenantVariables[projectId][projectId]; prgTenantVarsOk {
+			for k, v := range store.TenantVariables[projectId][projectId].Secrets {
+				textStr = strings.Replace(textStr, fmt.Sprint("$SECRET_", k), v.Value, -1)
+			}
+		}
 	}
 	return []byte(textStr)
 }

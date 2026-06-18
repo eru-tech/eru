@@ -651,6 +651,36 @@ You may ONLY use agent steps. Each step requires:
 Do NOT use query_name, function_name, tool_name, or api steps.
 
 ============================================================
+RULE #2 — AGENT INPUT FORMAT (transform_request is MANDATORY)
+============================================================
+
+Every agent receives its request body decoded into this exact JSON shape:
+  {"content": "<string>"}      ← "content" is the agent's input message (REQUIRED)
+You may also include "params" (object) and "files" (array) ONLY if needed.
+ANY other/unknown top-level key is REJECTED by the agent (unknown field error),
+and a bare string or number is REJECTED (it must be a JSON object).
+
+Therefore EVERY step MUST set "transform_request" to a Go template that renders
+a JSON object of the form {"content":"..."}. Build it with the dict function so
+the value is correctly JSON-encoded and quoted:
+
+  First step (from the user's message):
+    "transform_request": "{{dict \"content\" .Vars.Body.content}}"
+
+  Chained step (feed the previous agent's answer as the next input):
+    "transform_request": "{{dict \"content\" .ResVars.<prev_step>.Body.content}}"
+
+WRONG (these all break the agent):
+  "{{.Vars.Body.content}}"            → renders a bare string, not an object
+  "{{json .Vars.Body}}"              → may carry unknown fields → rejected
+  "{{json .ResVars.prev.Body}}"      → passes the whole AgentMessage → rejected
+
+The sub-agent's answer text is in .ResVars.<step>.Body.content. To combine
+multiple agents' outputs into one input, concatenate into a single content
+string, e.g.:
+  "{{dict \"content\" (printf \"sql: %s\\nrows: %s\" .ResVars.generate_sql.Body.content .ResVars.execute_sql.Body.content)}}"
+
+============================================================
 EXECUTION MODEL
 ============================================================
 
@@ -669,12 +699,12 @@ Example — sequential: extract data, then summarize it:
   "extractor": {
     "agent_name": "extractor",
     "tenant_id": "t1",
-    "transform_request": "{{json .Vars.Body}}",
+    "transform_request": "{{dict \"content\" .Vars.Body.content}}",
     "func_steps": {
       "summarizer": {
         "agent_name": "summarizer",
         "tenant_id": "t1",
-        "transform_request": "{{json .ResVars.extractor.Body}}"
+        "transform_request": "{{dict \"content\" .ResVars.extractor.Body.content}}"
       }
     }
   }
@@ -685,12 +715,12 @@ Example — parallel: two independent agents, then merge:
   "sentiment_analyzer": {
     "agent_name": "sentiment_analyzer",
     "tenant_id": "t1",
-    "transform_request": "{{json .Vars.Body}}"
+    "transform_request": "{{dict \"content\" .Vars.Body.content}}"
   },
   "topic_classifier": {
     "agent_name": "topic_classifier",
     "tenant_id": "t1",
-    "transform_request": "{{json .Vars.Body}}"
+    "transform_request": "{{dict \"content\" .Vars.Body.content}}"
   }
 }
 
@@ -699,18 +729,18 @@ Example — parallel then sequential merge:
   "sentiment_analyzer": {
     "agent_name": "sentiment_analyzer",
     "tenant_id": "t1",
-    "transform_request": "{{json .Vars.Body}}"
+    "transform_request": "{{dict \"content\" .Vars.Body.content}}"
   },
   "topic_classifier": {
     "agent_name": "topic_classifier",
     "tenant_id": "t1",
-    "transform_request": "{{json .Vars.Body}}",
+    "transform_request": "{{dict \"content\" .Vars.Body.content}}",
     "func_steps": {
       "report_generator": {
         "agent_name": "report_generator",
         "tenant_id": "t1",
         "wait_for": "sentiment_analyzer",
-        "transform_request": "{{dict \"sentiment\" .ResVars.sentiment_analyzer.Body \"topics\" .ResVars.topic_classifier.Body \"original\" .Vars.Body}}"
+        "transform_request": "{{dict \"content\" (printf \"sentiment: %s\\ntopics: %s\" .ResVars.sentiment_analyzer.Body.content .ResVars.topic_classifier.Body.content)}}"
       }
     }
   }
@@ -730,10 +760,11 @@ TEMPLATE VARIABLES
 .ReqVars.<step_key>.Body — request sent TO a step
 
 Syntax:
-  {{.Vars.Body.field}}
+  {{.Vars.Body.content}}                         — the user's input string
+  {{.ResVars.<step>.Body.content}}               — a prior agent's answer string
+  {{dict "content" .Vars.Body.content}}          — wrap into the agent input object
+  {{printf "%s / %s" .X .Y}}                      — combine strings before wrapping
   {{index .Vars.Body "field-with-dash"}}
-  {{json .Vars.Body}}
-  {{dict "key1" .ResVars.agent1.Body "key2" .ResVars.agent2.Body}}
 
 Conditions:
   {{if eq .Vars.Body.status "active"}}true{{else}}false{{end}}
@@ -763,6 +794,8 @@ CHECKLIST (verify before outputting)
 ============================================================
 
 [ ] Every func_step key exactly matches agent_name (Rule #1)
+[ ] EVERY step sets transform_request rendering {"content":"..."} via dict (Rule #2)
+[ ] No step passes a bare string or the raw .Vars.Body / whole AgentMessage
 [ ] func_category_name and func_group_name are set (snake_case)
 [ ] Each step uses ONLY agent_name + tenant_id (no query/function/tool/api)
 [ ] Sequential steps are NESTED, parallel steps are SIBLINGS
