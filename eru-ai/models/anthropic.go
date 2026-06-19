@@ -614,12 +614,11 @@ func convertTools(ctx context.Context, toolsMap map[string]tools.Tooling) ([]ant
 	for _, tool := range toolsMap {
 		toolNameI, _ := tool.GetAttribute(ctx, "tool_name")
 		toolDescI, _ := tool.GetAttribute(ctx, "description")
-		toolParamsI, _ := tool.GetAttribute(ctx, "parameters")
 		toolSysPromptI, _ := tool.GetAttribute(ctx, "system_prompt")
 
 		toolName := toolNameI.(string)
 		toolDesc := toolDescI.(string)
-		toolParams := toolParamsI.(eru_models.JSONSchema)
+		toolParams := tool.GetParameters()
 		toolSysPrompt := toolSysPromptI.(string)
 
 		toolPrompt += fmt.Sprint("Tool prompt for Tool ", toolName, " is as follows :\n", toolSysPrompt)
