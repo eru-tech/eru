@@ -25,10 +25,12 @@ type ToolHooks struct {
 }
 
 type Tool struct {
-	ToolType        string                `json:"tool_type" eru:"required"`
-	ToolName        string                `json:"tool_name" eru:"required"`
-	Description     string                `json:"description"`
-	SystemPrompt    string                `json:"system_prompt"`
+	ToolType     string `json:"tool_type" eru:"required"`
+	ToolName     string `json:"tool_name" eru:"required"`
+	Description  string `json:"description"`
+	SystemPrompt string `json:"system_prompt"`
+	// Deprecated: tool-level OutputSchema is no longer used (no live readers; ValidateOutput is uncalled).
+	// Describe an action's result on ToolAction.OutputSchema instead.
 	OutputSchema    eru_models.JSONSchema `json:"output_schema"`
 	Parameters      eru_models.JSONSchema `json:"parameters"`
 	ToolAction      ToolAction            `json:"-" eru:"optional"`

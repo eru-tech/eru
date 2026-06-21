@@ -159,6 +159,10 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 	queryObj.Cols = sqd.Cols
 	if sqd.ExecuteFlag {
 		sqd.Query = sqd.secureSQL(ctx, sqd.Query, projectId, datasource, s, sr)
+		sqd.Query, err = sqd.wrapGroupBy(ctx, sqd.Query)
+		if err != nil {
+			return nil, nil, err
+		}
 		logs.WithContext(ctx).Info(sqd.Query)
 		ctx = ds.WithUseWriter(ctx, sqd.UseWriter || qlcache.IsDML(sqd.Query))
 		if sqd.OutputType == eru_writes.OutputTypeCsv || sqd.OutputType == eru_writes.OutputTypeExcel {
@@ -167,7 +171,9 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 				err = logs.Err(ctx, err, "")
 			}
 			queryObj.DataTypes = sr.GetResultDataTypes(ctx)
-			res = append(res, result)
+			if result != nil {
+				res = append(res, result)
+			}
 		} else {
 			if qlcache.IsDML(sqd.Query) {
 				result, err = sr.ExecutePreparedQuery(ctx, sqd.Query, datasource)
@@ -207,10 +213,16 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 					err = logs.Err(ctx, err, "")
 				}
 			}
-			res = append(res, result)
+			if result != nil {
+				res = append(res, result)
+			}
 		}
 	} else if sqd.OutputType == "ast" {
 		secureQuery := sqd.secureSQL(ctx, sqd.Query, projectId, datasource, s, sr)
+		secureQuery, err = sqd.wrapGroupBy(ctx, secureQuery)
+		if err != nil {
+			return nil, nil, err
+		}
 		res = append(res, map[string]interface{}{"sql": secureQuery})
 	}
 	queryObjs = append(queryObjs, queryObj)

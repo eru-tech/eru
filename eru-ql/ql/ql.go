@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -30,6 +31,7 @@ type QLData struct {
 	PivotConfig    QLPivotConfig              `json:"pivot_config,omitempty"`
 	Formatter      eru_writes.CellFormatter   `json:"formatter,omitempty"`
 	UseWriter      bool                       `json:"use_writer,omitempty"`
+	GroupBy        module_model.GroupByConfig `json:"-"`
 }
 
 type QLPivotConfig struct {
@@ -53,11 +55,78 @@ type QL interface {
 	Execute(ctx context.Context, projectId string, datasources map[string]*module_model.DataSource, s module_store.ModuleStoreI, outputType string) (res []map[string]interface{}, queryObjs []QueryObject, err error)
 	SetQLData(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string)
 	SetTenantId(tenantId string)
+	SetGroupBy(gb module_model.GroupByConfig)
 	ProcessTransformRule(ctx context.Context, tr module_model.TransformRule, docs interface{}) (outputObj map[string]interface{}, err error)
 }
 
 func (qld *QLData) SetTenantId(tenantId string) {
 	qld.TenantId = tenantId
+}
+
+func (qld *QLData) SetGroupBy(gb module_model.GroupByConfig) {
+	qld.GroupBy = gb
+}
+
+var groupByIdentifierRegex = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$`)
+var groupByAliasRegex = regexp.MustCompile(`^[A-Za-z0-9_ ]+$`)
+var groupByAggFuncs = map[string]bool{"count": true, "sum": true, "avg": true, "min": true, "max": true}
+
+func validateGroupByIdentifier(ctx context.Context, name string) (err error) {
+	if !groupByIdentifierRegex.MatchString(name) {
+		err = errors.New(fmt.Sprint("invalid group by identifier : ", name))
+		logs.WithContext(ctx).Error(err.Error())
+	}
+	return
+}
+
+func validateGroupByAlias(ctx context.Context, alias string) (err error) {
+	if !groupByAliasRegex.MatchString(alias) {
+		err = errors.New(fmt.Sprint("invalid group by alias : ", alias))
+		logs.WithContext(ctx).Error(err.Error())
+	}
+	return
+}
+
+func (qld *QLData) wrapGroupBy(ctx context.Context, query string) (wrappedQuery string, err error) {
+	logs.WithContext(ctx).Debug("wrapGroupBy - Start")
+	if len(qld.GroupBy.GroupBy) == 0 {
+		return query, nil
+	}
+	for _, g := range qld.GroupBy.GroupBy {
+		if err = validateGroupByIdentifier(ctx, g); err != nil {
+			return "", err
+		}
+	}
+	aggregations := qld.GroupBy.Aggregations
+	if len(aggregations) == 0 {
+		aggregations = []module_model.AggregationConfig{{Func: "count", Field: "1", Alias: "cnt"}}
+	}
+	var selectParts []string
+	selectParts = append(selectParts, qld.GroupBy.GroupBy...)
+	for _, agg := range aggregations {
+		fn := strings.ToLower(strings.TrimSpace(agg.Func))
+		if !groupByAggFuncs[fn] {
+			err = errors.New(fmt.Sprint("invalid aggregation function : ", agg.Func))
+			logs.WithContext(ctx).Error(err.Error())
+			return "", err
+		}
+		field := strings.TrimSpace(agg.Field)
+		if !(fn == "count" && field == "1") {
+			if err = validateGroupByIdentifier(ctx, field); err != nil {
+				return "", err
+			}
+		}
+		alias := strings.TrimSpace(agg.Alias)
+		if alias == "" {
+			alias = fmt.Sprint(fn, "_", field)
+		}
+		if err = validateGroupByAlias(ctx, alias); err != nil {
+			return "", err
+		}
+		selectParts = append(selectParts, fmt.Sprint(fn, "(", field, ") \"", alias, "\""))
+	}
+	wrappedQuery = fmt.Sprint("select ", strings.Join(selectParts, " , "), " from (", query, ") eru_grp group by ", strings.Join(qld.GroupBy.GroupBy, " , "))
+	return wrappedQuery, nil
 }
 
 func (qld *QLData) SetQLDataCommon(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string) (err error) {

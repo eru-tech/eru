@@ -17,6 +17,7 @@ import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	db "github.com/eru-tech/eru/eru-db/db"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_models "github.com/eru-tech/eru/eru-models"
 	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	"github.com/eru-tech/eru/eru-store/store"
 	vectorstore "github.com/eru-tech/eru/eru-vectorstore/vectorstore"
@@ -673,6 +674,10 @@ func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId 
 		discoveryAgent.SetDiscoveredAgents(ms.discoverAgents(ctx, projectId, tenantId, agentName, discoveryAgent.AllowedAgentNames(), s))
 	}
 
+	if toolDiscoveryAgent, ok := agent.(agents.ToolDiscovery); ok {
+		toolDiscoveryAgent.SetDiscoveredTools(ms.discoverTools(ctx, projectId, tenantId, toolDiscoveryAgent.AllowedToolActions(), s))
+	}
+
 	agent.InitializeConversationManager(ctx)
 	summaryModelNameI, err := agent.GetAttribute(ctx, "summary_model")
 	if err != nil {
@@ -735,14 +740,56 @@ func (ms *ModuleStore) discoverAgents(ctx context.Context, projectId string, ten
 				agentType = atStr
 			}
 		}
+		var outputSchema eru_models.JSONSchema
+		if os, oerr := agentObj.GetAttribute(ctx, "output_schema"); oerr == nil {
+			if oss, ok := os.(eru_models.JSONSchema); ok {
+				outputSchema = oss
+			}
+		}
 		discovered = append(discovered, agents.DiscoveredAgent{
-			AgentName:   agentName,
-			AgentType:   agentType,
-			Description: description,
-			TenantId:    tenantId,
+			AgentName:    agentName,
+			AgentType:    agentType,
+			Description:  description,
+			TenantId:     tenantId,
+			OutputSchema: outputSchema,
 		})
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("discoverAgents - resolved ", len(discovered), " agent(s) for orchestrator ", selfName))
+	return discovered
+}
+
+func (ms *ModuleStore) discoverTools(ctx context.Context, projectId string, tenantId string, allowed map[string][]string, s ModuleStoreI) []agents.DiscoveredTool {
+	logs.WithContext(ctx).Debug("discoverTools - Start")
+	var discovered []agents.DiscoveredTool
+	for toolName, allowedActions := range allowed {
+		toolObj, err := ms.GetToolClone(ctx, projectId, tenantId, toolName, "", s)
+		if err != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("discoverTools - tool ", toolName, " not found: ", err.Error()))
+			continue
+		}
+		actionSet := make(map[string]bool)
+		for _, a := range allowedActions {
+			actionSet[a] = true
+		}
+		for _, action := range toolObj.GetActions() {
+			if len(actionSet) > 0 && !actionSet[action.ActionName] {
+				continue
+			}
+			inputSchema := action.Parameters
+			if action.GetParameters != nil {
+				inputSchema = action.GetParameters()
+			}
+			discovered = append(discovered, agents.DiscoveredTool{
+				ToolName:     toolName,
+				ActionName:   action.ActionName,
+				Description:  action.Description,
+				InputSchema:  inputSchema,
+				OutputSchema: action.OutputSchema,
+				TenantId:     tenantId,
+			})
+		}
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("discoverTools - resolved ", len(discovered), " tool action(s)"))
 	return discovered
 }
 

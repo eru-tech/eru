@@ -227,7 +227,7 @@ func TestSystemPromptContainsRequiredSections(t *testing.T) {
 		"RULE #1",
 		"STEP KEY = AGENT NAME",
 		"FUNCGROUP STRUCTURE",
-		"STEP TYPE — AGENT ONLY",
+		"STEP TYPE — AGENT or TOOL",
 		"EXECUTION MODEL",
 		"TEMPLATE VARIABLES",
 		"OPTIONAL STEP FIELDS",
@@ -275,12 +275,15 @@ func TestSystemPromptNoAgents(t *testing.T) {
 	}
 }
 
-func TestSystemPromptAgentOnlyConstraint(t *testing.T) {
+func TestSystemPromptStepTypeConstraint(t *testing.T) {
 	oa := &OrchestratorAgent{}
 	prompt := oa.GetSystemPrompt()
 
-	if !strings.Contains(prompt, "Do NOT use query_name, function_name, tool_name, or api steps") {
-		t.Error("prompt should explicitly prohibit non-agent step types")
+	if !strings.Contains(prompt, "Do NOT use query_name, function_name, or api steps") {
+		t.Error("prompt should prohibit query/function/api step types")
+	}
+	if !strings.Contains(prompt, "AVAILABLE TOOLS") {
+		t.Error("prompt should include the AVAILABLE TOOLS section")
 	}
 }
 
@@ -310,7 +313,7 @@ func TestSystemPromptTemplateVariables(t *testing.T) {
 		".Vars.Body",
 		".ResVars.<step_key>.Body",
 		".ReqVars.<step_key>.Body",
-		"{{json .Vars.Body}}",
+		"| stringify",
 		"{{dict",
 	}
 	for _, v := range vars {
@@ -327,7 +330,7 @@ func TestSystemPromptChecklist(t *testing.T) {
 	checks := []string{
 		"Every func_step key exactly matches agent_name",
 		"func_category_name and func_group_name are set",
-		"ONLY agent_name + tenant_id",
+		"(agent_name) OR (tool_name+tool_action)",
 		"Sequential steps are NESTED, parallel steps are SIBLINGS",
 		"wait_for only references sibling step keys",
 	}

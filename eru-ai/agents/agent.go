@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	models "github.com/eru-tech/eru/eru-ai/models"
@@ -59,6 +60,7 @@ type AgentOutputAction struct {
 const (
 	ActionTypeAnswer   = "answer"
 	ActionTypeQuestion = "question"
+	ActionTypeData     = "data"
 )
 
 type ClarificationRequest struct {
@@ -105,15 +107,30 @@ type AgentTools struct {
 	Tool           tools.Tooling `json:"-"`
 }
 type DiscoveredAgent struct {
-	AgentName   string `json:"agent_name"`
-	AgentType   string `json:"agent_type"`
-	Description string `json:"description"`
-	TenantId    string `json:"tenant_id"`
+	AgentName    string                `json:"agent_name"`
+	AgentType    string                `json:"agent_type"`
+	Description  string                `json:"description"`
+	TenantId     string                `json:"tenant_id"`
+	OutputSchema eru_models.JSONSchema `json:"output_schema"`
 }
 
 type AgentDiscovery interface {
 	AllowedAgentNames() []string
 	SetDiscoveredAgents(discovered []DiscoveredAgent)
+}
+
+type DiscoveredTool struct {
+	ToolName     string                `json:"tool_name"`
+	ActionName   string                `json:"action_name"`
+	Description  string                `json:"description"`
+	InputSchema  eru_models.JSONSchema `json:"input_schema"`
+	OutputSchema eru_models.JSONSchema `json:"output_schema"`
+	TenantId     string                `json:"tenant_id"`
+}
+
+type ToolDiscovery interface {
+	AllowedToolActions() map[string][]string
+	SetDiscoveredTools(discovered []DiscoveredTool)
 }
 
 type SystemPromptProvider interface {
@@ -256,12 +273,17 @@ func (agent *Agent) ExecuteAgentFunctionResumable(ctx context.Context, agentMess
 		headers.Add("claims", claims.(string))
 	}
 	r := &http.Request{
-		Method: "POST",
-		URL:    &url.URL{Scheme: "http", Host: "", Path: ""},
-		Header: headers,
-		Body:   io.NopCloser(bytes.NewBuffer(chatRequestJSON)),
+		Method:        "POST",
+		URL:           &url.URL{Scheme: "http", Host: "", Path: ""},
+		Header:        headers,
+		Body:          io.NopCloser(bytes.NewBuffer(chatRequestJSON)),
+		ContentLength: int64(len(chatRequestJSON)),
 	}
+	r.Header.Set("Content-Length", strconv.Itoa(len(chatRequestJSON)))
 	reqBody := make(map[string]interface{})
+	if uErr := json.Unmarshal(chatRequestJSON, &reqBody); uErr != nil {
+		logs.WithContext(ctx).Error(uErr.Error())
+	}
 	var fms function_module_store.ModuleStoreI = &function_module_store.ModuleDbStore{}
 	err = fms.SaveProject(ctx, projectId, fms, false)
 	if err != nil {

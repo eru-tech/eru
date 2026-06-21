@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	b64 "encoding/base64"
 	"encoding/csv"
 	"encoding/json"
@@ -263,6 +264,17 @@ func ProjectMyQueryASTHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	}
 }
 
+type contextKey string
+
+const groupByModeKey contextKey = "groupByMode"
+
+func ProjectMyQueryExecuteGroupHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	h := ProjectMyQueryExecuteHandler(sh)
+	return func(w http.ResponseWriter, r *http.Request) {
+		h(w, r.WithContext(context.WithValue(r.Context(), groupByModeKey, true)))
+	}
+}
+
 func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("ProjectMyQueryExecuteHandler - Start")
@@ -390,6 +402,34 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 				// do nothing - silently execute with is_public as false
 			}
 
+			groupMode, _ := r.Context().Value(groupByModeKey).(bool)
+			if groupMode {
+				var groupByConfig module_model.GroupByConfig
+				if gbData, gbOk := postBody["group_by"]; gbOk {
+					gbBytes, mErr := json.Marshal(gbData)
+					if mErr == nil {
+						if uErr := json.Unmarshal(gbBytes, &groupByConfig.GroupBy); uErr != nil {
+							logs.WithContext(r.Context()).Error(uErr.Error())
+						}
+					}
+					delete(postBody, "group_by")
+				}
+				if aggData, aggOk := postBody["aggregations"]; aggOk {
+					aggBytes, mErr := json.Marshal(aggData)
+					if mErr == nil {
+						if uErr := json.Unmarshal(aggBytes, &groupByConfig.Aggregations); uErr != nil {
+							logs.WithContext(r.Context()).Error(uErr.Error())
+						}
+					}
+					delete(postBody, "aggregations")
+				}
+				if len(groupByConfig.GroupBy) == 0 {
+					server_handlers.FormatResponse(w, 400)
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "group_by is required"})
+					return
+				}
+				qlInterface.SetGroupBy(groupByConfig)
+			}
 			qlInterface.SetQLData(r.Context(), myQuery, postBody, true, tokenObj, isPublic, outputType)
 			qlInterface.SetTenantId(vars["tenantId"])
 			res, qobjs, err = qlInterface.Execute(r.Context(), projectID, datasources, sh.Store, outputType)
