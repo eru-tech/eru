@@ -136,6 +136,17 @@ type MyQuery struct {
 	CacheLock    bool                                   `json:"cache_lock,omitempty"`
 }
 
+type AggregationConfig struct {
+	Func  string `json:"func"`
+	Field string `json:"field"`
+	Alias string `json:"alias"`
+}
+
+type GroupByConfig struct {
+	GroupBy      []string            `json:"group_by"`
+	Aggregations []AggregationConfig `json:"aggregations"`
+}
+
 type QueryCacheConfig struct {
 	Enabled        bool     `json:"enabled"`
 	DefaultTTLSec  int      `json:"default_ttl_sec"`

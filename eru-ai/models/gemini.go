@@ -321,11 +321,10 @@ func (geminiModel *GeminiModel) makeGeminiChatToolRequest(ctx context.Context, c
 	for _, tool := range tools {
 		toolNameI, _ := tool.GetAttribute(ctx, "tool_name")
 		toolDescriptionI, _ := tool.GetAttribute(ctx, "description")
-		toolParametersI, _ := tool.GetAttribute(ctx, "parameters")
 		toolSystemPromptI, _ := tool.GetAttribute(ctx, "system_prompt")
 		toolName := toolNameI.(string)
 		toolDescription := toolDescriptionI.(string)
-		toolParameters := toolParametersI.(eru_models.JSONSchema)
+		toolParameters := tool.GetParameters()
 
 		toolPrompt += fmt.Sprint("Tool prompt for Tool ", toolName, " is as follows :\n", toolSystemPromptI.(string))
 

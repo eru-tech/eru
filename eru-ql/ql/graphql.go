@@ -200,6 +200,50 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					}
 				}
 
+				if len(gqd.GroupBy.GroupBy) > 0 {
+					groupQuery, gErr := gqd.wrapGroupBy(ctx, sqlObj.WithQuery)
+					if gErr != nil {
+						return nil, nil, gErr
+					}
+					queryObj.Query = groupQuery
+					queryObj.Cols = strings.Join(gqd.GroupBy.GroupBy, " , ")
+					mainAliasNames = append(mainAliasNames, sqlObj.MainAliasName)
+					if gqd.ExecuteFlag {
+						ctxw := ds.WithUseWriter(ctx, false)
+						if gqd.OutputType == eru_writes.OutputTypeCsv || gqd.OutputType == eru_writes.OutputTypeExcel {
+							result, err = graphQLs[i].ExecuteQueryForCsv(ctxw, groupQuery, datasource, sqlObj.MainAliasName, graphQLs[i])
+							if err != nil {
+								err = logs.Err(ctx, err, "")
+							}
+							queryObj.DataTypes = graphQLs[i].GetResultDataTypes(ctx)
+						} else {
+							loader := func(ctx context.Context) (map[string]interface{}, []string, error) {
+								r, lerr := graphQLs[i].ExecutePreparedQuery(ctx, groupQuery, datasource)
+								if lerr != nil {
+									return nil, nil, lerr
+								}
+								tbls := graphQLs[i].ExtractTableNames(ctx, groupQuery)
+								names := make([]string, 0, len(tbls.Tables))
+								for _, t := range tbls.Tables {
+									if t.TableName != "" {
+										names = append(names, t.TableName)
+									}
+								}
+								return r, names, nil
+							}
+							result, err = qlcache.ServeOrLoad(ctxw, datasource, gqd.TenantId, groupQuery, graphQLs[i].DefaultSchemaName(), loader, qlcache.Options{})
+						}
+						if err != nil {
+							err = logs.Err(ctx, err, "")
+						}
+						if result != nil {
+							res = append(res, result)
+						}
+					}
+					queryObjs = append(queryObjs, queryObj)
+					continue
+				}
+
 				err = sqlObj.ProcessGraphQL(ctx, v, datasource, graphQLs[i], gqd.FinalVariables, s, gqd.ExecuteFlag) //TODO to handle if err recd.
 				//TODO : test this error handling
 				if err != nil {

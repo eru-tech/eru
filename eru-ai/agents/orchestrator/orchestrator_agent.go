@@ -27,13 +27,21 @@ const orchestratorClarificationGuidance = `
 HUMAN-IN-THE-LOOP CLARIFICATION:
 If the task is too ambiguous or missing information you need to build a correct orchestration plan, call the ask_user tool instead of outputting a FuncGroup. Ask the fewest questions needed, give 2-4 concrete options per question, and allow free text when options may not be exhaustive. Calling ask_user ends your turn; the user's answers arrive as a follow-up message and you then produce the plan.`
 
+type AvailableTool struct {
+	ToolName string   `json:"tool_name"`
+	Actions  []string `json:"actions"`
+}
+
 type OrchestratorAgent struct {
 	reasoning_agents.ReasoningAgent
-	AllowedAgents      []string `json:"available_agents"`
-	DelegationStrategy string   `json:"delegation_strategy"`
-	MaxReplans         int      `json:"max_replans"`
-	SynthesisPrompt    string   `json:"synthesis_prompt"`
+	AllowedAgents      []string        `json:"available_agents"`
+	AvailableTools     []AvailableTool `json:"available_tools"`
+	ClientOutputAgents []string        `json:"client_output_agents"`
+	DelegationStrategy string          `json:"delegation_strategy"`
+	MaxReplans         int             `json:"max_replans"`
+	SynthesisPrompt    string          `json:"synthesis_prompt"`
 	discoveredAgents   []agents.DiscoveredAgent
+	discoveredTools    []agents.DiscoveredTool
 }
 
 func (oa *OrchestratorAgent) AllowedAgentNames() []string {
@@ -42,6 +50,18 @@ func (oa *OrchestratorAgent) AllowedAgentNames() []string {
 
 func (oa *OrchestratorAgent) SetDiscoveredAgents(discovered []agents.DiscoveredAgent) {
 	oa.discoveredAgents = discovered
+}
+
+func (oa *OrchestratorAgent) AllowedToolActions() map[string][]string {
+	allowed := make(map[string][]string)
+	for _, t := range oa.AvailableTools {
+		allowed[t.ToolName] = t.Actions
+	}
+	return allowed
+}
+
+func (oa *OrchestratorAgent) SetDiscoveredTools(discovered []agents.DiscoveredTool) {
+	oa.discoveredTools = discovered
 }
 
 func (oa *OrchestratorAgent) GetSpec() agents.AgentI {
@@ -53,16 +73,20 @@ func (oa *OrchestratorAgent) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	type orchestratorFields struct {
-		AllowedAgents      []string `json:"available_agents"`
-		DelegationStrategy string   `json:"delegation_strategy"`
-		MaxReplans         int      `json:"max_replans"`
-		SynthesisPrompt    string   `json:"synthesis_prompt"`
+		AllowedAgents      []string        `json:"available_agents"`
+		AvailableTools     []AvailableTool `json:"available_tools"`
+		ClientOutputAgents []string        `json:"client_output_agents"`
+		DelegationStrategy string          `json:"delegation_strategy"`
+		MaxReplans         int             `json:"max_replans"`
+		SynthesisPrompt    string          `json:"synthesis_prompt"`
 	}
 	var of orchestratorFields
 	if err := json.Unmarshal(b, &of); err != nil {
 		return err
 	}
 	oa.AllowedAgents = of.AllowedAgents
+	oa.AvailableTools = of.AvailableTools
+	oa.ClientOutputAgents = of.ClientOutputAgents
 	oa.DelegationStrategy = of.DelegationStrategy
 	oa.MaxReplans = of.MaxReplans
 	oa.SynthesisPrompt = of.SynthesisPrompt
@@ -77,16 +101,20 @@ func (oa *OrchestratorAgent) MakeFromJson(ctx context.Context, rj *json.RawMessa
 	}
 
 	type orchestratorFields struct {
-		AllowedAgents      []string `json:"available_agents"`
-		DelegationStrategy string   `json:"delegation_strategy"`
-		MaxReplans         int      `json:"max_replans"`
-		SynthesisPrompt    string   `json:"synthesis_prompt"`
+		AllowedAgents      []string        `json:"available_agents"`
+		AvailableTools     []AvailableTool `json:"available_tools"`
+		ClientOutputAgents []string        `json:"client_output_agents"`
+		DelegationStrategy string          `json:"delegation_strategy"`
+		MaxReplans         int             `json:"max_replans"`
+		SynthesisPrompt    string          `json:"synthesis_prompt"`
 	}
 	var of orchestratorFields
 	if err := json.Unmarshal(*rj, &of); err != nil {
 		return err
 	}
 	oa.AllowedAgents = of.AllowedAgents
+	oa.AvailableTools = of.AvailableTools
+	oa.ClientOutputAgents = of.ClientOutputAgents
 	oa.DelegationStrategy = of.DelegationStrategy
 	oa.MaxReplans = of.MaxReplans
 	oa.SynthesisPrompt = of.SynthesisPrompt
@@ -157,6 +185,10 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 
 	assignStableConversationIds(decompositionResult, conversationId)
 
+	if streamCb != nil {
+		streamCb(agents.StreamEvent{Event: agents.StreamEventPlan, Data: decompositionResult})
+	}
+
 	var executionResult map[string]interface{}
 	var funcVarsMap map[string]functions.FuncTemplateVars
 	var execErr error
@@ -202,13 +234,16 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		return agents.AgentMessage{}, err
 	}
 
+	agentActions := []agents.AgentOutputAction{{
+		ActionType: agents.ActionTypeAnswer,
+		ActionName: oa.AgentName,
+		Action:     synthesisResult,
+	}}
+	agentActions = append(agentActions, oa.collectClientOutputs(ctx, funcVarsMap, executionResult)...)
+
 	agentOutput := agents.AgentMessage{
-		Role: "assistant",
-		Actions: []agents.AgentOutputAction{{
-			ActionType: agents.ActionTypeAnswer,
-			ActionName: oa.AgentName,
-			Action:     synthesisResult,
-		}},
+		Role:             "assistant",
+		Actions:          agentActions,
 		Traces:           allTraces,
 		MessageId:        agentMessage.MessageId,
 		MessageTimestamp: time.Now(),
@@ -329,13 +364,16 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 		return agents.AgentMessage{}, err
 	}
 
+	resumeActions := []agents.AgentOutputAction{{
+		ActionType: agents.ActionTypeAnswer,
+		ActionName: oa.AgentName,
+		Action:     synthesisResult,
+	}}
+	resumeActions = append(resumeActions, oa.collectClientOutputs(ctx, nil, executionResult)...)
+
 	agentOutput := agents.AgentMessage{
-		Role: "assistant",
-		Actions: []agents.AgentOutputAction{{
-			ActionType: agents.ActionTypeAnswer,
-			ActionName: oa.AgentName,
-			Action:     synthesisResult,
-		}},
+		Role:             "assistant",
+		Actions:          resumeActions,
 		Traces:           allTraces,
 		MessageId:        agentMessage.MessageId,
 		MessageTimestamp: time.Now(),
@@ -379,7 +417,18 @@ func (oa *OrchestratorAgent) decompose(ctx context.Context, agentMessage agents.
 		return nil, fmt.Errorf("tool %s not expected during decomposition", toolName)
 	}
 
-	response, traces, err := oa.Model.RunToolLoop(ctx, chatRequest, toolsMap, sp, oa.MaxIterations, oa.ThinkingBudget, toolExecutor)
+	var response models.Message
+	var traces []models.StepTrace
+	var err error
+	streamCb := agents.GetStreamCallback(ctx)
+	if streamingModel, ok := oa.Model.(models.StreamingModelI); ok && streamCb != nil {
+		modelCb := func(me models.ModelStreamEvent) {
+			streamCb(agents.StreamEvent{Event: string(me.Type), Data: me, Iteration: me.Iteration})
+		}
+		response, traces, err = streamingModel.RunToolLoopStreaming(ctx, chatRequest, toolsMap, sp, oa.MaxIterations, oa.ThinkingBudget, toolExecutor, modelCb)
+	} else {
+		response, traces, err = oa.Model.RunToolLoop(ctx, chatRequest, toolsMap, sp, oa.MaxIterations, oa.ThinkingBudget, toolExecutor)
+	}
 	if err != nil {
 		return nil, nil, traces, err
 	}
@@ -509,11 +558,12 @@ func (oa *OrchestratorAgent) synthesize(ctx context.Context, agentMessage agents
 	}
 
 	synthesisContent := fmt.Sprintf(
-		"Original request: %s\n\nSub-agent results:\n%s%s\n\n%s",
+		"Original request: %s\n\nSub-agent results:\n%s%s\n\n%s\n\n%s",
 		agentMessage.Content,
 		string(resultJSON),
 		bbSection,
 		synthesisPrompt,
+		"IMPORTANT: Respond with human-readable prose only. Do NOT embed raw JSON, code fences, or structured/widget payloads in your response — those are returned to the client separately as distinct actions. Summarize the result in words.",
 	)
 
 	chatRequest := models.ChatRequest{
@@ -600,9 +650,10 @@ func (oa *OrchestratorAgent) GetOutputSchema(ctx context.Context) eru_models.JSO
 
 func (oa *OrchestratorAgent) GetSystemPrompt() string {
 	agentDescriptions := oa.buildAgentDescriptions()
+	toolDescriptions := oa.buildToolDescriptions()
 
 	systemPrompt := `You are an expert orchestration engineer for the Eru platform.
-Your job is to decompose complex user tasks into a FuncGroup that coordinates multiple sub-agents.
+Your job is to decompose complex user tasks into a FuncGroup that coordinates sub-agents and tools.
 Output ONLY the FuncGroup JSON via the structured_output tool. No markdown, no explanations.
 
 ============================================================
@@ -612,7 +663,22 @@ AVAILABLE AGENTS
 ` + agentDescriptions + `
 
 ============================================================
-RULE #1 — STEP KEY = AGENT NAME (most common mistake)
+AVAILABLE TOOLS
+============================================================
+
+` + toolDescriptions + `
+
+============================================================
+SELECTION — USE ONLY WHAT THE TASK NEEDS
+============================================================
+
+The lists above are what you MAY use, not what you MUST use. Do NOT use every
+available agent/tool. Choose only the minimal set of agents and tools that best
+accomplish the user's request — often that is a single agent or a short chain.
+Omit anything not required.
+
+============================================================
+RULE #1 — STEP KEY = AGENT NAME / TOOL+ACTION NAME (most common mistake)
 ============================================================
 
 Every func_step key MUST exactly equal the agent_name value of that step.
@@ -641,14 +707,22 @@ FUNCGROUP STRUCTURE
 }
 
 ============================================================
-STEP TYPE — AGENT ONLY
+STEP TYPE — AGENT or TOOL
 ============================================================
 
-You may ONLY use agent steps. Each step requires:
-  "agent_name": "<name from available agents above>"
-  "tenant_id": "<tenant_id from available agents above>"
+A step is EITHER an agent step OR a tool step. Use ONLY agents listed in
+AVAILABLE AGENTS and tools listed in AVAILABLE TOOLS.
 
-Do NOT use query_name, function_name, tool_name, or api steps.
+Agent step:
+  "agent_name": "<name from available agents>"
+  "tenant_id":  "<tenant_id from available agents>"
+
+Tool step:
+  "tool_name":   "<tool from available tools>"
+  "tool_action": "<one of that tool's allowed actions>"
+  "tenant_id":   "<tenant_id from available tools>"
+
+Do NOT use query_name, function_name, or api steps.
 
 ============================================================
 RULE #2 — AGENT INPUT FORMAT (transform_request is MANDATORY)
@@ -661,24 +735,60 @@ ANY other/unknown top-level key is REJECTED by the agent (unknown field error),
 and a bare string or number is REJECTED (it must be a JSON object).
 
 Therefore EVERY step MUST set "transform_request" to a Go template that renders
-a JSON object of the form {"content":"..."}. Build it with the dict function so
-the value is correctly JSON-encoded and quoted:
+a JSON object of the form {"content":"..."}. Build it with the dict function and
+ALWAYS pipe the result through stringify so it renders as a JSON string (a bare
+dict renders as Go's map[...] and is NOT valid JSON):
 
-  First step (from the user's message):
-    "transform_request": "{{dict \"content\" .Vars.Body.content}}"
+AGENT OUTPUT SHAPE — how to read a previous step's result:
+Every agent RESPONDS with this envelope:
+  {"actions":[{"action_name":"<that_agent_name>","action":{ ...output fields... }}]}
+The useful values live in actions[0].action.<field>, where <field> is one of the
+"Output fields" listed for that agent in the AVAILABLE AGENTS section above. So to
+read a prior step's output, use:
+  (index .ResVars.<prev_step>.Body.actions 0).action.<field>
+NEVER use .ResVars.<prev_step>.Body.content for an agent step — the text is NOT there.
 
-  Chained step (feed the previous agent's answer as the next input):
-    "transform_request": "{{dict \"content\" .ResVars.<prev_step>.Body.content}}"
+  First step (from the user's message — .Vars.Body IS already {"content":...}):
+    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
+
+  Chained step (feed prior agent's output field as the next input). Example: a
+  generate_sql agent whose Output fields are "sql":
+    "transform_request": "{{stringify (dict \"content\" (index .ResVars.generate_sql.Body.actions 0).action.sql)}}"
+
+RULE: any template that builds an object/dict (in transform_request OR
+transform_response) MUST end with " | stringify" (or wrap in stringify) so the
+final output is a JSON string. A bare dict renders as Go's map[...] and is invalid.
 
 WRONG (these all break the agent):
-  "{{.Vars.Body.content}}"            → renders a bare string, not an object
-  "{{json .Vars.Body}}"              → may carry unknown fields → rejected
-  "{{json .ResVars.prev.Body}}"      → passes the whole AgentMessage → rejected
+  "{{dict \"content\" .Vars.Body.content}}"                  → renders map[...], invalid JSON (not stringified)
+  "{{.Vars.Body.content}}"                                     → bare unquoted string, not an object
+  "{{stringify (dict \"content\" .ResVars.generate_sql.Body.content)}}" → wrong path; agent output is in actions[0].action.<field>, not .content
+  passing the whole .ResVars.prev.Body                         → carries unknown AgentMessage fields → rejected
 
-The sub-agent's answer text is in .ResVars.<step>.Body.content. To combine
-multiple agents' outputs into one input, concatenate into a single content
-string, e.g.:
-  "{{dict \"content\" (printf \"sql: %s\\nrows: %s\" .ResVars.generate_sql.Body.content .ResVars.execute_sql.Body.content)}}"
+To combine multiple agents' outputs into one input, concatenate the fields into a
+single content string, e.g.:
+  "{{stringify (dict \"content\" (printf \"sql: %s\\nrows: %s\" (index .ResVars.generate_sql.Body.actions 0).action.sql (index .ResVars.execute_sql.Body.actions 0).action.result))}}"
+
+============================================================
+RULE #3 — TOOL STEP INPUT / OUTPUT (different from agents)
+============================================================
+
+A tool step's request body MUST be {"params": { ...action input fields... }} —
+the action's "Input schema" fields go INSIDE a root "params" object (NOT the
+{"content":...} agent envelope, and NOT at the root). Any other root key is
+rejected. Build params with dict, wrap in another dict under "params", stringify.
+Example — an execute_sql action whose Input schema needs {"query","project_id",
+"vars"}, fed from a prior agent's sql output:
+  "transform_request": "{{stringify (dict \"params\" (dict \"query\" (index .ResVars.generate_sql.Body.actions 0).action.sql \"project_id\" \"processo\" \"vars\" (dict)))}}"
+
+Reading a tool's OUTPUT to chain forward:
+  - If the tool shows an "Output schema": read .ResVars.<tool_step>.Body.<field> per that schema.
+  - If the tool's Output is "dynamic": do NOT try to pick fields — pass the whole
+    result as content to a downstream AGENT or to synthesis:
+      "transform_request": "{{stringify (dict \"content\" (stringify .ResVars.<tool_step>.Body))}}"
+
+NOTE: agent output lives in actions[0].action.<field>; tool output lives directly
+in .ResVars.<tool_step>.Body (no actions envelope). Don't mix them up.
 
 ============================================================
 EXECUTION MODEL
@@ -699,12 +809,12 @@ Example — sequential: extract data, then summarize it:
   "extractor": {
     "agent_name": "extractor",
     "tenant_id": "t1",
-    "transform_request": "{{dict \"content\" .Vars.Body.content}}",
+    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}",
     "func_steps": {
       "summarizer": {
         "agent_name": "summarizer",
         "tenant_id": "t1",
-        "transform_request": "{{dict \"content\" .ResVars.extractor.Body.content}}"
+        "transform_request": "{{stringify (dict \"content\" (index .ResVars.extractor.Body.actions 0).action.<extractor_output_field>)}}"
       }
     }
   }
@@ -715,12 +825,12 @@ Example — parallel: two independent agents, then merge:
   "sentiment_analyzer": {
     "agent_name": "sentiment_analyzer",
     "tenant_id": "t1",
-    "transform_request": "{{dict \"content\" .Vars.Body.content}}"
+    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
   },
   "topic_classifier": {
     "agent_name": "topic_classifier",
     "tenant_id": "t1",
-    "transform_request": "{{dict \"content\" .Vars.Body.content}}"
+    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
   }
 }
 
@@ -729,18 +839,18 @@ Example — parallel then sequential merge:
   "sentiment_analyzer": {
     "agent_name": "sentiment_analyzer",
     "tenant_id": "t1",
-    "transform_request": "{{dict \"content\" .Vars.Body.content}}"
+    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
   },
   "topic_classifier": {
     "agent_name": "topic_classifier",
     "tenant_id": "t1",
-    "transform_request": "{{dict \"content\" .Vars.Body.content}}",
+    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}",
     "func_steps": {
       "report_generator": {
         "agent_name": "report_generator",
         "tenant_id": "t1",
         "wait_for": "sentiment_analyzer",
-        "transform_request": "{{dict \"content\" (printf \"sentiment: %s\\ntopics: %s\" .ResVars.sentiment_analyzer.Body.content .ResVars.topic_classifier.Body.content)}}"
+        "transform_request": "{{stringify (dict \"content\" (printf \"sentiment: %s\\ntopics: %s\" (index .ResVars.sentiment_analyzer.Body.actions 0).action.<field> (index .ResVars.topic_classifier.Body.actions 0).action.<field>))}}"
       }
     }
   }
@@ -756,15 +866,19 @@ TEMPLATE VARIABLES
 .Vars.Token             — auth token
 .Vars.LoopVar           — current loop item
 .Vars.LoopVars          — full loop array
-.ResVars.<step_key>.Body — response FROM a completed step
+.ResVars.<step_key>.Body — response FROM a completed step (an agent envelope: {"actions":[{"action_name":...,"action":{...}}]})
 .ReqVars.<step_key>.Body — request sent TO a step
+(index .ResVars.<step_key>.Body.actions 0).action.<field> — a prior agent's output value
 
 Syntax:
-  {{.Vars.Body.content}}                         — the user's input string
-  {{.ResVars.<step>.Body.content}}               — a prior agent's answer string
-  {{dict "content" .Vars.Body.content}}          — wrap into the agent input object
-  {{printf "%s / %s" .X .Y}}                      — combine strings before wrapping
+  {{.Vars.Body.content}}                                   — the user's input string
+  {{(index .ResVars.<step>.Body.actions 0).action.<field>}} — a prior agent's output value
+  {{stringify (dict "content" .Vars.Body.content)}}        — wrap into the agent input object (JSON string)
+  {{printf "%s / %s" .X .Y}}                                — combine strings before wrapping
   {{index .Vars.Body "field-with-dash"}}
+
+stringify (= JSON-encode) is MANDATORY whenever the template builds a dict/object,
+in BOTH transform_request and transform_response. Output must be a JSON string.
 
 Conditions:
   {{if eq .Vars.Body.status "active"}}true{{else}}false{{end}}
@@ -773,9 +887,9 @@ Conditions:
 OPTIONAL STEP FIELDS
 ============================================================
 
-Transforms:
-  "transform_request":  "<Go template for request body>"
-  "transform_response": "<Go template for response body>"
+Transforms (any object output MUST end with " | stringify"):
+  "transform_request":  "<Go template → JSON string, e.g. {{dict ... | stringify}}>"
+  "transform_response": "<Go template → JSON string, e.g. {{dict ... | stringify}}>"
 
 Conditional:
   "condition": "<Go template → 'true' or 'false'>"
@@ -793,14 +907,16 @@ Synchronization:
 CHECKLIST (verify before outputting)
 ============================================================
 
-[ ] Every func_step key exactly matches agent_name (Rule #1)
-[ ] EVERY step sets transform_request rendering {"content":"..."} via dict (Rule #2)
+[ ] Every func_step key exactly matches agent_name, or tool_name_action for tool steps (Rule #1)
+[ ] Agent steps: transform_request renders {"content":"..."} (Rule #2)
+[ ] Tool steps: transform_request renders {"params": {<Input schema fields>}} (Rule #3)
+[ ] EVERY dict/object in transform_request AND transform_response ends with " | stringify"
 [ ] No step passes a bare string or the raw .Vars.Body / whole AgentMessage
 [ ] func_category_name and func_group_name are set (snake_case)
-[ ] Each step uses ONLY agent_name + tenant_id (no query/function/tool/api)
+[ ] Each step uses ONLY (agent_name) OR (tool_name+tool_action) + tenant_id (no query/function/api)
 [ ] Sequential steps are NESTED, parallel steps are SIBLINGS
-[ ] transform_request passes data correctly between agents
-[ ] Only agents from the available agents list are used
+[ ] transform_request passes data correctly between steps
+[ ] Only agents/tools from the AVAILABLE lists are used
 [ ] wait_for only references sibling step keys, not nested ones
 
 --- GUIDELINES ---
@@ -823,6 +939,110 @@ func (oa *OrchestratorAgent) buildAgentDescriptions() string {
 		sb.WriteString(fmt.Sprintf("  Type: %s\n", ad.AgentType))
 		sb.WriteString(fmt.Sprintf("  Tenant: %s\n", ad.TenantId))
 		sb.WriteString(fmt.Sprintf("  Description: %s\n", ad.Description))
+		if fields := outputFieldNames(ad.OutputSchema); len(fields) > 0 {
+			sb.WriteString(fmt.Sprintf("  Output fields (in actions[0].action): %s\n", strings.Join(fields, ", ")))
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+func outputFieldNames(schema eru_models.JSONSchema) []string {
+	var fields []string
+	for k := range schema.Properties {
+		fields = append(fields, k)
+	}
+	return fields
+}
+
+// collectClientOutputs returns the structured outputs to forward to the client
+// as separate actions. If ClientOutputAgents is set, it forwards each named
+// step's output; otherwise it falls back to the terminal step's output.
+func (oa *OrchestratorAgent) collectClientOutputs(ctx context.Context, funcVarsMap map[string]functions.FuncTemplateVars, executionResult map[string]interface{}) []agents.AgentOutputAction {
+	var out []agents.AgentOutputAction
+	if len(oa.ClientOutputAgents) > 0 {
+		seen := make(map[string]bool)
+		for _, name := range oa.ClientOutputAgents {
+			if seen[name] {
+				continue
+			}
+			body, found := stepOutputBody(funcVarsMap, name)
+			if !found {
+				logs.WithContext(ctx).Info(fmt.Sprint("collectClientOutputs - no output found for step ", name))
+				continue
+			}
+			out = append(out, agents.AgentOutputAction{
+				ActionType: agents.ActionTypeData,
+				ActionName: name,
+				Action:     extractStructuredOutput(body),
+			})
+			seen[name] = true
+		}
+		return out
+	}
+	if len(executionResult) > 0 {
+		out = append(out, agents.AgentOutputAction{
+			ActionType: agents.ActionTypeData,
+			ActionName: oa.AgentName,
+			Action:     extractStructuredOutput(executionResult),
+		})
+	}
+	return out
+}
+
+// stepOutputBody finds a completed step's response body in the per-step vars.
+func stepOutputBody(funcVarsMap map[string]functions.FuncTemplateVars, stepName string) (interface{}, bool) {
+	for _, fv := range funcVarsMap {
+		if fv.ResVars == nil {
+			continue
+		}
+		if tv, ok := fv.ResVars[stepName]; ok && tv != nil && tv.Body != nil {
+			return tv.Body, true
+		}
+	}
+	return nil, false
+}
+
+// extractStructuredOutput unwraps an agent envelope ({"actions":[{"action":{...}}]})
+// to the inner action object; for tool results (no actions envelope) it returns the
+// body as-is.
+func extractStructuredOutput(body interface{}) map[string]interface{} {
+	m, ok := body.(map[string]interface{})
+	if !ok {
+		return map[string]interface{}{"output": body}
+	}
+	if actionsI, ok := m["actions"]; ok {
+		if actions, ok := actionsI.([]interface{}); ok && len(actions) > 0 {
+			if a0, ok := actions[0].(map[string]interface{}); ok {
+				if act, ok := a0["action"].(map[string]interface{}); ok {
+					return act
+				}
+			}
+		}
+	}
+	return m
+}
+
+func (oa *OrchestratorAgent) buildToolDescriptions() string {
+	if len(oa.discoveredTools) == 0 {
+		return "No tools configured."
+	}
+
+	var sb strings.Builder
+	for _, dt := range oa.discoveredTools {
+		sb.WriteString(fmt.Sprintf("Tool: %s  Action: %s\n", dt.ToolName, dt.ActionName))
+		sb.WriteString(fmt.Sprintf("  Tenant: %s\n", dt.TenantId))
+		sb.WriteString(fmt.Sprintf("  Description: %s\n", dt.Description))
+		if inb, err := json.Marshal(dt.InputSchema); err == nil {
+			sb.WriteString(fmt.Sprintf("  Input schema (transform_request must produce this): %s\n", string(inb)))
+		}
+		if dt.OutputSchema.Type != "" {
+			if outb, err := json.Marshal(dt.OutputSchema); err == nil {
+				sb.WriteString(fmt.Sprintf("  Output schema (result at .ResVars.<step>.Body): %s\n", string(outb)))
+			}
+		} else {
+			sb.WriteString("  Output: dynamic — to chain, pass {{stringify .ResVars.<step>.Body}} to a downstream agent or synthesis\n")
+		}
 		sb.WriteString("\n")
 	}
 	return sb.String()
