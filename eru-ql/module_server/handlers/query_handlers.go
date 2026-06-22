@@ -427,38 +427,38 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			}
 
 			var wrapConfig module_model.QueryWrapConfig
-			if filterData, fOk := postBody["filter"]; fOk {
+			if filterData, fOk := postBody["qfilter"]; fOk {
 				if fm, fmOk := filterData.(map[string]interface{}); fmOk {
 					wrapConfig.Filter = fm
 				}
-				delete(postBody, "filter")
+				delete(postBody, "qfilter")
 			}
-			if sortData, sOk := postBody["sort"]; sOk {
+			if sortData, sOk := postBody["qsort"]; sOk {
 				sortBytes, mErr := json.Marshal(sortData)
 				if mErr == nil {
 					if uErr := json.Unmarshal(sortBytes, &wrapConfig.Sort); uErr != nil {
 						logs.WithContext(r.Context()).Error(uErr.Error())
 					}
 				}
-				delete(postBody, "sort")
+				delete(postBody, "qsort")
 			}
-			if limitData, lOk := postBody["limit"]; lOk {
+			if limitData, lOk := postBody["qlimit"]; lOk {
 				switch n := limitData.(type) {
 				case float64:
 					wrapConfig.Limit = int(n)
 				case int:
 					wrapConfig.Limit = n
 				}
-				delete(postBody, "limit")
+				delete(postBody, "qlimit")
 			}
-			if skipData, skOk := postBody["skip"]; skOk {
+			if skipData, skOk := postBody["qskip"]; skOk {
 				switch n := skipData.(type) {
 				case float64:
 					wrapConfig.Skip = int(n)
 				case int:
 					wrapConfig.Skip = n
 				}
-				delete(postBody, "skip")
+				delete(postBody, "qskip")
 			}
 			qlInterface.SetWrapConfig(wrapConfig)
 

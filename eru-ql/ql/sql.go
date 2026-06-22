@@ -159,13 +159,15 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 	queryObj.Cols = sqd.Cols
 	if sqd.ExecuteFlag {
 		sqd.Query = sqd.secureSQL(ctx, sqd.Query, projectId, datasource, s, sr)
-		sqd.Query, err = sqd.wrapGroupBy(ctx, sqd.Query)
-		if err != nil {
-			return nil, nil, err
-		}
-		sqd.Query, err = sqd.wrapQuery(ctx, sqd.Query, sr)
-		if err != nil {
-			return nil, nil, err
+		if !qlcache.IsDML(sqd.Query) {
+			sqd.Query, err = sqd.wrapGroupBy(ctx, sqd.Query)
+			if err != nil {
+				return nil, nil, err
+			}
+			sqd.Query, err = sqd.wrapQuery(ctx, sqd.Query, sr)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 		logs.WithContext(ctx).Info(sqd.Query)
 		ctx = ds.WithUseWriter(ctx, sqd.UseWriter || qlcache.IsDML(sqd.Query))
@@ -223,13 +225,15 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 		}
 	} else if sqd.OutputType == "ast" {
 		secureQuery := sqd.secureSQL(ctx, sqd.Query, projectId, datasource, s, sr)
-		secureQuery, err = sqd.wrapGroupBy(ctx, secureQuery)
-		if err != nil {
-			return nil, nil, err
-		}
-		secureQuery, err = sqd.wrapQuery(ctx, secureQuery, sr)
-		if err != nil {
-			return nil, nil, err
+		if !qlcache.IsDML(secureQuery) {
+			secureQuery, err = sqd.wrapGroupBy(ctx, secureQuery)
+			if err != nil {
+				return nil, nil, err
+			}
+			secureQuery, err = sqd.wrapQuery(ctx, secureQuery, sr)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 		res = append(res, map[string]interface{}{"sql": secureQuery})
 	}
