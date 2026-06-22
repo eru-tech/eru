@@ -205,6 +205,10 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					if gErr != nil {
 						return nil, nil, gErr
 					}
+					groupQuery, gErr = gqd.wrapQuery(ctx, groupQuery, graphQLs[i])
+					if gErr != nil {
+						return nil, nil, gErr
+					}
 					queryObj.Query = groupQuery
 					queryObj.Cols = strings.Join(gqd.GroupBy.GroupBy, " , ")
 					mainAliasNames = append(mainAliasNames, sqlObj.MainAliasName)
@@ -261,6 +265,11 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					qrm.QueryLevel = sqlObj.queryLevel
 					qrm.QuerySubLevel = sqlObj.querySubLevel
 					qrm.SQLQuery = sqlObj.DBQuery
+					qrm.SQLQuery, err = gqd.wrapQuery(ctx, qrm.SQLQuery, graphQLs[i])
+					if err != nil {
+						return nil, nil, err
+					}
+					queryObj.Query = qrm.SQLQuery
 					qrm.UseWriter = sqlObj.UseWriter
 					ctx := ds.WithUseWriter(ctx, sqlObj.UseWriter)
 

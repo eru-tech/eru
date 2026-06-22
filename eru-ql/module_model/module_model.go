@@ -95,9 +95,9 @@ type Project struct {
 }
 
 type TenantConfig struct {
-	TenantId    string                  `json:"tenant_id" eru:"required"`
-	DataSources map[string]*DataSource  `json:"data_sources"` //DB alias is the key
-	MyQueries   map[string]*MyQuery     `json:"my_queries"`   //queryName is key
+	TenantId    string                 `json:"tenant_id" eru:"required"`
+	DataSources map[string]*DataSource `json:"data_sources"` //DB alias is the key
+	MyQueries   map[string]*MyQuery    `json:"my_queries"`   //queryName is key
 }
 type ProjectSettings struct {
 	ClaimsKey string `json:"claims_key" eru:"required"`
@@ -119,21 +119,21 @@ type ProjectSettings struct {
 	}
 */
 type MyQuery struct {
-	QueryName    string                                 `json:"query_name"`
-	Query        string                                 `json:"query"`
-	Vars         map[string]interface{}                 `json:"vars"`
-	QueryType    string                                 `json:"query_type"`
-	DBAlias      string                                 `json:"db_alias"`
-	ReadWrite    string                                 `json:"read_write"`
-	Cols         string                                 `json:"cols"`
-	SecurityRule security_rule.SecurityRule             `json:"security_rule"`
-	ExcelStyles  map[string]eru_writes.CellFormatter    `json:"excel_styles"`
-	Columns      map[string]eru_writes.ColumnarSettings `json:"columns"`
-	PivotConfig  map[string]eru_writes.PivotTableConfig `json:"pivot_config"`
-	ExcludeColumns []string                             `json:"exclude_columns"`
-	CacheTTL     int                                    `json:"cache_ttl,omitempty"`
-	CacheSkip    bool                                   `json:"cache_skip,omitempty"`
-	CacheLock    bool                                   `json:"cache_lock,omitempty"`
+	QueryName      string                                 `json:"query_name"`
+	Query          string                                 `json:"query"`
+	Vars           map[string]interface{}                 `json:"vars"`
+	QueryType      string                                 `json:"query_type"`
+	DBAlias        string                                 `json:"db_alias"`
+	ReadWrite      string                                 `json:"read_write"`
+	Cols           string                                 `json:"cols"`
+	SecurityRule   security_rule.SecurityRule             `json:"security_rule"`
+	ExcelStyles    map[string]eru_writes.CellFormatter    `json:"excel_styles"`
+	Columns        map[string]eru_writes.ColumnarSettings `json:"columns"`
+	PivotConfig    map[string]eru_writes.PivotTableConfig `json:"pivot_config"`
+	ExcludeColumns []string                               `json:"exclude_columns"`
+	CacheTTL       int                                    `json:"cache_ttl,omitempty"`
+	CacheSkip      bool                                   `json:"cache_skip,omitempty"`
+	CacheLock      bool                                   `json:"cache_lock,omitempty"`
 }
 
 type AggregationConfig struct {
@@ -143,8 +143,16 @@ type AggregationConfig struct {
 }
 
 type GroupByConfig struct {
+	Active       bool                `json:"-"`
 	GroupBy      []string            `json:"group_by"`
 	Aggregations []AggregationConfig `json:"aggregations"`
+}
+
+type QueryWrapConfig struct {
+	Filter map[string]interface{} `json:"filter"`
+	Sort   []string               `json:"sort"`
+	Limit  int                    `json:"limit"`
+	Skip   int                    `json:"skip"`
 }
 
 type QueryCacheConfig struct {

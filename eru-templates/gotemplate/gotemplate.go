@@ -937,6 +937,10 @@ func makeParentFilter(ctx context.Context, inPutfilterStr string, jsonKey string
 	return makeFilterFromMap(ctx, filter, jsonKey, parentPrefix)
 }
 
+func MakeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonKey string, parentPrefix string) (filterStr string, err error) {
+	return makeFilterFromMap(ctx, filter, jsonKey, parentPrefix)
+}
+
 func makeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonKey string, parentPrefix string) (filterStr string, err error) {
 	var filterStrArray []string
 	tempStr := ""

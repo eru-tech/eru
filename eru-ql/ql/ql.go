@@ -19,19 +19,20 @@ import (
 )
 
 type QLData struct {
-	Query          string                     `json:"query"`
-	QueryName      string                     `json:"-"`
-	TenantId       string                     `json:"-"`
-	Variables      map[string]interface{}     `json:"variables"`
-	FinalVariables map[string]interface{}     `json:"-"`
-	ExecuteFlag    bool                       `json:"-"`
-	SecurityRule   security_rule.SecurityRule `json:"security_rule"`
-	IsPublic       bool                       `json:"is_public"`
-	OutputType     string                     `json:"output_type"`
-	PivotConfig    QLPivotConfig              `json:"pivot_config,omitempty"`
-	Formatter      eru_writes.CellFormatter   `json:"formatter,omitempty"`
-	UseWriter      bool                       `json:"use_writer,omitempty"`
-	GroupBy        module_model.GroupByConfig `json:"-"`
+	Query          string                       `json:"query"`
+	QueryName      string                       `json:"-"`
+	TenantId       string                       `json:"-"`
+	Variables      map[string]interface{}       `json:"variables"`
+	FinalVariables map[string]interface{}       `json:"-"`
+	ExecuteFlag    bool                         `json:"-"`
+	SecurityRule   security_rule.SecurityRule   `json:"security_rule"`
+	IsPublic       bool                         `json:"is_public"`
+	OutputType     string                       `json:"output_type"`
+	PivotConfig    QLPivotConfig                `json:"pivot_config,omitempty"`
+	Formatter      eru_writes.CellFormatter     `json:"formatter,omitempty"`
+	UseWriter      bool                         `json:"use_writer,omitempty"`
+	GroupBy        module_model.GroupByConfig   `json:"-"`
+	WrapConfig     module_model.QueryWrapConfig `json:"-"`
 }
 
 type QLPivotConfig struct {
@@ -56,6 +57,7 @@ type QL interface {
 	SetQLData(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string)
 	SetTenantId(tenantId string)
 	SetGroupBy(gb module_model.GroupByConfig)
+	SetWrapConfig(w module_model.QueryWrapConfig)
 	ProcessTransformRule(ctx context.Context, tr module_model.TransformRule, docs interface{}) (outputObj map[string]interface{}, err error)
 }
 
@@ -65,6 +67,10 @@ func (qld *QLData) SetTenantId(tenantId string) {
 
 func (qld *QLData) SetGroupBy(gb module_model.GroupByConfig) {
 	qld.GroupBy = gb
+}
+
+func (qld *QLData) SetWrapConfig(w module_model.QueryWrapConfig) {
+	qld.WrapConfig = w
 }
 
 var groupByIdentifierRegex = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$`)
@@ -89,7 +95,7 @@ func validateGroupByAlias(ctx context.Context, alias string) (err error) {
 
 func (qld *QLData) wrapGroupBy(ctx context.Context, query string) (wrappedQuery string, err error) {
 	logs.WithContext(ctx).Debug("wrapGroupBy - Start")
-	if len(qld.GroupBy.GroupBy) == 0 {
+	if !qld.GroupBy.Active {
 		return query, nil
 	}
 	for _, g := range qld.GroupBy.GroupBy {
@@ -125,7 +131,51 @@ func (qld *QLData) wrapGroupBy(ctx context.Context, query string) (wrappedQuery 
 		}
 		selectParts = append(selectParts, fmt.Sprint(fn, "(", field, ") \"", alias, "\""))
 	}
-	wrappedQuery = fmt.Sprint("select ", strings.Join(selectParts, " , "), " from (", query, ") eru_grp group by ", strings.Join(qld.GroupBy.GroupBy, " , "))
+	groupByClause := ""
+	if len(qld.GroupBy.GroupBy) > 0 {
+		groupByClause = fmt.Sprint(" group by ", strings.Join(qld.GroupBy.GroupBy, " , "))
+	}
+	wrappedQuery = fmt.Sprint("select ", strings.Join(selectParts, " , "), " from (", query, ") eru_grp", groupByClause)
+	return wrappedQuery, nil
+}
+
+func (qld *QLData) wrapQuery(ctx context.Context, query string, sr ds.SqlMakerI) (wrappedQuery string, err error) {
+	logs.WithContext(ctx).Debug("wrapQuery - Start")
+	w := qld.WrapConfig
+	if len(w.Filter) == 0 && len(w.Sort) == 0 && w.Limit == 0 && w.Skip == 0 {
+		return query, nil
+	}
+	whereClause := ""
+	if len(w.Filter) > 0 {
+		fStr, fErr := gotemplate.MakeFilterFromMap(ctx, w.Filter, "", "")
+		if fErr != nil {
+			return "", fErr
+		}
+		if fStr != "" {
+			whereClause = fmt.Sprint(" where ", fStr)
+		}
+	}
+	orderClause := ""
+	if len(w.Sort) > 0 {
+		var sorts []string
+		for _, s := range w.Sort {
+			dir := ""
+			col := s
+			if strings.HasPrefix(col, "-") {
+				dir = " desc"
+				col = col[1:]
+			}
+			if err = validateGroupByIdentifier(ctx, col); err != nil {
+				return "", err
+			}
+			sorts = append(sorts, fmt.Sprint(col, dir))
+		}
+		orderClause = fmt.Sprint(" order by ", strings.Join(sorts, " , "))
+	}
+	wrappedQuery = fmt.Sprint("select * from (", query, ") eru_wrap", whereClause, orderClause)
+	if w.Limit > 0 || w.Skip > 0 {
+		wrappedQuery = sr.AddLimitSkipClause(ctx, wrappedQuery, w.Limit, w.Skip, 1000)
+	}
 	return wrappedQuery, nil
 }
 

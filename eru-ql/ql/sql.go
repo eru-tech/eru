@@ -163,6 +163,10 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 		if err != nil {
 			return nil, nil, err
 		}
+		sqd.Query, err = sqd.wrapQuery(ctx, sqd.Query, sr)
+		if err != nil {
+			return nil, nil, err
+		}
 		logs.WithContext(ctx).Info(sqd.Query)
 		ctx = ds.WithUseWriter(ctx, sqd.UseWriter || qlcache.IsDML(sqd.Query))
 		if sqd.OutputType == eru_writes.OutputTypeCsv || sqd.OutputType == eru_writes.OutputTypeExcel {
@@ -220,6 +224,10 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 	} else if sqd.OutputType == "ast" {
 		secureQuery := sqd.secureSQL(ctx, sqd.Query, projectId, datasource, s, sr)
 		secureQuery, err = sqd.wrapGroupBy(ctx, secureQuery)
+		if err != nil {
+			return nil, nil, err
+		}
+		secureQuery, err = sqd.wrapQuery(ctx, secureQuery, sr)
 		if err != nil {
 			return nil, nil, err
 		}

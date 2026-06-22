@@ -404,7 +404,7 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 
 			groupMode, _ := r.Context().Value(groupByModeKey).(bool)
 			if groupMode {
-				var groupByConfig module_model.GroupByConfig
+				groupByConfig := module_model.GroupByConfig{Active: true}
 				if gbData, gbOk := postBody["group_by"]; gbOk {
 					gbBytes, mErr := json.Marshal(gbData)
 					if mErr == nil {
@@ -423,13 +423,45 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 					}
 					delete(postBody, "aggregations")
 				}
-				if len(groupByConfig.GroupBy) == 0 {
-					server_handlers.FormatResponse(w, 400)
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "group_by is required"})
-					return
-				}
 				qlInterface.SetGroupBy(groupByConfig)
 			}
+
+			var wrapConfig module_model.QueryWrapConfig
+			if filterData, fOk := postBody["filter"]; fOk {
+				if fm, fmOk := filterData.(map[string]interface{}); fmOk {
+					wrapConfig.Filter = fm
+				}
+				delete(postBody, "filter")
+			}
+			if sortData, sOk := postBody["sort"]; sOk {
+				sortBytes, mErr := json.Marshal(sortData)
+				if mErr == nil {
+					if uErr := json.Unmarshal(sortBytes, &wrapConfig.Sort); uErr != nil {
+						logs.WithContext(r.Context()).Error(uErr.Error())
+					}
+				}
+				delete(postBody, "sort")
+			}
+			if limitData, lOk := postBody["limit"]; lOk {
+				switch n := limitData.(type) {
+				case float64:
+					wrapConfig.Limit = int(n)
+				case int:
+					wrapConfig.Limit = n
+				}
+				delete(postBody, "limit")
+			}
+			if skipData, skOk := postBody["skip"]; skOk {
+				switch n := skipData.(type) {
+				case float64:
+					wrapConfig.Skip = int(n)
+				case int:
+					wrapConfig.Skip = n
+				}
+				delete(postBody, "skip")
+			}
+			qlInterface.SetWrapConfig(wrapConfig)
+
 			qlInterface.SetQLData(r.Context(), myQuery, postBody, true, tokenObj, isPublic, outputType)
 			qlInterface.SetTenantId(vars["tenantId"])
 			res, qobjs, err = qlInterface.Execute(r.Context(), projectID, datasources, sh.Store, outputType)
