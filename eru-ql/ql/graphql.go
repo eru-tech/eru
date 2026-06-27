@@ -145,8 +145,17 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 				graphQLs[i] = ds.GetSqlMaker(datasource.DbName)
 			}
 
+			boundVars := make(map[string]bool)
+			if fld, ok := v.(*ast.Field); ok {
+				for _, ff := range fld.Arguments {
+					if ff.Name.Value == "docs" && ff.Value.GetKind() == kinds.Variable {
+						boundVars[strings.Replace(ff.Value.(*ast.Variable).Name.Value, "$", "", -1)] = true
+					}
+				}
+			}
+
 			for k, v := range gqd.FinalVariables {
-				if k != module_model.RULEPREFIX_TOKEN {
+				if k != module_model.RULEPREFIX_TOKEN && !boundVars[k] {
 					err = graphQLs[i].VerifyForBlockedWords(ctx, k, v, graphQLs[i])
 					if err != nil {
 						return
