@@ -76,6 +76,10 @@ func (reflex_agent *ReflexAgent) Execute(ctx context.Context, agentMessage agent
 		return agentMessaage, nil
 	}
 
+	if codeMsg := reflex_agent.buildCodeMessage(ctx, agentMessage.Params); codeMsg != nil {
+		chatRequest.Messages = append(chatRequest.Messages, *codeMsg)
+	}
+
 	response, err := reflex_agent.execute(ctx, chatRequest, reflex_agent.AgentTools, 1, projectId, tenantId)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to execute agent: %v", err))
@@ -200,6 +204,28 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 	}
 	agentOutput.RetryCount = currentTry
 	return agentOutput, err
+}
+
+func (reflex_agent *ReflexAgent) buildCodeMessage(ctx context.Context, params map[string]interface{}) *models.Message {
+	if params == nil {
+		return nil
+	}
+	codeRaw, codeOk := params["code"]
+	if !codeOk {
+		logs.WithContext(ctx).Info("code is not present in the params")
+		return nil
+	}
+	codeStr, codeStrOk := codeRaw.(string)
+	if !codeStrOk {
+		logs.WithContext(ctx).Info("code is not a string")
+		return nil
+	}
+	content := fmt.Sprintf("This is the existing structured output (e.g. JSON or SQL) generated in a previous attempt and you need to build on top of this incorporating the user's new instructions and improvize. If this code is blank, generate a fresh output. \n\n %s \n\n", codeStr)
+	return &models.Message{
+		Role:    "system",
+		Content: content,
+		Name:    reflex_agent.AgentName,
+	}
 }
 
 func (reflex_agent *ReflexAgent) validate(ctx context.Context, jsonString string) error {

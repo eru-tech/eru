@@ -98,6 +98,14 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		}
 	}
 
+	if augment := buildCodeAugmentation(agentMessage.Params); augment != "" {
+		if strings.TrimSpace(agentMessage.Content) == "" {
+			agentMessage.Content = augment
+		} else {
+			agentMessage.Content = fmt.Sprintf("%s\n\n--- USER PROMPT ---\n%s", augment, agentMessage.Content)
+		}
+	}
+
 	chatRequest, conversation, err := ra.LoadConversations(ctx, conversationId, agentMessage, projectId, tenantId)
 	if err != nil {
 		return agents.AgentMessage{}, err
@@ -219,6 +227,26 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	}
 
 	return agentOutput, nil
+}
+
+func buildCodeAugmentation(params map[string]interface{}) string {
+	if params == nil {
+		return ""
+	}
+	codeRaw, ok := params["code"]
+	if !ok {
+		return ""
+	}
+	codeStr := stringifyParam(codeRaw)
+	if strings.TrimSpace(codeStr) == "" || strings.TrimSpace(codeStr) == "{}" || strings.TrimSpace(codeStr) == "null" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("--- EXISTING STRUCTURED OUTPUT FROM PREVIOUS ATTEMPT ---\n")
+	b.WriteString("This is the structured output (e.g. JSON or SQL) produced in a previous attempt. Build on top of it and improvize incorporating the user's new instructions: preserve what still applies unless the user prompt clearly requires changing it. If this is blank, generate a fresh output.\n\n")
+	b.WriteString(codeStr)
+	b.WriteString("\n--- END EXISTING STRUCTURED OUTPUT ---\n\n")
+	return b.String()
 }
 
 func (ra *ReasoningAgent) getOutputSchema(ctx context.Context) eru_models.JSONSchema {

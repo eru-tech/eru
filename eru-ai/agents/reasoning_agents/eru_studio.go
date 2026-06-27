@@ -41,6 +41,7 @@ func (eruStudioAgent *EruStudioAgent) Execute(ctx context.Context, agentMessage 
 			agentMessage.Content = fmt.Sprintf("%s\n\n--- USER PROMPT ---\n%s", augment, agentMessage.Content)
 		}
 	}
+	delete(agentMessage.Params, "code")
 
 	return eruStudioAgent.ReasoningAgent.Execute(ctx, agentMessage, conversationId, projectId, tenantId)
 }
