@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	model "github.com/eru-tech/eru/eru-ai/models"
@@ -54,6 +55,35 @@ func ModelEmbeddingsHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		}
 		server_handlers.FormatResponse(w, 200)
 		_ = json.NewEncoder(w).Encode(embeddings)
+	}
+}
+
+func TokenCountHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("TokenCountHandler - Start")
+		q := r.URL.Query()
+		providerParam := q.Get("provider")
+		modelParam := q.Get("model")
+		direction := q.Get("direction")
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		result, err := model.EstimateTokens(r.Context(), body, providerParam, modelParam, direction)
+		if err != nil {
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(result)
 	}
 }
 

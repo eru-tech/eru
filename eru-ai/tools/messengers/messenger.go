@@ -28,10 +28,9 @@ const (
 	RegisterPublicKey     = "register_public_key"
 	FetchPublicKey        = "fetch_public_key"
 	FlowEndpoint          = "flow_endpoint"
-	CreateMessageTemplate = "create_message_template"
+	SaveMessageTemplate   = "save_message_template"
 	DownloadFlowDocument  = "download_flow_document"
 	FetchTemplates        = "fetch_templates"
-	EditMessageTemplate   = "edit_message_template"
 	DeleteMessageTemplate = "delete_message_template"
 )
 

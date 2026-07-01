@@ -533,6 +533,9 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 		"makeParentFilter": func(filter string, jsonKey string, parentPrefix string) (silterStr string, err error) {
 			return makeParentFilter(ctx, filter, jsonKey, parentPrefix)
 		},
+		"makeFilterV2": func(filter string, jsonKey string, parentPrefix string, parentNames string, defaultPrefix string) (silterStr string, err error) {
+			return makeFilterV2(ctx, filter, jsonKey, parentPrefix, parentNames, defaultPrefix)
+		},
 		"fetch_filter_keys": func(filter string, parentPrefix string) (filterKeys []string, err error) {
 			return fetchFilterKeys(ctx, filter, parentPrefix)
 		},
@@ -935,6 +938,141 @@ func makeParentFilter(ctx context.Context, inPutfilterStr string, jsonKey string
 		return "false", nil
 	}
 	return makeFilterFromMap(ctx, filter, jsonKey, parentPrefix)
+}
+
+func makeFilterV2(ctx context.Context, inPutfilterStr string, jsonKey string, parentPrefix string, parentNamesStr string, defaultPrefix string) (filterStr string, err error) {
+	filter := make(map[string]interface{})
+	err = json.Unmarshal([]byte(inPutfilterStr), &filter)
+	if err != nil {
+		logs.Err(ctx, err, "")
+		return "false", nil
+	}
+	var parentNames []map[string]interface{}
+	if strings.TrimSpace(parentNamesStr) != "" {
+		if err = json.Unmarshal([]byte(parentNamesStr), &parentNames); err != nil {
+			logs.Err(ctx, err, "")
+			return "false", nil
+		}
+	}
+	return makeFilterFromMapV2(ctx, filter, jsonKey, parentPrefix, parentNames, defaultPrefix)
+}
+
+func matchParentPrefix(kk string, parentNames []map[string]interface{}, defaultPrefix string) (prefix string, fieldKey string) {
+	prefix = defaultPrefix
+	fieldKey = kk
+	if idx := strings.Index(kk, "~"); idx >= 0 {
+		before := kk[:idx]
+		after := kk[idx+1:]
+		for _, pn := range parentNames {
+			for pk, pv := range pn {
+				if strings.HasSuffix(pk, "_ef") {
+					if pvStr, pvOk := pv.(string); pvOk && strings.TrimPrefix(pvStr, "_") == before {
+						prefix = strings.TrimSuffix(pk, "_ef")
+						fieldKey = after
+					}
+				}
+			}
+		}
+	}
+	return
+}
+
+func makeFilterFromMapV2(ctx context.Context, filter map[string]interface{}, jsonKey string, parentPrefix string, parentNames []map[string]interface{}, defaultPrefix string) (filterStr string, err error) {
+	var filterStrArray []string
+	tempStr := ""
+	for k, v := range filter {
+		kk := fetchKey(k)
+		if kk == "$or" {
+			if vArray, vArrayOk := v.([]interface{}); vArrayOk {
+				tempStr, err = makeOrStringV2(ctx, vArray, jsonKey, parentPrefix, parentNames, defaultPrefix)
+				filterStrArray = append(filterStrArray, tempStr)
+			} else {
+				err = errors.New("$or needs an array")
+				logs.Err(ctx, err, "")
+				return "false", nil
+			}
+		} else {
+			include := false
+			isJson := false
+			if parentPrefix == "" || strings.HasPrefix(kk, parentPrefix) {
+				include = true
+				kk = strings.Replace(kk, parentPrefix, "", -1)
+			}
+			if include {
+				prefix, fieldKey := matchParentPrefix(kk, parentNames, defaultPrefix)
+				kk = fieldKey
+				if jsonKey != "" {
+					colRef := jsonKey
+					if prefix != "" {
+						colRef = fmt.Sprint(prefix, ".", jsonKey)
+					}
+					kk = fmt.Sprint(colRef, "->>'", kk, "'")
+					isJson = true
+				} else if prefix != "" {
+					kk = fmt.Sprint(prefix, ".", kk)
+				}
+				if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
+					tempStr, err = makeFilterStr(ctx, kk, vMap, isJson)
+					filterStrArray = append(filterStrArray, tempStr)
+				} else if vF, vFOk := v.(float64); vFOk {
+					if isJson {
+						kk = fmt.Sprint("(", kk, ")::numeric")
+					}
+					tempStr = fmt.Sprint(kk, " = ", vF)
+					filterStrArray = append(filterStrArray, tempStr)
+				} else if vB, vBOk := v.(bool); vBOk {
+					if isJson {
+						kk = fmt.Sprint("(", kk, ")::bool")
+					}
+					tempStr = fmt.Sprint(kk, " = ", vB)
+					filterStrArray = append(filterStrArray, tempStr)
+				} else if vS, vSOk := v.(string); vSOk {
+					if vBB, bErr := strconv.ParseBool(vS); bErr == nil {
+						if isJson {
+							kk = fmt.Sprint("(", kk, ")::bool")
+						}
+						tempStr = fmt.Sprint(kk, " = ", vBB)
+						filterStrArray = append(filterStrArray, tempStr)
+					} else {
+						tempStr = fmt.Sprint(kk, " = '", v, "'")
+						filterStrArray = append(filterStrArray, tempStr)
+					}
+				} else {
+					tempStr = fmt.Sprint(kk, " = '", v, "'")
+					filterStrArray = append(filterStrArray, tempStr)
+				}
+			}
+		}
+	}
+	filterStr = strings.Join(filterStrArray, " and ")
+	if filterStr != "" {
+		filterStr = fmt.Sprint("(", filterStr, ")")
+	}
+	return filterStr, nil
+}
+
+func makeOrStringV2(ctx context.Context, filter []interface{}, jsonKey string, parentPrefix string, parentNames []map[string]interface{}, defaultPrefix string) (orStr string, err error) {
+	orStr = ""
+	orOp := ""
+	filterStr := ""
+	for i, v := range filter {
+		if i > 0 {
+			orOp = " or "
+		}
+		if vMap, vMapOk := v.(map[string]interface{}); vMapOk {
+			filterStr, err = makeFilterFromMapV2(ctx, vMap, jsonKey, parentPrefix, parentNames, defaultPrefix)
+		} else {
+			err = errors.New("$or needs array of objects")
+			logs.Err(ctx, err, "")
+		}
+		if filterStr != "" {
+			orStr = fmt.Sprint(orStr, orOp, filterStr)
+		}
+	}
+	if orStr != "" {
+		orStr = fmt.Sprint("(", orStr, ")")
+	}
+	return
 }
 
 func MakeFilterFromMap(ctx context.Context, filter map[string]interface{}, jsonKey string, parentPrefix string) (filterStr string, err error) {

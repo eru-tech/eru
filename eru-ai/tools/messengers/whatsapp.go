@@ -42,6 +42,10 @@ type WhatsAppCreateTemplateRequest struct {
 	Components []WhatsAppTemplateComponent `json:"components" eru:"required"`
 }
 
+type WhatsAppEditTemplateRequest struct {
+	Components []WhatsAppTemplateComponent `json:"components" eru:"required"`
+}
+
 type WhatsAppTemplateComponent struct {
 	Type      string                   `json:"type" eru:"required"`
 	Format    string                   `json:"format,omitempty"`
@@ -119,10 +123,9 @@ func (whatsAppTool *WhatsAppTool) GetActionsList() []tools.ActionInfo {
 		{Name: RegisterPublicKey},
 		{Name: FetchPublicKey},
 		{Name: FlowEndpoint},
-		{Name: CreateMessageTemplate},
+		{Name: SaveMessageTemplate},
 		{Name: DownloadFlowDocument},
 		{Name: FetchTemplates},
-		{Name: EditMessageTemplate},
 		{Name: DeleteMessageTemplate},
 		{Name: Callback},
 	}
@@ -174,8 +177,8 @@ func (whatsAppTool *WhatsAppTool) Execute(ctx context.Context, projectId string,
 		toolResult, toolRequest, persistStore, err = whatsAppTool.CreateGroup(ctx, params)
 	case RegisterPublicKey:
 		toolResult, toolRequest, persistStore, err = whatsAppTool.RegisterPublicKey(ctx, params)
-	case CreateMessageTemplate:
-		toolResult, toolRequest, persistStore, err = whatsAppTool.CreateMessageTemplate(ctx, params)
+	case SaveMessageTemplate:
+		toolResult, toolRequest, persistStore, err = whatsAppTool.SaveMessageTemplate(ctx, params)
 	case FetchPublicKey:
 		toolResult, toolRequest, persistStore, err = whatsAppTool.FetchPublicKey(ctx, params)
 	case FlowEndpoint:
@@ -184,8 +187,6 @@ func (whatsAppTool *WhatsAppTool) Execute(ctx context.Context, projectId string,
 		toolResult, toolRequest, persistStore, err = whatsAppTool.DownloadFlowDocument(ctx, params)
 	case FetchTemplates:
 		toolResult, toolRequest, persistStore, err = whatsAppTool.FetchTemplates(ctx, params)
-	case EditMessageTemplate:
-		toolResult, toolRequest, persistStore, err = whatsAppTool.EditMessageTemplate(ctx, params)
 	case DeleteMessageTemplate:
 		toolResult, toolRequest, persistStore, err = whatsAppTool.DeleteMessageTemplate(ctx, params)
 	default:
@@ -1771,6 +1772,10 @@ func (whatsAppTool *WhatsAppTool) CreateMessageTemplate(ctx context.Context, par
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, nil, req)
 	if err != nil {
+		if errResult := whatsAppTemplateErrorFromCallErr(err); errResult != nil {
+			_ = logs.Err(ctx, err, "WhatsApp API returned an error")
+			return errResult, map[string]interface{}{"body": req}, false, nil
+		}
 		return nil, nil, false, logs.Err(ctx, err, "failed to call WhatsApp API for template creation")
 	}
 
@@ -1779,13 +1784,71 @@ func (whatsAppTool *WhatsAppTool) CreateMessageTemplate(ctx context.Context, par
 		return nil, nil, false, logs.Err(ctx, fmt.Errorf("unexpected response format from WhatsApp API"), "unexpected response format")
 	}
 
-	// Check for error in response
+	// Check for error in response; log but return success status 200 to our caller
 	if errorVal, exists := resMap["error"]; exists {
-		return nil, nil, false, logs.Err(ctx, fmt.Errorf("WhatsApp API error: %v", errorVal), "WhatsApp API returned an error")
+		_ = logs.Err(ctx, whatsAppApiError(errorVal), "WhatsApp API returned an error")
+		return whatsAppTemplateErrorResult(errorVal), map[string]interface{}{"body": req}, false, nil
 	}
 
-	toolResult = resMap
+	toolResult = whatsAppNormalizeResult(resMap)
+	toolResult["status"] = "success"
 	return toolResult, map[string]interface{}{"body": req}, false, nil
+}
+
+func whatsAppApiError(errorVal interface{}) error {
+	if errMap, ok := errorVal.(map[string]interface{}); ok {
+		title, _ := errMap["error_user_title"].(string)
+		msg, _ := errMap["error_user_msg"].(string)
+		if title != "" || msg != "" {
+			if title != "" && msg != "" {
+				return fmt.Errorf("%s: %s", title, msg)
+			}
+			return fmt.Errorf("%s%s", title, msg)
+		}
+	}
+	return fmt.Errorf("WhatsApp API error: %v", errorVal)
+}
+
+func whatsAppNormalizeResult(resMap map[string]interface{}) map[string]interface{} {
+	if body, ok := resMap["body"].(string); ok {
+		var parsed map[string]interface{}
+		if json.Unmarshal([]byte(body), &parsed) == nil {
+			return parsed
+		}
+	}
+	return resMap
+}
+
+func whatsAppTemplateErrorFromCallErr(callErr error) map[string]interface{} {
+	var parsed map[string]interface{}
+	if json.Unmarshal([]byte(callErr.Error()), &parsed) == nil {
+		if errorVal, exists := parsed["error"]; exists {
+			return whatsAppTemplateErrorResult(errorVal)
+		}
+	}
+	return nil
+}
+
+func whatsAppTemplateErrorResult(errorVal interface{}) map[string]interface{} {
+	result := map[string]interface{}{"status": "error"}
+	if errMap, ok := errorVal.(map[string]interface{}); ok {
+		if title, ok := errMap["error_user_title"].(string); ok {
+			result["error_user_title"] = title
+		}
+		if msg, ok := errMap["error_user_msg"].(string); ok {
+			result["error_user_msg"] = msg
+		}
+	}
+	return result
+}
+
+func (whatsAppTool *WhatsAppTool) SaveMessageTemplate(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("SaveMessageTemplate Execute - Start")
+
+	if templateId, ok := params["id"].(string); ok && templateId != "" {
+		return whatsAppTool.EditMessageTemplate(ctx, params)
+	}
+	return whatsAppTool.CreateMessageTemplate(ctx, params)
 }
 
 func (whatsAppTool *WhatsAppTool) EditMessageTemplate(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -1805,9 +1868,10 @@ func (whatsAppTool *WhatsAppTool) EditMessageTemplate(ctx context.Context, param
 	headers := http.Header{}
 	headers.Set("Authorization", fmt.Sprintf("Bearer %s", whatsAppTool.WhatsAppAccount.ApiKey))
 	headers.Set("Content-Type", "application/json")
+	headers.Set("Accept", "application/json")
 
-	// Map params to WhatsAppCreateTemplateRequest (since payload is similar)
-	var req WhatsAppCreateTemplateRequest
+	// name, category and language cannot be edited on WhatsApp; only components are allowed
+	var req WhatsAppEditTemplateRequest
 	reqBytes, err := json.Marshal(params)
 	if err != nil {
 		return nil, nil, false, logs.Err(ctx, err, "failed to marshal template edit request")
@@ -1819,6 +1883,10 @@ func (whatsAppTool *WhatsAppTool) EditMessageTemplate(ctx context.Context, param
 
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, nil, req)
 	if err != nil {
+		if errResult := whatsAppTemplateErrorFromCallErr(err); errResult != nil {
+			_ = logs.Err(ctx, err, "WhatsApp API returned an error")
+			return errResult, map[string]interface{}{"body": req}, false, nil
+		}
 		return nil, nil, false, logs.Err(ctx, err, "failed to call WhatsApp API for template edit")
 	}
 
@@ -1828,10 +1896,12 @@ func (whatsAppTool *WhatsAppTool) EditMessageTemplate(ctx context.Context, param
 	}
 
 	if errorVal, exists := resMap["error"]; exists {
-		return nil, nil, false, logs.Err(ctx, fmt.Errorf("WhatsApp API error: %v", errorVal), "WhatsApp API returned an error")
+		_ = logs.Err(ctx, whatsAppApiError(errorVal), "WhatsApp API returned an error")
+		return whatsAppTemplateErrorResult(errorVal), map[string]interface{}{"body": req}, false, nil
 	}
 
-	toolResult = resMap
+	toolResult = whatsAppNormalizeResult(resMap)
+	toolResult["status"] = "success"
 	return toolResult, map[string]interface{}{"body": req}, false, nil
 }
 
@@ -1875,7 +1945,7 @@ func (whatsAppTool *WhatsAppTool) DeleteMessageTemplate(ctx context.Context, par
 	}
 
 	if errorVal, exists := resMap["error"]; exists {
-		return nil, nil, false, logs.Err(ctx, fmt.Errorf("WhatsApp API error: %v", errorVal), "WhatsApp API returned an error")
+		return nil, nil, false, logs.Err(ctx, whatsAppApiError(errorVal), "WhatsApp API returned an error")
 	}
 
 	toolResult = resMap
@@ -2031,7 +2101,7 @@ func init() {
 		ToolType:     "WhatsApp",
 		Category:     "Communication",
 		Description:  "WhatsApp Business API for messaging, media, templates, and webhooks",
-		Actions:      []tools.ActionInfo{{Name: SendMessage}, {Name: SubscribeWebhooks}, {Name: GetMessageStatus}, {Name: UploadMedia}, {Name: RetrieveMedia}, {Name: DeleteMedia}, {Name: GetMediaUrl}, {Name: GetBusinessProfile}, {Name: GetMessageTemplates}, {Name: MarkMessageAsRead}, {Name: SendTypingIndicator}, {Name: GetThroughput}, {Name: CreateGroup}, {Name: RegisterPublicKey}, {Name: FetchPublicKey}, {Name: FlowEndpoint}, {Name: CreateMessageTemplate}, {Name: DownloadFlowDocument}, {Name: FetchTemplates}, {Name: EditMessageTemplate}, {Name: DeleteMessageTemplate}, {Name: Callback}},
+		Actions:      []tools.ActionInfo{{Name: SendMessage}, {Name: SubscribeWebhooks}, {Name: GetMessageStatus}, {Name: UploadMedia}, {Name: RetrieveMedia}, {Name: DeleteMedia}, {Name: GetMediaUrl}, {Name: GetBusinessProfile}, {Name: GetMessageTemplates}, {Name: MarkMessageAsRead}, {Name: SendTypingIndicator}, {Name: GetThroughput}, {Name: CreateGroup}, {Name: RegisterPublicKey}, {Name: FetchPublicKey}, {Name: FlowEndpoint}, {Name: SaveMessageTemplate}, {Name: DownloadFlowDocument}, {Name: FetchTemplates}, {Name: DeleteMessageTemplate}, {Name: Callback}},
 		OAuthEnabled: false,
 		Icon:         "",
 		IconType:     "svg",

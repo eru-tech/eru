@@ -96,6 +96,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodGet).Path("/tool/catalog").HandlerFunc(module_handlers.ToolCatalogHandler())
 	// functions for ai events
 	aiRouter := serverRouter.PathPrefix("/{project}").Subrouter()
+	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/tokencount").HandlerFunc(module_handlers.TokenCountHandler())
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/{model}/query").HandlerFunc(module_handlers.ModelQueryHandler(sh))
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/{model}/embeddings").HandlerFunc(module_handlers.ModelEmbeddingsHandler(sh))
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/{model}/{tool}/query").HandlerFunc(module_handlers.ModelQueryHandler(sh))
