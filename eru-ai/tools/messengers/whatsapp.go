@@ -111,6 +111,7 @@ func (whatsAppTool *WhatsAppTool) GetActionsList() []tools.ActionInfo {
 		{Name: SubscribeWebhooks},
 		{Name: GetMessageStatus},
 		{Name: UploadMedia},
+		{Name: ResumableUpload},
 		{Name: RetrieveMedia},
 		{Name: DeleteMedia},
 		{Name: GetMediaUrl},
@@ -157,6 +158,8 @@ func (whatsAppTool *WhatsAppTool) Execute(ctx context.Context, projectId string,
 		toolResult, toolRequest, persistStore, err = whatsAppTool.GetMessageStatus(ctx, params)
 	case UploadMedia:
 		toolResult, toolRequest, persistStore, err = whatsAppTool.UploadMedia(ctx, params)
+	case ResumableUpload:
+		toolResult, toolRequest, persistStore, err = whatsAppTool.ResumableUpload(ctx, params)
 	case RetrieveMedia:
 		toolResult, toolRequest, persistStore, err = whatsAppTool.RetrieveMedia(ctx, params)
 	case DeleteMedia:
@@ -783,6 +786,153 @@ func (whatsAppTool *WhatsAppTool) UploadMedia(ctx context.Context, params map[st
 			"file_name":         mediaFileNameStr,
 			"type":              fMime.String(),
 			"messaging_product": "whatsapp",
+		},
+	}, false, nil
+}
+
+func (whatsAppTool *WhatsAppTool) ResumableUpload(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("ResumableUpload Execute - Start")
+
+	mimeLimit := uint32(2000)
+	mimeLimitParam, mimeLimitParamOk := params["mime_limit"]
+	if mimeLimitParamOk {
+		mimeLimitInt, ok := mimeLimitParam.(uint32)
+		if ok {
+			mimeLimit = mimeLimitInt
+		}
+	}
+
+	appId, appIdOk := params["app_id"]
+	if !appIdOk {
+		err = logs.Err(ctx, fmt.Errorf("app_id parameter is required"), "app_id parameter is required")
+		return nil, nil, false, err
+	}
+	appIdStr, ok := appId.(string)
+	if !ok {
+		err = logs.Err(ctx, fmt.Errorf("app_id must be a string"), "app_id must be a string")
+		return nil, nil, false, err
+	}
+
+	mediaFile, mediaFileOk := params["file"]
+	if !mediaFileOk {
+		err = logs.Err(ctx, fmt.Errorf("file parameter is required (base64 encoded content)"), "file parameter is required (base64 encoded content)")
+		return nil, nil, false, err
+	}
+	mediaFileStr, ok := mediaFile.(string)
+	if !ok {
+		err = logs.Err(ctx, fmt.Errorf("file must be a base64 encoded string"), "file must be a base64 encoded string")
+		return nil, nil, false, err
+	}
+
+	mediaFileName, mediaFileNameOk := params["file_name"]
+	if !mediaFileNameOk {
+		err = logs.Err(ctx, fmt.Errorf("file_name parameter is required"), "file_name parameter is required")
+		return nil, nil, false, err
+	}
+	mediaFileNameStr, ok := mediaFileName.(string)
+	if !ok {
+		err = logs.Err(ctx, fmt.Errorf("file_name must be a string"), "file_name must be a string")
+		return nil, nil, false, err
+	}
+
+	fileBytes, err := base64.StdEncoding.DecodeString(mediaFileStr)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to decode base64 file: %s", err.Error()), "failed to decode base64 file")
+		return nil, nil, false, err
+	}
+
+	fileType := ""
+	if fileTypeParam, fileTypeParamOk := params["file_type"]; fileTypeParamOk {
+		fileType, _ = fileTypeParam.(string)
+	}
+	if fileType == "" {
+		mimetype.SetLimit(mimeLimit)
+		fMime := mimetype.Detect(fileBytes)
+		fileType = fMime.String()
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("File type: %s, size: %d", fileType, len(fileBytes)))
+
+	apiVersion := whatsAppTool.WhatsAppAccount.ApiVersion
+	if apiVersion == "" {
+		apiVersion = "v18.0"
+	}
+
+	sessionUrl := fmt.Sprintf("%s/%s/%s/uploads", WHATSAPP_BASE_URL, apiVersion, appIdStr)
+	sessionQueryParams := map[string]string{
+		"file_name":    mediaFileNameStr,
+		"file_length":  fmt.Sprintf("%d", len(fileBytes)),
+		"file_type":    fileType,
+		"access_token": whatsAppTool.WhatsAppAccount.ApiKey,
+	}
+	sessionHeaders := http.Header{}
+	sessionHeaders.Set("Accept", "application/json")
+
+	sessionRes, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, sessionUrl, sessionHeaders, map[string]string{}, []*http.Cookie{}, sessionQueryParams, nil)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to create upload session: %s", err.Error()), "failed to create upload session")
+		return nil, nil, false, err
+	}
+
+	sessionResMap, sessionResMapOk := sessionRes.(map[string]interface{})
+	if !sessionResMapOk {
+		err = logs.Err(ctx, fmt.Errorf("unexpected upload session response"), "unexpected upload session response")
+		return nil, nil, false, err
+	}
+	uploadSessionId, uploadSessionIdOk := sessionResMap["id"].(string)
+	if !uploadSessionIdOk || uploadSessionId == "" {
+		err = logs.Err(ctx, fmt.Errorf("upload session id not found in response"), "upload session id not found in response")
+		return nil, nil, false, err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("Upload session id: %s", uploadSessionId))
+
+	uploadUrl := fmt.Sprintf("%s/%s/%s", WHATSAPP_BASE_URL, apiVersion, uploadSessionId)
+	uploadReq, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadUrl, bytes.NewReader(fileBytes))
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to create upload request: %s", err.Error()), "failed to create upload request")
+		return nil, nil, false, err
+	}
+	uploadReq.Header.Set("Authorization", fmt.Sprintf("OAuth %s", whatsAppTool.WhatsAppAccount.ApiKey))
+	uploadReq.Header.Set("file_offset", "0")
+
+	client := &http.Client{}
+	uploadResp, err := client.Do(uploadReq)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to upload file: %s", err.Error()), "failed to upload file")
+		return nil, nil, false, err
+	}
+	defer uploadResp.Body.Close()
+
+	uploadBody, err := io.ReadAll(uploadResp.Body)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to read upload response: %s", err.Error()), "failed to read upload response")
+		return nil, nil, false, err
+	}
+
+	if uploadResp.StatusCode != http.StatusOK {
+		err = logs.Err(ctx, fmt.Errorf("resumable upload failed with status %d: %s", uploadResp.StatusCode, string(uploadBody)), "resumable upload failed")
+		return nil, nil, false, err
+	}
+
+	var uploadResponse map[string]interface{}
+	err = json.Unmarshal(uploadBody, &uploadResponse)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to parse upload response: %s", err.Error()), "failed to parse upload response")
+		return nil, nil, false, err
+	}
+
+	toolResult = make(map[string]interface{})
+	toolResult["response"] = uploadResponse
+	toolResult["upload_session_id"] = uploadSessionId
+	if h, hOk := uploadResponse["h"]; hOk {
+		toolResult["file_handle"] = h
+	}
+
+	return toolResult, map[string]interface{}{
+		"body": map[string]interface{}{
+			"app_id":      appIdStr,
+			"file_name":   mediaFileNameStr,
+			"file_type":   fileType,
+			"file_length": len(fileBytes),
 		},
 	}, false, nil
 }

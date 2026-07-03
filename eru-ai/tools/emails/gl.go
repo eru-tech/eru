@@ -730,6 +730,8 @@ func (glEmailTool *GlEmailTool) SendEmail(ctx context.Context, params map[string
 	body, _ := params["body"].(string)
 	bodyType, _ := params["body_type"].(string)
 	threadId, _ := params["thread_id"].(string)
+	inReplyTo, _ := params["in_reply_to"].(string)
+	references := strings.Join(glNormalizeRecipients(params["references"]), " ")
 
 	if len(to) == 0 {
 		err = errors.New("to is required")
@@ -769,7 +771,21 @@ func (glEmailTool *GlEmailTool) SendEmail(ctx context.Context, params map[string
 	if replyTo != "" {
 		fmt.Fprintf(&msg, "Reply-To: %s\r\n", replyTo)
 	}
+	if inReplyTo != "" {
+		fmt.Fprintf(&msg, "In-Reply-To: %s\r\n", inReplyTo)
+	}
+	if references != "" {
+		fmt.Fprintf(&msg, "References: %s\r\n", references)
+	}
 	fmt.Fprintf(&msg, "Subject: %s\r\n", subject)
+	if hdrs, ok := params["headers"].(map[string]interface{}); ok {
+		for hk, hv := range hdrs {
+			if hk == "" || hv == nil || strings.EqualFold(hk, "From") {
+				continue
+			}
+			fmt.Fprintf(&msg, "%s: %s\r\n", hk, fmt.Sprint(hv))
+		}
+	}
 	fmt.Fprintf(&msg, "MIME-Version: 1.0\r\n")
 
 	if len(attachments) == 0 {

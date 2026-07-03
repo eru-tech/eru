@@ -5,6 +5,7 @@ const (
 	SubscribeWebhooks   = "subscribe_webhooks"
 	GetMessageStatus    = "get_message_status"
 	UploadMedia         = "upload_media"
+	ResumableUpload     = "resumable_upload"
 	RetrieveMedia       = "retrieve_media"
 	DeleteMedia         = "delete_media"
 	GetMediaUrl         = "get_media_url"
