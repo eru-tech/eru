@@ -98,6 +98,7 @@ type WhatsAppTool struct {
 type WhatsAppAccount struct {
 	PhoneNumberId            string `json:"phone_number_id" eru:"required"`
 	BusinessAccountId        string `json:"business_account_id"`
+	AppId                    string `json:"app_id"`
 	ApiKey                   string `json:"api_key" eru:"required"`
 	WebhookUrl               string `json:"webhook_url"`
 	ApiVersion               string `json:"api_version"`
@@ -802,14 +803,9 @@ func (whatsAppTool *WhatsAppTool) ResumableUpload(ctx context.Context, params ma
 		}
 	}
 
-	appId, appIdOk := params["app_id"]
-	if !appIdOk {
-		err = logs.Err(ctx, fmt.Errorf("app_id parameter is required"), "app_id parameter is required")
-		return nil, nil, false, err
-	}
-	appIdStr, ok := appId.(string)
-	if !ok {
-		err = logs.Err(ctx, fmt.Errorf("app_id must be a string"), "app_id must be a string")
+	appIdStr := whatsAppTool.WhatsAppAccount.AppId
+	if appIdStr == "" {
+		err = logs.Err(ctx, fmt.Errorf("app_id is required in tool definition"), "app_id is required in tool definition")
 		return nil, nil, false, err
 	}
 
@@ -921,8 +917,8 @@ func (whatsAppTool *WhatsAppTool) ResumableUpload(ctx context.Context, params ma
 	}
 
 	toolResult = make(map[string]interface{})
-	toolResult["response"] = uploadResponse
-	toolResult["upload_session_id"] = uploadSessionId
+	//toolResult["response"] = uploadResponse
+	//toolResult["upload_session_id"] = uploadSessionId
 	if h, hOk := uploadResponse["h"]; hOk {
 		toolResult["file_handle"] = h
 	}
