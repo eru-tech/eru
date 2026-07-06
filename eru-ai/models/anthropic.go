@@ -300,7 +300,7 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 					return Message{}, traces, fmt.Errorf("structured_output tool input was empty or truncated; raise model.max_tokens (current=%d) or lower thinking_budget", maxTokens)
 				}
 				resultBytes, _ := json.Marshal(inputMap)
-				return Message{Content: string(resultBytes), Role: "assistant"}, traces, nil
+				return Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolStructuredOutput}, traces, nil
 			}
 
 			if tu.Name == TerminalToolAskUser {
@@ -488,7 +488,7 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 					return Message{}, traces, fmt.Errorf("structured_output tool input was empty or truncated; raise model.max_tokens (current=%d) or lower thinking_budget", maxTokens)
 				}
 				resultBytes, _ := json.Marshal(inputMap)
-				return Message{Content: string(resultBytes), Role: "assistant"}, traces, nil
+				return Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolStructuredOutput}, traces, nil
 			}
 
 			if tu.Name == TerminalToolAskUser {

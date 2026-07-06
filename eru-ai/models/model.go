@@ -35,6 +35,7 @@ const (
 )
 
 const TerminalToolAskUser = "ask_user"
+const TerminalToolStructuredOutput = "structured_output"
 
 type ModelStreamEvent struct {
 	Type      StreamEventType        `json:"type"`

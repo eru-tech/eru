@@ -25,7 +25,7 @@ FORBIDDEN PATTERNS (the model has gotten these wrong before — do not repeat th
 - DO NOT invent root-level keys: theme, layout, slug, version, description, colorScheme, primaryColor, fontFamily, etc.
 - DO NOT invent component types: TopBar, Sidebar, Brand, SearchInput, Dropdown, IconButton, UserMenu, NavItem, Divider as a section header, KPICard, ProgramCard, AddCard, Modal, Stepper as a custom shape, StepContent, ModalFooter, SelectionGrid, InfoBox, BottomNav, ViewToggle, PageHeader, Section, Toolbar with left/right arrays, etc.
 - DO NOT use a singular "style" key with inline CSS on a component. Styling MUST go inside styles.responsive_styles.base or styles.classes.
-- DO NOT use ad-hoc per-component arrays like "left", "center", "right", "items", "tabs", "sections", "options" at the EruComponent root. Children always live in children[]. Inner data (e.g. select options, stepper steps, tabs labels, menu items) lives under properties.base.* per the catalog.
+- DO NOT use ad-hoc per-component arrays like "left", "center", "right", "items", "tabs", "sections", "options" at the EruComponent root. Children always live in children[]. Inner data (e.g. select options, stepper steps, tabs labels, list items) lives under properties.base.* per the catalog — most such lists are COMMA-SEPARATED STRINGS, not arrays.
 - DO NOT generate Tailwind classes inside style values; classes go to styles.classes / styles.responsive_classes.
 
 ITERATIVE EDITING (MOST IMPORTANT BEHAVIOR)
@@ -97,7 +97,7 @@ INPUT/FORM:
   checkbox-eru, select-eru, attachment, location, people, priority, progress, rating, status, tag,
   radio, slider, slide_toggle, autocomplete
 
-NAVIGATION (may have children — except nav_menu/nav_outlet which are leaves):
+NAVIGATION (may have children — except menu/nav_menu/nav_outlet which are leaves):
   toolbar, menu, sidenav, tabs, nav_menu, nav_outlet
 
 DATA:
@@ -107,9 +107,10 @@ LOADING:
   ghost
 
 CONTAINER vs LEAF
-- Container types (allow children): flex_container, grid_container, card, expansion_panel, stepper, sidebar_stepper, sidenav, toolbar, tabs.
+- Container types (accept children[]): flex_container, grid_container, card, expansion_panel, stepper, sidebar_stepper, sidenav, toolbar, tabs.
 - Other types are leaves and MUST NOT include "children".
-- list, tree, grid_list, grid render their items from data, not children.
+- list, tree, grid_list render their items from a comma-separated string in properties.base.items — NOT from children.
+- grid renders rows from a data source (entity/query), NOT from children.
 - page_ref and widget embed another page/widget by id — they MUST NOT carry children either.
 - Type identifiers are case-sensitive: use "checkbox-eru" (NOT "checkbox"), "select-eru" (NOT "select"), "time-picker" (with hyphen).
 
@@ -127,193 +128,347 @@ COMPONENT SELECTION POLICY
 
 Pairing heuristics (composition patterns):
 - Forms: card or flex_container (column) + input components + button (submit).
-- Data views: toolbar (search/filter buttons) + grid; optionally with select/date filters above the grid.
-- Dashboards: grid_container or flex_container + KPI tiles (badge/text/tile) + line_chart/bar_chart/pie_chart.
-- Multi-step flows: stepper + form sections + Back/Next buttons.
-- App shell: sidenav + toolbar + main content area (flex_container with page_ref or tabs).
-- Settings/optional sections: expansion_panel + checkbox/select/textbox.
+- Data views: toolbar (title/search buttons) + grid; optionally with select/date filters above the grid.
+- Dashboards: grid_container or flex_container + KPI tiles (tile/badge/text) + line_chart/bar_chart/pie_chart.
+- Multi-step flows: stepper or sidebar_stepper + form sections + Back/Next buttons.
+- App shell: nav_menu + nav_outlet (URL-driven page switching), OR sidenav + toolbar + main content area (flex_container with page_ref or tabs).
+- Settings/optional sections: expansion_panel + checkbox-eru/select-eru/textbox.
 - Detail pages: card + grid_container of fields + actions toolbar.
 
 ROOT STRUCTURE
 - Prefer ONE top-level root component (usually a flex_container in column mode, or a grid_container) that contains everything else.
-- For app shells, the root may instead be a sidenav or toolbar with the main content as a child container.
+- For app shells, the root may instead be a sidenav, toolbar, or a nav_menu + nav_outlet pair.
 
 ============================================================
 TYPE-SPECIFIC PROPERTY CATALOG (set keys under properties.base)
 ============================================================
 
-flex_container:
-  layout_type ("flex"), flex_direction ("row"|"row-reverse"|"column"|"column-reverse"),
-  justify_content ("flex-start"|"flex-end"|"center"|"space-between"|"space-around"|"space-evenly"),
-  align_items ("stretch"|"flex-start"|"flex-end"|"center"|"baseline"),
-  flex_wrap ("nowrap"|"wrap"|"wrap-reverse"),
-  align_content ("stretch"|"flex-start"|"flex-end"|"center"|"space-between"|"space-around"|"space-evenly"),
-  gap, row_gap, column_gap (numbers 0..100),
-  flex_grow, flex_shrink, flex_basis ("auto" or "100px"/"50%"), align_self ("auto"|"flex-start"|"flex-end"|"center"|"baseline"|"stretch")
+Values shown as a|b|c are the ONLY allowed values for that key. "(default: x)" is the runtime default — omit the key to accept it.
 
-grid_container:
-  layout_type ("grid"),
-  grid_template_columns (e.g. "repeat(auto-fit, minmax(250px, 1fr))", "1fr 2fr"),
-  grid_template_rows ("auto", "100px 1fr"),
-  grid_template_areas (string),
-  gap, row_gap, column_gap,
-  justify_items, align_items ("stretch"|"start"|"end"|"center"),
-  justify_content, align_content ("start"|"end"|"center"|"stretch"|"space-between"|"space-around"|"space-evenly"),
-  grid_auto_flow ("row"|"column"|"row dense"|"column dense"),
-  grid_auto_columns, grid_auto_rows,
-  grid_column, grid_row, grid_area, justify_self, align_self
-
-card:
-  appearance ("raised"|"outlined"|"flat"), title, subtitle, header_image, footer_actions
-
-button:
-  label (text shown), icon (material icon name), iconPosition ("before"|"after"),
-  variant ("mat-button"|"mat-raised-button"|"mat-flat-button"|"mat-stroked-button"|"mat-icon-button"|"mat-fab"|"mat-mini-fab"),
-  color ("primary"|"accent"|"warn"), size ("small"|"medium"|"large"),
-  type ("button"|"submit"|"reset"), disableRipple, ariaLabel, ariaLabelledBy
+------ BASIC ------
 
 text:
-  text (the displayed text), value_source ("static"|"state"|"field"), state_key,
-  variant ("h1".."h6"|"body1"|"body2"|"caption"|"subtitle1"|"subtitle2")
+  value_source ("label"|"field"|"state"; default "label"): static label, page-data field, or page state.
+  state_key (a page-state key; only when value_source="state"),
+  value_path (dot/bracket path to pull from a JSON value, e.g. "data.name" or "items[0].label"; only when value_source is "field" or "state").
+  The displayed static text goes in the "label" common property.
+  (styles.responsive_styles supports line_height for text.)
 
-icon:
-  icon_name (material name), font_set, color ("primary"|"accent"|"warn"), inline, tooltip, aria_label
+button:
+  label (text shown), icon (material icon name; empty = none), iconPosition ("before"|"after"; default "before"),
+  variant ("mat-button"|"mat-raised-button"|"mat-flat-button"|"mat-stroked-button"|"mat-icon-button"|"mat-fab"|"mat-mini-fab"; default "mat-button"),
+  color ("primary"|"accent"|"warn"; default "primary"), size ("small"|"medium"|"large"; default "medium"),
+  type ("button"|"submit"|"reset"; default "button"), disableRipple (bool), ariaLabel, ariaLabelledBy,
+  active_label (label shown while a toggle-side-panel target is open; empty = use label),
+  active_icon (icon shown while a toggle-side-panel target is open; empty = use icon).
 
 image:
   src (asset id or URL), alt, tooltip,
-  object_fit ("cover"|"contain"|"fill"|"none"|"scale-down"),
-  object_position, loading ("lazy"|"eager"), fallback_icon, width, height, border_radius, opacity
+  object_fit ("cover"|"contain"|"fill"|"scale-down"|"none"; default "cover"),
+  object_position ("center"|"top"|"bottom"|"left"|"right"|"top left"|"top right"|"bottom left"|"bottom right"; default "center"),
+  loading ("lazy"|"eager"; default "lazy"), fallback_icon (material icon; default "broken_image").
+  (Sizing goes in styles.responsive_styles: width, height, border_radius, opacity.)
+
+button_toggle:
+  toggle_options (string: "Label=value,Label=value" or just "Label,Label"),
+  toggle_icons (comma-separated material icon names matched positionally to options; leave a slot empty to skip),
+  icon_scale (number; default 1.2), selected_bg_color, selected_text_color,
+  multiple (bool; allow multiple selections), hide_selection_indicator (bool),
+  default_selection (value selected by default; comma-separated when multiple).
 
 badge:
-  content (host text), badge_text, badge_position ("above before"|"above after"|"below before"|"below after"), color
+  content (host text the badge sits on),
+  value_source ("label"|"field"|"state"; default "label"),
+  badge_text (badge value; when value_source="label"),
+  state_key (page-state key; when value_source="state"),
+  value_path (path into a JSON value; when value_source is "field" or "state"),
+  badge_position ("above after"|"above before"|"below after"|"below before"|"before"|"after"; default "above after").
 
-chips / tag / status / priority:
-  options (array of {label,value}), multiple, removable, color, value
+chips:
+  value_source ("static"|"field"; default "static"),
+  chips (comma-separated chip labels; when value_source="static"),
+  removable (bool; default true).
 
-progress_bar / progress_spinner:
-  mode ("determinate"|"indeterminate"|"buffer"|"query"), value, color
+icon:
+  icon_name (material name; default "star"),
+  font_set (""|"material-icons-outlined"|"material-icons-round"|"material-icons-sharp"|"material-icons-two-tone"|"material-symbols-outlined"|"material-symbols-rounded"|"material-symbols-sharp"; default ""),
+  color (""|"primary"|"accent"|"warn"; default "" = inherit), inline (bool), tooltip, aria_label, aria_hidden (bool; default true).
+  (styles.responsive_styles.font_size sets the icon size in px.)
 
-textbox / textarea:
-  placeholder, appearance ("fill"|"outline"), name, label, identifier (set true for form fields), readonly, disabled
+progress_bar:
+  value_source ("static"|"field"|"state"; default "static"),
+  state_key (when value_source="state"), value_path (when value_source is "field"/"state"),
+  value (0..100; when value_source="static"), mode ("determinate"|"indeterminate"|"buffer"|"query"; default "determinate"),
+  buffer_value (0..100; for buffer mode).
 
-email / website / phone / number / currency:
-  placeholder, appearance, name, label, identifier, currency_code (for currency), country_code (for phone)
+progress_spinner:
+  value (0..100), diameter (px; default 40), stroke_width (px; default 4).
 
-date / datetime / time-picker / duration:
-  placeholder, appearance, format, name, label, identifier
+tile (rich KPI / metric tile):
+  variant ("metric"|"progress"|"gauge"|"card"; default "metric"),
+  data_source ("page_data"|"query"|"static"; default "page_data"),
+  entity_name (when data_source="page_data"), query (when data_source="query"),
+  title, title_field, subtitle,
+  primary_value_field, primary_value_label, secondary_value_field, secondary_value_label,
+  dynamic_number (bool; abbreviate numbers), display_number_as ("lacs"|"mn"; when dynamic_number), number_decimals (default 2),
+  currency_symbol_field, currency_symbol,
+  icon (material name; default "analytics"), icon_color,
+  badge_text, badge_color, badge_text_color, alert_text, alert_icon (default "warning"),
+  show_graph (bool; sparkline), graph_data_field,
+  color_rules (stringified JSON array, e.g. [{"min":0,"max":30,"bg":"#fee2e2","text":"#ef4444"}]),
+  bg_color, text_color, scale (number; default 1).
 
-select-eru:
-  placeholder, name, label, identifier,
-  option_type ("STATIC"|"ENTITY_DATA"|"API"),
-  static_options (comma-separated string when option_type=STATIC),
-  entity_name (when ENTITY_DATA), api (when API),
-  multiple, appearance
+timer:
+  duration (seconds; default 300), display_format ("seconds"|"mm:ss"; default "seconds"), auto_start (bool).
 
-checkbox-eru / slide_toggle / button_toggle:
-  name, label, identifier, default_value
+------ LAYOUT ------
 
-attachment / location / people / rating / progress:
-  name, label, identifier, accept (attachment), max (rating), default_value
+flex_container:
+  layout_type ("flex"|"grid"; default "flex"), flex_direction ("row"|"row-reverse"|"column"|"column-reverse"),
+  justify_content ("flex-start"|"flex-end"|"center"|"space-between"|"space-around"|"space-evenly"),
+  align_items ("stretch"|"flex-start"|"flex-end"|"center"|"baseline"),
+  flex_wrap ("nowrap"|"wrap"|"wrap-reverse"),
+  align_content ("stretch"|"flex-start"|"flex-end"|"center"|"space-between"|"space-around"),
+  gap, row_gap, column_gap (0..100),
+  (child-item overrides) flex_grow, flex_shrink, flex_basis ("auto"|"100px"|"50%"), align_self ("auto"|"flex-start"|"flex-end"|"center"|"baseline"|"stretch").
 
-stepper / sidebar_stepper:
-  steps (comma-separated), orientation ("horizontal"|"vertical"), linear, validate_steps
+grid_container:
+  layout_type ("grid"|"flex"; default "grid"),
+  grid_template_columns (e.g. "repeat(auto-fit, minmax(250px, 1fr))", "1fr 2fr"),
+  grid_template_rows ("auto", "100px 1fr"), grid_template_areas (string),
+  gap, row_gap, column_gap,
+  justify_items/align_items ("start"|"end"|"center"|"stretch"),
+  justify_content/align_content ("start"|"end"|"center"|"stretch"|"space-around"|"space-between"|"space-evenly"),
+  grid_auto_flow ("row"|"column"|"row dense"|"column dense"), grid_auto_columns, grid_auto_rows,
+  (child-item overrides) grid_column, grid_row, grid_area, justify_self, align_self ("auto"|"start"|"end"|"center"|"stretch").
+
+card:
+  title, subtitle, content (main text rendered when the card has NO children),
+  show_actions (bool), action_text (label of the action button).
+
+divider:
+  inset (bool), vertical (bool). (Excludes identifier/mandatory/disabled behavior props.)
 
 expansion_panel:
-  expanded (bool), title, description, hide_toggle, disabled
-
-tabs:
-  tabs (comma-separated), selected_index, animation_duration
-
-toolbar:
-  label, color ("primary"|"accent"|"warn"), dense
-
-sidenav:
-  label, mode ("over"|"push"|"side"), opened, fixed_in_viewport
-
-menu:
-  label, items (array of {label, icon, action})
+  expanded (bool; initially open). Put the panel body components in children[].
 
 list:
-  data_source ("static"|"entity"|"api"), entity_name, query, fields, item_template
+  items (comma-separated item labels), show_icons (bool; default true), dense (bool).
+
+stepper:
+  steps (comma-separated step titles), orientation ("horizontal"|"vertical"; default "horizontal"),
+  linear (bool; require previous steps done), validate_steps (bool; block Next if required fields empty).
+  Step content goes in children[] (the runtime maps children into steps).
+
+sidebar_stepper:
+  steps (comma-separated), step_subtitles (comma-separated), sidebar_width (px; default 280),
+  show_progress (bool; default true), active_color, complete_color, validate_steps (bool),
+  step_validation_expressions (newline-separated; one truthy expression per step, e.g. "@uploaded_docs == @required_docs").
 
 tree:
-  data_source, fields, expandable
+  items (comma-separated parent labels), show_icons (bool; default true).
 
-grid (data grid):
-  data_source ("static"|"entity"|"api"), entity_name, fields, query, group_by,
-  editable, columnResizable, columnReorderable, cellSelection, rowSelection, exportable, filtering,
-  sortable, sortBar, groupBar, freezeField, freezeHeader, freezeGrandTotal,
-  enableRowSubtotals, enableColumnSubtotals, enableGrandTotal, enableColumnGrandTotal,
-  subtotalPosition ("before"|"after"), grandTotalPosition ("before"|"after"),
-  subtotalLabel, replaceZeroValue, gridHeight (number), allowSelection,
-  showColumnLines, showRowLines, headerRowHeight (number), dataRowHeight (number)
-
-line_chart / bar_chart:
-  title, api, query, xAxisKey, yAxisKey, xAxisData, seriesData, transformData,
-  showGrid, showTooltip, lineColor (line_chart), areaOpacity (line_chart),
-  width, height, minWidth, minHeight
-
-pie_chart:
-  title, transformData, data (stringified JSON like "[{\"name\":\"A\",\"value\":335},{\"name\":\"B\",\"value\":310}]"),
-  nameKey ("name"), valueKey ("value")
-
-eru_page:
-  targetPageId, displayMode ("popup"|"side_panel"|"inline"), buttonText, buttonIcon, autoOpen
+grid_list:
+  cols (1..12; default 2), row_height (px; default 100), items (comma-separated).
 
 page_ref (embeds another EruPage — primary mechanism for nested pages, drill-ins, repeated sections):
-  display_type ("inline"|"popup"|"side_panel"; default "inline"),
+  display_type ("inline"|"popup"|"side_panel"; default "inline")
     inline      = render nested page directly in layout
-    popup       = open in MatDialog (80vw x 80vh, max 900px wide)
-    side_panel  = right-side overlay (420px wide, full height)
-  auto_open (bool; only meaningful when display_type="side_panel"):
-    true        = panel pinned open, no backdrop, no click-to-dismiss
-    false       = panel closed by default, opened via an event (open-side-panel / toggle-side-panel) with fieldNames=[page_ref_id]
+    popup       = open in MatDialog
+    side_panel  = right-side overlay
+  auto_open (bool; only meaningful when display_type="side_panel"): true = pinned open, false = opened via an event (open/toggle-side-panel with fieldNames=[page_ref_id]),
   page (string, required) — id of target EruPage,
-  nesting_type ("none"|"object"|"array"|"nested_object"|"nested_array"; default "object"):
-    none           = simple page reference
-    object         = single child record of an entity
-    array          = list of child records of an entity
-    nested_object  = nested object stored inside an entity field
-    nested_array   = nested array — repeats the page for each element
+  nesting_type ("none"|"object"|"array"|"nested_object"|"nested_array"; default "object"),
   entity (string) — bound entity name (required when nesting_type != "none"),
-  data_source ("auto"|"api"; default "auto"; only when nesting_type is "object" or "array"):
+  data_source ("auto"|"api"|"function"|"query"|"state"; default "auto"; only when nesting_type is "object" or "array"):
     auto = embedded page receives data automatically by parent entity_id
-    api  = embedded page calls api_name to fetch its data
-  api_name (string; when data_source="api"),
-  api_payload_fields (string[]; each entry is "state:<key>" or "page:<field>" — assembled into the API payload; only when data_source="api"),
+    api / function / query = call that source to fetch data
+    state = read a field from outer-page state
+  api_name (when data_source="api"), function_name (when data_source="function"), query_name (when data_source="query"),
+  api_payload_fields (string[]; outer state vars / page-data fields sent as payload; when data_source is api/function/query),
+  state_field (outer-page state key; when data_source="state"),
   loop_source ("data"|"static"|"api"|"field"; default "data"; only when nesting_type="nested_array"):
-    data    = iterate over bound child entity rows
-    static  = iterate over loop_static_data
-    api     = iterate over loop_api response
-    field   = iterate over options of loop_field
+    data = iterate child entity rows, static = iterate loop_static_data, api = iterate loop_api response, field = iterate options of loop_field
   loop_static_data (stringified JSON array; when loop_source="static"; default "[]"),
-  loop_api (api name; when loop_source="api"),
-  loop_field (entity field name; when loop_source="field"),
-  loop_match_fields (string[]; field names used to deduplicate non-data loops),
-  description (string)
+  loop_api (when loop_source="api"), loop_field (entity field; when loop_source="field"),
+  loop_match_fields (string[]; dedupe non-data loops),
+  description (string).
 
 widget (embeds a previously saved reusable widget by id):
-  widget (string, required) — id of the saved widget (no children allowed),
-  description (string)
+  widget (string, required) — id of the saved widget (no children allowed), description (string).
+
+------ INPUT / FORM ------
+
+COMMON to the eru form fields (email, phone, number, currency, date, datetime, time-picker, duration, website, textarea, textbox, checkbox-eru, select-eru, location, people, priority, progress, status, tag, attachment):
+  appearance ("fill"|"outline"; default "outline") [not on checkbox-eru, priority, progress, status, tag, attachment, rating],
+  default_mode ("view"|"edit"; default "edit") — initial render mode,
+  editable (bool; default true) — allow double-click to switch view↔edit.
+  Plus the universal common props: name, label, identifier, etc. (see COMMON BEHAVIOR PROPERTIES).
+
+textbox:
+  placeholder, prefix_icon (material icon before input), suffix_icon (material icon after input), appearance, default_mode, editable.
+
+textarea:
+  placeholder, rows (1..20; default 3), appearance, default_mode, editable.
+
+email / website / location / people / datetime / time-picker / duration:
+  placeholder, appearance, default_mode, editable.
+
+phone:
+  placeholder, appearance, allowed_country_codes (comma-separated ISO-2, e.g. "IN,US,GB"; blank = all), default_mode, editable.
+
+number:
+  placeholder, decimalPlaces (0..10; default 2), appearance, default_mode, editable,
+  dynamic_number (bool), display_number_as ("lacs"|"mn"; default "mn").
+
+currency:
+  value_source ("static"|"field"|"state"; default "field"), state_key (when "state"), value_path (when "field"/"state"), value (when "static"),
+  placeholder, symbol_field (take symbol from a field value; overrides symbol), symbol (default "$"),
+  decimalPlaces (0..10; default 2), appearance, default_mode, editable, dynamic_number, display_number_as ("lacs"|"mn"; default "mn").
+
+date:
+  placeholder, date_format ("dd-MM-yyyy"|"MM-dd-yyyy"|"yyyy-MM-dd"|"dd/MM/yyyy"|"MM/dd/yyyy"|"yyyy/MM/dd"|"dd.MM.yyyy"|"MM.dd.yyyy"; default "dd-MM-yyyy"), appearance, default_mode, editable.
+
+checkbox-eru:
+  label, color ("primary"|"accent"|"warn"; default "primary"), default_mode, editable.
+
+select-eru:
+  placeholder,
+  option_type ("STATIC"|"ENTITY_DATA"|"API"; default "STATIC"),
+  static_options (comma-separated string; when option_type="STATIC"),
+  entity_name (when option_type="ENTITY_DATA"), api (when option_type="API"),
+  multiple (bool), appearance, default_mode, editable.
+
+attachment:
+  label (default "Upload File"), show_label (bool), label_position ("before"|"after"; when show_label), editable.
+
+priority:
+  value ("low"|"medium"|"high"; default "medium"), default_mode ("view"=Badge|"edit"=Dropdown; default "view"), editable.
+
+progress:
+  value (0..100; default 50), mode ("determinate"|"indeterminate"; default "determinate"),
+  default_mode ("view"=Disabled|"edit"=Enabled; default "edit"), editable.
+
+rating:
+  icon_type ("star"|"heart"|"smiley"|"thumbsup"|"check"; default "star"), value (0..10; default 0), max (1..10; default 5).
+
+status:
+  value_source ("static"|"field"|"state"; default "static"), state_key (when "state"), value_path (when "field"/"state"),
+  value (default value; when "static"),
+  open_statuses (array of {label,color}, e.g. [{"label":"Active","color":"#22C55E"}]),
+  close_statuses (array of {label,color}, e.g. [{"label":"Closed","color":"#EF4444"}]),
+  default_mode ("view"=Badge|"edit"=Dropdown; default "view"), editable.
+
+tag:
+  label, default_mode, editable.
+
+radio:
+  label, radio_options (comma-separated), vertical (bool).
+
+slider:
+  label, value_source ("static"|"field"|"state"; default "static"), state_key (when "state"), value_path (when "field"/"state"),
+  value (when "static"; default 50), min (default 0), max (default 100), step (default 1), discrete (bool; tick marks; default true).
+
+slide_toggle:
+  label, checked (bool; initial state), color ("primary"|"accent"|"warn"; default "primary").
+
+autocomplete:
+  label, autocomplete_options (comma-separated), placeholder.
+
+------ NAVIGATION ------
+
+toolbar:
+  label. Place toolbar contents in children[].
+
+menu:
+  label. (leaf)
+
+sidenav:
+  label. Place sidenav contents in children[].
+
+tabs:
+  tabs (comma-separated tab titles). Place tab contents in children[].
+
+nav_menu (URL-driven app navigation; pair with nav_outlet):
+  items (stringified JSON array of {id, label, icon?, page?, group?, badge?}; "page" is the target page UUID written to the URL on click),
+  route_param_name (URL query param tracking the active item; default "view"),
+  default_item_id (item id/page id active when the param is empty),
+  app_title, app_logo_icon (material icon),
+  orientation ("vertical"|"horizontal"; default "vertical"),
+  collapsible (bool; default true; vertical only), default_collapsed (bool).
+
+nav_outlet (renders the page selected by the paired nav_menu):
+  route_param_name (must match the nav_menu; default "view"),
+  default_page (page id mounted when the param is empty).
+
+------ DATA ------
+
+grid (data grid — table / kanban board / pivot):
+  view_mode ("table"|"board"|"pivot"; default "table"),
+  data_source ("query"|"entity"|"nested_entity"; default "query"),
+  entity_name (when data_source is "entity"/"nested_entity"),
+  fields (multiselect of entity field names; when data_source is entity/nested_entity and view_mode != "board"),
+  group_by (field; when data_source is entity/nested_entity),
+  query (query name; when data_source="query"),
+  query_group_by, query_aggregations (JSON), query_result_path,
+  query_payload_fields (string[]), query_payload_static (JSON),
+  row_count_state_key (write row count to a page-state key),
+  hide_columns (string[]),
+  Board (kanban) props (view_mode="board"): card_page_id (page used as card layout; blank = default card),
+    board_card_height (default 132), board_card_gap (default 8),
+    board_card_hover_bg, board_card_selected_bg, board_card_selected_outline (colors),
+  editable, columnResizable, columnReorderable, cellSelection, rowSelection, select_first_row,
+  exportable, filtering, sortable, sortBar, groupBar,
+  showColumnLines, showRowLines,
+  enableRowSubtotals, enableColumnSubtotals, enableGrandTotal, enableColumnGrandTotal,
+  subtotalPosition/subtotalPositionColumn ("before"|"after"), grandTotalPosition ("before"|"after"; default "before"), grandTotalPositionColumn ("before"|"after"),
+  subtotalLabel (default "Subtotal"), replaceZeroValue,
+  freezeField, freezeHeader, freezeGrandTotal,
+  gridHeight (px; default 370), page_size (rows per lazy page; blank = 50),
+  headerRowHeight (px; default 36), dataRowHeight (px; default 32),
+  cursor_on_hover (""|"pointer"|"auto"|"crosshair"|"move"|"grab"|"not-allowed"|"help"|"text"),
+  theme tokens (all optional colors, blank = grid default): token_primary, token_on_primary, token_surface,
+    token_surface_container, token_surface_container_high, token_on_surface, token_on_surface_variant, token_outline, token_outline_variant.
+
+line_chart:
+  title, api, query, xAxisKey, yAxisKey,
+  xAxisData (stringified JSON array of labels, e.g. ["Jan","Feb"]), seriesData (stringified JSON array of values),
+  transformData, showGrid (bool), showTooltip (bool), lineColor (hex; default "#5470c6"), areaOpacity (0..1; default 0.3),
+  width, height, minWidth, minHeight (CSS sizes, e.g. "400px").
+
+bar_chart:
+  title, api, query, xAxisKey, yAxisKey, xAxisData, seriesData, transformData,
+  showGrid, showTooltip, barColor (hex; default "#5470c6"), width, height, minWidth, minHeight.
+
+pie_chart:
+  title, api, query, nameKey (default "name"), valueKey (default "value"),
+  data (stringified JSON array, e.g. "[{\"name\":\"A\",\"value\":335},{\"name\":\"B\",\"value\":310}]"),
+  transformData, showLegend (bool), showTooltip (bool), radius (e.g. "50%"),
+  width, height, minWidth, minHeight.
+
+eru_page (opens/embeds another page via a trigger):
+  targetPageId, displayMode ("popup"|"side_panel"|"inline"; default "popup"), buttonText, buttonIcon, autoOpen (bool).
 
 NOTE on data properties:
-- For chart components, the "data" property always holds STRINGIFIED JSON, not an object.
+- For chart components, "data"/"xAxisData"/"seriesData" always hold STRINGIFIED JSON, not objects/arrays.
 - Provide sensible defaults when no DATA CONTEXT is supplied; otherwise derive shape from the supplied data.
 
 ============================================================
-COMMON BEHAVIOR PROPERTIES (apply to most components)
+COMMON BEHAVIOR PROPERTIES (apply to most components; set under properties.base)
 ============================================================
 
-  name:                   field/component name (snake_case for form fields; for non-form components keep empty)
-  label:                  user-visible label
+  name:                   field/component name (snake_case for form fields = a real entity field; keep empty for non-form components)
+  label:                  user-visible label / static display text
   description:            help text
   identifier:             true for form fields whose values you want stored in page data
-  visible:                "always" | "never" | "conditionally"
-  visibility_conditions:  expression (only when visible="conditionally")
-  mandatory:              "always" | "never" | "conditionally"
-  mandatory_conditions:   expression (only when mandatory="conditionally")
-  disabled_behavior:      "always" | "never" | "conditionally"
-  disabled_conditions:    expression (only when disabled_behavior="conditionally")
+  visible:                "always" | "never" | "conditionally"   (default "always")
+  visibility_conditions:  logic expression (only when visible="conditionally"); reference fields/state with @
+  mandatory:              "always" | "never" | "conditionally"   (default "never")
+  mandatory_conditions:   logic expression (only when mandatory="conditionally")
+  disabled_behavior:      "always" | "never" | "conditionally"   (default "never")
+  disabled_conditions:    logic expression (only when disabled_behavior="conditionally")
+
+(divider excludes identifier, mandatory, mandatory_conditions, disabled_behavior, disabled_conditions. page_ref replaces its whole schema and takes only its own catalog keys.)
 
 ============================================================
 PAGE-LEVEL STATE (EruPage.state)
@@ -353,29 +508,35 @@ Each component may have an "events" array. Each item is a ComponentEventSubscrip
 
 Event names by component:
   - All: click, dblclick, mouseenter, mouseleave, mouseover, mouseout, mousedown, mouseup, focus, blur, keydown, keyup
-  - Form fields with identifier=true: valueChange (alias: value_change)
+  - Form fields with identifier=true: valueChange
   - Button: buttonpress, buttonrelease, buttonhover, buttonfocus, buttonblur, api_success, api_error
-  - Charts: chart_click, datapoint_click
+  - Grid: row_select
+  - Attachment: on_upload
+  - Sidebar_stepper: on_complete
   - Timer: timeout, timer_start
-  - Page-level (EruPage.events, NOT EruComponent.events): on_load — fired by parent page_ref once nested data has arrived.
+  - page_ref (component-level): on_api_success, on_api_error
+  - Page-level (EruPage.events, NOT EruComponent.events): on_load — fired by a parent page_ref once nested data has arrived.
 
 Allowed actions (pick the most specific one):
-  no-action, call-api, fetch-page-data, save-page-data, clear-page-data, clear-all-page-data,
+  no-action, call-api, call-function, call-query, fetch-page-data, save-page-data, clear-page-data, clear-all-page-data,
   hide-fields, unhide-fields, disable-field, enable-field, set-field,
   hide-component, show-component, disable-component, enable-component,
-  start-loading, stop-loading, start-timer, stop-timer, refresh-grid,
+  update-property, start-loading, stop-loading, start-timer, stop-timer, refresh-grid,
   update-state, step-forward, step-back, emit-to-parent,
   toggle-side-panel, open-side-panel, close-side-panel, navigate-to-page
 
 Action-specific keys:
-  - call-api                   REQUIRES "apiName". Optional: payload, on_success[], on_error[], validate_before_action, validate_field_names[], error_field, error_state_key.
+  - call-api                   REQUIRES "apiName". Optional: payload, api_payload_fields[], on_success[], on_error[], validate_before_action, validate_field_names[], error_field, error_state_key.
+  - call-function              REQUIRES "function_name". Same optional keys as call-api.
+  - call-query                 REQUIRES "query_name". Same optional keys as call-api.
   - fetch-page-data            page_id, payload.
   - save-page-data             payload (optional).
   - clear-page-data            page_id (optional).
   - clear-all-page-data        (no extra keys).
   - hide-fields/unhide-fields/disable-field/enable-field   fieldNames: [<field name>...]
-  - set-field                  fieldNames: [<field name>] AND value (or state_key+state_formula).
+  - set-field                  fieldNames: [<field name>] AND value (or state_key+state_formula, or value_expression).
   - hide-component/show-component/disable-component/enable-component/start-loading/stop-loading/start-timer/stop-timer/refresh-grid   fieldNames: [<component id>]
+  - update-property            fieldNames: [<component id>] + property_key + value (or value_expression). Overrides one property on the target component at runtime.
   - update-state               state_key + state_formula. UpdateStateFormula shape:
                                  { fn: "set"|"increment"|"decrement"|"toggle"|"set-from-field"|"set-from-payload"|"reset"|"expr",
                                    value?, by?, values?, field?, expr?, payload_path? }
@@ -384,6 +545,8 @@ Action-specific keys:
   - emit-to-parent             state_key (event name to emit), payload (optional).
   - toggle-side-panel / open-side-panel / close-side-panel   fieldNames: [<page_ref component id>].
   - navigate-to-page           page_id (required).
+
+value_expression: on set-field and update-property you may supply "value_expression" instead of "value" — it is evaluated at runtime by the logic evaluator (e.g. "@view == 'kanban' ? 'board' : 'table'") and takes precedence over the static "value".
 
 A submit button on a form should typically subscribe to "click" with action "call-api", "validate_before_action": true, and optionally "validate_field_names": [...] to restrict which fields gate the call.
 
@@ -409,8 +572,14 @@ STYLING GUIDELINES
 ============================================================
 
 styles.classes:                Tailwind utility classes always applied (e.g. "rounded-xl shadow-sm bg-white").
-styles.responsive_classes.base: Tailwind classes for base breakpoint.
-styles.responsive_styles.base: { padding: 16, margin: 8, background_color: "#fff", color: "#0f172a", border_radius: 12, font_size: 14, font_weight: "500", text_align: "left", ... }
+styles.responsive_classes.base: Tailwind classes for the base breakpoint (also sm/md/lg/xl/2xl keys).
+styles.responsive_styles.base: object of style properties (snake_case keys). Supported keys the runtime maps to CSS:
+    width, height, position, display, z_index,
+    margin, padding, gap,
+    font_family, font_size, font_weight, text_align, color, line_height, letter_spacing, text_shadow,
+    background, background_color, background_image, background_position, background_repeat, background_size,
+    border_width, border_style, border_color, border_radius, box_shadow, opacity
+    Example: { "padding": 16, "background_color": "#ffffff", "color": "#0f172a", "border_radius": 12, "font_size": 14, "font_weight": "500", "text_align": "left" }
 styles.custom:                Free-form CSS map (camelCase keys). Use sparingly.
 
 DO use modern, generous spacing (padding 12–24), readable font sizes (14–16), subtle borders, and clear visual hierarchy.
@@ -430,17 +599,17 @@ INTERACTING WITH DATA
 
 When DATA CONTEXT is supplied:
 - Inspect its shape (fields, types, sample values).
-- Pick form-field types that match (e.g. number → number, ISO date → date, list of strings → select-eru with option_type="STATIC", boolean → slide_toggle/checkbox-eru).
-- For grids, populate "fields" derived from the data sample.
-- For charts, populate xAxisKey/yAxisKey/nameKey/valueKey from the data shape; pre-fill "data" with a stringified JSON sample if helpful.
+- Pick form-field types that match (e.g. number → number, ISO date → date, list of strings → select-eru with option_type="STATIC", boolean → slide_toggle/checkbox-eru, currency amount → currency).
+- For grids, set data_source and entity_name/query and populate "fields" from the data sample.
+- For charts, populate xAxisKey/yAxisKey/nameKey/valueKey from the data shape; pre-fill "data"/"seriesData"/"xAxisData" with stringified JSON samples if helpful.
 
 When AVAILABLE ENTITIES are supplied:
 - Set entity_name on the page when the page is centered on a single entity.
-- For form fields, set "name" to a real entity field; set identifier=true on inputs.
+- For form fields, set "name" to a real entity field and identifier=true on inputs.
 
 When AVAILABLE APIs are supplied:
 - For call-api event subscriptions, set apiName to one of the listed APIs.
-- For charts/grids that need data, set the "api" property to a listed api name.
+- For charts/grids that need data, set the "api"/"query" property to a listed name.
 
 ============================================================
 RESPONSIVE DESIGN
@@ -468,7 +637,7 @@ CHECKLIST — verify before emitting:
 [ ] Every component has id, type, properties.base, styles.{classes, responsive_classes, responsive_styles, custom}
 [ ] Only container types use "children"; leaves do not
 [ ] Every "type" is from the allowed list
-[ ] Every event "action" is from the allowed list; call-api events have apiName
+[ ] Every event "action" is from the allowed list; call-api has apiName, call-function has function_name, call-query has query_name
 [ ] Validation rule values match the rule type
 [ ] No fabricated api names, entity names, or component types
 `
