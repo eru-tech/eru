@@ -1244,7 +1244,7 @@ func (whatsAppTool *WhatsAppTool) FetchTemplates(ctx context.Context, params map
 			return nil, nil, false, logs.Err(ctx, err, "failed to fetch template by id")
 		}
 		toolResult = make(map[string]interface{})
-		toolResult["template"] = res
+		toolResult["templates"] = []interface{}{res}
 		return toolResult, map[string]interface{}{"query": map[string]string{"id": templateId}}, false, nil
 	}
 
