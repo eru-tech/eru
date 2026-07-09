@@ -1937,7 +1937,6 @@ func (whatsAppTool *WhatsAppTool) CreateMessageTemplate(ctx context.Context, par
 	}
 
 	toolResult = whatsAppNormalizeResult(resMap)
-	toolResult["status"] = "success"
 	return toolResult, map[string]interface{}{"body": req}, false, nil
 }
 
