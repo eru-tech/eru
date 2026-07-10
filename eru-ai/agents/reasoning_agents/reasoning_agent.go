@@ -197,6 +197,11 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	}
 
 	agentResponse := parseAgentResponse(response.Content)
+	if schema := ra.getOutputSchema(ctx); schema.Type != "" {
+		if normalized, ok := normalizeToSchema(ctx, agentResponse, schema).(map[string]interface{}); ok {
+			agentResponse = normalized
+		}
+	}
 
 	metrics := agents.BuildMetrics(traces, startTime, response.Usage)
 
@@ -324,6 +329,96 @@ func parseAgentResponse(content string) map[string]interface{} {
 	}
 
 	return map[string]interface{}{"output": content}
+}
+
+// normalizeToSchema enforces that every value in the parsed action matches the
+// type declared by the agent's output schema. Structured-output models
+// occasionally emit a nested array/object field as a stringified JSON string
+// (e.g. eru_studio returning `components` as "[{...}]" instead of [{...}]).
+// This walks the schema and json.Unmarshals any such string back into its
+// declared array/object type, recursing so that even double/triple-encoded
+// values are decoded. Fields the schema does not type (free-form / additional
+// properties, such as component `data` which is intentionally stringified JSON)
+// are left untouched, and a value that is not valid JSON is kept as-is.
+func normalizeToSchema(ctx context.Context, value interface{}, schema eru_models.JSONSchema) interface{} {
+	switch schema.Type {
+	case "object":
+		obj, ok := coerceToObject(value)
+		if !ok {
+			return value
+		}
+		for key, propSchema := range schema.Properties {
+			if child, exists := obj[key]; exists {
+				obj[key] = normalizeToSchema(ctx, child, propSchema)
+			}
+		}
+		return obj
+	case "array":
+		arr, ok := coerceToArray(value)
+		if !ok {
+			return value
+		}
+		if schema.Items != nil {
+			for i, item := range arr {
+				arr[i] = normalizeToSchema(ctx, item, *schema.Items)
+			}
+		}
+		return arr
+	default:
+		return value
+	}
+}
+
+// coerceToObject returns value as a JSON object, decoding a stringified object
+// (recursively, for multiply-encoded values) when needed.
+func coerceToObject(value interface{}) (map[string]interface{}, bool) {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return v, true
+	case string:
+		parsed, ok := unmarshalJSONValue(v)
+		if !ok {
+			return nil, false
+		}
+		return coerceToObject(parsed)
+	default:
+		return nil, false
+	}
+}
+
+// coerceToArray returns value as a JSON array, decoding a stringified array
+// (recursively, for multiply-encoded values) when needed.
+func coerceToArray(value interface{}) ([]interface{}, bool) {
+	switch v := value.(type) {
+	case []interface{}:
+		return v, true
+	case string:
+		parsed, ok := unmarshalJSONValue(v)
+		if !ok {
+			return nil, false
+		}
+		return coerceToArray(parsed)
+	default:
+		return nil, false
+	}
+}
+
+// unmarshalJSONValue parses a string that looks like JSON (object, array, or a
+// quote-wrapped JSON literal for double-encoded values) into a generic value.
+// It returns false for plain strings so non-JSON fields are left as-is.
+func unmarshalJSONValue(s string) (interface{}, bool) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return nil, false
+	}
+	if c := trimmed[0]; c != '{' && c != '[' && c != '"' {
+		return nil, false
+	}
+	var out interface{}
+	if err := json.Unmarshal([]byte(trimmed), &out); err != nil {
+		return nil, false
+	}
+	return out, true
 }
 
 func tryUnmarshalObject(s string) (map[string]interface{}, bool) {
