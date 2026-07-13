@@ -35,6 +35,18 @@ const (
 	applicationJson = "application/json"
 )
 
+var sharedHttpTransport = func() *http.Transport {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	timeout := 60 * time.Second
+	if v := os.Getenv("HTTP_RESPONSE_HEADER_TIMEOUT_SEC"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			timeout = time.Duration(secs) * time.Second
+		}
+	}
+	tr.ResponseHeaderTimeout = timeout
+	return tr
+}()
+
 /* var httpClient = http.Client{
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
@@ -299,7 +311,7 @@ func ExecuteHttp(ctx context.Context, req *http.Request) (resp *http.Response, e
 	//	logs.WithContext(ctx).Info(c.String())
 	//}
 	logs.WithContext(ctx).Info("before HTTPClientTransporter")
-	resp, err = HTTPClientTransporter(http.DefaultTransport).RoundTrip(req)
+	resp, err = HTTPClientTransporter(sharedHttpTransport).RoundTrip(req)
 	logs.WithContext(ctx).Info("after HTTPClientTransporter")
 	logs.WithContext(ctx).Info(fmt.Sprintf("resp: %+v", resp))
 	//resp, err = otelhttp.NewTransport(http.DefaultTransport).RoundTrip(req)

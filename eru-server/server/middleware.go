@@ -173,31 +173,26 @@ func contextCancellationMiddleware(next http.Handler) http.Handler {
 					panicMsg := fmt.Sprintf("HTTP handler panic in contextCancellationMiddleware: %v\nStack trace:\n%s", rec, string(debug.Stack()))
 					logs.WithContext(ctx).Error(panicMsg)
 
-					// Try to send error response if possible (response may already be written)
-					select {
-					case <-done:
-						// Channel already closed, can't write response
-					default:
-						// Try to write error response
-						if w.Header().Get("Content-Type") == "" {
-							w.Header().Set("Content-Type", "application/json")
-							w.WriteHeader(http.StatusInternalServerError)
+					// Try to write error response. w is only ever touched by this
+					// goroutine, so this is safe.
+					if w.Header().Get("Content-Type") == "" {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusInternalServerError)
 
-							errorResponse := map[string]interface{}{
-								"error":   "Internal server error",
-								"message": "Request handler panicked",
-							}
-
-							requestID, _ := r.Context().Value(server_handlers.RequestIdKey).(string)
-							if requestID == "" {
-								requestID = r.Header.Get(server_handlers.RequestIdKey)
-							}
-							if requestID != "" {
-								errorResponse["request_id"] = requestID
-							}
-
-							json.NewEncoder(w).Encode(errorResponse)
+						errorResponse := map[string]interface{}{
+							"error":   "Internal server error",
+							"message": "Request handler panicked",
 						}
+
+						requestID, _ := r.Context().Value(server_handlers.RequestIdKey).(string)
+						if requestID == "" {
+							requestID = r.Header.Get(server_handlers.RequestIdKey)
+						}
+						if requestID != "" {
+							errorResponse["request_id"] = requestID
+						}
+
+						json.NewEncoder(w).Encode(errorResponse)
 					}
 				}
 				close(done)
@@ -205,35 +200,18 @@ func contextCancellationMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		}()
 
-		// Wait for either completion or context cancellation
+		// Wait for the handler goroutine to finish. Even when the request
+		// context is cancelled we must NOT return here and leave the goroutine
+		// running - that would race two goroutines on the same ResponseWriter
+		// and leak the goroutine. Cancellation propagates to the handler via
+		// r.Context() (outbound calls unwind), which closes done.
 		select {
 		case <-done:
 			// Request completed normally
 			return
 		case <-ctx.Done():
-			// Context was cancelled (could be due to goroutine manager shutdown)
-			logs.WithContext(ctx).Warn("Request cancelled during processing")
-
-			// Check if response has already been written
-			if w.Header().Get("Content-Type") == "" {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusServiceUnavailable)
-
-				errorResponse := map[string]interface{}{
-					"error":   "Service unavailable",
-					"message": "Request cancelled due to service shutdown",
-				}
-
-				requestID, _ := r.Context().Value(server_handlers.RequestIdKey).(string)
-				if requestID == "" {
-					requestID = r.Header.Get(server_handlers.RequestIdKey)
-				}
-				if requestID != "" {
-					errorResponse["request_id"] = requestID
-				}
-
-				json.NewEncoder(w).Encode(errorResponse)
-			}
+			logs.WithContext(ctx).Warn("Request cancelled during processing - waiting for handler to unwind")
+			<-done
 			return
 		}
 	})
