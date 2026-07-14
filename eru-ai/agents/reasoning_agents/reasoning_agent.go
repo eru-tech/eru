@@ -171,11 +171,21 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		sp = sp + clarificationGuidance
 	}
 
+	// When the agent produces structured output, the final answer is the
+	// structured_output tool payload, delivered to the client in the terminal
+	// `done` event — NOT as streamed text. If the model instead emits the answer
+	// as plain text (e.g. a markdown ```json block), those text_delta events must
+	// NOT be forwarded, otherwise the whole answer leaks into the stream. Only
+	// thinking is streamed for structured-output agents.
+	suppressTextStream := outputSchema.Type != ""
 	streamCb := agents.GetStreamCallback(ctx)
 	runModel := func() (models.Message, []models.StepTrace, error) {
 		if streamCb != nil {
 			if streamingModel, ok := ra.Model.(models.StreamingModelI); ok {
 				modelCb := func(me models.ModelStreamEvent) {
+					if suppressTextStream && me.Type == models.StreamTextDelta {
+						return
+					}
 					streamCb(agents.StreamEvent{
 						Event:     string(me.Type),
 						Data:      me,
