@@ -140,6 +140,10 @@ func (pichainTool *PichainTool) Callback(ctx context.Context, projectId string, 
 	return callbackResultMap, false, nil
 }
 
+func (pichainTool *PichainTool) GetToolCbUrl(projectId string, tenantId string) string {
+	return fmt.Sprint(pichainTool.CallbackBaseUrl, "/", projectId, "/callback/", tenantId, "/tool/", pichainTool.ToolName)
+}
+
 func (pichainTool *PichainTool) GetSpec() tools.Tooling {
 	return pichainTool
 }

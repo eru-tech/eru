@@ -171,34 +171,57 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		sp = sp + clarificationGuidance
 	}
 
+	streamCb := agents.GetStreamCallback(ctx)
+	runModel := func() (models.Message, []models.StepTrace, error) {
+		if streamCb != nil {
+			if streamingModel, ok := ra.Model.(models.StreamingModelI); ok {
+				modelCb := func(me models.ModelStreamEvent) {
+					streamCb(agents.StreamEvent{
+						Event:     string(me.Type),
+						Data:      me,
+						Iteration: me.Iteration,
+					})
+				}
+				return streamingModel.RunToolLoopStreaming(ctx, chatRequest, toolsMap, sp, ra.MaxIterations, ra.ThinkingBudget, toolExecutor, modelCb)
+			}
+		}
+		return ra.Model.RunToolLoop(ctx, chatRequest, toolsMap, sp, ra.MaxIterations, ra.ThinkingBudget, toolExecutor)
+	}
+
 	var response models.Message
 	var traces []models.StepTrace
-
-	streamCb := agents.GetStreamCallback(ctx)
-	if streamCb != nil {
-		if streamingModel, ok := ra.Model.(models.StreamingModelI); ok {
-			modelCb := func(me models.ModelStreamEvent) {
-				streamCb(agents.StreamEvent{
-					Event:     string(me.Type),
-					Data:      me,
-					Iteration: me.Iteration,
-				})
-			}
-			response, traces, err = streamingModel.RunToolLoopStreaming(ctx, chatRequest, toolsMap, sp, ra.MaxIterations, ra.ThinkingBudget, toolExecutor, modelCb)
-		} else {
-			response, traces, err = ra.Model.RunToolLoop(ctx, chatRequest, toolsMap, sp, ra.MaxIterations, ra.ThinkingBudget, toolExecutor)
+	var agentResponse map[string]interface{}
+	attempt := 0
+	for {
+		response, traces, err = runModel()
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return agents.AgentMessage{}, err
 		}
-	} else {
-		response, traces, err = ra.Model.RunToolLoop(ctx, chatRequest, toolsMap, sp, ra.MaxIterations, ra.ThinkingBudget, toolExecutor)
-	}
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return agents.AgentMessage{}, err
-	}
 
-	agentResponse := parseAgentResponse(response.Content)
-	if normalized, ok := deepUnstringifyJSON(agentResponse, "").(map[string]interface{}); ok {
-		agentResponse = normalized
+		agentResponse = parseAgentResponse(response.Content)
+		if normalized, ok := deepUnstringifyJSON(agentResponse, "").(map[string]interface{}); ok {
+			agentResponse = normalized
+		}
+
+		if response.TerminalTool == models.TerminalToolAskUser {
+			break
+		}
+
+		valErr := validateAgainstSchema(agentResponse, outputSchema, "")
+		if valErr == nil {
+			break
+		}
+		logs.WithContext(ctx).Error(fmt.Sprintf("agent %s output validation failed (attempt %d of %d): %v", ra.AgentName, attempt+1, ra.RetryCount+1, valErr))
+		if attempt >= ra.RetryCount {
+			return agents.AgentMessage{}, fmt.Errorf("agent output failed JSON validation after %d attempt(s): %w", attempt+1, valErr)
+		}
+		chatRequest.Messages = append(chatRequest.Messages, models.Message{
+			Role:    "user",
+			Content: fmt.Sprintf(agentValidationRetryPrompt, valErr.Error()),
+			Name:    ra.AgentName,
+		})
+		attempt++
 	}
 
 	metrics := agents.BuildMetrics(traces, startTime, response.Usage)
@@ -219,6 +242,7 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		Metrics:          metrics,
 		MessageId:        agentMessage.MessageId,
 		MessageTimestamp: time.Now(),
+		RetryCount:       attempt,
 	}
 
 	conversation.Messages = append(conversation.Messages, agentOutput)
@@ -443,6 +467,99 @@ func escapeControlCharsInStrings(s string) string {
 		b.WriteByte(c)
 	}
 	return b.String()
+}
+
+// agentValidationRetryPrompt is fed back to the model when its output fails
+// JSON validation, so it can self-correct on the next attempt.
+const agentValidationRetryPrompt = `Your previous structured_output was NOT valid and was rejected: %s
+
+Call structured_output again with a corrected result. Requirements:
+- The ENTIRE output must be a single valid, parseable JSON object.
+- Every field must match its declared type EXACTLY. In particular, array/object fields (e.g. ` + "`components`" + `) MUST be real JSON arrays/objects, NEVER a stringified JSON string.
+- All control characters inside string values (newlines, tabs, quotes, backslashes) MUST be properly escaped.
+Do not repeat the previous mistake.`
+
+// validateAgainstSchema checks that value conforms to the type declared by
+// schema wherever the schema is strict about arrays/objects. It is the
+// validation step for reasoning agents (analogous to go-template execution for
+// the gotemplate agent): if a field the schema declares as an array/object is
+// still a string after normalization, the model emitted a stringified or
+// malformed value that could not be repaired, and we return a descriptive error
+// so the model can fix it on retry. Agents without an output schema
+// (schema.Type == "") are not validated.
+func validateAgainstSchema(value interface{}, schema eru_models.JSONSchema, path string) error {
+	switch schema.Type {
+	case "object":
+		if s, isStr := value.(string); isStr {
+			return jsonFieldError(path, "object", s)
+		}
+		m, ok := value.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		for key, propSchema := range schema.Properties {
+			child, exists := m[key]
+			if !exists {
+				continue
+			}
+			if err := validateAgainstSchema(child, propSchema, joinSchemaPath(path, key)); err != nil {
+				return err
+			}
+		}
+	case "array":
+		if s, isStr := value.(string); isStr {
+			return jsonFieldError(path, "array", s)
+		}
+		arr, ok := value.([]interface{})
+		if !ok {
+			return nil
+		}
+		if schema.Items != nil {
+			for i, item := range arr {
+				if err := validateAgainstSchema(item, *schema.Items, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// jsonFieldError builds a descriptive validation error for a field that should
+// be a JSON array/object but arrived as a string, including the underlying JSON
+// parse error and a snippet around the offending byte to guide the model's fix.
+func jsonFieldError(path, want, s string) error {
+	field := path
+	if field == "" {
+		field = "<root>"
+	}
+	trimmed := strings.TrimSpace(s)
+	var probe interface{}
+	perr := json.Unmarshal([]byte(trimmed), &probe)
+	if perr == nil {
+		return fmt.Errorf("field %q must be a JSON %s, but it was sent as a stringified JSON string; emit it as a real %s, not a string", field, want, want)
+	}
+	snippet := ""
+	if se, ok := perr.(*json.SyntaxError); ok {
+		off := int(se.Offset)
+		start := off - 60
+		if start < 0 {
+			start = 0
+		}
+		end := off + 60
+		if end > len(trimmed) {
+			end = len(trimmed)
+		}
+		snippet = fmt.Sprintf(" near byte %d: ...%s...", off, trimmed[start:end])
+	}
+	return fmt.Errorf("field %q must be a valid JSON %s but its value could not be parsed: %v%s", field, want, perr, snippet)
+}
+
+func joinSchemaPath(base, key string) string {
+	if base == "" {
+		return key
+	}
+	return base + "." + key
 }
 
 func tryUnmarshalObject(s string) (map[string]interface{}, bool) {

@@ -20,6 +20,8 @@ HARD CONSTRAINTS — READ THESE FIRST
 4. EruComponent.type MUST be one of the allowed types listed below. Never invent component types.
 5. Properties MUST live under properties.base (and optionally sm/md/lg/xl/2xl). Styles MUST live under styles.{classes, responsive_classes, responsive_styles, custom}.
 6. Children MUST live in children[]. Do not create ad-hoc keys like left, right, center, header, footer, sections, items, sidebar, topbar, tabs, etc.
+7. "components" MUST be a real JSON array of EruComponent objects — e.g. "components": [ { ... } ]. NEVER pass it as a stringified JSON string (e.g. "components": "[{...}]"). The same applies to every array/object field ("children", "events", "state", "styles", "properties"): emit real JSON arrays/objects, not strings.
+8. The ENTIRE argument to structured_output MUST be a single valid, parseable JSON value. Every control character inside a string value (newline, tab, double-quote, backslash) MUST be escaped (\n, \t, \", \\). Do not place raw/unescaped newlines or control characters inside any string. If your output cannot be parsed as JSON it will be rejected and you will be asked to regenerate it.
 
 FORBIDDEN PATTERNS (the model has gotten these wrong before — do not repeat them)
 - DO NOT invent root-level keys: theme, layout, slug, version, description, colorScheme, primaryColor, fontFamily, etc.
