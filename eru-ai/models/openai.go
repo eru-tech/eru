@@ -3,15 +3,20 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	chunking "github.com/eru-tech/eru/eru-ai/chunking"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
 	utils "github.com/eru-tech/eru/eru-utils"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -138,6 +143,24 @@ type OpenAIChatToolRequest struct {
 	ToolChoice        string               `json:"tool_choice"`
 	Tools             []OpenAIRequestTools `json:"tools"`
 	ParallelToolCalls bool                 `json:"parallel_tool_calls"`
+}
+
+type OpenAIToolLoopMessage struct {
+	Role       string                   `json:"role"`
+	Content    interface{}              `json:"content,omitempty"`
+	ToolCalls  []OpenAIResponseToolCall `json:"tool_calls,omitempty"`
+	ToolCallId string                   `json:"tool_call_id,omitempty"`
+}
+
+type OpenAIToolLoopRequest struct {
+	Model               string                  `json:"model"`
+	Messages            []OpenAIToolLoopMessage `json:"messages"`
+	MaxCompletionTokens int64                   `json:"max_completion_tokens,omitempty"`
+	Temperature         *float64                `json:"temperature,omitempty"`
+	ReasoningEffort     string                  `json:"reasoning_effort,omitempty"`
+	ServiceTier         string                  `json:"service_tier,omitempty"`
+	Tools               []OpenAIRequestTools    `json:"tools,omitempty"`
+	ToolChoice          string                  `json:"tool_choice,omitempty"`
 }
 
 type OpenAIChatAudioRequest struct {
@@ -942,6 +965,197 @@ func (openaiModel *OpenAIModel) supportsDimensions() bool {
 	default:
 		return false // Conservative default
 	}
+}
+
+func convertOpenAITools(ctx context.Context, toolsMap map[string]tools.Tooling) ([]OpenAIRequestTools, string) {
+	var openAIRequestTools []OpenAIRequestTools
+	toolPrompt := ""
+	for _, tool := range toolsMap {
+		toolNameI, _ := tool.GetAttribute(ctx, "tool_name")
+		toolDescriptionI, _ := tool.GetAttribute(ctx, "description")
+		toolSystemPromptI, _ := tool.GetAttribute(ctx, "system_prompt")
+		toolName := toolNameI.(string)
+		toolDescription := toolDescriptionI.(string)
+		toolParameters := tool.GetParameters()
+
+		if toolSystemPrompt, ok := toolSystemPromptI.(string); ok && toolSystemPrompt != "" {
+			toolPrompt += fmt.Sprint("Tool prompt for Tool ", toolName, " is as follows :\n", toolSystemPrompt)
+		}
+
+		openAIRequestTools = append(openAIRequestTools, OpenAIRequestTools{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        toolName,
+				Description: toolDescription,
+				Parameters:  toolParameters,
+			},
+		})
+	}
+	return openAIRequestTools, toolPrompt
+}
+
+func (openaiModel *OpenAIModel) queryToolLoop(ctx context.Context, request OpenAIToolLoopRequest) (openAIChatResponse OpenAIChatResponse, err error) {
+	logs.WithContext(ctx).Debug("queryToolLoop - Start")
+	reqHeader := http.Header{}
+	reqHeader.Add("Authorization", "Bearer "+openaiModel.LLMSecret)
+	reqHeader.Add("Content-Type", "application/json")
+
+	response, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, OpenAIApiUrl, reqHeader, nil, nil, nil, request)
+	if err != nil {
+		return
+	}
+
+	responseJson, err := json.Marshal(response)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	err = json.Unmarshal(responseJson, &openAIChatResponse)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return
+	}
+	return
+}
+
+func (openaiModel *OpenAIModel) RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (Message, []StepTrace, error) {
+	logs.WithContext(ctx).Debug("RunToolLoop - Start")
+	ctx, span := otel.Tracer("eru-ai").Start(ctx, "OpenAI.RunToolLoop",
+		oteltrace.WithAttributes(attribute.String("model", openaiModel.LLMName), attribute.Int("max_iterations", maxIterations)),
+	)
+	defer span.End()
+
+	openAIRequestTools, toolPrompt := convertOpenAITools(ctx, toolsMap)
+	systemContent := agentPrompt
+	if toolPrompt != "" {
+		systemContent = strings.TrimSpace(fmt.Sprint(agentPrompt, "\n", toolPrompt))
+	}
+
+	var messages []OpenAIToolLoopMessage
+	messages = append(messages, OpenAIToolLoopMessage{Role: "system", Content: systemContent})
+	for _, message := range chatRequest.Messages {
+		messages = append(messages, OpenAIToolLoopMessage{
+			Role:    message.Role,
+			Content: openaiModel.makeOpenAIChatRequestContent(ctx, message),
+		})
+	}
+
+	serviceTier := openaiModel.ServiceTier
+	if serviceTier == "" {
+		serviceTier = "auto"
+	}
+
+	var traces []StepTrace
+
+	for iteration := 1; iteration <= maxIterations; iteration++ {
+		request := OpenAIToolLoopRequest{
+			Model:       openaiModel.LLMName,
+			Messages:    messages,
+			ServiceTier: serviceTier,
+		}
+		if len(openAIRequestTools) > 0 {
+			request.Tools = openAIRequestTools
+			request.ToolChoice = "auto"
+		}
+		if openaiModel.MaxTokens > 0 {
+			request.MaxCompletionTokens = openaiModel.MaxTokens
+		}
+		if openaiModel.isReasoningModel() {
+			effort := openaiModel.ReasoningEffort
+			if effort == "" {
+				effort = "medium"
+			}
+			request.ReasoningEffort = effort
+		} else {
+			temperature := openaiModel.Temprature
+			request.Temperature = &temperature
+		}
+
+		openAIChatResponse, err := openaiModel.queryToolLoop(ctx, request)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return Message{}, traces, err
+		}
+		if len(openAIChatResponse.Choices) == 0 {
+			err = errors.New("no choices in OpenAI response")
+			logs.WithContext(ctx).Error(err.Error())
+			return Message{}, traces, err
+		}
+		choice := openAIChatResponse.Choices[0]
+
+		trace := StepTrace{
+			Iteration: iteration,
+			Timestamp: time.Now(),
+		}
+
+		if choice.FinishReason == "length" {
+			logs.WithContext(ctx).Error(fmt.Sprintf("OpenAI response truncated: finish_reason=length, max_completion_tokens=%d. Increase model.max_tokens.", request.MaxCompletionTokens))
+		}
+
+		assistantMessage := OpenAIToolLoopMessage{Role: "assistant", ToolCalls: choice.Message.ToolCalls}
+		if choice.Message.Content != "" {
+			assistantMessage.Content = choice.Message.Content
+		}
+		messages = append(messages, assistantMessage)
+
+		if len(choice.Message.ToolCalls) == 0 {
+			trace.Content = choice.Message.Content
+			traces = append(traces, trace)
+			return Message{Content: choice.Message.Content, Role: "assistant"}, traces, nil
+		}
+
+		for _, toolCall := range choice.Message.ToolCalls {
+			inputMap := make(map[string]interface{})
+			if uerr := json.Unmarshal([]byte(toolCall.Function.Arguments), &inputMap); uerr != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("tool_call %s arguments parse failed (likely truncated by max_completion_tokens=%d): %v; raw=%s", toolCall.Function.Name, request.MaxCompletionTokens, uerr, toolCall.Function.Arguments))
+			}
+
+			if toolCall.Function.Name == TerminalToolStructuredOutput {
+				trace.ToolName = toolCall.Function.Name
+				trace.ToolInput = inputMap
+				traces = append(traces, trace)
+				if len(inputMap) == 0 {
+					return Message{}, traces, fmt.Errorf("structured_output tool input was empty or truncated; raise model.max_tokens (current=%d)", request.MaxCompletionTokens)
+				}
+				resultBytes, _ := json.Marshal(inputMap)
+				return Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolStructuredOutput}, traces, nil
+			}
+
+			if toolCall.Function.Name == TerminalToolAskUser {
+				trace.ToolName = toolCall.Function.Name
+				trace.ToolInput = inputMap
+				traces = append(traces, trace)
+				if len(inputMap) == 0 {
+					return Message{}, traces, fmt.Errorf("ask_user tool input was empty or truncated; raise model.max_tokens (current=%d)", request.MaxCompletionTokens)
+				}
+				resultBytes, _ := json.Marshal(inputMap)
+				return Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolAskUser}, traces, nil
+			}
+
+			trace.ToolName = toolCall.Function.Name
+			trace.ToolInput = inputMap
+		}
+
+		for _, toolCall := range choice.Message.ToolCalls {
+			inputMap := make(map[string]interface{})
+			json.Unmarshal([]byte(toolCall.Function.Arguments), &inputMap)
+
+			result, execErr := toolExecutor(ctx, toolCall.Function.Name, inputMap)
+			toolMessage := OpenAIToolLoopMessage{Role: "tool", ToolCallId: toolCall.Id}
+			if execErr != nil {
+				toolMessage.Content = fmt.Sprintf("Error: %s", execErr.Error())
+				trace.ToolResult = map[string]interface{}{"error": execErr.Error()}
+			} else {
+				resultBytes, _ := json.Marshal(result)
+				toolMessage.Content = string(resultBytes)
+				trace.ToolResult = result
+			}
+			messages = append(messages, toolMessage)
+		}
+		traces = append(traces, trace)
+	}
+
+	return Message{Content: "max iterations reached", Role: "assistant"}, traces, nil
 }
 
 func (openaiModel *OpenAIModel) queryModelResponsesWithTool(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (queryResponse JsonMessage, err error) {
