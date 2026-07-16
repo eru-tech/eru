@@ -164,9 +164,9 @@ type GlHistoryListResponse struct {
 }
 
 type GlHistoryRecord struct {
-	Id             string                 `json:"id"`
-	Messages       []GlHistoryMessageRef  `json:"messages,omitempty"`
-	MessagesAdded  []GlHistoryMessageItem `json:"messagesAdded,omitempty"`
+	Id            string                 `json:"id"`
+	Messages      []GlHistoryMessageRef  `json:"messages,omitempty"`
+	MessagesAdded []GlHistoryMessageItem `json:"messagesAdded,omitempty"`
 }
 
 type GlHistoryMessageItem struct {
@@ -495,7 +495,7 @@ func (glEmailTool *GlEmailTool) fetchEmailsSince(ctx context.Context, startHisto
 					continue
 				}
 				seen[ma.Message.Id] = true
-				readMsg, _, _, readErr := glEmailTool.ReadMessage(ctx, map[string]interface{}{"message_id": ma.Message.Id})
+				readMsg, _, _, readErr := glEmailTool.ReadMessage(ctx, map[string]interface{}{"message_id": ma.Message.Id, "attachments": true})
 				if readErr != nil {
 					logs.WithContext(ctx).Error(readErr.Error())
 					continue

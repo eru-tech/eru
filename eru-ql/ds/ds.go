@@ -807,14 +807,22 @@ func (sqr *SqlMaker) ExecutePreparedQuery(ctx context.Context, query string, dat
 					return nil, err
 				}
 			} else if (colType.DatabaseTypeName() == "JSONB" || colType.DatabaseTypeName() == "JSON") && mapping[colType.Name()] != nil {
-				bytesToUnmarshal := mapping[colType.Name()].([]byte)
-				var v interface{}
-				err = json.Unmarshal(bytesToUnmarshal, &v)
-				if err != nil {
-					err = logs.Err(ctx, err, "")
-					return nil, err
+				var bytesToUnmarshal []byte
+				switch mv := mapping[colType.Name()].(type) {
+				case []byte:
+					bytesToUnmarshal = mv
+				case string:
+					bytesToUnmarshal = []byte(mv)
 				}
-				mapping[colType.Name()] = &v
+				if bytesToUnmarshal != nil {
+					var v interface{}
+					err = json.Unmarshal(bytesToUnmarshal, &v)
+					if err != nil {
+						err = logs.Err(ctx, err, "")
+						return nil, err
+					}
+					mapping[colType.Name()] = &v
+				}
 			}
 			innerResultRow[colType.Name()] = mapping[colType.Name()]
 			//innerResult[colType.Name()+"_DT"] = reflect.TypeOf(r).Kind().String()
@@ -1220,13 +1228,21 @@ func (sqr *SqlMaker) ExecuteQuery(ctx context.Context, datasource *module_model.
 					return nil, err
 				}
 			} else if (colType.DatabaseTypeName() == "JSONB" || colType.DatabaseTypeName() == "JSON") && mapping[colType.Name()] != nil {
-				bytesToUnmarshal := mapping[colType.Name()].([]byte)
-				var v interface{}
-				err = json.Unmarshal(bytesToUnmarshal, &v)
-				if err != nil {
-					return nil, err
+				var bytesToUnmarshal []byte
+				switch mv := mapping[colType.Name()].(type) {
+				case []byte:
+					bytesToUnmarshal = mv
+				case string:
+					bytesToUnmarshal = []byte(mv)
 				}
-				mapping[colType.Name()] = &v
+				if bytesToUnmarshal != nil {
+					var v interface{}
+					err = json.Unmarshal(bytesToUnmarshal, &v)
+					if err != nil {
+						return nil, err
+					}
+					mapping[colType.Name()] = &v
+				}
 			}
 			resultRowHolderNew[colLevelI][colSubLevelI][cn] = mapping[colType.Name()]
 
