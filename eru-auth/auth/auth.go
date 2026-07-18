@@ -466,15 +466,7 @@ func (auth *Auth) GetTokens(ctx context.Context, code string) (res interface{}, 
 
 func (auth *Auth) FetchTokens(ctx context.Context, refreshToken string, userId string) (res interface{}, err error) {
 	logs.WithContext(ctx).Debug("FetchTokens - Start")
-	_, err = auth.Hydra.fetchTokens(ctx, refreshToken)
-	if err != nil {
-		return
-	}
-	identity, ierr := auth.getUserInfo(ctx, userId)
-	if ierr != nil {
-		return nil, ierr
-	}
-	return auth.makeTokens(ctx, identity)
+	return auth.Hydra.fetchTokens(ctx, refreshToken)
 }
 
 func (auth *Auth) LoginApi(ctx context.Context, refreshToken string, userId string) (res interface{}, err error) {

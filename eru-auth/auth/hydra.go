@@ -212,6 +212,7 @@ func (hydraConfig HydraConfig) fetchTokens(ctx context.Context, refresh_token st
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
+		loginSuccess.Expiry = time.Now().Add(time.Duration(loginSuccess.ExpiresIn) * time.Second)
 	}
 	return loginSuccess, nil
 }
@@ -285,14 +286,22 @@ func (hydraConfig HydraConfig) verifyRefreshToken(ctx context.Context, token str
 func (hydraConfig HydraConfig) GetOauthConfig(ctx context.Context, clientId string) (oauth2Config *oauth2.Config, err error) {
 	logs.WithContext(ctx).Debug("getOauthConfig - Start")
 	if hc, ok := hydraConfig.HydraClients[clientId]; ok {
+		authStyle := oauth2.AuthStyleAutoDetect
+		switch hc.TokenEndpointAuthMethod {
+		case "client_secret_post", "none":
+			authStyle = oauth2.AuthStyleInParams
+		case "client_secret_basic":
+			authStyle = oauth2.AuthStyleInHeader
+		}
 		return &oauth2.Config{
 			RedirectURL:  hc.RedirectURIs[0],
 			ClientID:     clientId,
 			ClientSecret: hc.ClientSecret,
 			Scopes:       strings.Split(hc.Scope, " "),
 			Endpoint: oauth2.Endpoint{
-				AuthURL:  hydraConfig.AuthURL,
-				TokenURL: hydraConfig.TokenURL,
+				AuthURL:   hydraConfig.AuthURL,
+				TokenURL:  hydraConfig.TokenURL,
+				AuthStyle: authStyle,
 			},
 		}, nil
 	} else {

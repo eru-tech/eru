@@ -8,33 +8,80 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/lestrrat-go/jwx/jwk"
+	"sync"
+	"time"
 )
 
-func FetchKeyJWK(ctx context.Context, kid string, jwkurl string) (interface{}, error) {
-	// TODO Use jwk.AutoRefresh if you intend to keep reuse the JWKS over and over
-	set, err := jwk.Fetch(ctx, jwkurl)
-	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprint("failed to parse JWK: %s", err))
-		return nil, errors.New("Failed to parse JWK")
+var (
+	jwkRefresherOnce sync.Once
+	jwkRefresher     *jwk.AutoRefresh
+	jwkConfigured    sync.Map
+	jwkLastForced    sync.Map
+)
+
+func fetchJWKSet(ctx context.Context, jwkurl string) (jwk.Set, error) {
+	jwkRefresherOnce.Do(func() {
+		jwkRefresher = jwk.NewAutoRefresh(context.Background())
+	})
+	if _, loaded := jwkConfigured.LoadOrStore(jwkurl, true); !loaded {
+		jwkRefresher.Configure(jwkurl, jwk.WithMinRefreshInterval(5*time.Minute))
 	}
+	return jwkRefresher.Fetch(ctx, jwkurl)
+}
 
+func refreshJWKSet(ctx context.Context, jwkurl string) (jwk.Set, error) {
+	now := time.Now()
+	if lastI, ok := jwkLastForced.Load(jwkurl); ok {
+		if last, lok := lastI.(time.Time); lok && now.Sub(last) < time.Minute {
+			return jwkRefresher.Fetch(ctx, jwkurl)
+		}
+	}
+	jwkLastForced.Store(jwkurl, now)
+	return jwkRefresher.Refresh(ctx, jwkurl)
+}
+
+func lookupRawKeyJWK(ctx context.Context, set jwk.Set, kid string) (interface{}, bool, error) {
 	for it := set.Iterate(context.Background()); it.Next(context.Background()); {
-
 		pair := it.Pair()
 		key := pair.Value.(jwk.Key)
 		if kid == key.KeyID() {
-			var rawkey interface{} // This is the raw key, like *rsa.PrivateKey or *ecdsa.PrivateKey
+			var rawkey interface{}
 			if err := key.Raw(&rawkey); err != nil {
 				err = errors.New(fmt.Sprint("Failed to create public key - ", err.Error()))
 				logs.WithContext(ctx).Error(err.Error())
-				return nil, err
+				return nil, false, err
 			}
-			// Use rawkey for jws.Verify() or whatever.
-			return rawkey, nil
-
+			return rawkey, true, nil
 		}
 	}
-	// OUTPUT:
+	return nil, false, nil
+}
+
+func FetchKeyJWK(ctx context.Context, kid string, jwkurl string) (interface{}, error) {
+	set, err := fetchJWKSet(ctx, jwkurl)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("failed to parse JWK: ", err))
+		return nil, errors.New("Failed to parse JWK")
+	}
+	rawkey, found, err := lookupRawKeyJWK(ctx, set, kid)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		return rawkey, nil
+	}
+	set, err = refreshJWKSet(ctx, jwkurl)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("failed to refresh JWK: ", err))
+		return nil, errors.New("Failed to parse JWK")
+	}
+	rawkey, found, err = lookupRawKeyJWK(ctx, set, kid)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		return rawkey, nil
+	}
 	err = errors.New(fmt.Sprint("kid ", kid, " not found"))
 	logs.WithContext(ctx).Error(err.Error())
 	return nil, err

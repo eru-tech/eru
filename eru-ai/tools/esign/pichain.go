@@ -79,6 +79,11 @@ func (pichainTool *PichainTool) Callback(ctx context.Context, projectId string, 
 
 	gm := server.GetGlobalGoroutineManager(ctx)
 	gm.SafeGoWithRestartBehavior("pichain-callback", func(bgCtx context.Context) {
+		requestId := ctx.Value("request_id")
+		if requestId != nil {
+			bgCtx = context.WithValue(bgCtx, "request_id", requestId)
+		}
+
 		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
 		if efurl == nil {
 			err = errors.New("erufuncbaseurl not found in context")
