@@ -863,7 +863,7 @@ func (kratosHydraAuth *KratosHydraAuth) GetUser(ctx context.Context, userId stri
 
 func (kratosHydraAuth *KratosHydraAuth) FetchTokens(ctx context.Context, refreshToken string, userId string) (res interface{}, err error) {
 	logs.WithContext(ctx).Debug("FetchTokens - Start")
-	return kratosHydraAuth.Hydra.fetchTokens(ctx, refreshToken)
+	return kratosHydraAuth.Hydra.fetchTokens(ctx, refreshToken, userId)
 }
 
 func (kratosHydraAuth *KratosHydraAuth) getKratosUser(ctx context.Context, userId string) (identity KratosIdentity, err error) {

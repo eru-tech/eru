@@ -167,7 +167,7 @@ func (hydraConfig HydraConfig) GetUserInfo(ctx context.Context, access_token str
 	}
 }
 
-func (hydraConfig HydraConfig) fetchTokens(ctx context.Context, refresh_token string) (res interface{}, err error) {
+func (hydraConfig HydraConfig) fetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error) {
 	logs.WithContext(ctx).Debug("fetchTokens - Start")
 	dummyMap := make(map[string]string)
 	headers := http.Header{}
@@ -213,6 +213,7 @@ func (hydraConfig HydraConfig) fetchTokens(ctx context.Context, refresh_token st
 			return nil, err
 		}
 		loginSuccess.Expiry = time.Now().Add(time.Duration(loginSuccess.ExpiresIn) * time.Second)
+		loginSuccess.Id = userId
 	}
 	return loginSuccess, nil
 }
