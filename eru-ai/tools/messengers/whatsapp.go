@@ -2046,6 +2046,7 @@ func (whatsAppTool *WhatsAppTool) EditMessageTemplate(ctx context.Context, param
 	}
 
 	toolResult = whatsAppNormalizeResult(resMap)
+	toolResult["status"] = "PENDING"
 	return toolResult, map[string]interface{}{"body": req}, false, nil
 }
 
