@@ -28,6 +28,7 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 		host, url := extractHostUrl(r)
 		logs.WithContext(r.Context()).Info(host)
 		logs.WithContext(r.Context()).Info(url)
+		utils.PrintRequestBody(r.Context(), r, "request from gateway")
 		tg, authorizer, addHeaders, instanceId, err := sh.Store.GetTargetGroupAuthorizer(r.Context(), r)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
