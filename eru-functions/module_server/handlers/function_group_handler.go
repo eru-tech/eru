@@ -391,23 +391,25 @@ func FuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		// Lookup a functions in a function based on host and url
 
 		reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
-		var bodyMap interface{}
+		var bodyMap map[string]interface{}
 		if reqContentType == "application/json" && r.ContentLength > 0 {
 
-			tmplBodyFromReq := json.NewDecoder(r.Body)
-			tmplBodyFromReq.DisallowUnknownFields()
-			if err := tmplBodyFromReq.Decode(&bodyMap); err != nil {
-				logs.WithContext(r.Context()).Error(fmt.Sprint("error decode request body : ", err.Error()))
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				logs.WithContext(r.Context()).Error(fmt.Sprint("error reading request body : ", err.Error()))
 				server_handlers.FormatResponse(w, http.StatusBadRequest)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to decode request body"})
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to read request body"})
 				return
 			}
-			body, err := json.Marshal(bodyMap)
-			if err != nil {
-				logs.WithContext(ctx).Error(fmt.Sprint("json.Marshal(vars.Body) error : ", err.Error()))
-				server_handlers.FormatResponse(w, http.StatusBadRequest)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to marshal request body"})
-				return
+			if err := json.Unmarshal(body, &bodyMap); err != nil {
+				var bodyArray []interface{}
+				if arrErr := json.Unmarshal(body, &bodyArray); arrErr != nil {
+					logs.WithContext(r.Context()).Error(fmt.Sprint("error decode request body : ", err.Error()))
+					server_handlers.FormatResponse(w, http.StatusBadRequest)
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to decode request body"})
+					return
+				}
+				bodyMap = map[string]interface{}{"body": bodyArray}
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			r.Header.Set("Content-Length", strconv.Itoa(len(body)))
