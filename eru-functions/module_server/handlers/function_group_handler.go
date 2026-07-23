@@ -391,7 +391,7 @@ func FuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		// Lookup a functions in a function based on host and url
 
 		reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
-		bodyMap := make(map[string]interface{})
+		var bodyMap interface{}
 		if reqContentType == "application/json" && r.ContentLength > 0 {
 
 			tmplBodyFromReq := json.NewDecoder(r.Body)
