@@ -698,7 +698,7 @@ func (glEmailTool *GlEmailTool) SubscribeEmail(ctx context.Context, projectId st
 	return toolResult, map[string]interface{}{"body": subPost}, persistStore, nil
 }
 
-func glNormalizeRecipients(v interface{}) []string {
+func emailNormalizeRecipients(v interface{}) []string {
 	switch vv := v.(type) {
 	case string:
 		if vv == "" {
@@ -722,19 +722,19 @@ func glNormalizeRecipients(v interface{}) []string {
 func (glEmailTool *GlEmailTool) SendEmail(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("SendEmail Execute - Start")
 
-	to := glNormalizeRecipients(params["to"])
-	cc := glNormalizeRecipients(params["cc"])
-	bcc := glNormalizeRecipients(params["bcc"])
+	to := emailNormalizeRecipients(params["to"])
+	cc := emailNormalizeRecipients(params["cc"])
+	bcc := emailNormalizeRecipients(params["bcc"])
 	replyTo, _ := params["reply_to"].(string)
 	subject, _ := params["subject"].(string)
 	body, _ := params["body"].(string)
 	bodyType, _ := params["body_type"].(string)
 	threadId, _ := params["thread_id"].(string)
 	inReplyTo, _ := params["in_reply_to"].(string)
-	references := strings.Join(glNormalizeRecipients(params["references"]), " ")
+	references := strings.Join(emailNormalizeRecipients(params["references"]), " ")
 
-	if len(to) == 0 {
-		err = errors.New("to is required")
+	if len(to) == 0 && len(cc) == 0 && len(bcc) == 0 {
+		err = errors.New("at least one of to, cc or bcc is required")
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, false, err
 	}
@@ -761,7 +761,9 @@ func (glEmailTool *GlEmailTool) SendEmail(ctx context.Context, params map[string
 	}
 
 	var msg bytes.Buffer
-	fmt.Fprintf(&msg, "To: %s\r\n", strings.Join(to, ", "))
+	if len(to) > 0 {
+		fmt.Fprintf(&msg, "To: %s\r\n", strings.Join(to, ", "))
+	}
 	if len(cc) > 0 {
 		fmt.Fprintf(&msg, "Cc: %s\r\n", strings.Join(cc, ", "))
 	}
@@ -1280,7 +1282,7 @@ func init() {
 		Description:  "Google (Gmail) email integration for reading, sending, and subscribing to emails via Gmail API and Pub/Sub",
 		Actions:      []tools.ActionInfo{{Name: ReadEmail}, {Name: SendEmail}, {Name: SubscribeEmail}, {Name: ReadMessage}, {Name: GetSsoUrl}, {Name: Login}, {Name: RenewToken}, {Name: RenewSubscription}, {Name: ReadHistoryRange}},
 		OAuthEnabled: true,
-		Icon:         "",
+		Icon:         "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxLjMzZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjU2IDE5MyI+PHBhdGggZmlsbD0iIzQyODVmNCIgZD0iTTU4LjE4MiAxOTIuMDVWOTMuMTRMMjcuNTA3IDY1LjA3N0wwIDQ5LjUwNHYxMjUuMDkxYzAgOS42NTggNy44MjUgMTcuNDU1IDE3LjQ1NSAxNy40NTV6Ii8+PHBhdGggZmlsbD0iIzM0YTg1MyIgZD0iTTE5Ny44MTggMTkyLjA1aDQwLjcyN2M5LjY1OSAwIDE3LjQ1NS03LjgyNiAxNy40NTUtMTcuNDU1VjQ5LjUwNWwtMzEuMTU2IDE3LjgzN2wtMjcuMDI2IDI1Ljc5OHoiLz48cGF0aCBmaWxsPSIjZWE0MzM1IiBkPSJtNTguMTgyIDkzLjE0bC00LjE3NC0zOC42NDdsNC4xNzQtMzYuOTg5TDEyOCA2OS44NjhsNjkuODE4LTUyLjM2NGw0LjY2OSAzNC45OTJsLTQuNjY5IDQwLjY0NEwxMjggMTQ1LjUwNHoiLz48cGF0aCBmaWxsPSIjZmJiYzA0IiBkPSJNMTk3LjgxOCAxNy41MDRWOTMuMTRMMjU2IDQ5LjUwNFYyNi4yMzFjMC0yMS41ODUtMjQuNjQtMzMuODktNDEuODktMjAuOTQ1eiIvPjxwYXRoIGZpbGw9IiNjNTIyMWYiIGQ9Im0wIDQ5LjUwNGwyNi43NTkgMjAuMDdMNTguMTgyIDkzLjE0VjE3LjUwNEw0MS44OSA1LjI4NkMyNC42MS03LjY2IDAgNC42NDYgMCAyNi4yM3oiLz48L3N2Zz4=",
 		IconType:     "svg",
 		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(GlEmailTool{}), []string{}),
 	})

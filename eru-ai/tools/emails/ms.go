@@ -334,6 +334,14 @@ func (msEmailTool *MsEmailTool) SendEmail(ctx context.Context, params map[string
 	logs.WithContext(ctx).Debug("SendEmail Execute - Start")
 	url := "/v1.0/me/sendMail"
 	_ = url
+	to := emailNormalizeRecipients(params["to"])
+	cc := emailNormalizeRecipients(params["cc"])
+	bcc := emailNormalizeRecipients(params["bcc"])
+	if len(to) == 0 && len(cc) == 0 && len(bcc) == 0 {
+		err = errors.New("at least one of to, cc or bcc is required")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
 	return nil, map[string]interface{}{"body": params}, false, nil
 }
 
@@ -768,7 +776,7 @@ func init() {
 		Description:  "Microsoft email integration for reading, sending, and subscribing to emails via Microsoft Graph API",
 		Actions:      []tools.ActionInfo{{Name: ReadEmail}, {Name: SendEmail}, {Name: SubscribeEmail}, {Name: ReadMessage}, {Name: GetSsoUrl}, {Name: Login}, {Name: RenewToken}, {Name: RenewSubscription}},
 		OAuthEnabled: true,
-		Icon:         "",
+		Icon:         "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjU2IDI1NiI+PHBhdGggZmlsbD0iI2YxNTExYiIgZD0iTTEyMS42NjYgMTIxLjY2NkgwVjBoMTIxLjY2NnoiLz48cGF0aCBmaWxsPSIjODBjYzI4IiBkPSJNMjU2IDEyMS42NjZIMTM0LjMzNVYwSDI1NnoiLz48cGF0aCBmaWxsPSIjMDBhZGVmIiBkPSJNMTIxLjY2MyAyNTYuMDAySDBWMTM0LjMzNmgxMjEuNjYzeiIvPjxwYXRoIGZpbGw9IiNmYmJjMDkiIGQ9Ik0yNTYgMjU2LjAwMkgxMzQuMzM1VjEzNC4zMzZIMjU2eiIvPjwvc3ZnPg==",
 		IconType:     "svg",
 		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(MsEmailTool{}), []string{}),
 	})

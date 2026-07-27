@@ -82,9 +82,14 @@ func (awsKmsStore *AwsKmsStore) CreateKey(ctx context.Context) (err error) {
 		if aliasFound {
 			break
 		}
-		aliasesPage, err := aliasesPaginator.NextPage(ctx)
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
+		aliasesPage, pageErr := aliasesPaginator.NextPage(ctx)
+		if pageErr != nil {
+			logs.WithContext(ctx).Error(pageErr.Error())
+			var nfe *types.NotFoundException
+			if errors.As(pageErr, &nfe) {
+				break
+			}
+			return pageErr
 		}
 		for _, alias := range aliasesPage.Aliases {
 			if fmt.Sprint("alias/", awsKmsStore.KmsAlias) == *alias.AliasName {
