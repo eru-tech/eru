@@ -90,40 +90,20 @@ func (oa *OrchestratorAgent) UnmarshalJSON(b []byte) error {
 	oa.DelegationStrategy = of.DelegationStrategy
 	oa.MaxReplans = of.MaxReplans
 	oa.SynthesisPrompt = of.SynthesisPrompt
-	return nil
-}
-
-func (oa *OrchestratorAgent) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
-	logs.WithContext(ctx).Debug("OrchestratorAgent MakeFromJson - Start")
-	err := oa.ReasoningAgent.MakeFromJson(ctx, rj)
-	if err != nil {
-		return err
-	}
-
-	type orchestratorFields struct {
-		AllowedAgents      []string        `json:"available_agents"`
-		AvailableTools     []AvailableTool `json:"available_tools"`
-		ClientOutputAgents []string        `json:"client_output_agents"`
-		DelegationStrategy string          `json:"delegation_strategy"`
-		MaxReplans         int             `json:"max_replans"`
-		SynthesisPrompt    string          `json:"synthesis_prompt"`
-	}
-	var of orchestratorFields
-	if err := json.Unmarshal(*rj, &of); err != nil {
-		return err
-	}
-	oa.AllowedAgents = of.AllowedAgents
-	oa.AvailableTools = of.AvailableTools
-	oa.ClientOutputAgents = of.ClientOutputAgents
-	oa.DelegationStrategy = of.DelegationStrategy
-	oa.MaxReplans = of.MaxReplans
-	oa.SynthesisPrompt = of.SynthesisPrompt
-
 	if oa.MaxReplans <= 0 {
 		oa.MaxReplans = 2
 	}
 	if oa.DelegationStrategy == "" {
 		oa.DelegationStrategy = "adaptive"
+	}
+	return nil
+}
+
+func (oa *OrchestratorAgent) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
+	logs.WithContext(ctx).Debug("OrchestratorAgent MakeFromJson - Start")
+	if err := json.Unmarshal(*rj, oa); err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
 	}
 	oa.ReasoningAgent.Agent.Provider = oa
 	return nil

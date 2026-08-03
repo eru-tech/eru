@@ -56,6 +56,12 @@ func (ra *ReasoningAgent) UnmarshalJSON(b []byte) error {
 	ra.MaxIterations = rf.MaxIterations
 	ra.ThinkingBudget = rf.ThinkingBudget
 	ra.EnableClarification = rf.EnableClarification
+	if ra.MaxIterations <= 0 {
+		ra.MaxIterations = 10
+	}
+	if ra.ThinkingBudget <= 0 {
+		ra.ThinkingBudget = 10000
+	}
 	return nil
 }
 
@@ -65,12 +71,6 @@ func (ra *ReasoningAgent) MakeFromJson(ctx context.Context, rj *json.RawMessage)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return err
-	}
-	if ra.MaxIterations <= 0 {
-		ra.MaxIterations = 10
-	}
-	if ra.ThinkingBudget <= 0 {
-		ra.ThinkingBudget = 10000
 	}
 	return nil
 }

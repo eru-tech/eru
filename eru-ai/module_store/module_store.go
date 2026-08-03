@@ -573,7 +573,13 @@ func (ms *ModuleStore) GetAgentClone(ctx context.Context, projectId string, tena
 	if err != nil {
 		return
 	}
-	agentObjClone.SetProvider(agentObj.GetProvider())
+	if provider := agentObj.GetProvider(); provider != nil {
+		if cloneProvider, ok := agentObjClone.(agents.SystemPromptProvider); ok && any(provider) == any(agentObj) {
+			agentObjClone.SetProvider(cloneProvider)
+		} else {
+			agentObjClone.SetProvider(provider)
+		}
+	}
 	cacheI := agentObj.GetChatMemory()
 	if cacheI != nil {
 		err := agentObjClone.GetChatMemory().SyncPersistence(ctx, agentObj.GetChatMemory())
