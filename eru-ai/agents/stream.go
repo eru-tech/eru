@@ -5,6 +5,7 @@ import "context"
 type contextKey string
 
 const StreamCallbackKey contextKey = "stream_callback"
+const RawOutputKey contextKey = "raw_output"
 
 const (
 	StreamEventThinking   = "thinking"
@@ -35,4 +36,18 @@ func GetStreamCallback(ctx context.Context) StreamCallback {
 		return cb
 	}
 	return nil
+}
+
+// WithRawOutput marks the request as wanting internal artifacts (orchestration
+// plans, structured_output tool inputs) in the response. Set from the ?raw=true
+// query param and meant for development only.
+func WithRawOutput(ctx context.Context, raw bool) context.Context {
+	return context.WithValue(ctx, RawOutputKey, raw)
+}
+
+func RawOutputEnabled(ctx context.Context) bool {
+	if raw, ok := ctx.Value(RawOutputKey).(bool); ok {
+		return raw
+	}
+	return false
 }

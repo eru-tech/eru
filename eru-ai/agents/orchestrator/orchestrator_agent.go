@@ -175,8 +175,9 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 
 	assignStableConversationIds(decompositionResult, conversationId)
 
+	oa.logPlan(ctx, decompositionResult, conversationId)
 	if streamCb != nil {
-		streamCb(agents.StreamEvent{Event: agents.StreamEventPlan, Data: decompositionResult})
+		streamCb(agents.StreamEvent{Event: agents.StreamEventPlan, Data: oa.planEventData(ctx, decompositionResult)})
 	}
 
 	var executionResult map[string]interface{}
@@ -253,7 +254,33 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		return agents.AgentMessage{}, err
 	}
 
+	agentOutput.Traces = clientTraces(ctx, agentOutput.Traces)
 	return agentOutput, nil
+}
+
+// logPlan records the full FuncGroup server side. The plan is internal
+// orchestration detail, so this log — not the response — is where it belongs.
+func (oa *OrchestratorAgent) logPlan(ctx context.Context, plan map[string]interface{}, conversationId string) {
+	planJSON, err := json.Marshal(plan)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("failed to marshal plan for logging : ", err.Error()))
+		return
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("orchestrator plan - agent=", oa.AgentName, " conversation_id=", conversationId, " plan=", string(planJSON)))
+}
+
+// planEventData returns what the client receives on the plan event: the step
+// graph only, or the whole FuncGroup when raw output was requested.
+func (oa *OrchestratorAgent) planEventData(ctx context.Context, plan map[string]interface{}) interface{} {
+	if agents.RawOutputEnabled(ctx) {
+		return plan
+	}
+	summary, err := summarizePlan(plan)
+	if err != nil {
+		logs.WithContext(ctx).Error(fmt.Sprint("failed to summarize plan : ", err.Error()))
+		return planSummary{}
+	}
+	return summary
 }
 
 // emitClarification persists and returns a question action, pausing the
@@ -288,6 +315,7 @@ func (oa *OrchestratorAgent) emitClarification(ctx context.Context, req agents.C
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
 		return agents.AgentMessage{}, err
 	}
+	agentOutput.Traces = clientTraces(ctx, agentOutput.Traces)
 	return agentOutput, nil
 }
 
@@ -314,6 +342,7 @@ func (oa *OrchestratorAgent) emitDirectAnswer(ctx context.Context, answer string
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
 		return agents.AgentMessage{}, err
 	}
+	agentOutput.Traces = clientTraces(ctx, agentOutput.Traces)
 	return agentOutput, nil
 }
 
@@ -406,6 +435,7 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
 		return agents.AgentMessage{}, err
 	}
+	agentOutput.Traces = clientTraces(ctx, agentOutput.Traces)
 	return agentOutput, nil
 }
 

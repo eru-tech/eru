@@ -745,6 +745,7 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		conversationId := vars["conversationid"]
 
 		isStream := strings.HasSuffix(r.URL.Path, "/stream")
+		isRaw := strings.EqualFold(r.URL.Query().Get("raw"), "true")
 
 		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, conversationId, agentName, sh.Store)
 		if err != nil {
@@ -777,6 +778,10 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 
 		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
 		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+		if isRaw {
+			logs.WithContext(r.Context()).Info(fmt.Sprint("AgentExecuteHandler - raw output requested for agent ", agentName))
+			r = r.WithContext(agents.WithRawOutput(r.Context(), true))
+		}
 
 		if isStream {
 			w.Header().Set("Content-Type", "text/event-stream")
