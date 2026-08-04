@@ -588,6 +588,13 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 	}
 }
 
+func (goTmpl *GoTemplate) Validate(ctx context.Context) (err error) {
+	logs.WithContext(ctx).Debug("Validate - Start")
+	t := template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(GenericFuncMap(ctx))
+	_, err = t.Parse(strings.ReplaceAll(goTmpl.Template, "\n", ""))
+	return err
+}
+
 func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFormat string) (output interface{}, err error) {
 	logs.WithContext(ctx).Debug("Execute - Start")
 	buf := &bytes.Buffer{}

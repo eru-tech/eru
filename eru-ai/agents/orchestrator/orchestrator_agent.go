@@ -167,6 +167,12 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		return oa.emitDirectAnswer(ctx, directAnswer, allTraces, agentMessage, conversation, projectId, tenantId)
 	}
 
+	decompositionResult, repairTraces, err := oa.repairPlan(ctx, agentMessage, decompositionResult, projectId, tenantId)
+	allTraces = append(allTraces, repairTraces...)
+	if err != nil {
+		return agents.AgentMessage{}, err
+	}
+
 	assignStableConversationIds(decompositionResult, conversationId)
 
 	if streamCb != nil {
@@ -195,6 +201,12 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 			}
 			if replanQuestion != nil {
 				return oa.emitClarification(ctx, *replanQuestion, nil, allTraces, agentMessage, conversation, projectId, tenantId)
+			}
+			replanResult, replanRepairTraces, replanRepairErr := oa.repairPlan(ctx, agentMessage, replanResult, projectId, tenantId)
+			allTraces = append(allTraces, replanRepairTraces...)
+			if replanRepairErr != nil {
+				logs.WithContext(ctx).Error(fmt.Sprint("re-planned plan failed template validation: ", replanRepairErr.Error()))
+				break
 			}
 			assignStableConversationIds(replanResult, conversationId)
 			decompositionResult = replanResult
@@ -490,6 +502,89 @@ func (oa *OrchestratorAgent) executeFuncGroup(ctx context.Context, funcGroupMap 
 	}
 
 	return result, funcVarsMap, nil
+}
+
+// repairPlan parses every go template in the plan and, when any is invalid, feeds
+// the parse errors back to the model for correction. Templates are validated
+// before execution so a malformed one cannot half-run the plan and leave side
+// effects behind.
+func (oa *OrchestratorAgent) repairPlan(ctx context.Context, agentMessage agents.AgentMessage, plan map[string]interface{}, projectId string, tenantId string) (map[string]interface{}, []models.StepTrace, error) {
+	logs.WithContext(ctx).Debug("OrchestratorAgent repairPlan - Start")
+	maxAttempts := oa.RetryCount
+	if maxAttempts <= 0 {
+		maxAttempts = 2
+	}
+	var traces []models.StepTrace
+	for attempt := 0; ; attempt++ {
+		issues := validatePlanTemplates(ctx, plan)
+		if len(issues) == 0 {
+			return plan, traces, nil
+		}
+		issueText := formatPlanIssues(issues)
+		logs.WithContext(ctx).Error(fmt.Sprint("invalid plan templates (attempt ", attempt+1, "/", maxAttempts+1, "):\n", issueText))
+		if attempt >= maxAttempts {
+			return nil, traces, fmt.Errorf("plan contains invalid go templates after %d repair attempt(s):\n%s", maxAttempts, issueText)
+		}
+		if streamCb := agents.GetStreamCallback(ctx); streamCb != nil {
+			streamCb(agents.StreamEvent{Event: agents.StreamEventStatus, Data: "repairing_plan"})
+		}
+		repairedPlan, repairTraces, err := oa.repairPlanOnce(ctx, agentMessage, plan, issueText, projectId, tenantId)
+		traces = append(traces, repairTraces...)
+		if err != nil {
+			return nil, traces, err
+		}
+		plan = repairedPlan
+	}
+}
+
+func (oa *OrchestratorAgent) repairPlanOnce(ctx context.Context, agentMessage agents.AgentMessage, plan map[string]interface{}, issueText string, projectId string, tenantId string) (map[string]interface{}, []models.StepTrace, error) {
+	planJSON, err := json.Marshal(plan)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	repairContent := fmt.Sprintf(
+		"The FuncGroup you produced has invalid go templates. Fix ONLY the templates listed below and return the corrected FuncGroup via structured_output.\n\nTemplate errors:\n%s\nPrevious plan:\n%s\n\nOriginal request: %s\n\nRules:\n- Keep the step structure, step keys, agents, tools and logic exactly as they are — change only the broken template strings.\n- Every '{{' must have a matching '}}' and every '(' a matching ')'; do not leave stray braces or parentheses at the end of an action.\n- Any template that builds an object must still be wrapped in / piped through stringify.",
+		issueText,
+		string(planJSON),
+		agentMessage.Content,
+	)
+
+	chatRequest := models.ChatRequest{
+		Messages: []models.Message{{
+			Role:    "user",
+			Content: repairContent,
+		}},
+	}
+
+	toolsMap := oa.buildDecompositionTools(ctx)
+	delete(toolsMap, utility.AskUserToolName)
+
+	sp := oa.GetSystemPrompt()
+	if oa.GetProvider() != nil {
+		providerPrompt := oa.GetProvider().GetSystemPrompt()
+		if providerPrompt != "" {
+			sp = providerPrompt
+		}
+	}
+
+	toolExecutor := func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error) {
+		return nil, fmt.Errorf("tool %s not expected during plan repair", toolName)
+	}
+
+	response, traces, err := oa.Model.RunToolLoop(ctx, chatRequest, toolsMap, sp, oa.MaxIterations, oa.ThinkingBudget, toolExecutor)
+	if err != nil {
+		return nil, traces, err
+	}
+	if response.TerminalTool != models.TerminalToolStructuredOutput {
+		return nil, traces, fmt.Errorf("plan repair did not return a FuncGroup")
+	}
+
+	var repairedPlan map[string]interface{}
+	if err := json.Unmarshal([]byte(response.Content), &repairedPlan); err != nil {
+		return nil, traces, fmt.Errorf("failed to parse repaired plan: %w", err)
+	}
+	return repairedPlan, traces, nil
 }
 
 func (oa *OrchestratorAgent) replan(ctx context.Context, agentMessage agents.AgentMessage, previousPlan map[string]interface{}, previousErr error, projectId string, tenantId string) (map[string]interface{}, *agents.ClarificationRequest, []models.StepTrace, error) {
@@ -925,6 +1020,7 @@ CHECKLIST (verify before outputting)
 [ ] Agent steps: transform_request renders {"content":"..."} (Rule #2)
 [ ] Tool steps: transform_request renders {"params": {<Input schema fields>}} (Rule #3)
 [ ] EVERY dict/object in transform_request AND transform_response ends with " | stringify"
+[ ] EVERY template parses: each "{{" has a matching "}}", every "(" a matching ")", and no stray brace or parenthesis is left at the end of an action
 [ ] No step passes a bare string or the raw .Vars.Body / whole AgentMessage
 [ ] func_category_name and func_group_name are set (snake_case)
 [ ] Each step uses ONLY (agent_name) OR (tool_name+tool_action) + tenant_id (no query/function/api)
