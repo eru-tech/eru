@@ -578,6 +578,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 				toolAction = fmt.Sprint("/", funcStep.ToolAction)
 			}
 			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/tool/", funcStep.ToolName, toolAction)
+			r.OnError = "STOP"
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
 			eruaibaseurl := getEruaibaseurl(ctx)
@@ -601,6 +602,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 				conversationId = fmt.Sprint("/", funcStep.ConversationId)
 			}
 			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/agent/", funcStep.AgentName, conversationId)
+			r.OnError = "STOP"
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
 			eruaibaseurl := getEruaibaseurl(ctx)
@@ -622,6 +624,9 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			}
 		}
 		r.TokenSecretKey = ms.Projects[projectId].ProjectSettings.ClaimsKey
+		if funcStep.OnError != "" {
+			r.OnError = funcStep.OnError
+		}
 		funcStep.Route = r
 	}
 	for ck, cv := range funcStep.FuncSteps {

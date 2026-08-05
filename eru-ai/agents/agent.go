@@ -318,6 +318,10 @@ func (agent *Agent) ExecuteAgentFunctionResumable(ctx context.Context, agentMess
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, err
 	}
+	if response.StatusCode >= 400 {
+		err = logs.Err(ctx, fmt.Errorf("function %s failed with status %d : %s", agent.Function.FuncGroupName, response.StatusCode, string(responseBody)), "")
+		return nil, funcVarsMap, err
+	}
 	err = json.Unmarshal(responseBody, &responseContent)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())

@@ -13,10 +13,17 @@ func planWithTransformRequest(t *testing.T, transformRequest string) map[string]
 		"func_category_name": "scf",
 		"func_group_name":    "scf_pie",
 		"func_steps": map[string]interface{}{
-			"eru_widget": map[string]interface{}{
-				"agent_name":        "eru_widget",
-				"tenant_id":         "processo",
-				"transform_request": transformRequest,
+			"eruql_processo_execute_sql": map[string]interface{}{
+				"tool_name":   "eruql_processo",
+				"tool_action": "execute_sql",
+				"tenant_id":   "processo",
+				"func_steps": map[string]interface{}{
+					"eru_widget": map[string]interface{}{
+						"agent_name":        "eru_widget",
+						"tenant_id":         "processo",
+						"transform_request": transformRequest,
+					},
+				},
 			},
 		},
 	}
@@ -32,7 +39,7 @@ func TestValidatePlanTemplatesCatchesExtraBrace(t *testing.T) {
 	if len(issues) != 1 {
 		t.Fatalf("expected 1 issue, got %d : %v", len(issues), issues)
 	}
-	if issues[0].StepPath != "eru_widget" || issues[0].Field != "transform_request" {
+	if issues[0].StepPath != "eruql_processo_execute_sql.eru_widget" || issues[0].Field != "transform_request" {
 		t.Errorf("unexpected issue location : %+v", issues[0])
 	}
 	if !strings.Contains(formatPlanIssues(issues), "transform_request") {
@@ -55,7 +62,7 @@ func TestValidatePlanTemplatesNestedStepsAndUnknownFunc(t *testing.T) {
 				"agent_name":        "generate_sql",
 				"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
 				"func_steps": map[string]interface{}{
-					"execute_sql": map[string]interface{}{
+					"eruql_processo_execute_sql": map[string]interface{}{
 						"tool_name":         "eruql_processo",
 						"tool_action":       "execute_sql",
 						"transform_request": `{{jsonify (dict "params" (dict "query" "select 1"))}}`,
@@ -70,7 +77,7 @@ func TestValidatePlanTemplatesNestedStepsAndUnknownFunc(t *testing.T) {
 		t.Fatalf("expected 2 issues, got %d : %v", len(issues), issues)
 	}
 	for _, issue := range issues {
-		if issue.StepPath != "generate_sql.execute_sql" {
+		if issue.StepPath != "generate_sql.eruql_processo_execute_sql" {
 			t.Errorf("expected nested step path, got %q", issue.StepPath)
 		}
 	}

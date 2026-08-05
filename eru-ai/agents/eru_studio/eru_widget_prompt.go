@@ -15,7 +15,11 @@ Core rules:
    - Do not invent fields that are not allowed if additionalProperties is false.
    - Include all required fields.
    - Respect enums, types, arrays, and nested object requirements.
-4) Use realistic, meaningful example values (not lorem ipsum everywhere). Keep it concise but complete.
+4) Use meaningful labels and titles (not lorem ipsum everywhere). Keep it concise but complete.
+   NEVER invent DATA values: the "data" property (and options/static_options) must contain only
+   rows you were actually given. If the supplied data is missing, null, empty, "{}", "[]" or an
+   error object, set "data" to "[]" and state in a label that no data was returned. An empty
+   chart is correct; a chart with made-up numbers is a defect.
 5) Ensure recursion rules are respected:
    - If you include "children", each child must itself be a valid EruComponent per the SAME schema.
    - Keep nesting depth reasonable (2-3 levels max unless explicitly asked).

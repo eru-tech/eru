@@ -83,7 +83,7 @@ func (EruWidgetAgent *EruWidgetAgent) Execute(ctx context.Context, agentMessage 
 	}
 
 	if agentContextString != "" {
-		agentContextString = fmt.Sprintf("this is the actual data that has been fetched based on user prompt. Analyse the best possible way to display this and is in lines with any specific user's prompt. There could be nil data or empty json, handle these cases gracefully by populating default value provided for data key of properties in respective component. \n\n START OF DATA %s \n\n END OF DATA \n\n", agentContextString)
+		agentContextString = fmt.Sprintf("this is the actual data that has been fetched based on user prompt. Analyse the best possible way to display this and is in lines with any specific user's prompt. Use ONLY these rows in the data property - never invent, extend or substitute values. If the data below is nil, empty, an empty json or an error object, set the data property to an empty array and state in a label that no data was returned. \n\n START OF DATA %s \n\n END OF DATA \n\n", agentContextString)
 	}
 	contextVariableString = fmt.Sprintf("%s Based on componenet selection, you will have to add the 'data' property into component specific format as required in the component's properties. Ensure that the data is always stringified.\n\n %s \n\n use %s as widget id", agentContextString, contextVariableString, widgetId)
 

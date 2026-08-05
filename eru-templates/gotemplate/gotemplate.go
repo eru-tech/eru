@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"text/template/parse"
 	"time"
 
 	sprig "github.com/Masterminds/sprig/v3"
@@ -593,6 +594,76 @@ func (goTmpl *GoTemplate) Validate(ctx context.Context) (err error) {
 	t := template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(GenericFuncMap(ctx))
 	_, err = t.Parse(strings.ReplaceAll(goTmpl.Template, "\n", ""))
 	return err
+}
+
+// FieldReferences returns the identifier chain of every field referenced by the
+// template, e.g. {{.ResVars.step1.Body}} yields ["ResVars", "step1", "Body"].
+// Used to check that a template only reads variables that will actually exist.
+func (goTmpl *GoTemplate) FieldReferences(ctx context.Context) (refs [][]string, err error) {
+	logs.WithContext(ctx).Debug("FieldReferences - Start")
+	t := template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(GenericFuncMap(ctx))
+	t, err = t.Parse(strings.ReplaceAll(goTmpl.Template, "\n", ""))
+	if err != nil {
+		return nil, err
+	}
+	for _, tmpl := range t.Templates() {
+		if tmpl.Tree == nil {
+			continue
+		}
+		collectFieldReferences(tmpl.Tree.Root, &refs)
+	}
+	return refs, nil
+}
+
+func collectFieldReferences(node parse.Node, refs *[][]string) {
+	switch n := node.(type) {
+	case nil:
+		return
+	case *parse.FieldNode:
+		if len(n.Ident) > 0 {
+			*refs = append(*refs, n.Ident)
+		}
+	case *parse.ChainNode:
+		collectFieldReferences(n.Node, refs)
+	case *parse.ListNode:
+		if n == nil {
+			return
+		}
+		for _, child := range n.Nodes {
+			collectFieldReferences(child, refs)
+		}
+	case *parse.ActionNode:
+		collectFieldReferences(n.Pipe, refs)
+	case *parse.PipeNode:
+		if n == nil {
+			return
+		}
+		for _, cmd := range n.Cmds {
+			collectFieldReferences(cmd, refs)
+		}
+	case *parse.CommandNode:
+		for _, arg := range n.Args {
+			collectFieldReferences(arg, refs)
+		}
+	case *parse.IfNode:
+		collectBranchFieldReferences(n.BranchNode, refs)
+	case *parse.RangeNode:
+		collectBranchFieldReferences(n.BranchNode, refs)
+	case *parse.WithNode:
+		collectBranchFieldReferences(n.BranchNode, refs)
+	case *parse.TemplateNode:
+		collectFieldReferences(n.Pipe, refs)
+	}
+}
+
+func collectBranchFieldReferences(branch parse.BranchNode, refs *[][]string) {
+	collectFieldReferences(branch.Pipe, refs)
+	if branch.List != nil {
+		collectFieldReferences(branch.List, refs)
+	}
+	if branch.ElseList != nil {
+		collectFieldReferences(branch.ElseList, refs)
+	}
 }
 
 func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFormat string) (output interface{}, err error) {

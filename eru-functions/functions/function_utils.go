@@ -932,3 +932,19 @@ func removeFieldsFromTemplateVars(ctx context.Context, fields []string, vars map
 	}
 	return
 }
+
+func responseBodyForError(ctx context.Context, response *http.Response) string {
+	if response == nil || response.Body == nil {
+		return ""
+	}
+	bodyBytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return ""
+	}
+	response.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	if len(bodyBytes) > 2000 {
+		return string(bodyBytes[:2000])
+	}
+	return string(bodyBytes)
+}

@@ -236,7 +236,7 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		ActionName: oa.AgentName,
 		Action:     synthesisResult,
 	}}
-	agentActions = append(agentActions, oa.collectClientOutputs(ctx, funcVarsMap, executionResult)...)
+	agentActions = append(agentActions, oa.collectClientOutputs(ctx, decompositionResult, funcVarsMap, executionResult)...)
 
 	agentOutput := agents.AgentMessage{
 		Role:             "assistant",
@@ -420,7 +420,7 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 		ActionName: oa.AgentName,
 		Action:     synthesisResult,
 	}}
-	resumeActions = append(resumeActions, oa.collectClientOutputs(ctx, nil, executionResult)...)
+	resumeActions = append(resumeActions, oa.collectClientOutputs(ctx, pr.Plan, map[string]functions.FuncTemplateVars{pr.JoinStep: {ResVars: merged}}, executionResult)...)
 
 	agentOutput := agents.AgentMessage{
 		Role:             "assistant",
@@ -541,19 +541,19 @@ func (oa *OrchestratorAgent) executeFuncGroup(ctx context.Context, funcGroupMap 
 func (oa *OrchestratorAgent) repairPlan(ctx context.Context, agentMessage agents.AgentMessage, plan map[string]interface{}, projectId string, tenantId string) (map[string]interface{}, []models.StepTrace, error) {
 	logs.WithContext(ctx).Debug("OrchestratorAgent repairPlan - Start")
 	maxAttempts := oa.RetryCount
-	if maxAttempts <= 0 {
+	if maxAttempts < 2 {
 		maxAttempts = 2
 	}
 	var traces []models.StepTrace
 	for attempt := 0; ; attempt++ {
-		issues := validatePlanTemplates(ctx, plan)
+		issues := validatePlan(ctx, plan, oa.discoveredAgents, oa.discoveredTools)
 		if len(issues) == 0 {
 			return plan, traces, nil
 		}
 		issueText := formatPlanIssues(issues)
-		logs.WithContext(ctx).Error(fmt.Sprint("invalid plan templates (attempt ", attempt+1, "/", maxAttempts+1, "):\n", issueText))
+		logs.WithContext(ctx).Error(fmt.Sprint("invalid plan (attempt ", attempt+1, "/", maxAttempts+1, "):\n", issueText))
 		if attempt >= maxAttempts {
-			return nil, traces, fmt.Errorf("plan contains invalid go templates after %d repair attempt(s):\n%s", maxAttempts, issueText)
+			return nil, traces, fmt.Errorf("plan is still invalid after %d repair attempt(s):\n%s", maxAttempts, issueText)
 		}
 		if streamCb := agents.GetStreamCallback(ctx); streamCb != nil {
 			streamCb(agents.StreamEvent{Event: agents.StreamEventStatus, Data: "repairing_plan"})
@@ -574,7 +574,7 @@ func (oa *OrchestratorAgent) repairPlanOnce(ctx context.Context, agentMessage ag
 	}
 
 	repairContent := fmt.Sprintf(
-		"The FuncGroup you produced has invalid go templates. Fix ONLY the templates listed below and return the corrected FuncGroup via structured_output.\n\nTemplate errors:\n%s\nPrevious plan:\n%s\n\nOriginal request: %s\n\nRules:\n- Keep the step structure, step keys, agents, tools and logic exactly as they are — change only the broken template strings.\n- Every '{{' must have a matching '}}' and every '(' a matching ')'; do not leave stray braces or parentheses at the end of an action.\n- Any template that builds an object must still be wrapped in / piped through stringify.",
+		"The FuncGroup you produced is invalid. Fix ONLY the problems listed below and return the corrected FuncGroup via structured_output.\n\nProblems found:\n%s\nPrevious plan:\n%s\n\nOriginal request: %s\n\nRules:\n- Change only what is needed to clear the problems listed above; keep the rest of the plan (steps, order, agents, tools, logic) exactly as it is.\n- Every '{{' must have a matching '}}' and every '(' a matching ')'; do not leave stray braces or parentheses at the end of an action.\n- Any template that builds an object must still be wrapped in / piped through stringify.\n- Reference a previous step only by its exact func_steps key, and only a step that actually runs before this one.\n- Use only the agents and tool actions listed in the AVAILABLE AGENTS / AVAILABLE TOOLS sections.",
 		issueText,
 		string(planJSON),
 		agentMessage.Content,
@@ -697,12 +697,13 @@ func (oa *OrchestratorAgent) synthesize(ctx context.Context, agentMessage agents
 	}
 
 	synthesisContent := fmt.Sprintf(
-		"Original request: %s\n\nSub-agent results:\n%s%s\n\n%s\n\n%s",
+		"Original request: %s\n\nSub-agent results:\n%s%s\n\n%s\n\n%s\n\n%s",
 		agentMessage.Content,
 		string(resultJSON),
 		bbSection,
 		synthesisPrompt,
 		"IMPORTANT: Respond with human-readable prose only. Do NOT embed raw JSON, code fences, or structured/widget payloads in your response — those are returned to the client separately as distinct actions. Summarize the result in words.",
+		"GROUNDING (ABSOLUTE): every figure, name, date and total you state MUST appear in the sub-agent results above. Never invent, estimate, extrapolate or illustrate values, and never restate numbers that a sub-agent may itself have fabricated in place of missing data. If the results are empty, null, an error, or contain no rows for what the user asked, say plainly that no data was returned and what failed — do not produce a summary, table or percentages. Do not compute shares or totals unless the underlying values are present.",
 	)
 
 	chatRequest := models.ChatRequest{
@@ -909,6 +910,26 @@ single content string, e.g.:
   "{{stringify (dict \"content\" (printf \"sql: %s\\nrows: %s\" (index .ResVars.generate_sql.Body.actions 0).action.sql (index .ResVars.execute_sql.Body.actions 0).action.result))}}"
 
 ============================================================
+RULE #2b — PASS FETCHED DATA IN params.context, NOT PROSE
+============================================================
+
+When a step's job is to RENDER or ANALYSE data produced by an earlier step (UI /
+page / widget / chart agents such as eru_studio, report or summary agents), the
+rows MUST be passed as "params" -> "context", with "content" carrying only the
+instruction. These agents read params.context as their data source:
+
+  "transform_request": "{{stringify (dict \"content\" .Vars.Body.content \"params\" (dict \"context\" (stringify .ResVars.<data_step>.Body)))}}"
+
+Do NOT bury the rows inside the content string for these agents, and NEVER
+paraphrase, sample, round or retype the data into the template — always pass the
+upstream value itself, so the downstream agent renders real values instead of
+inventing plausible ones.
+
+If the plan produces data and then displays it, the displaying step MUST reference
+the data step through .ResVars. A display step whose transform_request contains no
+.ResVars reference to the data step is WRONG — it will render fabricated data.
+
+============================================================
 RULE #3 — TOOL STEP INPUT / OUTPUT (different from agents)
 ============================================================
 
@@ -1058,6 +1079,8 @@ CHECKLIST (verify before outputting)
 [ ] transform_request passes data correctly between steps
 [ ] Only agents/tools from the AVAILABLE lists are used
 [ ] wait_for only references sibling step keys, not nested ones
+[ ] EVERY .ResVars/.ReqVars reference names an EXACT func_steps key of an earlier step (not an agent name, tool name or invented short form)
+[ ] A step that renders or analyses earlier data receives it via params.context and references that step through .ResVars (Rule #2b)
 
 --- GUIDELINES ---
 {{GUIDELINES_PLACEHOLDER}}
@@ -1098,7 +1121,7 @@ func outputFieldNames(schema eru_models.JSONSchema) []string {
 // collectClientOutputs returns the structured outputs to forward to the client
 // as separate actions. If ClientOutputAgents is set, it forwards each named
 // step's output; otherwise it falls back to the terminal step's output.
-func (oa *OrchestratorAgent) collectClientOutputs(ctx context.Context, funcVarsMap map[string]functions.FuncTemplateVars, executionResult map[string]interface{}) []agents.AgentOutputAction {
+func (oa *OrchestratorAgent) collectClientOutputs(ctx context.Context, plan map[string]interface{}, funcVarsMap map[string]functions.FuncTemplateVars, executionResult map[string]interface{}) []agents.AgentOutputAction {
 	var out []agents.AgentOutputAction
 	if len(oa.ClientOutputAgents) > 0 {
 		seen := make(map[string]bool)
@@ -1121,9 +1144,13 @@ func (oa *OrchestratorAgent) collectClientOutputs(ctx context.Context, funcVarsM
 		return out
 	}
 	if len(executionResult) > 0 {
+		actionName := terminalStepName(ctx, plan)
+		if actionName == "" {
+			actionName = oa.AgentName
+		}
 		out = append(out, agents.AgentOutputAction{
 			ActionType: agents.ActionTypeData,
-			ActionName: oa.AgentName,
+			ActionName: actionName,
 			Action:     extractStructuredOutput(executionResult),
 		})
 	}

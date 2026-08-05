@@ -80,6 +80,7 @@ type FuncStep struct {
 	Path                    string        `json:"path"`
 	ToolName                string        `json:"tool_name"`
 	ToolAction              string        `json:"tool_action"`
+	OnError                 string        `json:"on_error"`
 	AgentName               string        `json:"agent_name"`
 	TenantId                string        `json:"tenant_id"`
 	ConversationId          string        `json:"conversation_id"`
@@ -995,8 +996,13 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 
 			safeSetVar(resVars, funcStep.GetRouteName(), routevars)
 			safeSetVar(resVars, funcStep.FuncKey, routevars)
+			if funcStep.Route.OnError == "STOP" && err != nil {
+				err = logs.Err(ctx, fmt.Errorf("step %s failed : %w", funcStep.FuncKey, err), "")
+				return
+			}
 			if funcStep.Route.OnError == "STOP" && response.StatusCode >= 400 {
 				logs.WithContext(ctx).Info("inside funcStep.Route.OnError == \"STOP\" && response.StatusCode >= 400")
+				err = logs.Err(ctx, fmt.Errorf("step %s failed with status %d : %s", funcStep.FuncKey, response.StatusCode, responseBodyForError(ctx, response)), "")
 				return
 			} else {
 				if err != nil {

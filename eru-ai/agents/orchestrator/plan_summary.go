@@ -3,11 +3,13 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
 	functions "github.com/eru-tech/eru/eru-functions/functions"
+	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
 type planStepSummary struct {
@@ -103,4 +105,50 @@ func clientTraces(ctx context.Context, traces []models.StepTrace) []models.StepT
 		}
 	}
 	return sanitized
+}
+
+// terminalStepName returns the name of the step that produced the FuncGroup's
+// final response, so a forwarded output is attributed to the agent/tool that
+// actually generated it rather than to the orchestrator. It returns "" when the
+// plan has more than one leaf step, since the producer is then ambiguous.
+func terminalStepName(ctx context.Context, plan map[string]interface{}) string {
+	planJSON, err := json.Marshal(plan)
+	if err != nil {
+		return ""
+	}
+	var funcGroup functions.FuncGroup
+	if err := json.Unmarshal(planJSON, &funcGroup); err != nil {
+		return ""
+	}
+	leaves := collectLeafSteps(funcGroup.FuncSteps, nil)
+	if len(leaves) != 1 {
+		logs.WithContext(ctx).Info(fmt.Sprint("terminalStepName - plan has ", len(leaves), " leaf step(s), attributing output to the orchestrator"))
+		return ""
+	}
+	return leaves[0]
+}
+
+func collectLeafSteps(steps map[string]*functions.FuncStep, leaves []string) []string {
+	for _, stepKey := range sortedStepKeys(steps) {
+		step := steps[stepKey]
+		if step == nil {
+			continue
+		}
+		if len(step.FuncSteps) == 0 {
+			leaves = append(leaves, stepDisplayName(stepKey, step))
+			continue
+		}
+		leaves = collectLeafSteps(step.FuncSteps, leaves)
+	}
+	return leaves
+}
+
+func stepDisplayName(stepKey string, step *functions.FuncStep) string {
+	if step.AgentName != "" {
+		return step.AgentName
+	}
+	if step.ToolName != "" {
+		return step.ToolName
+	}
+	return stepKey
 }
