@@ -42,7 +42,7 @@ func formatPlanIssues(issues []planIssue) string {
 // before any step runs. It reports structural problems too, since a plan that
 // cannot be decoded into a FuncGroup can never execute.
 func validatePlanTemplates(ctx context.Context, plan map[string]interface{}) []planIssue {
-	return validatePlan(ctx, plan, nil, nil)
+	return validatePlan(ctx, plan, nil, nil, codeContext{})
 }
 
 // validatePlan checks a generated FuncGroup before any step runs: every go
@@ -50,7 +50,7 @@ func validatePlanTemplates(ctx context.Context, plan map[string]interface{}) []p
 // .ResVars/.ReqVars reference is resolved against the plan's real step keys, and
 // step keys, agent names and tool actions are checked against the naming rules
 // and the agents/tools the orchestrator is actually allowed to use.
-func validatePlan(ctx context.Context, plan map[string]interface{}, allowedAgents []agents.DiscoveredAgent, allowedTools []agents.DiscoveredTool) []planIssue {
+func validatePlan(ctx context.Context, plan map[string]interface{}, allowedAgents []agents.DiscoveredAgent, allowedTools []agents.DiscoveredTool, cc codeContext) []planIssue {
 	planJSON, err := json.Marshal(plan)
 	if err != nil {
 		return []planIssue{{Field: "func_group", Err: err.Error()}}
@@ -66,7 +66,82 @@ func validatePlan(ctx context.Context, plan map[string]interface{}, allowedAgent
 	issues := validateStepTemplates(ctx, "", funcGroup.FuncSteps)
 	issues = append(issues, validateStepReferences(ctx, funcGroup.FuncSteps)...)
 	issues = append(issues, validateStepIdentity(funcGroup.FuncSteps, allowedAgents, allowedTools)...)
+	issues = append(issues, validateCodeRouting(ctx, funcGroup.FuncSteps, cc)...)
 	return issues
+}
+
+// validateCodeRouting checks how the plan handled the caller's existing
+// structured output (params.code): a step may not read an artifact that was
+// never sent, and the artifact must be passed by reference rather than pasted
+// into a template, which bloats the plan and breaks on quoting.
+func validateCodeRouting(ctx context.Context, steps map[string]*functions.FuncStep, cc codeContext) []planIssue {
+	fingerprint := cc.fingerprint()
+	var issues []planIssue
+	walkSteps(steps, "", func(stepPath string, stepKey string, step *functions.FuncStep) {
+		for _, templateField := range stepTemplateFields(step) {
+			if strings.TrimSpace(templateField.Template) == "" {
+				continue
+			}
+			if !cc.Present && templateReadsCodeParam(ctx, stepPath, templateField) {
+				issues = append(issues, planIssue{
+					StepPath: stepPath,
+					Field:    templateField.Name,
+					Template: templateField.Template,
+					Err:      "reads .Vars.Body.params.code but the request carried no code artifact - remove the code key from this step's params",
+				})
+			}
+			if fingerprint != "" && strings.Contains(normaliseForFingerprint(templateField.Template), fingerprint) {
+				issues = append(issues, planIssue{
+					StepPath: stepPath,
+					Field:    templateField.Name,
+					Err:      "the existing artifact from params.code is pasted into this template - pass it by reference instead, as (dict \"code\" .Vars.Body.params.code), and remove the pasted copy",
+				})
+			}
+		}
+	})
+	return issues
+}
+
+// templateReadsCodeParam reports whether a template feeds the caller's
+// params.code artifact into its step.
+func templateReadsCodeParam(ctx context.Context, stepPath string, templateField stepTemplateField) bool {
+	goTmpl := gotemplate.GoTemplate{Name: fmt.Sprint(stepPath, ".", templateField.Name), Template: templateField.Template}
+	refs, err := goTmpl.FieldReferences(ctx)
+	if err != nil {
+		return strings.Contains(templateField.Template, fmt.Sprint("params.", codeParamKey))
+	}
+	for _, ref := range refs {
+		if len(ref) >= 4 && ref[0] == "Vars" && ref[1] == "Body" && ref[2] == "params" && ref[3] == codeParamKey {
+			return true
+		}
+	}
+	return false
+}
+
+// codeRoutedSteps lists the steps that receive the params.code artifact, so the
+// routing decision the planner made is visible in the logs.
+func codeRoutedSteps(ctx context.Context, plan map[string]interface{}) []string {
+	planJSON, err := json.Marshal(plan)
+	if err != nil {
+		return nil
+	}
+	var funcGroup functions.FuncGroup
+	if err := json.Unmarshal(planJSON, &funcGroup); err != nil {
+		return nil
+	}
+	var routed []string
+	walkSteps(funcGroup.FuncSteps, "", func(stepPath string, stepKey string, step *functions.FuncStep) {
+		for _, templateField := range stepTemplateFields(step) {
+			if strings.TrimSpace(templateField.Template) == "" {
+				continue
+			}
+			if templateReadsCodeParam(ctx, stepPath, templateField) {
+				routed = append(routed, stepPath)
+				return
+			}
+		}
+	})
+	return routed
 }
 
 // validateStepReferences rejects a template that reads .ResVars/.ReqVars of a

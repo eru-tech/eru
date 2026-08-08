@@ -150,8 +150,14 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		}
 	}
 
+	codeCtx := describeCodeParam(agentMessage.Params)
+	if codeCtx.Present {
+		logs.WithContext(ctx).Info(fmt.Sprint("orchestrator params.code received - agent=", oa.AgentName, " conversation_id=", conversationId,
+			" kind=", codeCtx.Kind, " size=", codeCtx.Size, " top_keys=", strings.Join(codeCtx.TopKeys, ",")))
+	}
+
 	emitStatus("planning")
-	decompositionResult, decompositionQuestion, directAnswer, traces, err := oa.decompose(ctx, agentMessage, projectId, tenantId)
+	decompositionResult, decompositionQuestion, directAnswer, traces, err := oa.decompose(ctx, agentMessage, codeCtx, projectId, tenantId)
 	if err != nil {
 		return agents.AgentMessage{}, err
 	}
@@ -167,7 +173,7 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		return oa.emitDirectAnswer(ctx, directAnswer, allTraces, agentMessage, conversation, projectId, tenantId)
 	}
 
-	decompositionResult, repairTraces, err := oa.repairPlan(ctx, agentMessage, decompositionResult, projectId, tenantId)
+	decompositionResult, repairTraces, err := oa.repairPlan(ctx, agentMessage, decompositionResult, codeCtx, projectId, tenantId)
 	allTraces = append(allTraces, repairTraces...)
 	if err != nil {
 		return agents.AgentMessage{}, err
@@ -176,6 +182,7 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	assignStableConversationIds(decompositionResult, conversationId)
 
 	oa.logPlan(ctx, decompositionResult, conversationId)
+	oa.logCodeRouting(ctx, decompositionResult, codeCtx)
 	if streamCb != nil {
 		streamCb(agents.StreamEvent{Event: agents.StreamEventPlan, Data: oa.planEventData(ctx, decompositionResult)})
 	}
@@ -194,7 +201,7 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		logs.WithContext(ctx).Info(fmt.Sprintf("Execution failed (attempt %d/%d): %v", attempt+1, oa.MaxReplans+1, execErr))
 
 		if attempt < oa.MaxReplans {
-			replanResult, replanQuestion, replanTraces, replanErr := oa.replan(ctx, agentMessage, decompositionResult, execErr, projectId, tenantId)
+			replanResult, replanQuestion, replanTraces, replanErr := oa.replan(ctx, agentMessage, decompositionResult, execErr, codeCtx, projectId, tenantId)
 			allTraces = append(allTraces, replanTraces...)
 			if replanErr != nil {
 				logs.WithContext(ctx).Error(fmt.Sprintf("Re-planning failed: %v", replanErr))
@@ -203,13 +210,14 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 			if replanQuestion != nil {
 				return oa.emitClarification(ctx, *replanQuestion, nil, allTraces, agentMessage, conversation, projectId, tenantId)
 			}
-			replanResult, replanRepairTraces, replanRepairErr := oa.repairPlan(ctx, agentMessage, replanResult, projectId, tenantId)
+			replanResult, replanRepairTraces, replanRepairErr := oa.repairPlan(ctx, agentMessage, replanResult, codeCtx, projectId, tenantId)
 			allTraces = append(allTraces, replanRepairTraces...)
 			if replanRepairErr != nil {
 				logs.WithContext(ctx).Error(fmt.Sprint("re-planned plan failed template validation: ", replanRepairErr.Error()))
 				break
 			}
 			assignStableConversationIds(replanResult, conversationId)
+			oa.logCodeRouting(ctx, replanResult, codeCtx)
 			decompositionResult = replanResult
 		}
 	}
@@ -267,6 +275,39 @@ func (oa *OrchestratorAgent) logPlan(ctx context.Context, plan map[string]interf
 		return
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("orchestrator plan - agent=", oa.AgentName, " conversation_id=", conversationId, " plan=", string(planJSON)))
+}
+
+// logCodeRouting records which steps the planner decided need the caller's
+// existing structured output, so an unexpected routing decision is diagnosable
+// without re-reading the whole plan.
+func (oa *OrchestratorAgent) logCodeRouting(ctx context.Context, plan map[string]interface{}, cc codeContext) {
+	if !cc.Present {
+		return
+	}
+	routed := codeRoutedSteps(ctx, plan)
+	if len(routed) == 0 {
+		logs.WithContext(ctx).Info(fmt.Sprint("orchestrator params.code routing - agent=", oa.AgentName, " kind=", cc.Kind, " routed_to=none (planner judged it irrelevant to every step)"))
+		return
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("orchestrator params.code routing - agent=", oa.AgentName, " kind=", cc.Kind, " routed_to=", strings.Join(routed, ",")))
+}
+
+// planningSystemPrompt builds the system prompt used for every planning call.
+// When the caller sent an existing structured output in params.code, a
+// description of that artifact - never the artifact itself - is appended so the
+// planner can route it to the sub-agents it is actually relevant to.
+func (oa *OrchestratorAgent) planningSystemPrompt(cc codeContext, includeClarification bool) string {
+	sp := oa.GetSystemPrompt()
+	if oa.GetProvider() != nil {
+		providerPrompt := oa.GetProvider().GetSystemPrompt()
+		if providerPrompt != "" {
+			sp = providerPrompt
+		}
+	}
+	if includeClarification && oa.EnableClarification {
+		sp = sp + orchestratorClarificationGuidance
+	}
+	return sp + cc.promptSection(oa.discoveredAgents)
 }
 
 // planEventData returns what the client receives on the plan event: the step
@@ -439,7 +480,7 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 	return agentOutput, nil
 }
 
-func (oa *OrchestratorAgent) decompose(ctx context.Context, agentMessage agents.AgentMessage, projectId string, tenantId string) (map[string]interface{}, *agents.ClarificationRequest, string, []models.StepTrace, error) {
+func (oa *OrchestratorAgent) decompose(ctx context.Context, agentMessage agents.AgentMessage, cc codeContext, projectId string, tenantId string) (map[string]interface{}, *agents.ClarificationRequest, string, []models.StepTrace, error) {
 	logs.WithContext(ctx).Debug("OrchestratorAgent decompose - Start")
 	ctx, span := otel.Tracer("eru-ai").Start(ctx, "OrchestratorAgent.Decompose")
 	defer span.End()
@@ -454,16 +495,7 @@ func (oa *OrchestratorAgent) decompose(ctx context.Context, agentMessage agents.
 
 	toolsMap := oa.buildDecompositionTools(ctx)
 
-	sp := oa.GetSystemPrompt()
-	if oa.GetProvider() != nil {
-		providerPrompt := oa.GetProvider().GetSystemPrompt()
-		if providerPrompt != "" {
-			sp = providerPrompt
-		}
-	}
-	if oa.EnableClarification {
-		sp = sp + orchestratorClarificationGuidance
-	}
+	sp := oa.planningSystemPrompt(cc, true)
 
 	toolExecutor := func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("tool %s not expected during decomposition", toolName)
@@ -538,7 +570,7 @@ func (oa *OrchestratorAgent) executeFuncGroup(ctx context.Context, funcGroupMap 
 // the parse errors back to the model for correction. Templates are validated
 // before execution so a malformed one cannot half-run the plan and leave side
 // effects behind.
-func (oa *OrchestratorAgent) repairPlan(ctx context.Context, agentMessage agents.AgentMessage, plan map[string]interface{}, projectId string, tenantId string) (map[string]interface{}, []models.StepTrace, error) {
+func (oa *OrchestratorAgent) repairPlan(ctx context.Context, agentMessage agents.AgentMessage, plan map[string]interface{}, cc codeContext, projectId string, tenantId string) (map[string]interface{}, []models.StepTrace, error) {
 	logs.WithContext(ctx).Debug("OrchestratorAgent repairPlan - Start")
 	maxAttempts := oa.RetryCount
 	if maxAttempts < 2 {
@@ -546,7 +578,7 @@ func (oa *OrchestratorAgent) repairPlan(ctx context.Context, agentMessage agents
 	}
 	var traces []models.StepTrace
 	for attempt := 0; ; attempt++ {
-		issues := validatePlan(ctx, plan, oa.discoveredAgents, oa.discoveredTools)
+		issues := validatePlan(ctx, plan, oa.discoveredAgents, oa.discoveredTools, cc)
 		if len(issues) == 0 {
 			return plan, traces, nil
 		}
@@ -558,7 +590,7 @@ func (oa *OrchestratorAgent) repairPlan(ctx context.Context, agentMessage agents
 		if streamCb := agents.GetStreamCallback(ctx); streamCb != nil {
 			streamCb(agents.StreamEvent{Event: agents.StreamEventStatus, Data: "repairing_plan"})
 		}
-		repairedPlan, repairTraces, err := oa.repairPlanOnce(ctx, agentMessage, plan, issueText, projectId, tenantId)
+		repairedPlan, repairTraces, err := oa.repairPlanOnce(ctx, agentMessage, plan, issueText, cc, projectId, tenantId)
 		traces = append(traces, repairTraces...)
 		if err != nil {
 			return nil, traces, err
@@ -567,7 +599,7 @@ func (oa *OrchestratorAgent) repairPlan(ctx context.Context, agentMessage agents
 	}
 }
 
-func (oa *OrchestratorAgent) repairPlanOnce(ctx context.Context, agentMessage agents.AgentMessage, plan map[string]interface{}, issueText string, projectId string, tenantId string) (map[string]interface{}, []models.StepTrace, error) {
+func (oa *OrchestratorAgent) repairPlanOnce(ctx context.Context, agentMessage agents.AgentMessage, plan map[string]interface{}, issueText string, cc codeContext, projectId string, tenantId string) (map[string]interface{}, []models.StepTrace, error) {
 	planJSON, err := json.Marshal(plan)
 	if err != nil {
 		return nil, nil, err
@@ -590,13 +622,7 @@ func (oa *OrchestratorAgent) repairPlanOnce(ctx context.Context, agentMessage ag
 	toolsMap := oa.buildDecompositionTools(ctx)
 	delete(toolsMap, utility.AskUserToolName)
 
-	sp := oa.GetSystemPrompt()
-	if oa.GetProvider() != nil {
-		providerPrompt := oa.GetProvider().GetSystemPrompt()
-		if providerPrompt != "" {
-			sp = providerPrompt
-		}
-	}
+	sp := oa.planningSystemPrompt(cc, false)
 
 	toolExecutor := func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("tool %s not expected during plan repair", toolName)
@@ -617,7 +643,7 @@ func (oa *OrchestratorAgent) repairPlanOnce(ctx context.Context, agentMessage ag
 	return repairedPlan, traces, nil
 }
 
-func (oa *OrchestratorAgent) replan(ctx context.Context, agentMessage agents.AgentMessage, previousPlan map[string]interface{}, previousErr error, projectId string, tenantId string) (map[string]interface{}, *agents.ClarificationRequest, []models.StepTrace, error) {
+func (oa *OrchestratorAgent) replan(ctx context.Context, agentMessage agents.AgentMessage, previousPlan map[string]interface{}, previousErr error, cc codeContext, projectId string, tenantId string) (map[string]interface{}, *agents.ClarificationRequest, []models.StepTrace, error) {
 	logs.WithContext(ctx).Debug("OrchestratorAgent replan - Start")
 
 	previousPlanJSON, _ := json.Marshal(previousPlan)
@@ -638,13 +664,7 @@ func (oa *OrchestratorAgent) replan(ctx context.Context, agentMessage agents.Age
 
 	toolsMap := oa.buildDecompositionTools(ctx)
 
-	sp := oa.GetSystemPrompt()
-	if oa.GetProvider() != nil {
-		providerPrompt := oa.GetProvider().GetSystemPrompt()
-		if providerPrompt != "" {
-			sp = providerPrompt
-		}
-	}
+	sp := oa.planningSystemPrompt(cc, false)
 
 	toolExecutor := func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("tool %s not expected during replanning", toolName)
