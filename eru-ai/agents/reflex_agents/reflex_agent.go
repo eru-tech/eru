@@ -111,6 +111,7 @@ func (reflex_agent *ReflexAgent) execute(ctx context.Context, chatRequest models
 		sp = reflex_agent.GetProvider().GetSystemPrompt()
 	}
 	sp += "\n" + reflex_agent.SystemPrompt
+	sp += reflex_agent.GuardrailSection()
 
 	chatRequest.Messages = append([]models.Message{
 		{Role: "assistant", Content: sp, Name: reflex_agent.AgentName},

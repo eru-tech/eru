@@ -12,13 +12,13 @@ import (
 func makeTestJSON(t *testing.T) *json.RawMessage {
 	t.Helper()
 	data := map[string]interface{}{
-		"agent_type":    "ORCHESTRATOR",
-		"agent_name":    "test_orchestrator",
-		"description":   "test orchestrator agent",
-		"system_prompt": "custom prompt",
-		"max_iterations":  5,
-		"thinking_budget": 8000,
-		"available_agents": []string{"classifier", "summarizer"},
+		"agent_type":          "ORCHESTRATOR",
+		"agent_name":          "test_orchestrator",
+		"description":         "test orchestrator agent",
+		"system_prompt":       "custom prompt",
+		"max_iterations":      5,
+		"thinking_budget":     8000,
+		"available_agents":    []string{"classifier", "summarizer"},
 		"delegation_strategy": "sequential",
 		"max_replans":         3,
 		"synthesis_prompt":    "combine all results",
@@ -40,7 +40,7 @@ func TestUnmarshalJSON(t *testing.T) {
 		"delegation_strategy": "parallel",
 		"max_replans":         4,
 		"synthesis_prompt":    "synth prompt",
-		"available_agents": []string{"a1"},
+		"available_agents":    []string{"a1"},
 	}
 	b, _ := json.Marshal(data)
 
@@ -346,5 +346,43 @@ func TestAllowedAgentNames(t *testing.T) {
 	names := oa.AllowedAgentNames()
 	if len(names) != 2 || names[0] != "a1" || names[1] != "a2" {
 		t.Errorf("unexpected allowed agent names: %v", names)
+	}
+}
+
+func TestPlanningSystemPromptGuardrail(t *testing.T) {
+	oa := &OrchestratorAgent{}
+	if strings.Contains(oa.planningSystemPrompt(codeContext{}, false), "AGENT GUARDRAILS") {
+		t.Error("guardrail section present when no guardrail configured")
+	}
+
+	oa.GuardrailPrompt = "Only plan loan origination workflows."
+	prompt := oa.planningSystemPrompt(codeContext{}, false)
+	for _, c := range []string{
+		"AGENT GUARDRAILS / BOUNDARIES — NON-NEGOTIABLE",
+		"Only plan loan origination workflows.",
+		"do NOT call structured_output",
+	} {
+		if !strings.Contains(prompt, c) {
+			t.Errorf("planning prompt missing %q", c)
+		}
+	}
+}
+
+func TestSystemPromptPrefersParallel(t *testing.T) {
+	oa := &OrchestratorAgent{}
+	prompt := oa.GetSystemPrompt()
+
+	for _, c := range []string{
+		"PARALLEL IS THE DEFAULT",
+		"The ONLY valid reason to nest a step is a real dependency",
+		"needs NO user request to justify it",
+		"loop_in_parallel is true wherever the loop iterations are independent",
+	} {
+		if !strings.Contains(prompt, c) {
+			t.Errorf("prompt missing parallel-first guidance: %q", c)
+		}
+	}
+	if strings.Contains(prompt, "Default to sequential") {
+		t.Error("prompt still defaults to sequential execution")
 	}
 }

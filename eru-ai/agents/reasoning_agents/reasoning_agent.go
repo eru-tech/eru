@@ -20,8 +20,8 @@ import (
 
 type ReasoningAgent struct {
 	agents.Agent
-	MaxIterations      int  `json:"max_iterations"`
-	ThinkingBudget     int  `json:"thinking_budget"`
+	MaxIterations       int  `json:"max_iterations"`
+	ThinkingBudget      int  `json:"thinking_budget"`
 	EnableClarification bool `json:"enable_clarification"`
 }
 
@@ -45,8 +45,8 @@ func (ra *ReasoningAgent) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	type reasoningFields struct {
-		MaxIterations      int  `json:"max_iterations"`
-		ThinkingBudget     int  `json:"thinking_budget"`
+		MaxIterations       int  `json:"max_iterations"`
+		ThinkingBudget      int  `json:"thinking_budget"`
 		EnableClarification bool `json:"enable_clarification"`
 	}
 	var rf reasoningFields
@@ -170,6 +170,7 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	if ra.EnableClarification {
 		sp = sp + clarificationGuidance
 	}
+	sp = sp + ra.GuardrailSection()
 
 	// When the agent produces structured output, the final answer is the
 	// structured_output tool payload, delivered to the client in the terminal

@@ -27,6 +27,15 @@ const orchestratorClarificationGuidance = `
 HUMAN-IN-THE-LOOP CLARIFICATION:
 If the task is too ambiguous or missing information you need to build a correct orchestration plan, call the ask_user tool instead of outputting a FuncGroup. Ask the fewest questions needed, give 2-4 concrete options per question, and allow free text when options may not be exhaustive. Calling ask_user ends your turn; the user's answers arrive as a follow-up message and you then produce the plan.`
 
+// orchestratorGuardrailNote tells the planner how to refuse: the base prompt demands
+// structured_output only, so an out-of-scope request needs an explicit text path.
+const orchestratorGuardrailNote = `
+For a request that falls outside the guardrails above, do NOT build a FuncGroup and
+do NOT call structured_output. Reply with plain text saying the request is outside
+this agent's scope, and state what it can help with instead. Selecting agents, tools
+or steps whose purpose lies outside the guardrails is a violation of them.
+`
+
 type AvailableTool struct {
 	ToolName string   `json:"tool_name"`
 	Actions  []string `json:"actions"`
@@ -307,7 +316,11 @@ func (oa *OrchestratorAgent) planningSystemPrompt(cc codeContext, includeClarifi
 	if includeClarification && oa.EnableClarification {
 		sp = sp + orchestratorClarificationGuidance
 	}
-	return sp + cc.promptSection(oa.discoveredAgents)
+	sp = sp + cc.promptSection(oa.discoveredAgents)
+	if guardrail := oa.GuardrailSection(); guardrail != "" {
+		sp = sp + guardrail + orchestratorGuardrailNote
+	}
+	return sp
 }
 
 // planEventData returns what the client receives on the plan event: the step
@@ -980,9 +993,57 @@ Two rules:
 
 Sequential (A then B): nest B inside A's func_steps.
 Parallel (A and B): place both as siblings.
-Default to sequential (nesting) unless the task clearly benefits from parallelism.
+
+PARALLEL IS THE DEFAULT — MAXIMISE IT
+The ONLY valid reason to nest a step is a real dependency. Nest B inside A ONLY if
+at least one is true:
+  - B's transform_request references .ResVars.A / .ReqVars.A (it consumes A's output)
+  - B must not run unless A succeeded (A's side effect is a precondition of B)
+  - B's loop_variable is derived from A's output
+If none of those hold, B MUST be a sibling of A and run in parallel.
+
+Do NOT nest for any of these reasons — they are all WRONG:
+  - "the user didn't ask for parallel / didn't ask to optimise performance"
+  - "sequential is simpler / easier to read / safer / more predictable"
+  - "the steps are conceptually ordered" or "it reads naturally as step 1, step 2"
+  - "parallelism is not needed for this small task"
+Parallel execution is the platform default and needs NO user request to justify it.
+Only an EXPLICIT user instruction (e.g. "run these one at a time", "do X only after
+Y", "execute sequentially") may override a dependency-free parallel layout.
+
+Method — derive the layout from data flow, not from narrative order:
+  1. List the steps the task needs.
+  2. For each step, list which other steps' outputs it actually reads.
+  3. Steps with no unmet dependency → siblings at the same level (parallel).
+  4. A step that depends on exactly one step → nest it inside that step.
+  5. A step that depends on SEVERAL steps → nest it inside one of them and add
+     "wait_for" naming a sibling it also needs (see the merge example below).
+  6. Prefer the WIDEST layout that respects the dependencies — never serialise
+     independent work into one chain.
+
+Loops: when the iterations of a loop_variable are independent of each other, set
+"loop_in_parallel": true. Use false only when iteration N depends on iteration N-1
+or the target must be hit one call at a time.
 
 If parent fails, nested children do NOT execute — no success-check conditions needed.
+
+Example — WRONG (independent steps needlessly serialised):
+{
+  "sentiment_analyzer": {
+    "agent_name": "sentiment_analyzer",
+    "tenant_id": "t1",
+    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}",
+    "func_steps": {
+      "topic_classifier": {
+        "agent_name": "topic_classifier",
+        "tenant_id": "t1",
+        "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
+      }
+    }
+  }
+}
+topic_classifier never reads .ResVars.sentiment_analyzer — both read only
+.Vars.Body.content, so they MUST be siblings (see the parallel example below).
 
 Example — sequential: extract data, then summarize it:
 {
@@ -1096,6 +1157,12 @@ CHECKLIST (verify before outputting)
 [ ] func_category_name and func_group_name are set (snake_case)
 [ ] Each step uses ONLY (agent_name) OR (tool_name+tool_action) + tenant_id (no query/function/api)
 [ ] Sequential steps are NESTED, parallel steps are SIBLINGS
+[ ] EVERY nested step is justified by a real dependency on its parent (reads its
+    .ResVars, needs its success, or loops over its output) — otherwise it is moved
+    up to be a sibling and run in parallel
+[ ] Independent steps are NOT serialised for simplicity/readability; parallel is
+    the default and only an explicit user instruction may force sequential
+[ ] loop_in_parallel is true wherever the loop iterations are independent
 [ ] transform_request passes data correctly between steps
 [ ] Only agents/tools from the AVAILABLE lists are used
 [ ] wait_for only references sibling step keys, not nested ones

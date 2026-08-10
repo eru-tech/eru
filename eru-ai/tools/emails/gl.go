@@ -28,6 +28,9 @@ const (
 	GlBaseUrl              = "https://gmail.googleapis.com"
 	INSERT_FUNC_ASYNC_GL   = "insert into eruai_cb_glemail (project_id, tenant_id, request_body, request_params) values ($1, $2, $3, $4)"
 	SELECT_LAST_HISTORY_GL = "select request_body->'notification'->>'history_id' as history_id from eruai_cb_glemail where project_id = $1 and tenant_id = $2 and request_body->'notification'->>'email_address' = $3 order by created_date desc limit 1"
+	GlParamPaginate        = "paginate"
+	GlParamMaxMessages     = "max_messages"
+	glMaxResultsPerPage    = 500
 )
 
 var (
@@ -320,8 +323,32 @@ func (glEmailTool *GlEmailTool) Execute(ctx context.Context, projectId string, t
 
 func (glEmailTool *GlEmailTool) ReadEmail(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("ReadEmail Execute - Start")
+	paginate := true
+	switch v := params[GlParamPaginate].(type) {
+	case bool:
+		paginate = v
+	case string:
+		paginate = !(v == "false" || v == "0")
+	}
+	maxMessages := 0
+	if v, ok := params[GlParamMaxMessages]; ok && v != nil {
+		if parsed, pErr := strconv.Atoi(strings.TrimSpace(fmt.Sprint(v))); pErr == nil && parsed > 0 {
+			maxMessages = parsed
+		}
+	}
+
 	qVals := url.Values{}
+	pageToken := ""
 	for k, v := range params {
+		if k == GlParamPaginate || k == GlParamMaxMessages {
+			continue
+		}
+		if k == "pageToken" {
+			if v != nil {
+				pageToken = strings.TrimSpace(fmt.Sprint(v))
+			}
+			continue
+		}
 		switch vv := v.(type) {
 		case []interface{}:
 			for _, item := range vv {
@@ -340,22 +367,98 @@ func (glEmailTool *GlEmailTool) ReadEmail(ctx context.Context, params map[string
 			qVals.Add(k, fmt.Sprint(vv))
 		}
 	}
-	reqUrl := fmt.Sprint(GlBaseUrl, "/gmail/v1/users/me/messages")
-	if encoded := qVals.Encode(); encoded != "" {
-		reqUrl = fmt.Sprint(reqUrl, "?", encoded)
+
+	pageSize := glMaxResultsPerPage
+	if mr := qVals.Get("maxResults"); mr != "" {
+		if parsed, pErr := strconv.Atoi(strings.TrimSpace(mr)); pErr == nil && parsed > 0 && parsed < glMaxResultsPerPage {
+			pageSize = parsed
+		}
 	}
+	if maxMessages > 0 && maxMessages < pageSize {
+		pageSize = maxMessages
+	}
+	qVals.Set("maxResults", strconv.Itoa(pageSize))
+
+	baseUrl := fmt.Sprint(GlBaseUrl, "/gmail/v1/users/me/messages")
 	headers := http.Header{}
 	headers.Set("Authorization", fmt.Sprintf("Bearer %s", glEmailTool.EmailAccount.AccessToken))
 	headers.Set("Content-Type", "application/json")
-	logs.WithContext(ctx).Info(fmt.Sprint("read_email url: ", reqUrl))
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, reqUrl, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, nil, false, err
+
+	allMessages := make([]interface{}, 0)
+	seen := make(map[string]bool)
+	pages := 0
+	resultSizeEstimate := float64(0)
+	nextPageToken := ""
+	for {
+		if pageToken != "" {
+			qVals.Set("pageToken", pageToken)
+		} else {
+			qVals.Del("pageToken")
+		}
+		reqUrl := baseUrl
+		if encoded := qVals.Encode(); encoded != "" {
+			reqUrl = fmt.Sprint(reqUrl, "?", encoded)
+		}
+		logs.WithContext(ctx).Info(fmt.Sprint("read_email url: ", reqUrl))
+		res, _, _, _, callErr := utils.CallHttp(ctx, http.MethodGet, reqUrl, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
+		if callErr != nil {
+			logs.WithContext(ctx).Error(callErr.Error())
+			return nil, nil, false, callErr
+		}
+		resMap, ok := res.(map[string]interface{})
+		if !ok {
+			err = errors.New("read_email result is not a map")
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, nil, false, err
+		}
+		pages = pages + 1
+		if rse, ok := resMap["resultSizeEstimate"].(float64); ok && rse > resultSizeEstimate {
+			resultSizeEstimate = rse
+		}
+		msgs, _ := resMap["messages"].([]interface{})
+		truncated := false
+		for _, m := range msgs {
+			if mm, ok := m.(map[string]interface{}); ok {
+				if id, _ := mm["id"].(string); id != "" {
+					if seen[id] {
+						continue
+					}
+					seen[id] = true
+				}
+			}
+			if maxMessages > 0 && len(allMessages) >= maxMessages {
+				truncated = true
+				break
+			}
+			allMessages = append(allMessages, m)
+		}
+		nextPageToken, _ = resMap["nextPageToken"].(string)
+		if !paginate || truncated || nextPageToken == "" || nextPageToken == pageToken {
+			break
+		}
+		if maxMessages > 0 && len(allMessages) >= maxMessages {
+			break
+		}
+		pageToken = nextPageToken
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("read_email pages fetched: ", pages, " messages: ", len(allMessages)))
+
+	if float64(len(allMessages)) > resultSizeEstimate {
+		resultSizeEstimate = float64(len(allMessages))
+	}
+	emails := map[string]interface{}{
+		"messages":           allMessages,
+		"resultSizeEstimate": resultSizeEstimate,
+	}
+	if nextPageToken != "" && (!paginate || (maxMessages > 0 && len(allMessages) >= maxMessages)) {
+		emails["nextPageToken"] = nextPageToken
 	}
 	toolResult = make(map[string]interface{})
-	toolResult["emails"] = res
-	return toolResult, map[string]interface{}{"query": qVals.Encode()}, false, nil
+	toolResult["emails"] = emails
+	toolResult["count"] = len(allMessages)
+	toolResult["pages"] = pages
+	qVals.Del("pageToken")
+	return toolResult, map[string]interface{}{"query": qVals.Encode(), "pages": pages, "count": len(allMessages)}, false, nil
 }
 
 func glFetchAttachmentBytes(ctx context.Context, accessToken string, messageId string, attachmentId string) (dataStd string, size int64, err error) {

@@ -582,11 +582,122 @@ styles.responsive_styles.base: object of style properties (snake_case keys). Sup
     font_family, font_size, font_weight, text_align, color, line_height, letter_spacing, text_shadow,
     background, background_color, background_image, background_position, background_repeat, background_size,
     border_width, border_style, border_color, border_radius, box_shadow, opacity
-    Example: { "padding": 16, "background_color": "#ffffff", "color": "#0f172a", "border_radius": 12, "font_size": 14, "font_weight": "500", "text_align": "left" }
+    Example: { "padding": 16, "background_color": "var(--studio-surface)", "color": "var(--studio-on-surface)", "border_radius": 12, "font_size": 14, "font_weight": "500", "text_align": "left" }
 styles.custom:                Free-form CSS map (camelCase keys). Use sparingly.
 
 DO use modern, generous spacing (padding 12–24), readable font sizes (14–16), subtle borders, and clear visual hierarchy.
 DO NOT inline raw CSS strings in classes — use Tailwind utility names only.
+
+------------------------------------------------------------
+COLOR VALUES — theme tokens, hex or rgba
+------------------------------------------------------------
+
+Every color style key (color, background_color, border_color, and each gradient
+stop) accepts exactly ONE of these forms:
+
+  1. Theme token — PREFERRED, follows the host app's Material theme and light/dark mode:
+       "var(--studio-primary)"
+  2. Theme token with opacity — still theme-reactive:
+       "color-mix(in srgb, var(--studio-primary) 60%, transparent)"
+  3. Hex literal:   "#ffffff"
+  4. rgba literal (a hex colour with alpha): "rgba(103,80,164,0.6)"
+  5. "transparent"
+
+The ONLY valid colour tokens (use these exact strings):
+  var(--studio-primary)               var(--studio-on-primary)
+  var(--studio-primary-container)     var(--studio-on-primary-container)
+  var(--studio-secondary)             var(--studio-on-secondary)
+  var(--studio-secondary-container)   var(--studio-on-secondary-container)
+  var(--studio-tertiary)              var(--studio-on-tertiary)
+  var(--studio-tertiary-container)    var(--studio-on-tertiary-container)
+  var(--studio-surface)               var(--studio-on-surface)
+  var(--studio-surface-variant)       var(--studio-on-surface-variant)
+  var(--studio-surface-container)
+  var(--studio-outline)               var(--studio-outline-variant)
+  var(--studio-error)                 var(--studio-error-container)
+  var(--studio-base-surface)          (fixed white, flips with the host's dark mode)
+  var(--studio-base-on-surface)       (fixed black, flips with the host's dark mode)
+  var(--studio-base-border)
+
+USE DESIGN TOKENS AS MUCH AS POSSIBLE — page chrome, cards, headers, panels,
+buttons, text, borders and accents should all be tokens, so the page follows the
+host app's theme and light/dark mode. A hard-coded hex is frozen: it will look
+wrong when the theme changes.
+
+BUT DO pick a specific hex/rgba when the component or the design genuinely calls
+for that colour, for example:
+  - the user names a colour or brand shade ("make it #ff0000", "our brand orange")
+  - semantic status colours the theme has no token for (green = paid/approved,
+    amber = pending, red = overdue/breach) — e.g. status options, color_rules,
+    color_ranges, badge colours, gauge/progress thresholds
+  - chart/series palettes needing several distinguishable colours
+  - a deliberate accent or hero/gradient treatment the theme cannot express
+In those cases use the exact hex the design needs — do NOT bend it to the nearest
+token. Keep everything AROUND it on tokens, and do not mix a token background with
+a hex text colour on the same element.
+
+PAIRING RULE — a filled surface takes its "on-" counterpart as text colour:
+  background_color var(--studio-primary)            -> color var(--studio-on-primary)
+  background_color var(--studio-primary-container)  -> color var(--studio-on-primary-container)
+  background_color var(--studio-surface)            -> color var(--studio-on-surface)
+  background_color var(--studio-surface-variant)    -> color var(--studio-on-surface-variant)
+  background_color var(--studio-error-container)    -> color var(--studio-on-surface)
+There is no on-error token: use var(--studio-error) as accent TEXT on a surface
+background rather than as a fill.
+primary/secondary/tertiary may also be used as ACCENT text on a surface
+background (links, KPI numbers, icons). Never pair a token background with a hex
+text colour, or vice versa.
+
+Borders: prefer var(--studio-outline-variant) (subtle) or var(--studio-outline).
+
+------------------------------------------------------------
+BACKGROUND FILL — solid, gradient or image (choose exactly ONE)
+------------------------------------------------------------
+
+The runtime decides the fill mode from which keys are present, so a component
+must use ONE of these three shapes inside styles.responsive_styles.<breakpoint>:
+
+  SOLID (default):
+    "background_color": "<colour value>"
+    and NO "background", NO "background_image".
+
+  GRADIENT (two colours):
+    "background": "linear-gradient(<angle>deg, <colour1> 0%, <colour2> 100%)"
+    - exactly two stops, at 0% and 100%, in that order
+    - <angle> is a number 0–360 followed by "deg" (135 is a good default)
+    - each stop is any colour value from the list above (tokens allowed, e.g.
+      "linear-gradient(135deg, var(--studio-primary) 0%, var(--studio-primary-container) 100%)")
+    - do NOT also set "background_image"; "background_color" is masked by this shorthand,
+      so put the text colour on the on- counterpart of the FIRST stop.
+
+  IMAGE:
+    "background_image":    "<bare image url>"
+    "background_size":     "cover" | "contain" | "auto" | "100% 100%"
+    "background_position": "center" | "top" | "bottom" | "left" | "right" | "top left" | "top right" | "bottom left" | "bottom right"
+    "background_repeat":   "no-repeat" | "repeat" | "repeat-x" | "repeat-y"
+    - do NOT also set "background" (the gradient shorthand hides the image)
+    - the value is the bare url — the runtime wraps it in url(...) itself
+    - use only a url the user gave you or one present in the data/context you were
+      given; NEVER invent an image url
+    - default to size "cover", position "center", repeat "no-repeat"
+
+Component colour PROPERTIES (not styles) — icon_color, bg_color, text_color,
+badge_color, badge_text_color, selected_bg_color, selected_text_color,
+active_color, complete_color, and the color/background fields inside color_rules
+/ color_ranges / status options — take the same colour values as above (token,
+color-mix, hex, rgba). EXCEPTION: a property documented as
+color ("primary"|"accent"|"warn") is a Material palette name — pass "primary",
+not "var(--studio-primary)". Grid token_* properties also take colour values.
+
+WRONG:
+  "background_color": "primary"                          -> not a colour; use "var(--studio-primary)"
+  "background_color": "var(--primary)"                   -> token names are --studio-*
+  "background_color": "linear-gradient(135deg, #a 0%, #b 100%)" -> gradients go in "background"
+  "background": "linear-gradient(to right, #aaa, #bbb)"  -> must be <n>deg with 0%/100% stops
+  "background_image": "url(https://x/y.png)"             -> pass the bare url
+  "background": "...", "background_image": "..."         -> two fill modes on one component
+  "color": "rgb(15,23,42)"                               -> use hex or rgba(r,g,b,a)
+  "color": "#ffffff" on "background_color": "var(--studio-primary)" -> use var(--studio-on-primary)
 
 ============================================================
 ID GENERATION
@@ -656,4 +767,8 @@ CHECKLIST — verify before emitting:
 [ ] Every event "action" is from the allowed list; call-api has apiName, call-function has function_name, call-query has query_name
 [ ] Validation rule values match the rule type
 [ ] No fabricated api names, entity names, or component types
+[ ] Every colour value is a var(--studio-*) token from the list, a color-mix(...) of one, a hex, an rgba, or "transparent" — never a bare name like "primary"
+[ ] Token backgrounds carry their "on-" counterpart as text colour
+[ ] Each component uses ONE background fill: background_color, OR "background" gradient, OR background_image (+ size/position/repeat) — never two
+[ ] Gradients are "linear-gradient(<n>deg, <c1> 0%, <c2> 100%)"; background_image values are bare urls that came from the user or the given data
 `
