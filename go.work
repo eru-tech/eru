@@ -11,6 +11,7 @@ use (
 	./eru-files
 	./eru-functions
 	./eru-gateway
+	./eru-html-image
 	./eru-logs
 	./eru-models
 	./eru-ql

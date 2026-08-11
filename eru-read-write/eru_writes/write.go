@@ -9,7 +9,18 @@ import (
 const (
 	OutputTypeExcel = "excel"
 	OutputTypeCsv   = "csv"
+	OutputTypeHtml  = "html"
+	OutputTypeImage = "image"
 )
+
+func IsColumnarOutput(outputType string) bool {
+	switch outputType {
+	case OutputTypeCsv, OutputTypeExcel, OutputTypeHtml, OutputTypeImage:
+		return true
+	default:
+		return false
+	}
+}
 
 type WriteData struct {
 	ColumnarDataMap map[string][][]interface{}

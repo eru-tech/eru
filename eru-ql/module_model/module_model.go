@@ -130,6 +130,7 @@ type MyQuery struct {
 	ExcelStyles    map[string]eru_writes.CellFormatter    `json:"excel_styles"`
 	Columns        map[string]eru_writes.ColumnarSettings `json:"columns"`
 	PivotConfig    map[string]eru_writes.PivotTableConfig `json:"pivot_config"`
+	ImageConfig    eru_writes.ImageConfig                 `json:"image_config"`
 	ExcludeColumns []string                               `json:"exclude_columns"`
 	CacheTTL       int                                    `json:"cache_ttl,omitempty"`
 	CacheSkip      bool                                   `json:"cache_skip,omitempty"`

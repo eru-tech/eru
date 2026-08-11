@@ -165,6 +165,10 @@ func PrintResponseBody(ctx context.Context, response *http.Response, msg string)
 		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
 			return
 		}
+		if strings.HasPrefix(response.Header.Get("Content-Type"), "image/") {
+			logs.WithContext(ctx).Info(fmt.Sprint("skipped printing ", response.Header.Get("Content-Type"), " response body of ", response.ContentLength, " bytes"))
+			return
+		}
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
@@ -1393,6 +1397,9 @@ func StructToJSONSchema(t reflect.Type, seenFields []string) eru_models.JSONSche
 }
 
 func goTypeToSchema(t reflect.Type, seenFields []string) eru_models.JSONSchema {
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
 	kind := t.Kind()
 
 	switch kind {

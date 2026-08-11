@@ -171,7 +171,7 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 		}
 		logs.WithContext(ctx).Info(sqd.Query)
 		ctx = ds.WithUseWriter(ctx, sqd.UseWriter || qlcache.IsDML(sqd.Query))
-		if sqd.OutputType == eru_writes.OutputTypeCsv || sqd.OutputType == eru_writes.OutputTypeExcel {
+		if eru_writes.IsColumnarOutput(sqd.OutputType) {
 			result, err = sr.ExecuteQueryForCsv(ctx, sqd.Query, datasource, "Results", sr)
 			if err != nil {
 				err = logs.Err(ctx, err, "")

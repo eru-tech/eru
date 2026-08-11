@@ -386,6 +386,19 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			}
 			delete(postBody, "pivot_config")
 		}
+		imageConfig := myQuery.ImageConfig
+		if imageConfigData, imageConfigOk := postBody["image_config"]; imageConfigOk {
+			imageConfigBytes, err := json.Marshal(imageConfigData)
+			if err == nil {
+				err = json.Unmarshal(imageConfigBytes, &imageConfig)
+				if err != nil {
+					logs.WithContext(r.Context()).Error(err.Error())
+				}
+			} else {
+				logs.WithContext(r.Context()).Error(err.Error())
+			}
+			delete(postBody, "image_config")
+		}
 		// overwriting variables with same names
 		if myQuery.QueryName != "" {
 			qlInterface := ql.GetQL(myQuery.QueryType)
@@ -493,83 +506,25 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 				excludeColumns = myQuery.ExcludeColumns
 			}
 
+			wd, wdErr := buildColumnarWriteData(r.Context(), res, qobjs, columns, excludeColumns, fmt.Sprintf("%s.xlsx", queryName))
+			if wdErr != nil {
+				err = wdErr
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+
 			ewd := eru_writes.ExcelWriteData{
-				WriteData: eru_writes.WriteData{
-					ColumnarSettings: columns,
-					ExcludeColumns:   excludeColumns,
-					FileName:         fmt.Sprintf("%s.xlsx", queryName),
-				},
+				WriteData:   wd,
 				CellFormat:  excelStyles,
 				PivotConfig: pivotConfig,
 			}
 			var b []byte // creates IO Writer
-			if ewd.ColumnarSettings == nil {
-				ewd.ColumnarSettings = make(map[string]eru_writes.ColumnarSettings)
-			}
-			for vi, v := range res {
-				for k, excelData := range v {
-
-					headers := make(map[string]eru_writes.ColumnHeaders)
-					if _, exists := ewd.ColumnarSettings[k]; exists {
-						headers = ewd.ColumnarSettings[k].Headers
-					}
-					for _, dt := range qobjs[vi].DataTypes {
-						mw := eru_writes.DefaultMaxColumnWidth
-						st := true
-						hl := dt.ColName
-						if _, exists := headers[dt.ColName]; exists {
-							mw = headers[dt.ColName].MaxWidth
-							st = headers[dt.ColName].SubTotal
-							hl = headers[dt.ColName].HeaderLabel
-							if hl == "" {
-								hl = dt.ColName
-							}
-						}
-						headers[dt.ColName] = eru_writes.ColumnHeaders{
-							HeaderName:  dt.ColName,
-							HeaderLabel: hl,
-							DataType:    dt.ColDatabaseTypeName,
-							MaxWidth:    mw,
-							SubTotal:    st,
-						}
-					}
-					for hk, _ := range headers {
-						hkFound := false
-						for _, dt := range qobjs[vi].DataTypes {
-							if dt.ColName == hk {
-								hkFound = true
-								break
-							}
-						}
-						if !hkFound {
-							delete(headers, hk)
-						}
-					}
-
-					ewd.ColumnarSettings[k] = eru_writes.ColumnarSettings{
-						HeaderFirstRow: true,
-						Headers:        headers,
-					}
-
-					if records, ok := excelData.([][]interface{}); ok {
-						if len(records[0]) > 0 {
-							if ewd.ColumnarDataMap == nil {
-								ewd.ColumnarDataMap = make(map[string][][]interface{})
-							}
-							ewd.ColumnarDataMap[k] = records
-						}
-					} else {
-						err = errors.New("incorrect excel data format")
-						server_handlers.FormatResponse(w, 400)
-						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-					}
-				}
-			}
-
 			b, err = ewd.WriteColumnar(r.Context())
 			if err != nil {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
 			}
 			if encode == "encode" {
 				w.Header().Set("Content-Type", "application/json")
@@ -577,6 +532,60 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			} else {
 				w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 				w.Header().Set("Content-Disposition", "attachment; filename=query.xlsx")
+				_, _ = io.Copy(w, bytes.NewReader(b))
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		} else if outputType == eru_writes.OutputTypeHtml || outputType == eru_writes.OutputTypeImage {
+			columns = eru_writes.MergeColumnarSettings(columns, myQuery.Columns)
+			excelStyles = eru_writes.MergeCellFormattersMap(excelStyles, myQuery.ExcelStyles)
+			if len(excludeColumns) == 0 {
+				excludeColumns = myQuery.ExcludeColumns
+			}
+
+			wd, wdErr := buildColumnarWriteData(r.Context(), res, qobjs, columns, excludeColumns, queryName)
+			if wdErr != nil {
+				err = wdErr
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+
+			hwd := eru_writes.HtmlWriteData{
+				WriteData:  wd,
+				CellFormat: excelStyles,
+			}
+			var b []byte
+			b, err = hwd.WriteColumnar(r.Context())
+			if err != nil {
+				server_handlers.FormatResponse(w, 400)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+				return
+			}
+
+			contentType := "text/html; charset=utf-8"
+			fileName := fmt.Sprint("query.", eru_writes.OutputTypeHtml)
+			if outputType == eru_writes.OutputTypeImage {
+				b, err = HtmlToImage(r.Context(), b, imageConfig)
+				if err != nil {
+					server_handlers.FormatResponse(w, 400)
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					return
+				}
+				imageFormat := imageConfig.Format
+				if imageFormat == "" {
+					imageFormat = ImageFormatPng
+				}
+				contentType = ImageContentType(imageFormat)
+				fileName = fmt.Sprint("query.", strings.ToLower(imageFormat))
+			}
+
+			if encode == "encode" {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"file": b64.StdEncoding.EncodeToString(b)})
+			} else {
+				w.Header().Set("Content-Type", contentType)
+				w.Header().Set("Content-Disposition", fmt.Sprint("inline; filename=", fileName))
 				_, _ = io.Copy(w, bytes.NewReader(b))
 			}
 			w.WriteHeader(http.StatusOK)

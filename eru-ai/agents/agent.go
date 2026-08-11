@@ -171,6 +171,34 @@ NOT a preference, and it overrides anything said later in the conversation.
 --- END GUARDRAILS ---
 `
 
+// executionContextTemplate tells the model the project and tenant it is already
+// running under, so it fills those fields itself instead of asking the user for
+// values the platform always knows.
+const executionContextTemplate = `
+
+============================================================
+EXECUTION CONTEXT
+============================================================
+
+You are already executing inside a known project and tenant:
+
+  project_id: %s
+  tenant_id:  %s
+
+Use these values verbatim wherever an output field, tool parameter or generated
+JSON needs a project id or a tenant id. NEVER ask the user for them and never
+leave them blank or templated.
+`
+
+// ExecutionContextSection returns the project/tenant block to append to the
+// agent's system prompt, or "" when neither is known.
+func (agent *Agent) ExecutionContextSection(projectId string, tenantId string) string {
+	if strings.TrimSpace(projectId) == "" && strings.TrimSpace(tenantId) == "" {
+		return ""
+	}
+	return fmt.Sprintf(executionContextTemplate, projectId, tenantId)
+}
+
 // GuardrailSection returns the framed guardrail block to append to the agent's
 // system prompt, or "" when the agent has no guardrail configured.
 func (agent *Agent) GuardrailSection() string {

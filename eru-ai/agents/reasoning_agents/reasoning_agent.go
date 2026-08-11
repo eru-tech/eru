@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -167,6 +168,7 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	if ra.GetProvider() != nil {
 		sp = ra.GetProvider().GetSystemPrompt() + "\n" + sp
 	}
+	sp = sp + ra.ExecutionContextSection(projectId, tenantId)
 	if ra.EnableClarification {
 		sp = sp + clarificationGuidance
 	}
@@ -219,7 +221,10 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 			break
 		}
 
-		valErr := validateAgainstSchema(agentResponse, outputSchema, "")
+		valErr := validateRootKeys(agentResponse, outputSchema)
+		if valErr == nil {
+			valErr = validateAgainstSchema(agentResponse, outputSchema, "")
+		}
 		if valErr == nil {
 			break
 		}
@@ -489,6 +494,38 @@ Call structured_output again with a corrected result. Requirements:
 - Every field must match its declared type EXACTLY. In particular, array/object fields (e.g. ` + "`components`" + `) MUST be real JSON arrays/objects, NEVER a stringified JSON string.
 - All control characters inside string values (newlines, tabs, quotes, backslashes) MUST be properly escaped.
 Do not repeat the previous mistake.`
+
+// validateRootKeys checks that the model's output actually has the top-level
+// keys the output schema declares as required. Without this a completely
+// off-shape answer (e.g. a hand-rolled step DSL instead of the declared
+// wrapper) passes validation untouched, because validateAgainstSchema only
+// inspects the keys that ARE present. Only the root object is checked - nested
+// required lists are left alone so a deep optional omission never fails a
+// whole generation.
+func validateRootKeys(value interface{}, schema eru_models.JSONSchema) error {
+	if schema.Type != "object" || len(schema.Required) == 0 {
+		return nil
+	}
+	m, ok := value.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	var missing []string
+	for _, key := range schema.Required {
+		if _, found := m[key]; !found {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	present := make([]string, 0, len(m))
+	for key := range m {
+		present = append(present, key)
+	}
+	sort.Strings(present)
+	return fmt.Errorf("output is missing required top-level key(s) %s - it must be a single JSON object with exactly the declared top-level keys (got %s); do not invent your own structure", strings.Join(missing, ", "), strings.Join(present, ", "))
+}
 
 // validateAgainstSchema checks that value conforms to the type declared by
 // schema wherever the schema is strict about arrays/objects. It is the

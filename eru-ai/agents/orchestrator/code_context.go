@@ -82,7 +82,7 @@ func classifyCode(code string) (string, []string) {
 			switch {
 			case hasAnyKey(obj, "components", "eru_page", "page"):
 				return "eru_page_json", keys
-			case hasAnyKey(obj, "func_steps", "func_group_name"):
+			case hasAnyKey(obj, "func_steps", "func_group_name"), isFuncGroupWrapper(obj):
 				return "func_group_json", keys
 			}
 			return "json_object", keys
@@ -120,6 +120,16 @@ func sortedMapKeys(m map[string]interface{}) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// isFuncGroupWrapper reports whether obj is the eru_func agent's wrapper output
+// - {"function": <func group>, "trigger": {...}} - instead of a bare func group.
+func isFuncGroupWrapper(m map[string]interface{}) bool {
+	fn, ok := m["function"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	return hasAnyKey(fn, "func_steps", "func_group_name")
 }
 
 func hasAnyKey(m map[string]interface{}, keys ...string) bool {

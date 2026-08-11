@@ -223,7 +223,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					mainAliasNames = append(mainAliasNames, sqlObj.MainAliasName)
 					if gqd.ExecuteFlag {
 						ctxw := ds.WithUseWriter(ctx, false)
-						if gqd.OutputType == eru_writes.OutputTypeCsv || gqd.OutputType == eru_writes.OutputTypeExcel {
+						if eru_writes.IsColumnarOutput(gqd.OutputType) {
 							result, err = graphQLs[i].ExecuteQueryForCsv(ctxw, groupQuery, datasource, sqlObj.MainAliasName, graphQLs[i])
 							if err != nil {
 								err = logs.Err(ctx, err, "")
@@ -282,7 +282,7 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					qrm.UseWriter = sqlObj.UseWriter
 					ctx := ds.WithUseWriter(ctx, sqlObj.UseWriter)
 
-					if gqd.OutputType == eru_writes.OutputTypeCsv || gqd.OutputType == eru_writes.OutputTypeExcel {
+					if eru_writes.IsColumnarOutput(gqd.OutputType) {
 						result, err = graphQLs[i].ExecuteQueryForCsv(ctx, qrm.SQLQuery, datasource, mainAliasNames[i], graphQLs[i])
 						if err != nil {
 							err = logs.Err(ctx, err, "")

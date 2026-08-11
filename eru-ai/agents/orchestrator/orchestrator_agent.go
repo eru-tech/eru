@@ -305,7 +305,7 @@ func (oa *OrchestratorAgent) logCodeRouting(ctx context.Context, plan map[string
 // When the caller sent an existing structured output in params.code, a
 // description of that artifact - never the artifact itself - is appended so the
 // planner can route it to the sub-agents it is actually relevant to.
-func (oa *OrchestratorAgent) planningSystemPrompt(cc codeContext, includeClarification bool) string {
+func (oa *OrchestratorAgent) planningSystemPrompt(cc codeContext, includeClarification bool, projectId string, tenantId string) string {
 	sp := oa.GetSystemPrompt()
 	if oa.GetProvider() != nil {
 		providerPrompt := oa.GetProvider().GetSystemPrompt()
@@ -316,6 +316,7 @@ func (oa *OrchestratorAgent) planningSystemPrompt(cc codeContext, includeClarifi
 	if includeClarification && oa.EnableClarification {
 		sp = sp + orchestratorClarificationGuidance
 	}
+	sp = sp + oa.ExecutionContextSection(projectId, tenantId)
 	sp = sp + cc.promptSection(oa.discoveredAgents)
 	if guardrail := oa.GuardrailSection(); guardrail != "" {
 		sp = sp + guardrail + orchestratorGuardrailNote
@@ -508,7 +509,7 @@ func (oa *OrchestratorAgent) decompose(ctx context.Context, agentMessage agents.
 
 	toolsMap := oa.buildDecompositionTools(ctx)
 
-	sp := oa.planningSystemPrompt(cc, true)
+	sp := oa.planningSystemPrompt(cc, true, projectId, tenantId)
 
 	toolExecutor := func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("tool %s not expected during decomposition", toolName)
@@ -635,7 +636,7 @@ func (oa *OrchestratorAgent) repairPlanOnce(ctx context.Context, agentMessage ag
 	toolsMap := oa.buildDecompositionTools(ctx)
 	delete(toolsMap, utility.AskUserToolName)
 
-	sp := oa.planningSystemPrompt(cc, false)
+	sp := oa.planningSystemPrompt(cc, false, projectId, tenantId)
 
 	toolExecutor := func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("tool %s not expected during plan repair", toolName)
@@ -677,7 +678,7 @@ func (oa *OrchestratorAgent) replan(ctx context.Context, agentMessage agents.Age
 
 	toolsMap := oa.buildDecompositionTools(ctx)
 
-	sp := oa.planningSystemPrompt(cc, false)
+	sp := oa.planningSystemPrompt(cc, false, projectId, tenantId)
 
 	toolExecutor := func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("tool %s not expected during replanning", toolName)

@@ -351,12 +351,12 @@ func TestAllowedAgentNames(t *testing.T) {
 
 func TestPlanningSystemPromptGuardrail(t *testing.T) {
 	oa := &OrchestratorAgent{}
-	if strings.Contains(oa.planningSystemPrompt(codeContext{}, false), "AGENT GUARDRAILS") {
+	if strings.Contains(oa.planningSystemPrompt(codeContext{}, false, "", ""), "AGENT GUARDRAILS") {
 		t.Error("guardrail section present when no guardrail configured")
 	}
 
 	oa.GuardrailPrompt = "Only plan loan origination workflows."
-	prompt := oa.planningSystemPrompt(codeContext{}, false)
+	prompt := oa.planningSystemPrompt(codeContext{}, false, "", "")
 	for _, c := range []string{
 		"AGENT GUARDRAILS / BOUNDARIES — NON-NEGOTIABLE",
 		"Only plan loan origination workflows.",
