@@ -540,6 +540,7 @@ func (agent *Agent) UnmarshalJSON(b []byte) error {
 	type TempAgent struct {
 		AgentType       string                `json:"agent_type"`
 		AgentName       string                `json:"agent_name"`
+		IsSystem        bool                  `json:"is_system"`
 		Description     string                `json:"description"`
 		SystemPrompt    string                `json:"system_prompt"`
 		GuardrailPrompt string                `json:"guardrail_prompt"`
@@ -556,6 +557,7 @@ func (agent *Agent) UnmarshalJSON(b []byte) error {
 	}
 	agent.AgentType = tempAgent.AgentType
 	agent.AgentName = tempAgent.AgentName
+	agent.IsSystem = tempAgent.IsSystem
 	agent.Description = tempAgent.Description
 	agent.SystemPrompt = tempAgent.SystemPrompt
 	agent.GuardrailPrompt = tempAgent.GuardrailPrompt
