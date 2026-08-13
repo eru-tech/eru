@@ -368,6 +368,7 @@ func (pichainTool *PichainTool) BytesToTool(ctx context.Context, toolObjJson []b
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:       true,
 		ToolType:     "PICHAIN",
 		Category:     "ESign",
 		Description:  "Pichain e-signature integration for contract initiation and callbacks",

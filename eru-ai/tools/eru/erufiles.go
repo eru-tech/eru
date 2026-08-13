@@ -45,9 +45,9 @@ const (
 	erufilesGdrive   = "GDRIVE"
 	erufilesOneDrive = "ONEDRIVE"
 
-	gdriveApiBase    = "https://www.googleapis.com/drive/v3"
-	graphDriveBase   = "https://graph.microsoft.com/v1.0/me/drive"
-	graphSubsBase    = "https://graph.microsoft.com/v1.0/subscriptions"
+	gdriveApiBase  = "https://www.googleapis.com/drive/v3"
+	graphDriveBase = "https://graph.microsoft.com/v1.0/me/drive"
+	graphSubsBase  = "https://graph.microsoft.com/v1.0/subscriptions"
 )
 
 type ErufilesUploadParams struct {
@@ -1325,6 +1325,7 @@ func (t *ErufilesTool) callbackOneDrive(ctx context.Context, projectId string, t
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:      false,
 		ToolType:    "ERUFILES",
 		Category:    "Storage",
 		Description: "Eru-files storage tool for upload, download and change subscription on cloud-backed storages (GDRIVE / ONEDRIVE).",

@@ -58,6 +58,8 @@ type ModuleStoreI interface {
 	SearchVectors(ctx context.Context, vectorRecords vectorstore.VectorRecordsSearch, vectorName string, projectId string, tenantId string, realStore ModuleStoreI) (vectorstore.VectorResults, error)
 	ListVectors(ctx context.Context, vectorRecords vectorstore.VectorRecordsList, vectorName string, projectId string, tenantId string, realStore ModuleStoreI) (vectorstore.VectorResults, error)
 	SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error
+	SaveToolCatalogAccess(ctx context.Context, projectId string, accessRequest module_model.ToolCatalogAccessRequest, realStore ModuleStoreI) error
+	GetProjectSettings(ctx context.Context, projectId string) (module_model.ProjectSettings, error)
 	RemoveTenants()
 	SaveTool(ctx context.Context, tooling tools.Tooling, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
 	RemoveTool(ctx context.Context, toolName string, projectId string, tenantId string, realStore ModuleStoreI) error
@@ -812,6 +814,33 @@ func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string
 	logs.WithContext(ctx).Info("SaveStore called from SaveProjectSettings")
 	return realStore.SaveStore(ctx, projectId, "", realStore)
 }
+func (ms *ModuleStore) SaveToolCatalogAccess(ctx context.Context, projectId string, accessRequest module_model.ToolCatalogAccessRequest, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("SaveToolCatalogAccess - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
+	err := ms.checkProjectExists(ctx, projectId)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	projectSettings := ms.Projects[projectId].ProjectSettings
+	err = projectSettings.SetToolCatalogAccess(ctx, accessRequest)
+	if err != nil {
+		return err
+	}
+	ms.Projects[projectId].ProjectSettings = projectSettings
+	return realStore.SaveStore(ctx, projectId, "", realStore)
+}
+
+func (ms *ModuleStore) GetProjectSettings(ctx context.Context, projectId string) (projectSettings module_model.ProjectSettings, err error) {
+	logs.WithContext(ctx).Debug("GetProjectSettings - Start")
+	prj, err := ms.GetProjectConfig(ctx, projectId)
+	if err != nil {
+		return
+	}
+	return prj.ProjectSettings, nil
+}
+
 func (ms *ModuleStore) GetStoreWithoutTenants(ctx context.Context, realStore store.StoreI) (b []byte, err error) {
 	logs.WithContext(ctx).Debug("GetStoreByteArrayWithoutTenants - Start")
 	logs.WithContext(ctx).Info("calling custom get store byte array without tenants from eruai")

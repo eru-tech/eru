@@ -749,6 +749,7 @@ func (eruqlTool *EruqlTool) SetToolAction(actionName string) {
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:      false,
 		ToolType:    "Eruql",
 		Category:    "Data",
 		Description: "Eru query engine supporting SQL, GraphQL, and custom EruQL for data access",

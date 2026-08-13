@@ -7,13 +7,14 @@ import (
 )
 
 type ToolCatalogEntry struct {
-	ToolType     string              `json:"tool_type"`
-	Category     string              `json:"category"`
-	Description  string              `json:"description"`
-	Actions      []ActionInfo        `json:"actions"`
-	OAuthEnabled bool                `json:"oauth_enabled"`
-	Icon         string              `json:"icon"`
-	IconType     string              `json:"icon_type"`
+	ToolType     string                `json:"tool_type"`
+	Public       bool                  `json:"public"`
+	Category     string                `json:"category"`
+	Description  string                `json:"description"`
+	Actions      []ActionInfo          `json:"actions"`
+	OAuthEnabled bool                  `json:"oauth_enabled"`
+	Icon         string                `json:"icon"`
+	IconType     string                `json:"icon_type"`
 	ToolSchema   eru_models.JSONSchema `json:"tool_schema"`
 }
 

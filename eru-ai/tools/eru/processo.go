@@ -548,6 +548,7 @@ func (processoTool *ProcessoTool) GetQuery(ctx context.Context, projectId string
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:      false,
 		ToolType:    "PROCESSO",
 		Category:    "Data",
 		Description: "Processo tool to save and execute apis (function groups) for an org and process via eru-functions service",

@@ -337,6 +337,7 @@ func (ozoneTool *OzoneTool) BytesToTool(ctx context.Context, toolObjJson []byte)
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:       false,
 		ToolType:     "Ozone",
 		Category:     "Telecom",
 		Description:  "Ozone telecom integration for voice calls, CDR fetch, and callbacks",

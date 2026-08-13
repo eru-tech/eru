@@ -266,6 +266,7 @@ func (clevertapTool *ClevertapTool) BytesToTool(ctx context.Context, toolObjJson
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:       true,
 		ToolType:     "CLEVERTAP",
 		Category:     "Analytics",
 		Description:  "CleverTap analytics integration for fetching events",

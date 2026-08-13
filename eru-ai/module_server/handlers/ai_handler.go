@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 
 	model "github.com/eru-tech/eru/eru-ai/models"
 	"github.com/eru-tech/eru/eru-ai/module_store"
@@ -236,6 +237,7 @@ func AgentListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		vars := mux.Vars(r)
 		projectID := vars["project"]
 		tenantID := vars["tenant"]
+		includeSystem, _ := strconv.ParseBool(r.URL.Query().Get("system"))
 		names, err := sh.Store.GetAgentNames(r.Context(), projectID, tenantID)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -247,6 +249,9 @@ func AgentListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			agent, err := sh.Store.GetAgent(r.Context(), projectID, tenantID, "", name, sh.Store)
 			if err != nil {
 				logs.WithContext(r.Context()).Error(fmt.Sprintf("GetAgent %s: %v", name, err))
+				continue
+			}
+			if !includeSystem && agent.GetIsSystem() {
 				continue
 			}
 			agentList = append(agentList, agent.GetSpec())

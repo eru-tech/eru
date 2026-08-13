@@ -771,6 +771,7 @@ func (msEmailTool *MsEmailTool) ReadConversation(ctx context.Context, params map
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:       true,
 		ToolType:     "MsEmail",
 		Category:     "Communication",
 		Description:  "Microsoft email integration for reading, sending, and subscribing to emails via Microsoft Graph API",

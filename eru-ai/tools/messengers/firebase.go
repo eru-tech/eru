@@ -395,6 +395,7 @@ func (f *FirebaseTool) SendNotification(ctx context.Context, projectId string, t
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:      true,
 		ToolType:    "FIREBASE",
 		Category:    "Communication",
 		Description: "Firebase Cloud Messaging tool to register device tokens and send push notifications to a user's devices",

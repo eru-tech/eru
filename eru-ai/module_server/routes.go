@@ -93,7 +93,10 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodGet).PathPrefix("/{project}/tool/list").HandlerFunc(module_handlers.ToolListNamesHandler(sh))
 	storeRouter.Methods(http.MethodGet).PathPrefix("/{project}/{tenant}/tools").HandlerFunc(module_handlers.ToolListHandler(sh))
 	storeRouter.Methods(http.MethodGet).PathPrefix("/{project}/tools").HandlerFunc(module_handlers.ToolListHandler(sh))
-	storeRouter.Methods(http.MethodGet).Path("/tool/catalog").HandlerFunc(module_handlers.ToolCatalogHandler())
+	storeRouter.Methods(http.MethodGet).Path("/tool/catalog").HandlerFunc(module_handlers.ToolCatalogHandler(sh))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/{tenant}/tool/catalog").HandlerFunc(module_handlers.ToolCatalogHandler(sh))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/tool/catalog").HandlerFunc(module_handlers.ToolCatalogHandler(sh))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/settings/tool/access").HandlerFunc(module_handlers.ToolCatalogAccessSaveHandler(sh))
 	// functions for ai events
 	aiRouter := serverRouter.PathPrefix("/{project}").Subrouter()
 	aiRouter.Methods(http.MethodPost).PathPrefix("/{tenant}/tokencount").HandlerFunc(module_handlers.TokenCountHandler())

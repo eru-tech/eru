@@ -1204,6 +1204,7 @@ func (ckycTool *CkycTool) GetBytes(ctx context.Context) ([]byte, error) {
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:      true,
 		ToolType:    "Ckyc",
 		Category:    "KYC/Compliance",
 		Description: "Central KYC registry search and verification for financial compliance",

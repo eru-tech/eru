@@ -212,6 +212,7 @@ func (agent *Agent) GuardrailSection() string {
 type Agent struct {
 	AgentType           string                   `json:"agent_type" eru:"required"`
 	AgentName           string                   `json:"agent_name" eru:"required"`
+	IsSystem            bool                     `json:"is_system"`
 	Description         string                   `json:"description"`
 	SystemPrompt        string                   `json:"system_prompt"`
 	GuardrailPrompt     string                   `json:"guardrail_prompt"`
@@ -231,6 +232,7 @@ type Agent struct {
 
 type AgentI interface {
 	GetSpec() AgentI
+	GetIsSystem() bool
 	Execute(ctx context.Context, agentMessage AgentMessage, conversationId string, projectId string, tenantId string) (AgentMessage, error)
 	MakeFromJson(ctx context.Context, rj *json.RawMessage) error
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
@@ -253,6 +255,10 @@ type AgentI interface {
 
 func (agent *Agent) GetSpec() AgentI {
 	return agent
+}
+
+func (agent *Agent) GetIsSystem() bool {
+	return agent.IsSystem
 }
 
 func (agent *Agent) GetProvider() SystemPromptProvider {
@@ -284,6 +290,8 @@ func (agent *Agent) GetAttribute(ctx context.Context, attributeName string) (att
 		return agent.AgentType, nil
 	case "agent_name":
 		return agent.AgentName, nil
+	case "is_system":
+		return agent.IsSystem, nil
 	case "system_prompt":
 		return agent.SystemPrompt, nil
 	case "guardrail_prompt":

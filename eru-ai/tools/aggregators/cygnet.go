@@ -1274,6 +1274,7 @@ func (cygnetTool *CygnetTool) GetBytes(ctx context.Context) ([]byte, error) {
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:      false,
 		ToolType:    "Cygnet",
 		Category:    "Aggregator",
 		Description: "Cygnet financial aggregator for GST, e-invoicing, and compliance reporting",

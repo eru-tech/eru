@@ -908,6 +908,7 @@ func (slackTool *SlackTool) BytesToTool(ctx context.Context, toolObjJson []byte)
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:       true,
 		ToolType:     "Slack",
 		Category:     "Communication",
 		Description:  "Slack integration for messaging, channels, and webhooks",

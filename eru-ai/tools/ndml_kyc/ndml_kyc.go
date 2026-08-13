@@ -900,6 +900,7 @@ func (ndmlTool *NdmlTool) SetToolAction(actionName string) {
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:      true,
 		ToolType:    "Ndml",
 		Category:    "KYC/Compliance",
 		Description: "NDML KYC verification and document operations for regulatory compliance",

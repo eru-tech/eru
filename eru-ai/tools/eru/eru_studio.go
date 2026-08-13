@@ -309,6 +309,7 @@ func (t *EruStudioTool) SavePage(ctx context.Context, projectId string, tenantId
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:      false,
 		ToolType:    "ERUSTUDIO",
 		Category:    "Data",
 		Description: "Eru Studio tool to manage pages (fetch and edit) via eru-ql myquery endpoints",

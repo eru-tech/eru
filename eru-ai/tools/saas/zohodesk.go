@@ -639,6 +639,7 @@ func (zohoDeskTool *ZohoDeskTool) StopAutoRenew(ctx context.Context, projectId s
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:       true,
 		ToolType:     "ZohoDesk",
 		Category:     "SaaS",
 		Description:  "Zoho Desk integration for ticket management, organizations, and support operations",

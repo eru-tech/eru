@@ -315,6 +315,7 @@ func (mt *MemoryTool) SetAttribute(ctx context.Context, attributeName string, at
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:      false,
 		ToolType:    "Memory",
 		Category:    "AI",
 		Description: "Semantic memory for cross-agent and cross-session knowledge sharing",

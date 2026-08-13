@@ -294,6 +294,17 @@ func (m *mockModuleStore) ListVectors(_ context.Context, _ vectorstore.VectorRec
 func (m *mockModuleStore) SaveProjectSettings(_ context.Context, _ string, _ module_model.ProjectSettings, _ module_store.ModuleStoreI) error {
 	return nil
 }
+func (m *mockModuleStore) SaveToolCatalogAccess(_ context.Context, _ string, _ module_model.ToolCatalogAccessRequest, _ module_store.ModuleStoreI) error {
+	return nil
+}
+func (m *mockModuleStore) GetProjectSettings(_ context.Context, projectId string) (module_model.ProjectSettings, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if prj, ok := m.projects[projectId]; ok {
+		return prj.ProjectSettings, nil
+	}
+	return module_model.ProjectSettings{}, nil
+}
 func (m *mockModuleStore) RemoveTenants() {}
 func (m *mockModuleStore) SaveTool(_ context.Context, _ tools.Tooling, _, _ string, _ module_store.ModuleStoreI, _ bool) error {
 	return nil

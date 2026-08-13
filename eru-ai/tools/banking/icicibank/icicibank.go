@@ -813,6 +813,7 @@ func (iciciBankTool *IciciBankTool) GetBytes(ctx context.Context) ([]byte, error
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:      false,
 		ToolType:    "IciciBank",
 		Category:    "Banking",
 		Description: "ICICI Bank payment and banking operations including fund confirmation, account inquiries, and transactions",

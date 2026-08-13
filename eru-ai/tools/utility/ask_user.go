@@ -213,6 +213,7 @@ func (auTool *AskUserTool) BytesToTool(ctx context.Context, toolObjJson []byte) 
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:       false,
 		ToolType:     "AskUser",
 		Category:     "Utility",
 		Description:  "Human-in-the-loop clarification: agent asks the user multiple-choice questions with a free-text fallback",

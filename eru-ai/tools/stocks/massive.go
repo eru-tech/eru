@@ -476,6 +476,7 @@ func (massiveTool *MassiveTool) BytesToTool(ctx context.Context, toolObjJson []b
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:       true,
 		ToolType:     "Massive",
 		Category:     "Finance",
 		Description:  "Massive stock market data including prices, indices, dividends, and market holidays",

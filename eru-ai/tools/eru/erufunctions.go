@@ -693,6 +693,7 @@ func (erufuncTool *ErufunctionsTool) UnScheduleFunc(ctx context.Context, project
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:      false,
 		ToolType:    "ERUFUNCTIONS",
 		Category:    "Data",
 		Description: "Eru functions service for saving, validating, running, scheduling functions, executing templates, and listing project entities",

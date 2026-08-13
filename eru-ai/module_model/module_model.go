@@ -68,7 +68,86 @@ type TenantConfig struct {
 }
 
 type ProjectSettings struct {
-	ClaimsKey string `json:"claims_key" eru:"required"`
+	ClaimsKey         string                       `json:"claims_key" eru:"required"`
+	ToolCatalogAccess map[string]ToolCatalogAccess `json:"tool_catalog_access"`
+}
+
+type ToolCatalogAccess struct {
+	Public         *bool    `json:"public,omitempty"`
+	AllowedTenants []string `json:"allowed_tenants"`
+}
+
+type ToolCatalogAccessRequest struct {
+	ToolType      string   `json:"tool_type" eru:"required"`
+	Public        *bool    `json:"public,omitempty"`
+	AddTenants    []string `json:"add_tenants"`
+	RemoveTenants []string `json:"remove_tenants"`
+}
+
+// IsToolVisible tells whether a tenant may see a catalog entry. The persisted
+// access overlay wins over defaultPublic (the tool's code level tag) when it
+// sets public explicitly, and an allowed tenant always sees the entry.
+func (ps ProjectSettings) IsToolVisible(toolType string, defaultPublic bool, tenantId string) bool {
+	access, ok := ps.ToolCatalogAccess[toolType]
+	if !ok {
+		return defaultPublic
+	}
+	public := defaultPublic
+	if access.Public != nil {
+		public = *access.Public
+	}
+	if public {
+		return true
+	}
+	if tenantId == "" {
+		return false
+	}
+	for _, allowedTenant := range access.AllowedTenants {
+		if allowedTenant == tenantId {
+			return true
+		}
+	}
+	return false
+}
+
+func (ps *ProjectSettings) SetToolCatalogAccess(ctx context.Context, accessRequest ToolCatalogAccessRequest) error {
+	logs.WithContext(ctx).Debug("SetToolCatalogAccess - Start")
+	if accessRequest.ToolType == "" {
+		err := errors.New("tool_type cannot be blank")
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	if ps.ToolCatalogAccess == nil {
+		ps.ToolCatalogAccess = make(map[string]ToolCatalogAccess)
+	}
+	access := ps.ToolCatalogAccess[accessRequest.ToolType]
+	if accessRequest.Public != nil {
+		public := *accessRequest.Public
+		access.Public = &public
+	}
+	removeTenants := make(map[string]bool)
+	for _, tenantId := range accessRequest.RemoveTenants {
+		removeTenants[tenantId] = true
+	}
+	allowedTenants := make([]string, 0, len(access.AllowedTenants)+len(accessRequest.AddTenants))
+	existingTenants := make(map[string]bool)
+	for _, tenantId := range access.AllowedTenants {
+		if removeTenants[tenantId] || existingTenants[tenantId] {
+			continue
+		}
+		existingTenants[tenantId] = true
+		allowedTenants = append(allowedTenants, tenantId)
+	}
+	for _, tenantId := range accessRequest.AddTenants {
+		if tenantId == "" || removeTenants[tenantId] || existingTenants[tenantId] {
+			continue
+		}
+		existingTenants[tenantId] = true
+		allowedTenants = append(allowedTenants, tenantId)
+	}
+	access.AllowedTenants = allowedTenants
+	ps.ToolCatalogAccess[accessRequest.ToolType] = access
+	return nil
 }
 
 func (prj *Project) AddModel(ctx context.Context, tenantId string, modelObj models.ModelI) error {

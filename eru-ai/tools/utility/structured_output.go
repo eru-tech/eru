@@ -124,6 +124,7 @@ func (soTool *StructuredOutputTool) BytesToTool(ctx context.Context, toolObjJson
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:       false,
 		ToolType:     "StructuredOutput",
 		Category:     "Utility",
 		Description:  "AI structured output generation with schema-enforced JSON responses",

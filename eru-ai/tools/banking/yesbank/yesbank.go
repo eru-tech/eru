@@ -611,6 +611,7 @@ func (yesBankTool *YesBankTool) SetToolAction(actionName string) {
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:      false,
 		ToolType:    "YesBank",
 		Category:    "Banking",
 		Description: "Yes Bank payment and banking operations including fund confirmation, NEFT, and account inquiries",

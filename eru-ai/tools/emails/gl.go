@@ -1380,6 +1380,7 @@ func (glEmailTool *GlEmailTool) ReadConversation(ctx context.Context, params map
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:       true,
 		ToolType:     "GlEmail",
 		Category:     "Communication",
 		Description:  "Google (Gmail) email integration for reading, sending, and subscribing to emails via Gmail API and Pub/Sub",

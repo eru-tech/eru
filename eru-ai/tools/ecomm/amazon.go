@@ -1195,6 +1195,7 @@ func (amazonTool *AmazonTool) StopAutoRenew(ctx context.Context, projectId strin
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:       true,
 		ToolType:     "Amazon",
 		Category:     "Ecommerce",
 		Description:  "Amazon Selling Partner API for orders, financials, and account management",

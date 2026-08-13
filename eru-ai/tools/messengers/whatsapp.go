@@ -2243,6 +2243,7 @@ func (whatsAppTool *WhatsAppTool) DownloadFlowDocument(ctx context.Context, para
 
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
+		Public:       true,
 		ToolType:     "WhatsApp",
 		Category:     "Communication",
 		Description:  "WhatsApp Business API for messaging, media, templates, and webhooks",
