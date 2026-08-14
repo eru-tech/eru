@@ -312,6 +312,17 @@ func (m *mockModuleStore) SaveTool(_ context.Context, _ tools.Tooling, _, _ stri
 func (m *mockModuleStore) RemoveTool(_ context.Context, _, _, _ string, _ module_store.ModuleStoreI) error {
 	return nil
 }
+func (m *mockModuleStore) IsTenantTool(_ context.Context, projectId, tenantId, toolName string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if prj, ok := m.projects[projectId]; ok {
+		if tenant, ok := prj.Tenants[tenantId]; ok {
+			_, ok = tenant.Tools[toolName]
+			return ok
+		}
+	}
+	return false
+}
 
 func (m *mockModuleStore) LoadStore(_ string, _ store.StoreI) error   { return nil }
 func (m *mockModuleStore) GetStoreByteArray(_ string) ([]byte, error) { return nil, nil }

@@ -375,7 +375,7 @@ func (eruqlTool *EruqlTool) ExecuteQuery(ctx context.Context, projectId string, 
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
-	return toolResult, body, true, nil
+	return toolResult, body, false, nil
 }
 
 func (eruqlTool *EruqlTool) ExecuteSQL(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, mandatoryVarsCheck bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -433,7 +433,7 @@ func (eruqlTool *EruqlTool) ExecuteSQL(ctx context.Context, projectId string, te
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
-	return toolResult, body, true, nil
+	return toolResult, body, false, nil
 }
 
 func (eruqlTool *EruqlTool) ExecuteGraphQL(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, mandatoryVarsCheck bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -490,7 +490,7 @@ func (eruqlTool *EruqlTool) ExecuteGraphQL(ctx context.Context, projectId string
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
-	return toolResult, body, true, nil
+	return toolResult, body, false, nil
 }
 
 func (eruqlTool *EruqlTool) getEruqlBaseUrl(ctx context.Context) (string, error) {
@@ -557,7 +557,7 @@ func (eruqlTool *EruqlTool) SaveQuery(ctx context.Context, projectId string, ten
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
-	return toolResult, body, true, nil
+	return toolResult, body, false, nil
 }
 
 func (eruqlTool *EruqlTool) RemoveQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -588,7 +588,7 @@ func (eruqlTool *EruqlTool) RemoveQuery(ctx context.Context, projectId string, t
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
-	return toolResult, reqBody, true, nil
+	return toolResult, reqBody, false, nil
 }
 
 func (eruqlTool *EruqlTool) ListQueries(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -623,7 +623,7 @@ func (eruqlTool *EruqlTool) ListQueries(ctx context.Context, projectId string, t
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
-	return toolResult, reqBody, true, nil
+	return toolResult, reqBody, false, nil
 }
 
 func (eruqlTool *EruqlTool) ListQueryNames(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -653,7 +653,7 @@ func (eruqlTool *EruqlTool) ListQueryNames(ctx context.Context, projectId string
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
-	return toolResult, reqBody, true, nil
+	return toolResult, reqBody, false, nil
 }
 
 func (eruqlTool *EruqlTool) GetQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -684,7 +684,7 @@ func (eruqlTool *EruqlTool) GetQuery(ctx context.Context, projectId string, tena
 	}
 	toolResult = make(map[string]interface{})
 	toolResult["result"] = res
-	return toolResult, reqBody, true, nil
+	return toolResult, reqBody, false, nil
 }
 
 func (eruqlTool *EruqlTool) GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error) {

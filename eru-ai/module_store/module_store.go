@@ -64,6 +64,7 @@ type ModuleStoreI interface {
 	SaveTool(ctx context.Context, tooling tools.Tooling, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
 	RemoveTool(ctx context.Context, toolName string, projectId string, tenantId string, realStore ModuleStoreI) error
 	GetTool(ctx context.Context, projectId string, tenantId string, toolName string, actionName string, s ModuleStoreI) (tools.Tooling, error)
+	IsTenantTool(ctx context.Context, projectId string, tenantId string, toolName string) bool
 	GetAgentNames(ctx context.Context, projectID string, tenantID string) (agentNames []string, err error)
 	GetToolNames(ctx context.Context, projectID string, tenantID string) (toolNames []string, err error)
 }
@@ -497,6 +498,20 @@ func (ms *ModuleStore) GetTool(ctx context.Context, projectId string, tenantId s
 	logs.WithContext(ctx).Debug("GetTool - Start")
 	return ms.GetToolClone(ctx, projectId, tenantId, toolName, actionName, s)
 
+}
+
+func (ms *ModuleStore) IsTenantTool(ctx context.Context, projectId string, tenantId string, toolName string) bool {
+	logs.WithContext(ctx).Debug("IsTenantTool - Start")
+	prj, err := ms.GetProjectConfig(ctx, projectId)
+	if err != nil {
+		return false
+	}
+	tenant, tenantExists := prj.Tenants[tenantId]
+	if !tenantExists {
+		return false
+	}
+	_, toolExists := tenant.Tools[toolName]
+	return toolExists
 }
 
 func (ms *ModuleStore) SaveAgent(ctx context.Context, agentObj agents.AgentI, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error {

@@ -968,6 +968,10 @@ func ToolExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				server_handlers.FormatResponse(w, 400)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			} else {
+				if persistStore && !sh.Store.IsTenantTool(r.Context(), projectId, tenantId, toolName) {
+					logs.WithContext(r.Context()).Info(fmt.Sprintf("skipping store persistence of tool %v - not owned by tenant %v", toolName, tenantId))
+					persistStore = false
+				}
 				if persistStore {
 					err = sh.Store.SaveTool(r.Context(), tool, projectId, tenantId, sh.Store, true)
 					if err != nil {
@@ -1034,6 +1038,10 @@ func ToolWhatsAppEndpointExecuteHandler(sh *module_store.StoreHolder) http.Handl
 				server_handlers.FormatResponse(w, 421)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			} else {
+				if persistStore && !sh.Store.IsTenantTool(r.Context(), projectId, tenantId, toolName) {
+					logs.WithContext(r.Context()).Info(fmt.Sprintf("skipping store persistence of tool %v - not owned by tenant %v", toolName, tenantId))
+					persistStore = false
+				}
 				if persistStore {
 					err = sh.Store.SaveTool(r.Context(), tool, projectId, tenantId, sh.Store, true)
 					if err != nil {
