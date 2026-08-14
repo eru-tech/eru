@@ -105,7 +105,7 @@ type ModuleStoreI interface {
 	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route functions.Route, err error)
 	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, tenantId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
 	GetFunc(ctx context.Context, funcName string, projectId string, tenantId string, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
-	ScheduleFunc(ctx context.Context, funcSchedule scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) error
+	ScheduleFunc(ctx context.Context, funcSchedule scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) (jobId string, err error)
 	UnScheduleFunc(ctx context.Context, projectId string, jobId string, realStore ModuleStoreI) error
 	GetWf(ctx context.Context, wfName string, projectId string, s ModuleStoreI) (wfObj functions.Workflow, err error)
 	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, tenantId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
@@ -1256,25 +1256,25 @@ func LoadStore(ctx context.Context, StoreTableName string, StoreTenantTableName 
 	//s.Store = myStore
 	return myStore, err
 }
-func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) error {
+func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) (jobId string, err error) {
 	logs.WithContext(ctx).Info("ScheduleFunc - Start")
 	scheduleId := uuid.New().String()
 	scheduler, err := realStore.FetchScheduler(ctx, projectId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return err
+		return "", err
 	}
 	reqBodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return err
+		return "", err
 	}
 	jobName := fmt.Sprintf("%s_%s_%s_%s_%s", projectId, scheduleConfig.TenantId, funcName, scheduleConfig.SchedulerName, scheduleId)
 	cronStr := scheduleConfig.GetCronStr(ctx)
 	schedulerCommand := fmt.Sprint("CALL schedule_procedure('", funcName, "','", string(reqBodyBytes), "','", scheduleConfig.SchedulerName, "')")
-	jobId, err := scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
+	jobId, err = scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
 	if err != nil {
-		return err
+		return "", err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("ScheduleFunc - End : ", jobId))
 
@@ -1282,7 +1282,7 @@ func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig schedule
 	err = json.Unmarshal([]byte(tokenStr), &tokenObj)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return err
+		return "", err
 	}
 
 	reqBody["job_id"] = jobId
@@ -1298,13 +1298,13 @@ func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig schedule
 	reqBodyBytes, err = json.Marshal(requestBody)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
-		return err
+		return "", err
 	}
 	//recalling schedule with same jobname to edit the body with job id
 	schedulerCommand = fmt.Sprint("CALL schedule_procedure('", funcName, "','", string(reqBodyBytes), "','", scheduleConfig.SchedulerName, "')")
 	jobId, err = scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
 	if err != nil {
-		return err
+		return "", err
 	}
 	ed := scheduleConfig.EndDate
 	if ed == "" {
@@ -1319,11 +1319,11 @@ func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig schedule
 
 	insertOutput, insertOutputErr := eru_utils.ExecuteDbSave(ctx, realStore.GetConn(), insertQueries)
 	if insertOutputErr != nil {
-		return insertOutputErr
+		return "", insertOutputErr
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("insertOutput : ", insertOutput))
 
-	return nil
+	return jobId, nil
 }
 func (ms *ModuleStore) UnScheduleFunc(ctx context.Context, projectId string, jobId string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Info("UnScheduleFunc - Start")
