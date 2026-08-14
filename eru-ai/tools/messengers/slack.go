@@ -2,17 +2,20 @@ package messengers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
+	"strconv"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	models "github.com/eru-tech/eru/eru-models"
 	server "github.com/eru-tech/eru/eru-server/server"
 	utils "github.com/eru-tech/eru/eru-utils"
+	"github.com/gabriel-vasile/mimetype"
 )
 
 const (
@@ -683,9 +686,204 @@ func (slackTool *SlackTool) InviteToChannel(ctx context.Context, params map[stri
 func (slackTool *SlackTool) UploadMedia(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("UploadMedia Execute - Start")
 
-	err = errors.New("UploadMedia not implemented yet - requires multipart form upload")
-	logs.WithContext(ctx).Error(err.Error())
-	return nil, nil, false, err
+	mediaFile, mediaFileOk := params["file"]
+	if !mediaFileOk {
+		err = logs.Err(ctx, errors.New("file parameter is required (base64 encoded content)"), "")
+		return nil, nil, false, err
+	}
+	mediaFileStr, mediaFileStrOk := mediaFile.(string)
+	if !mediaFileStrOk {
+		err = logs.Err(ctx, errors.New("file must be a base64 encoded string"), "")
+		return nil, nil, false, err
+	}
+
+	mediaFileName, mediaFileNameOk := params["file_name"]
+	if !mediaFileNameOk {
+		err = logs.Err(ctx, errors.New("file_name parameter is required"), "")
+		return nil, nil, false, err
+	}
+	mediaFileNameStr, mediaFileNameStrOk := mediaFileName.(string)
+	if !mediaFileNameStrOk {
+		err = logs.Err(ctx, errors.New("file_name must be a string"), "")
+		return nil, nil, false, err
+	}
+
+	fileBytes, err := base64.StdEncoding.DecodeString(mediaFileStr)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to decode base64 file: %s", err.Error()), "")
+		return nil, nil, false, err
+	}
+	if len(fileBytes) == 0 {
+		err = logs.Err(ctx, errors.New("file is empty"), "")
+		return nil, nil, false, err
+	}
+
+	mimeLimit := uint32(2000)
+	if mimeLimitParam, mimeLimitParamOk := params["mime_limit"]; mimeLimitParamOk {
+		if mimeLimitInt, mimeLimitIntOk := mimeLimitParam.(uint32); mimeLimitIntOk {
+			mimeLimit = mimeLimitInt
+		}
+	}
+	mimetype.SetLimit(mimeLimit)
+	fMime := mimetype.Detect(fileBytes)
+	logs.WithContext(ctx).Info(fmt.Sprintf("File MIME: %s", fMime.String()))
+
+	accessToken := slackTool.getAccessToken(ctx, params)
+
+	getUrlFormData := map[string]string{
+		"filename": mediaFileNameStr,
+		"length":   strconv.Itoa(len(fileBytes)),
+	}
+	if altText, altTextOk := params["alt_text"]; altTextOk {
+		getUrlFormData["alt_txt"] = fmt.Sprintf("%v", altText)
+	}
+	if snippetType, snippetTypeOk := params["snippet_type"]; snippetTypeOk {
+		getUrlFormData["snippet_type"] = fmt.Sprintf("%v", snippetType)
+	}
+
+	getUrlHeaders := http.Header{}
+	getUrlHeaders.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+	getUrlHeaders.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	getUrlRes, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, fmt.Sprintf("%s/files.getUploadURLExternal", SLACK_BASE_URL), getUrlHeaders, getUrlFormData, []*http.Cookie{}, map[string]string{}, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+
+	var uploadUrlResponse SlackUploadUrlResponse
+	getUrlResBytes, err := json.Marshal(getUrlRes)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	err = json.Unmarshal(getUrlResBytes, &uploadUrlResponse)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	if !uploadUrlResponse.Ok {
+		err = logs.Err(ctx, fmt.Errorf("slack API error: %s", uploadUrlResponse.Error), "")
+		return nil, nil, false, err
+	}
+	if uploadUrlResponse.UploadUrl == "" || uploadUrlResponse.FileId == "" {
+		err = logs.Err(ctx, errors.New("slack did not return upload_url and file_id"), "")
+		return nil, nil, false, err
+	}
+
+	logs.WithContext(ctx).Info(fmt.Sprintf("Uploading file to slack with file_id: %s", uploadUrlResponse.FileId))
+
+	_, _, _, _, err = utils.CallHttpWithFiles(ctx, http.MethodPost, uploadUrlResponse.UploadUrl, http.Header{}, map[string]string{}, []utils.FileData{{
+		FieldName:   "file",
+		FileName:    mediaFileNameStr,
+		Content:     fileBytes,
+		ContentType: fMime.String(),
+	}}, []*http.Cookie{}, map[string]string{})
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+
+	title := mediaFileNameStr
+	if titleParam, titleParamOk := params["title"]; titleParamOk {
+		title = fmt.Sprintf("%v", titleParam)
+	}
+
+	channel := ""
+	if channelParam, channelParamOk := params["channel"]; channelParamOk {
+		channel = fmt.Sprintf("%v", channelParam)
+	} else if channelParam, channelParamOk = params["channel_id"]; channelParamOk {
+		channel = fmt.Sprintf("%v", channelParam)
+	}
+
+	completePayload := map[string]interface{}{
+		"files": []map[string]interface{}{{"id": uploadUrlResponse.FileId, "title": title}},
+	}
+	if channel != "" {
+		completePayload["channel_id"] = channel
+	}
+	if initialComment, initialCommentOk := params["initial_comment"]; initialCommentOk {
+		completePayload["initial_comment"] = fmt.Sprintf("%v", initialComment)
+	}
+	if threadTs, threadTsOk := params["thread_ts"]; threadTsOk {
+		completePayload["thread_ts"] = fmt.Sprintf("%v", threadTs)
+	}
+
+	completeUrl := fmt.Sprintf("%s/files.completeUploadExternal", SLACK_BASE_URL)
+	completeHeaders := http.Header{}
+	completeHeaders.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+	completeHeaders.Set("Content-Type", "application/json")
+
+	completeResponse, err := slackTool.completeUpload(ctx, completeUrl, completeHeaders, completePayload)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+
+	if !completeResponse.Ok && completeResponse.Error == "not_in_channel" && channel != "" {
+		logs.WithContext(ctx).Info("Not in channel, attempting to join and retry")
+		joinParams := map[string]interface{}{"channel": channel}
+		if tokenType, tokenTypeOk := params["token_type"]; tokenTypeOk {
+			joinParams["token_type"] = tokenType
+		}
+		_, _, _, joinErr := slackTool.JoinChannel(ctx, joinParams)
+		if joinErr != nil {
+			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to join channel: %v", joinErr))
+			return nil, nil, false, fmt.Errorf("failed to join channel: %v", joinErr)
+		}
+		completeResponse, err = slackTool.completeUpload(ctx, completeUrl, completeHeaders, completePayload)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil, nil, false, err
+		}
+	}
+
+	toolRequest = map[string]interface{}{"body": map[string]interface{}{
+		"file_name": mediaFileNameStr,
+		"file_size": len(fileBytes),
+		"mime_type": fMime.String(),
+		"title":     title,
+		"channel":   channel,
+	}}
+
+	toolResult = make(map[string]interface{})
+	toolResult["response"] = completeResponse
+	toolResult["file_id"] = uploadUrlResponse.FileId
+	if !completeResponse.Ok {
+		toolResult["status"] = "failed"
+		toolResult["error"] = completeResponse.Error
+		return toolResult, toolRequest, false, nil
+	}
+
+	toolResult["status"] = "uploaded"
+	if len(completeResponse.Files) > 0 {
+		toolResult["permalink"] = completeResponse.Files[0].Permalink
+		toolResult["url_private"] = completeResponse.Files[0].UrlPrivate
+	}
+
+	return toolResult, toolRequest, false, nil
+}
+
+func (slackTool *SlackTool) completeUpload(ctx context.Context, url string, headers http.Header, payload map[string]interface{}) (completeResponse SlackCompleteUploadResponse, err error) {
+	logs.WithContext(ctx).Debug("completeUpload - Start")
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return completeResponse, err
+	}
+
+	resBytes, err := json.Marshal(res)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return completeResponse, err
+	}
+	err = json.Unmarshal(resBytes, &completeResponse)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return completeResponse, err
+	}
+	return completeResponse, nil
 }
 
 func (slackTool *SlackTool) GetToolCallback() tools.ToolCallback {

@@ -153,15 +153,20 @@ var allowedComponentTypes = []any{
 // allowedEventActions mirrors the union literal in
 // eru-studio/src/lib/models/eru-project.model.ts (ComponentEventSubscription.action).
 var allowedEventActions = []any{
-	"no-action", "call-api", "fetch-page-data", "hide-fields", "unhide-fields",
+	"no-action", "call-api", "call-function", "call-query",
+	"fetch-page-data", "hide-fields", "unhide-fields",
 	"save-page-data", "start-loading", "stop-loading", "hide-component",
 	"show-component", "disable-field", "enable-field", "update-state",
-	"start-timer", "stop-timer", "set-field", "enable-component",
-	"disable-component", "refresh-grid", "step-forward", "step-back",
-	"emit-to-parent",
+	"start-timer", "stop-timer", "set-field", "update-property",
+	"enable-component", "disable-component", "refresh-grid", "refresh-page-ref",
+	"step-forward", "step-back", "emit-to-parent",
 	"toggle-side-panel", "open-side-panel", "close-side-panel",
 	"navigate-to-page", "clear-page-data", "clear-all-page-data",
 }
+
+var allowedStateScopes = []any{"page", "app"}
+
+var allowedPageDataSources = []any{"none", "state"}
 
 var allowedValidationTypes = []any{
 	"required", "min", "max", "minLength", "maxLength", "pattern", "email", "custom",
@@ -232,20 +237,40 @@ func buildEruPageOutputSchema() eru_models.JSONSchema {
 		AdditionalProperties: false,
 	}
 
+	navParamSchema := eru_models.JSONSchema{
+		Type:        "object",
+		Description: "One query param carried to the target page by `navigate-to-page`. `param` should match a state variable declared on the target page.",
+		Properties: map[string]eru_models.JSONSchema{
+			"param":            {Type: "string"},
+			"value":            {},
+			"value_expression": {Type: "string", Description: "Evaluated by the logic evaluator, e.g. \"@state.selected_company\"."},
+			"encode":           {Type: "string", Enum: []any{"json"}, Description: "Set only for a small structured value; larger payloads belong in app state."},
+		},
+		Required:             []string{"param"},
+		AdditionalProperties: false,
+	}
+
 	eventSchema := eru_models.JSONSchema{
 		Type:        "object",
 		Description: "ComponentEventSubscription wiring an emitted event to a runtime action.",
 		Properties: map[string]eru_models.JSONSchema{
 			"id":                     {Type: "string"},
-			"event":                  {Type: "string", Description: "DOM/component/page event (click, valueChange, focus, blur, mouseenter, buttonpress, on_load, timeout, timer_start, ...)."},
+			"event":                  {Type: "string", Description: "DOM/component/page event (click, valueChange, focus, blur, mouseenter, buttonpress, on_load, on_api_success, on_api_error, row_select, on_upload, on_complete, timeout, timer_start, ...)."},
 			"action":                 {Type: "string", Enum: allowedEventActions},
 			"apiName":                {Type: "string", Description: "REQUIRED when action is `call-api`."},
-			"fieldNames":             {Type: "array", Items: &eru_models.JSONSchema{Type: "string"}, Description: "Target field/component ids. Use [page_ref_id] for *-side-panel actions, [timer_id] for *-timer actions, [grid_id] for refresh-grid, [component_id] for hide/show/enable/disable-component and start/stop-loading."},
+			"function_name":          {Type: "string", Description: "REQUIRED when action is `call-function`."},
+			"query_name":             {Type: "string", Description: "REQUIRED when action is `call-query`."},
+			"api_payload_fields":     {Type: "array", Items: &eru_models.JSONSchema{Type: "string"}, Description: "State vars / page-data fields sent as the payload of call-api / call-function / call-query."},
+			"fieldNames":             {Type: "array", Items: &eru_models.JSONSchema{Type: "string"}, Description: "Target field/component ids. Use [page_ref_id] for *-side-panel and refresh-page-ref, [timer_id] for *-timer actions, [grid_id] for refresh-grid, [component_id] for hide/show/enable/disable-component and start/stop-loading."},
 			"page_id":                {Type: "string", Description: "Target page id for `navigate-to-page`."},
+			"nav_params":             {Type: "array", Items: &navParamSchema, Description: "Extra query params written alongside the page id by `navigate-to-page`."},
 			"payload":                {Type: "object", AdditionalProperties: true},
-			"state_key":              {Type: "string"},
+			"state_key":              {Type: "string", Description: "State variable for `update-state`; signal name for `emit-to-parent`; URL query param name (default \"view\") for `navigate-to-page`."},
+			"state_scope":            {Type: "string", Enum: allowedStateScopes, Description: "Scope for `update-state`. \"page\" (default) writes this page's state; \"app\" writes the window-wide app state readable anywhere as @app.<key>."},
 			"state_formula":          {Type: "object", AdditionalProperties: true, Description: "UpdateStateFormula { fn: set|increment|decrement|toggle|set-from-field|set-from-payload|reset|expr, value?, by?, values?, field?, expr?, payload_path? }"},
+			"property_key":           {Type: "string", Description: "REQUIRED when action is `update-property` — the property overridden on the target component."},
 			"value":                  {},
+			"value_expression":       {Type: "string", Description: "Optional expression for `set-field` / `update-property`; takes precedence over the static `value`."},
 			"on_success":             {Type: "array", Items: &eru_models.JSONSchema{Type: "object", AdditionalProperties: true}},
 			"on_error":               {Type: "array", Items: &eru_models.JSONSchema{Type: "object", AdditionalProperties: true}},
 			"error_field":            {Type: "string"},
@@ -343,7 +368,7 @@ func buildEruPageOutputSchema() eru_models.JSONSchema {
 	pageSchema := eru_models.JSONSchema{
 		Type: "object",
 		Description: "EruPage root object. Mirrors the EruPage TypeScript interface in eru-studio/src/lib/models/eru-project.model.ts.\n" +
-			"Allowed top-level keys: id, name, title, entity_name, route, components, styles, state, display_mode, parent_page_id, master_detail_config, events.\n" +
+			"Allowed top-level keys: id, name, title, entity_name, route, components, styles, state, display_mode, parent_page_id, master_detail_config, events, data_source, state_scope, state_field, state_result_path.\n" +
 			"DO NOT add invented keys such as `theme`, `layout`, `slug`, `version`, `description`, `topbar`, `sidebar`, `colorScheme`.",
 		Properties: map[string]eru_models.JSONSchema{
 			"id":                   {Type: "string", Description: "Stable page id. Reuse the value provided in the user message verbatim."},
@@ -357,7 +382,11 @@ func buildEruPageOutputSchema() eru_models.JSONSchema {
 			"display_mode":         {Type: "string", Enum: allowedDisplayModes},
 			"parent_page_id":       {Type: "string"},
 			"master_detail_config": masterDetailSchema,
-			"events":               {Type: "array", Items: &eventSchema, Description: "Page-level event subscriptions."},
+			"events":               {Type: "array", Items: &eventSchema, Description: "Page-level event subscriptions (currently `on_load`, fired by a parent page_ref once the nested page's data has arrived)."},
+			"data_source":          {Type: "string", Enum: allowedPageDataSources, Description: "Seed this page's data from a state variable when it is opened on its own (navigate-to-page, deep link, viewer). Ignored while the page is mounted inside a page_ref. Default \"none\"."},
+			"state_scope":          {Type: "string", Enum: allowedStateScopes, Description: "Which store `state_field` is read from. Default \"page\"."},
+			"state_field":          {Type: "string", Description: "State variable holding the record for this page. Only meaningful when data_source is \"state\"."},
+			"state_result_path":    {Type: "string", Description: "Optional dotted path into the state value before it is used, e.g. \"program_data.charges\"."},
 		},
 		Required:             []string{"id", "name", "components", "styles"},
 		AdditionalProperties: false,

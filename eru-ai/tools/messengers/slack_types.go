@@ -179,6 +179,30 @@ type SlackFileUploadResponse struct {
 	Error string `json:"error,omitempty"`
 }
 
+type SlackUploadUrlResponse struct {
+	Ok        bool   `json:"ok"`
+	UploadUrl string `json:"upload_url"`
+	FileId    string `json:"file_id"`
+	Error     string `json:"error,omitempty"`
+}
+
+type SlackUploadedFile struct {
+	Id         string `json:"id"`
+	Name       string `json:"name"`
+	Title      string `json:"title"`
+	Mimetype   string `json:"mimetype"`
+	Filetype   string `json:"filetype"`
+	Size       int    `json:"size"`
+	Permalink  string `json:"permalink"`
+	UrlPrivate string `json:"url_private"`
+}
+
+type SlackCompleteUploadResponse struct {
+	Ok    bool                `json:"ok"`
+	Files []SlackUploadedFile `json:"files"`
+	Error string              `json:"error,omitempty"`
+}
+
 type SlackTokens struct {
 	Ok         bool   `json:"ok"`
 	Error      string `json:"error,omitempty"`
