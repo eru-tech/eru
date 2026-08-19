@@ -40,6 +40,9 @@ type SlackEvent struct {
 
 	// App mention fields
 	Blocks []interface{} `json:"blocks,omitempty"`
+
+	// Files shared along with a message / app_mention
+	Files []SlackUploadedFile `json:"files,omitempty"`
 }
 
 // SlackMessagePayload represents the payload for chat.postMessage API
@@ -187,14 +190,26 @@ type SlackUploadUrlResponse struct {
 }
 
 type SlackUploadedFile struct {
-	Id         string `json:"id"`
-	Name       string `json:"name"`
-	Title      string `json:"title"`
-	Mimetype   string `json:"mimetype"`
-	Filetype   string `json:"filetype"`
-	Size       int    `json:"size"`
-	Permalink  string `json:"permalink"`
-	UrlPrivate string `json:"url_private"`
+	Id                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Title              string   `json:"title"`
+	Mimetype           string   `json:"mimetype"`
+	Filetype           string   `json:"filetype"`
+	Size               int      `json:"size"`
+	Permalink          string   `json:"permalink"`
+	UrlPrivate         string   `json:"url_private"`
+	UrlPrivateDownload string   `json:"url_private_download"`
+	Created            int64    `json:"created"`
+	User               string   `json:"user"`
+	Channels           []string `json:"channels,omitempty"`
+	Groups             []string `json:"groups,omitempty"`
+	Ims                []string `json:"ims,omitempty"`
+}
+
+type SlackFileInfoResponse struct {
+	Ok    bool              `json:"ok"`
+	File  SlackUploadedFile `json:"file"`
+	Error string            `json:"error,omitempty"`
 }
 
 type SlackCompleteUploadResponse struct {

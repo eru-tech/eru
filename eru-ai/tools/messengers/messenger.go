@@ -22,6 +22,7 @@ const (
 	ListUsers       = "list_users"
 	CreateChannel   = "create_channel"
 	InviteToChannel = "invite_to_channel"
+	DownloadMedia   = "download_media"
 
 	Login     = "login"
 	GetSsoUrl = "get_sso_url"

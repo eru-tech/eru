@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"reflect"
 	"strconv"
+	"strings"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -49,6 +51,7 @@ func (slackTool *SlackTool) GetActionsList() []tools.ActionInfo {
 		{Name: InviteToChannel},
 		{Name: JoinChannel},
 		{Name: UploadMedia},
+		{Name: DownloadMedia},
 		{Name: Callback},
 	}
 }
@@ -89,6 +92,8 @@ func (slackTool *SlackTool) Execute(ctx context.Context, projectId string, tenan
 		toolResult, toolRequest, persistStore, err = slackTool.JoinChannel(ctx, params)
 	case UploadMedia:
 		toolResult, toolRequest, persistStore, err = slackTool.UploadMedia(ctx, params)
+	case DownloadMedia:
+		toolResult, toolRequest, persistStore, err = slackTool.DownloadMedia(ctx, params)
 	case Login:
 		toolResult, toolRequest, persistStore, err = slackTool.Login(ctx, projectId, tenantId, params, "")
 	case GetSsoUrl:
@@ -886,6 +891,141 @@ func (slackTool *SlackTool) completeUpload(ctx context.Context, url string, head
 	return completeResponse, nil
 }
 
+func (slackTool *SlackTool) getFileInfo(ctx context.Context, accessToken string, fileId string) (fileInfoResponse SlackFileInfoResponse, err error) {
+	logs.WithContext(ctx).Debug("getFileInfo - Start")
+
+	headers := http.Header{}
+	headers.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+	headers.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, fmt.Sprintf("%s/files.info", SLACK_BASE_URL), headers, map[string]string{}, []*http.Cookie{}, map[string]string{"file": fileId}, nil)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return fileInfoResponse, err
+	}
+
+	resBytes, err := json.Marshal(res)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return fileInfoResponse, err
+	}
+	err = json.Unmarshal(resBytes, &fileInfoResponse)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return fileInfoResponse, err
+	}
+	if !fileInfoResponse.Ok {
+		err = logs.Err(ctx, fmt.Errorf("slack API error: %s", fileInfoResponse.Error), "")
+		return fileInfoResponse, err
+	}
+	return fileInfoResponse, nil
+}
+
+func (slackTool *SlackTool) DownloadMedia(ctx context.Context, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("DownloadMedia Execute - Start")
+
+	fileId := ""
+	if fileIdParam, fileIdParamOk := params["file_id"]; fileIdParamOk {
+		fileId = fmt.Sprintf("%v", fileIdParam)
+	}
+	downloadUrl := ""
+	if urlParam, urlParamOk := params["url"]; urlParamOk {
+		downloadUrl = fmt.Sprintf("%v", urlParam)
+	}
+	if fileId == "" && downloadUrl == "" {
+		err = logs.Err(ctx, errors.New("file_id parameter is required"), "")
+		return nil, nil, false, err
+	}
+
+	accessToken := slackTool.getAccessToken(ctx, params)
+
+	fileInfo := SlackUploadedFile{}
+	if fileId != "" {
+		fileInfoResponse, fileInfoErr := slackTool.getFileInfo(ctx, accessToken, fileId)
+		if fileInfoErr != nil {
+			logs.WithContext(ctx).Error(fileInfoErr.Error())
+			return nil, nil, false, fileInfoErr
+		}
+		fileInfo = fileInfoResponse.File
+		if downloadUrl == "" {
+			downloadUrl = fileInfo.UrlPrivateDownload
+		}
+		if downloadUrl == "" {
+			downloadUrl = fileInfo.UrlPrivate
+		}
+	}
+	if downloadUrl == "" {
+		err = logs.Err(ctx, errors.New("slack did not return a download url for the file"), "")
+		return nil, nil, false, err
+	}
+
+	logs.WithContext(ctx).Info(fmt.Sprintf("Downloading slack file: %s", fileId))
+
+	downloadReq, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadUrl, nil)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to create download request: %s", err.Error()), "")
+		return nil, nil, false, err
+	}
+	downloadReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+
+	client := &http.Client{}
+	downloadResp, err := client.Do(downloadReq)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to download file: %s", err.Error()), "")
+		return nil, nil, false, err
+	}
+	defer downloadResp.Body.Close()
+
+	if downloadResp.StatusCode != http.StatusOK {
+		err = logs.Err(ctx, fmt.Errorf("file download failed with status %d", downloadResp.StatusCode), "")
+		return nil, nil, false, err
+	}
+
+	if strings.HasPrefix(downloadResp.Header.Get("Content-Type"), "text/html") {
+		err = logs.Err(ctx, errors.New("file download not authorized - verify files:read scope and that the app has access to the file"), "")
+		return nil, nil, false, err
+	}
+
+	fileBytes, err := io.ReadAll(downloadResp.Body)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to read downloaded file: %s", err.Error()), "")
+		return nil, nil, false, err
+	}
+	if len(fileBytes) == 0 {
+		err = logs.Err(ctx, errors.New("downloaded file is empty"), "")
+		return nil, nil, false, err
+	}
+
+	mimeLimit := uint32(2000)
+	if mimeLimitParam, mimeLimitParamOk := params["mime_limit"]; mimeLimitParamOk {
+		if mimeLimitInt, mimeLimitIntOk := mimeLimitParam.(uint32); mimeLimitIntOk {
+			mimeLimit = mimeLimitInt
+		}
+	}
+	mimetype.SetLimit(mimeLimit)
+	detectedMime := mimetype.Detect(fileBytes)
+
+	mimeType := fileInfo.Mimetype
+	if mimeType == "" {
+		mimeType = detectedMime.String()
+	}
+	fileName := fileInfo.Name
+	if fileName == "" {
+		fileName = fmt.Sprint("media", detectedMime.Extension())
+	}
+
+	toolResult = make(map[string]interface{})
+	toolResult["file_content"] = base64.StdEncoding.EncodeToString(fileBytes)
+	toolResult["file_name"] = fileName
+	toolResult["mime_type"] = mimeType
+	toolResult["file_size"] = len(fileBytes)
+	toolResult["file_id"] = fileId
+	toolResult["title"] = fileInfo.Title
+	toolResult["permalink"] = fileInfo.Permalink
+
+	return toolResult, map[string]interface{}{"query": map[string]string{"file": fileId}}, false, nil
+}
+
 func (slackTool *SlackTool) GetToolCallback() tools.ToolCallback {
 	return tools.ToolCallback{
 		ResponseContentType: "application/json",
@@ -979,6 +1119,7 @@ func (slackTool *SlackTool) Callback(ctx context.Context, projectId string, tena
 						"client_msg_id": eventPayload.Event.ClientMsgId,
 						"thread_ts":     eventPayload.Event.Thread_ts,
 						"blocks":        eventPayload.Event.Blocks,
+						"files":         eventPayload.Event.Files,
 					}
 					logs.WithContext(bgCtx).Info(fmt.Sprintf("Message from user %s: %s", eventPayload.Event.User, eventPayload.Event.Text))
 
@@ -988,6 +1129,7 @@ func (slackTool *SlackTool) Callback(ctx context.Context, projectId string, tena
 						"ts":        eventPayload.Event.Ts,
 						"thread_ts": eventPayload.Event.Thread_ts,
 						"blocks":    eventPayload.Event.Blocks,
+						"files":     eventPayload.Event.Files,
 					}
 					logs.WithContext(bgCtx).Info(fmt.Sprintf("App mentioned by user %s: %s", eventPayload.Event.User, eventPayload.Event.Text))
 
@@ -1110,7 +1252,7 @@ func init() {
 		ToolType:     "Slack",
 		Category:     "Communication",
 		Description:  "Slack integration for messaging, channels, and webhooks",
-		Actions:      []tools.ActionInfo{{Name: SendMessage}, {Name: ReadMessages}, {Name: Login}, {Name: GetSsoUrl}, {Name: SubscribeWebhooks}, {Name: ListChannels}, {Name: ListUsers}, {Name: CreateChannel}, {Name: InviteToChannel}, {Name: JoinChannel}, {Name: UploadMedia}, {Name: Callback}},
+		Actions:      []tools.ActionInfo{{Name: SendMessage}, {Name: ReadMessages}, {Name: Login}, {Name: GetSsoUrl}, {Name: SubscribeWebhooks}, {Name: ListChannels}, {Name: ListUsers}, {Name: CreateChannel}, {Name: InviteToChannel}, {Name: JoinChannel}, {Name: UploadMedia}, {Name: DownloadMedia}, {Name: Callback}},
 		OAuthEnabled: true,
 		Icon:         "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxZW0iIGhlaWdodD0iMWVtIiB2aWV3Qm94PSIwIDAgMjU2IDI1NiI+PHBhdGggZmlsbD0iI2UwMWU1YSIgZD0iTTUzLjg0MSAxNjEuMzJjMCAxNC44MzItMTEuOTg3IDI2LjgyLTI2LjgxOSAyNi44MlMuMjAzIDE3Ni4xNTIuMjAzIDE2MS4zMmMwLTE0LjgzMSAxMS45ODctMjYuODE4IDI2LjgyLTI2LjgxOEg1My44NHptMTMuNDEgMGMwLTE0LjgzMSAxMS45ODctMjYuODE4IDI2LjgxOS0yNi44MThzMjYuODE5IDExLjk4NyAyNi44MTkgMjYuODE5djY3LjA0N2MwIDE0LjgzMi0xMS45ODcgMjYuODItMjYuODIgMjYuODJjLTE0LjgzIDAtMjYuODE4LTExLjk4OC0yNi44MTgtMjYuODJ6Ii8+PHBhdGggZmlsbD0iIzM2YzVmMCIgZD0iTTk0LjA3IDUzLjYzOGMtMTQuODMyIDAtMjYuODItMTEuOTg3LTI2LjgyLTI2LjgxOVM3OS4yMzkgMCA5NC4wNyAwczI2LjgxOSAxMS45ODcgMjYuODE5IDI2LjgxOXYyNi44MnptMCAxMy42MTNjMTQuODMyIDAgMjYuODE5IDExLjk4NyAyNi44MTkgMjYuODE5cy0xMS45ODcgMjYuODE5LTI2LjgyIDI2LjgxOUgyNi44MkMxMS45ODcgMTIwLjg4OSAwIDEwOC45MDIgMCA5NC4wNjljMC0xNC44MyAxMS45ODctMjYuODE4IDI2LjgxOS0yNi44MTh6Ii8+PHBhdGggZmlsbD0iIzJlYjY3ZCIgZD0iTTIwMS41NSA5NC4wN2MwLTE0LjgzMiAxMS45ODctMjYuODIgMjYuODE4LTI2LjgyczI2LjgyIDExLjk4OCAyNi44MiAyNi44MnMtMTEuOTg4IDI2LjgxOS0yNi44MiAyNi44MTlIMjAxLjU1em0tMTMuNDEgMGMwIDE0LjgzMi0xMS45ODggMjYuODE5LTI2LjgyIDI2LjgxOWMtMTQuODMxIDAtMjYuODE4LTExLjk4Ny0yNi44MTgtMjYuODJWMjYuODJDMTM0LjUwMiAxMS45ODcgMTQ2LjQ4OSAwIDE2MS4zMiAwczI2LjgxOSAxMS45ODcgMjYuODE5IDI2LjgxOXoiLz48cGF0aCBmaWxsPSIjZWNiMjJlIiBkPSJNMTYxLjMyIDIwMS41NWMxNC44MzIgMCAyNi44MiAxMS45ODcgMjYuODIgMjYuODE4cy0xMS45ODggMjYuODItMjYuODIgMjYuODJjLTE0LjgzMSAwLTI2LjgxOC0xMS45ODgtMjYuODE4LTI2LjgyVjIwMS41NXptMC0xMy40MWMtMTQuODMxIDAtMjYuODE4LTExLjk4OC0yNi44MTgtMjYuODJjMC0xNC44MzEgMTEuOTg3LTI2LjgxOCAyNi44MTktMjYuODE4aDY3LjI1YzE0LjgzMiAwIDI2LjgyIDExLjk4NyAyNi44MiAyNi44MTlzLTExLjk4OCAyNi44MTktMjYuODIgMjYuODE5eiIvPjwvc3ZnPg==",
 		IconType:     "svg",
