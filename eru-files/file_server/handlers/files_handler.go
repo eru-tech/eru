@@ -802,6 +802,24 @@ func GdriveStopWatchHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	}
 }
 
+func GdriveInspectFileHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		storageName := vars["storagename"]
+		fileId := vars["file_id"]
+		res, err := sh.Store.GdriveInspectFile(r.Context(), projectId, storageName, fileId, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(res)
+	}
+}
+
 func GdriveListChangesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()

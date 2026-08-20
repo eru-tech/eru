@@ -64,6 +64,7 @@ func AddFileRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/gdrive/watch/changes").HandlerFunc(file_handlers.GdriveWatchChangesHandler(sh))
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/gdrive/watch/file/{file_id}").HandlerFunc(file_handlers.GdriveWatchFileHandler(sh))
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/gdrive/watch/stop").HandlerFunc(file_handlers.GdriveStopWatchHandler(sh))
+	fileRouter.Methods(http.MethodGet, http.MethodPost).Path("/{storagename}/gdrive/inspect/{file_id}").HandlerFunc(file_handlers.GdriveInspectFileHandler(sh))
 	fileRouter.Methods(http.MethodPost).Path("/{storagename}/gdrive/changes").HandlerFunc(file_handlers.GdriveListChangesHandler(sh))
 	fileRouter.Methods(http.MethodPost, http.MethodGet).Path("/stringtofile").HandlerFunc(file_handlers.StringToFileHandler(sh))
 	fileRouter.Methods(http.MethodPost).Path("/exceltojson").HandlerFunc(file_handlers.ExcelToJsonHandler(sh))

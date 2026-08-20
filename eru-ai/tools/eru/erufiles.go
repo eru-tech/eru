@@ -32,6 +32,7 @@ const (
 	ErufilesUpload            = "upload"
 	ErufilesUploadB64         = "upload_b64"
 	ErufilesDownload          = "download"
+	ErufilesInspectFile       = "inspect_file"
 	ErufilesSubscribe         = "subscribe"
 	ErufilesSubscribeFile     = "subscribe_file"
 	ErufilesRenewSubscription = "renew_subscription"
@@ -68,6 +69,10 @@ type ErufilesDownloadParams struct {
 	MimeType       string `json:"mime_type" desc:"narrow by mime type"`
 	ExportMimeType string `json:"export_mime_type" desc:"target export mime for Google Docs Editors files (pdf, docx, xlsx, etc.)"`
 	MaxResults     int    `json:"max_results" desc:"cap candidates returned (default 20)"`
+}
+
+type ErufilesInspectFileParams struct {
+	FileId string `json:"file_id" eru:"required" desc:"GDrive file id to inspect"`
 }
 
 type ErufilesSubscribeParams struct {
@@ -122,6 +127,15 @@ var erufilesToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
 			return utils.StructToJSONSchema(reflect.TypeOf(ErufilesDownloadParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ErufilesInspectFile,
+		Description:  "Inspect a GDrive file id: metadata (modified time, last modifying user, checksum, head revision, owners, shortcut target, web link), its full revision history, and all visible files with the same name. Use this when a download returns stale content to identify which file object actually changed.",
+		SystemPrompt: "Return Drive metadata, revision history and same-name duplicates for a file id.",
+		OutputSchema: eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ErufilesInspectFileParams{}), []string{})
 		},
 	},
 	{
@@ -376,6 +390,8 @@ func (t *ErufilesTool) Execute(ctx context.Context, projectId string, tenantId s
 		toolResult, toolRequest, persistStore, err = t.Upload(ctx, projectId, params, true)
 	case ErufilesDownload:
 		toolResult, toolRequest, persistStore, err = t.Download(ctx, projectId, params)
+	case ErufilesInspectFile:
+		toolResult, toolRequest, persistStore, err = t.InspectFile(ctx, projectId, params)
 	case ErufilesSubscribe:
 		toolResult, toolRequest, persistStore, err = t.Subscribe(ctx, projectId, tenantId, params, false)
 	case ErufilesSubscribeFile:
@@ -648,6 +664,39 @@ func (t *ErufilesTool) Download(ctx context.Context, projectId string, params ma
 		rm = map[string]interface{}{"raw": res}
 	}
 	return rm, body, false, nil
+}
+
+func (t *ErufilesTool) InspectFile(ctx context.Context, projectId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("ErufilesTool InspectFile - Start")
+	if t.StorageType != erufilesGdrive {
+		err = fmt.Errorf("inspect_file is only supported for GDRIVE storage")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	p := ErufilesInspectFileParams{}
+	if err = unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	if p.FileId == "" {
+		err = errors.New("file_id is required")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	base, err := erufilesBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	inspectUrl := fmt.Sprintf("%s/files/%s/%s/gdrive/inspect/%s", base, projectId, t.StorageName, url.PathEscape(p.FileId))
+	res, _, _, status, callErr := utils.CallHttp(ctx, http.MethodGet, inspectUrl, t.buildHeaders(ctx), map[string]string{}, nil, map[string]string{}, nil)
+	if callErr != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("erufiles gdrive inspect failed (status %d): %s", status, callErr.Error()))
+		return nil, nil, false, callErr
+	}
+	rm, _ := res.(map[string]interface{})
+	if rm == nil {
+		rm = map[string]interface{}{"raw": res}
+	}
+	return rm, map[string]interface{}{"file_id": p.FileId}, false, nil
 }
 
 func (t *ErufilesTool) SubscribeFile(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, unsubscribe bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {

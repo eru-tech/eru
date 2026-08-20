@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ const (
 	gdriveApiBase    = "https://www.googleapis.com/drive/v3"
 	gdriveUploadBase = "https://www.googleapis.com/upload/drive/v3"
 	gdriveFolderMime = "application/vnd.google-apps.folder"
+	gdriveDocsBase   = "https://docs.google.com"
 )
 
 type GdriveStorage struct {
@@ -458,9 +460,81 @@ func gdriveResolveExportMime(googleMime, requested string) string {
 	}
 }
 
+func gdriveDocsExportUrl(fileId, srcMime string) (string, string) {
+	switch srcMime {
+	case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+		return fmt.Sprintf("%s/spreadsheets/d/%s/export?format=xlsx", gdriveDocsBase, fileId), srcMime
+	case "application/vnd.ms-excel":
+		return fmt.Sprintf("%s/spreadsheets/d/%s/export?format=xlsx", gdriveDocsBase, fileId), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		return fmt.Sprintf("%s/document/d/%s/export?format=docx", gdriveDocsBase, fileId), srcMime
+	case "application/msword":
+		return fmt.Sprintf("%s/document/d/%s/export?format=docx", gdriveDocsBase, fileId), "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+		return fmt.Sprintf("%s/presentation/d/%s/export/pptx", gdriveDocsBase, fileId), srcMime
+	case "application/vnd.ms-powerpoint":
+		return fmt.Sprintf("%s/presentation/d/%s/export/pptx", gdriveDocsBase, fileId), "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	default:
+		return "", ""
+	}
+}
+
+func gdriveFetch(ctx context.Context, accessToken, dlUrl string) ([]byte, error) {
+	req, rErr := http.NewRequestWithContext(ctx, http.MethodGet, dlUrl, nil)
+	if rErr != nil {
+		return nil, rErr
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Cache-Control", "no-cache, no-store, max-age=0")
+	req.Header.Set("Pragma", "no-cache")
+	resp, rErr := http.DefaultClient.Do(req)
+	if rErr != nil {
+		return nil, rErr
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("drive download failed: status %d body %s", resp.StatusCode, string(body))
+	}
+	return body, nil
+}
+
+func (g *GdriveStorage) latestRevision(ctx context.Context, accessToken, fileId string) (revId string, revModifiedTime string, exportLinks map[string]interface{}) {
+	h := http.Header{}
+	h.Set("Authorization", "Bearer "+accessToken)
+	h.Set("Content-Type", "application/json")
+	h.Set("Cache-Control", "no-cache, no-store, max-age=0")
+	h.Set("Pragma", "no-cache")
+	params := map[string]string{
+		"fields":   "revisions(id,modifiedTime,mimeType,exportLinks)",
+		"pageSize": "1000",
+	}
+	res, _, _, status, err := utils.CallHttp(ctx, http.MethodGet, fmt.Sprintf("%s/files/%s/revisions", gdriveApiBase, fileId), h, map[string]string{}, nil, params, nil)
+	if err != nil {
+		logs.WithContext(ctx).Warn(fmt.Sprintf("drive revisions list failed for %s (status %d): %s", fileId, status, err.Error()))
+		return "", "", nil
+	}
+	rm, ok := res.(map[string]interface{})
+	if !ok {
+		return "", "", nil
+	}
+	revs, _ := rm["revisions"].([]interface{})
+	if len(revs) == 0 {
+		return "", "", nil
+	}
+	last, _ := revs[len(revs)-1].(map[string]interface{})
+	if last == nil {
+		return "", "", nil
+	}
+	revId, _ = last["id"].(string)
+	revModifiedTime, _ = last["modifiedTime"].(string)
+	exportLinks, _ = last["exportLinks"].(map[string]interface{})
+	return revId, revModifiedTime, exportLinks
+}
+
 func (g *GdriveStorage) downloadByDriveId(ctx context.Context, accessToken, fileId, exportMime string) (data []byte, mime string, name string, meta map[string]interface{}, err error) {
 	metaParams := map[string]string{
-		"fields":            "id,name,mimeType,size,version,modifiedTime,headRevisionId",
+		"fields":            "id,name,mimeType,size,version,modifiedTime,headRevisionId,md5Checksum",
 		"supportsAllDrives": "true",
 	}
 	h := http.Header{}
@@ -476,46 +550,72 @@ func (g *GdriveStorage) downloadByDriveId(ctx context.Context, accessToken, file
 	version := ""
 	modifiedTime := ""
 	revisionId := ""
+	blobMd5 := ""
 	if mm, ok := metaRes.(map[string]interface{}); ok {
 		name, _ = mm["name"].(string)
 		srcMime, _ = mm["mimeType"].(string)
 		version = fmt.Sprint(mm["version"])
 		modifiedTime, _ = mm["modifiedTime"].(string)
 		revisionId, _ = mm["headRevisionId"].(string)
+		blobMd5, _ = mm["md5Checksum"].(string)
 	}
 	meta = map[string]interface{}{
 		"version":       version,
 		"revision_id":   revisionId,
 		"modified_time": modifiedTime,
 	}
-	cacheBuster := url.QueryEscape(strings.Join([]string{version, revisionId, modifiedTime}, "_"))
-	logs.WithContext(ctx).Info(fmt.Sprintf("drive download %s : version %s revision %s modifiedTime %s", fileId, version, revisionId, modifiedTime))
+	latestRevId, latestRevTime, latestRevExportLinks := g.latestRevision(ctx, accessToken, fileId)
+	if latestRevId != "" {
+		meta["latest_revision_id"] = latestRevId
+		meta["latest_revision_time"] = latestRevTime
+	}
+	cacheBuster := url.QueryEscape(strings.Join([]string{version, revisionId, latestRevId, modifiedTime, latestRevTime}, "_"))
+	logs.WithContext(ctx).Info(fmt.Sprintf("drive download %s : version %s headRevision %s modifiedTime %s latestRevision %s latestRevisionTime %s", fileId, version, revisionId, modifiedTime, latestRevId, latestRevTime))
 
 	var dlUrl string
 	if strings.HasPrefix(srcMime, "application/vnd.google-apps.") {
 		targetMime := gdriveResolveExportMime(srcMime, exportMime)
-		dlUrl = fmt.Sprintf("%s/files/%s/export?mimeType=%s&supportsAllDrives=true&eruv=%s", gdriveApiBase, fileId, url.QueryEscape(targetMime), cacheBuster)
 		mime = targetMime
+		dlUrl = fmt.Sprintf("%s/files/%s/export?mimeType=%s&supportsAllDrives=true&eruv=%s", gdriveApiBase, fileId, url.QueryEscape(targetMime), cacheBuster)
+		if latestRevId != "" && latestRevTime > modifiedTime {
+			if link, lOk := latestRevExportLinks[targetMime].(string); lOk && link != "" {
+				dlUrl = link
+				meta["downloaded_from"] = "latest_revision_export_link"
+			}
+		}
 	} else {
-		dlUrl = fmt.Sprintf("%s/files/%s?alt=media&supportsAllDrives=true&eruv=%s", gdriveApiBase, fileId, cacheBuster)
 		mime = srcMime
+		dlUrl = fmt.Sprintf("%s/files/%s?alt=media&supportsAllDrives=true&eruv=%s", gdriveApiBase, fileId, cacheBuster)
+		if latestRevId != "" && (latestRevTime > modifiedTime || latestRevId != revisionId) {
+			dlUrl = fmt.Sprintf("%s/files/%s/revisions/%s?alt=media&eruv=%s", gdriveApiBase, fileId, url.PathEscape(latestRevId), cacheBuster)
+			meta["downloaded_from"] = "latest_revision"
+		} else if latestRevTime != "" && modifiedTime > latestRevTime {
+			docsUrl, docsMime := gdriveDocsExportUrl(fileId, srcMime)
+			if docsUrl != "" {
+				logs.WithContext(ctx).Info(fmt.Sprintf("drive download %s : file modified %s after last revision %s - fetching live editor export", fileId, modifiedTime, latestRevTime))
+				docsData, docsErr := gdriveFetch(ctx, accessToken, docsUrl)
+				if docsErr != nil {
+					logs.WithContext(ctx).Warn(fmt.Sprintf("drive live editor export failed for %s, falling back to stored blob : %s", fileId, docsErr.Error()))
+				} else {
+					meta["downloaded_from"] = "live_editor_export"
+					meta["blob_md5"] = blobMd5
+					meta["downloaded_md5"] = fmt.Sprintf("%x", md5.Sum(docsData))
+					return docsData, docsMime, name, meta, nil
+				}
+			}
+		}
+	}
+	if _, dOk := meta["downloaded_from"]; !dOk {
+		meta["downloaded_from"] = "head"
 	}
 
-	req, rErr := http.NewRequestWithContext(ctx, http.MethodGet, dlUrl, nil)
-	if rErr != nil {
-		return nil, "", "", nil, rErr
+	body, dErr := gdriveFetch(ctx, accessToken, dlUrl)
+	if dErr != nil {
+		return nil, "", "", nil, dErr
 	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Cache-Control", "no-cache, no-store, max-age=0")
-	req.Header.Set("Pragma", "no-cache")
-	resp, rErr := http.DefaultClient.Do(req)
-	if rErr != nil {
-		return nil, "", "", nil, rErr
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		return nil, "", "", nil, fmt.Errorf("drive download failed: status %d body %s", resp.StatusCode, string(body))
+	if blobMd5 != "" {
+		meta["blob_md5"] = blobMd5
+		meta["downloaded_md5"] = fmt.Sprintf("%x", md5.Sum(body))
 	}
 	return body, mime, name, meta, nil
 }
@@ -748,4 +848,50 @@ func (g *GdriveStorage) ListChanges(ctx context.Context, projectId, pageToken st
 	newStartPageToken, _ = m["newStartPageToken"].(string)
 	nextPageToken, _ = m["nextPageToken"].(string)
 	return
+}
+
+func (g *GdriveStorage) InspectFile(ctx context.Context, projectId, fileId string) (map[string]interface{}, error) {
+	tok, err := g.getAccessToken(ctx, projectId)
+	if err != nil {
+		return nil, err
+	}
+	h := http.Header{}
+	h.Set("Authorization", "Bearer "+tok)
+	h.Set("Content-Type", "application/json")
+	h.Set("Cache-Control", "no-cache, no-store, max-age=0")
+	h.Set("Pragma", "no-cache")
+
+	fileFields := "id,name,mimeType,size,md5Checksum,version,createdTime,modifiedTime,modifiedByMeTime,viewedByMeTime,headRevisionId,trashed,driveId,parents,owners(emailAddress,displayName),lastModifyingUser(emailAddress,displayName),sharingUser(emailAddress,displayName),shortcutDetails,capabilities(canEdit,canDownload),webViewLink"
+	fileRes, _, _, fStatus, fErr := utils.CallHttp(ctx, http.MethodGet, fmt.Sprintf("%s/files/%s", gdriveApiBase, fileId), h, map[string]string{}, nil, map[string]string{
+		"fields":            fileFields,
+		"supportsAllDrives": "true",
+	}, nil)
+	if fErr != nil {
+		return nil, fmt.Errorf("drive metadata failed (status %d): %w", fStatus, fErr)
+	}
+	fileMeta, _ := fileRes.(map[string]interface{})
+
+	out := map[string]interface{}{"file": fileMeta}
+
+	revRes, _, _, rStatus, rErr := utils.CallHttp(ctx, http.MethodGet, fmt.Sprintf("%s/files/%s/revisions", gdriveApiBase, fileId), h, map[string]string{}, nil, map[string]string{
+		"fields":   "revisions(id,modifiedTime,mimeType,size,lastModifyingUser(emailAddress,displayName))",
+		"pageSize": "1000",
+	}, nil)
+	if rErr != nil {
+		out["revisions_error"] = fmt.Sprintf("status %d : %s", rStatus, rErr.Error())
+	} else if rm, ok := revRes.(map[string]interface{}); ok {
+		out["revisions"] = rm["revisions"]
+	}
+
+	if fileMeta != nil {
+		if name, ok := fileMeta["name"].(string); ok && name != "" {
+			sameName, sErr := g.SearchFiles(ctx, projectId, GdriveSearchFilters{FileName: name, MaxResults: 50})
+			if sErr != nil {
+				out["same_name_error"] = sErr.Error()
+			} else {
+				out["same_name_files"] = sameName
+			}
+		}
+	}
+	return out, nil
 }
