@@ -460,29 +460,39 @@ func gdriveResolveExportMime(googleMime, requested string) string {
 
 func (g *GdriveStorage) downloadByDriveId(ctx context.Context, accessToken, fileId, exportMime string) (data []byte, mime string, name string, err error) {
 	metaParams := map[string]string{
-		"fields":            "id,name,mimeType,size",
+		"fields":            "id,name,mimeType,size,version,modifiedTime,headRevisionId",
 		"supportsAllDrives": "true",
 	}
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+accessToken)
 	h.Set("Content-Type", "application/json")
+	h.Set("Cache-Control", "no-cache, no-store, max-age=0")
+	h.Set("Pragma", "no-cache")
 	metaRes, _, _, mStatus, mErr := utils.CallHttp(ctx, http.MethodGet, fmt.Sprintf("%s/files/%s", gdriveApiBase, fileId), h, map[string]string{}, nil, metaParams, nil)
 	if mErr != nil {
 		return nil, "", "", fmt.Errorf("drive metadata failed (status %d): %w", mStatus, mErr)
 	}
 	srcMime := ""
+	version := ""
+	modifiedTime := ""
+	revisionId := ""
 	if mm, ok := metaRes.(map[string]interface{}); ok {
 		name, _ = mm["name"].(string)
 		srcMime, _ = mm["mimeType"].(string)
+		version = fmt.Sprint(mm["version"])
+		modifiedTime, _ = mm["modifiedTime"].(string)
+		revisionId, _ = mm["headRevisionId"].(string)
 	}
+	cacheBuster := url.QueryEscape(strings.Join([]string{version, revisionId, modifiedTime}, "_"))
+	logs.WithContext(ctx).Info(fmt.Sprintf("drive download %s : version %s revision %s modifiedTime %s", fileId, version, revisionId, modifiedTime))
 
 	var dlUrl string
 	if strings.HasPrefix(srcMime, "application/vnd.google-apps.") {
 		targetMime := gdriveResolveExportMime(srcMime, exportMime)
-		dlUrl = fmt.Sprintf("%s/files/%s/export?mimeType=%s", gdriveApiBase, fileId, url.QueryEscape(targetMime))
+		dlUrl = fmt.Sprintf("%s/files/%s/export?mimeType=%s&supportsAllDrives=true&eruv=%s", gdriveApiBase, fileId, url.QueryEscape(targetMime), cacheBuster)
 		mime = targetMime
 	} else {
-		dlUrl = fmt.Sprintf("%s/files/%s?alt=media&supportsAllDrives=true", gdriveApiBase, fileId)
+		dlUrl = fmt.Sprintf("%s/files/%s?alt=media&supportsAllDrives=true&eruv=%s", gdriveApiBase, fileId, cacheBuster)
 		mime = srcMime
 	}
 
@@ -491,6 +501,8 @@ func (g *GdriveStorage) downloadByDriveId(ctx context.Context, accessToken, file
 		return nil, "", "", rErr
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Cache-Control", "no-cache, no-store, max-age=0")
+	req.Header.Set("Pragma", "no-cache")
 	resp, rErr := http.DefaultClient.Do(req)
 	if rErr != nil {
 		return nil, "", "", rErr
