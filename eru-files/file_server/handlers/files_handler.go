@@ -148,7 +148,7 @@ func FileDownloadHandlerB64(sh *module_store.StoreHolder) http.HandlerFunc {
 		}
 
 		if dfFromObj.FileId != "" || dfFromObj.SharedWithMe || dfFromObj.OwnerEmail != "" || dfFromObj.ModifiedAfter != "" || dfFromObj.MimeType != "" || dfFromObj.ExportMimeType != "" {
-			fileB64, mimeType, fileName, fileId, candidates, sErr := sh.Store.DownloadFileSmart(r.Context(), projectId, storageName, dfFromObj, sh.Store)
+			fileB64, mimeType, fileName, fileId, fileMeta, candidates, sErr := sh.Store.DownloadFileSmart(r.Context(), projectId, storageName, dfFromObj, sh.Store)
 			if sErr != nil {
 				server_handlers.FormatResponse(w, 400)
 				json.NewEncoder(w).Encode(map[string]interface{}{"error": sErr.Error()})
@@ -164,7 +164,11 @@ func FileDownloadHandlerB64(sh *module_store.StoreHolder) http.HandlerFunc {
 				return
 			}
 			server_handlers.FormatResponse(w, http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{"file": fileB64, "file_type": mimeType, "file_name": fileName, "file_id": fileId})
+			downloadRes := map[string]interface{}{"file": fileB64, "file_type": mimeType, "file_name": fileName, "file_id": fileId}
+			for k, v := range fileMeta {
+				downloadRes[k] = v
+			}
+			json.NewEncoder(w).Encode(downloadRes)
 			return
 		}
 

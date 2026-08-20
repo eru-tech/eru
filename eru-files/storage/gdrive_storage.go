@@ -343,7 +343,7 @@ func (g *GdriveStorage) DownloadFile(ctx context.Context, projectId string, fold
 	if err != nil {
 		return nil, err
 	}
-	data, _, _, err := g.downloadByDriveId(ctx, tok, fileId, "")
+	data, _, _, _, err := g.downloadByDriveId(ctx, tok, fileId, "")
 	return data, err
 }
 
@@ -458,7 +458,7 @@ func gdriveResolveExportMime(googleMime, requested string) string {
 	}
 }
 
-func (g *GdriveStorage) downloadByDriveId(ctx context.Context, accessToken, fileId, exportMime string) (data []byte, mime string, name string, err error) {
+func (g *GdriveStorage) downloadByDriveId(ctx context.Context, accessToken, fileId, exportMime string) (data []byte, mime string, name string, meta map[string]interface{}, err error) {
 	metaParams := map[string]string{
 		"fields":            "id,name,mimeType,size,version,modifiedTime,headRevisionId",
 		"supportsAllDrives": "true",
@@ -470,7 +470,7 @@ func (g *GdriveStorage) downloadByDriveId(ctx context.Context, accessToken, file
 	h.Set("Pragma", "no-cache")
 	metaRes, _, _, mStatus, mErr := utils.CallHttp(ctx, http.MethodGet, fmt.Sprintf("%s/files/%s", gdriveApiBase, fileId), h, map[string]string{}, nil, metaParams, nil)
 	if mErr != nil {
-		return nil, "", "", fmt.Errorf("drive metadata failed (status %d): %w", mStatus, mErr)
+		return nil, "", "", nil, fmt.Errorf("drive metadata failed (status %d): %w", mStatus, mErr)
 	}
 	srcMime := ""
 	version := ""
@@ -482,6 +482,11 @@ func (g *GdriveStorage) downloadByDriveId(ctx context.Context, accessToken, file
 		version = fmt.Sprint(mm["version"])
 		modifiedTime, _ = mm["modifiedTime"].(string)
 		revisionId, _ = mm["headRevisionId"].(string)
+	}
+	meta = map[string]interface{}{
+		"version":       version,
+		"revision_id":   revisionId,
+		"modified_time": modifiedTime,
 	}
 	cacheBuster := url.QueryEscape(strings.Join([]string{version, revisionId, modifiedTime}, "_"))
 	logs.WithContext(ctx).Info(fmt.Sprintf("drive download %s : version %s revision %s modifiedTime %s", fileId, version, revisionId, modifiedTime))
@@ -498,27 +503,27 @@ func (g *GdriveStorage) downloadByDriveId(ctx context.Context, accessToken, file
 
 	req, rErr := http.NewRequestWithContext(ctx, http.MethodGet, dlUrl, nil)
 	if rErr != nil {
-		return nil, "", "", rErr
+		return nil, "", "", nil, rErr
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Cache-Control", "no-cache, no-store, max-age=0")
 	req.Header.Set("Pragma", "no-cache")
 	resp, rErr := http.DefaultClient.Do(req)
 	if rErr != nil {
-		return nil, "", "", rErr
+		return nil, "", "", nil, rErr
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		return nil, "", "", fmt.Errorf("drive download failed: status %d body %s", resp.StatusCode, string(body))
+		return nil, "", "", nil, fmt.Errorf("drive download failed: status %d body %s", resp.StatusCode, string(body))
 	}
-	return body, mime, name, nil
+	return body, mime, name, meta, nil
 }
 
-func (g *GdriveStorage) DownloadById(ctx context.Context, projectId, fileId, exportMime string) (data []byte, mime string, name string, err error) {
+func (g *GdriveStorage) DownloadById(ctx context.Context, projectId, fileId, exportMime string) (data []byte, mime string, name string, meta map[string]interface{}, err error) {
 	tok, err := g.getAccessToken(ctx, projectId)
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", "", nil, err
 	}
 	return g.downloadByDriveId(ctx, tok, fileId, exportMime)
 }

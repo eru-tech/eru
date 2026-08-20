@@ -79,7 +79,7 @@ type ModuleStoreI interface {
 	UploadFileB64(ctx context.Context, projectId string, storageName string, file []byte, fileName string, docType string, fodlerPath string, s ModuleStoreI) (docId string, err error)
 	UploadFileFromUrl(ctx context.Context, projectId string, storageName string, urlStr string, fileName string, docType string, fodlerPath string, fileType string, s ModuleStoreI) (docId string, err error)
 	DownloadFile(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (file []byte, mimeType string, err error)
-	DownloadFileSmart(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, fileName string, fileId string, candidates []map[string]interface{}, err error)
+	DownloadFileSmart(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, fileName string, fileId string, fileMeta map[string]interface{}, candidates []map[string]interface{}, err error)
 	GdriveWatchChanges(ctx context.Context, projectId string, storageName string, channelId string, pushEndpoint string, expirationMs int64, s ModuleStoreI) (resourceId string, startPageToken string, expiration string, err error)
 	GdriveWatchFile(ctx context.Context, projectId string, storageName string, fileId string, channelId string, pushEndpoint string, expirationMs int64, s ModuleStoreI) (resourceId string, expiration string, err error)
 	GdriveStopWatch(ctx context.Context, projectId string, storageName string, channelId string, resourceId string, s ModuleStoreI) error
@@ -350,7 +350,7 @@ func (ms *ModuleStore) DownloadFileB64(ctx context.Context, projectId string, st
 	return base64.StdEncoding.EncodeToString(f), mt, e
 }
 
-func (ms *ModuleStore) DownloadFileSmart(ctx context.Context, projectId string, storageName string, req FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, fileName string, fileId string, candidates []map[string]interface{}, err error) {
+func (ms *ModuleStore) DownloadFileSmart(ctx context.Context, projectId string, storageName string, req FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, fileName string, fileId string, fileMeta map[string]interface{}, candidates []map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("DownloadFileSmart - Start")
 	ctx = context.WithValue(ctx, "eruauthbaseurl", os.Getenv("ERUAUTH_BASEURL"))
 	storageObj, _, sErr := ms.GetStorageClone(ctx, projectId, storageName, s)
@@ -367,7 +367,7 @@ func (ms *ModuleStore) DownloadFileSmart(ctx context.Context, projectId string, 
 
 	if req.FileId != "" {
 		var data []byte
-		data, mimeType, fileName, err = gd.DownloadById(ctx, projectId, req.FileId, req.ExportMimeType)
+		data, mimeType, fileName, fileMeta, err = gd.DownloadById(ctx, projectId, req.FileId, req.ExportMimeType)
 		if err != nil {
 			return
 		}
@@ -405,7 +405,7 @@ func (ms *ModuleStore) DownloadFileSmart(ctx context.Context, projectId string, 
 	}
 	only := matches[0]
 	fid, _ := only["id"].(string)
-	data, mt, nm, dErr := gd.DownloadById(ctx, projectId, fid, req.ExportMimeType)
+	data, mt, nm, fm, dErr := gd.DownloadById(ctx, projectId, fid, req.ExportMimeType)
 	if dErr != nil {
 		err = dErr
 		return
@@ -414,6 +414,7 @@ func (ms *ModuleStore) DownloadFileSmart(ctx context.Context, projectId string, 
 	mimeType = mt
 	fileName = nm
 	fileId = fid
+	fileMeta = fm
 	return
 }
 
