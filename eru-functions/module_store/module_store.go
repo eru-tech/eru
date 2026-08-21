@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -68,7 +69,7 @@ func getEruaibaseurl(ctx context.Context) string {
 
 const (
 	UPDATE_FUNC_ASYNC    = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
-	SELECT_FUNC_ASYNC    = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???)) y where x.async_id=y.async_id returning y.*"
+	SELECT_FUNC_ASYNC    = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???) for update of a skip locked) y where x.async_id=y.async_id returning y.*"
 	INSERT_FUNC_SCHEDULE = "insert into erufunctions_schedules (schedule_id, project_id, tenant_id, func_group_name, func_step_name, event_msg, scheduler_name, scheduler_label,job_id, start_date, end_date) values (???, ???, ???, ???, ???, ???, ???, ???, ???, ???, ???)"
 	DELETE_FUNC_SCHEDULE = "delete from erufunctions_schedules where job_id=???"
 )
@@ -1012,7 +1013,11 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 			ctx = logs.NewContext(ctx, zap.String(server_handlers.RequestIdKey, async_id))
 
 			asyncFuncData, err = ms.FetchAsyncEvent(ctx, async_id, aStatus, s)
-			if err != nil || asyncFuncData.AsyncId == "" {
+			if err == nil && asyncFuncData.AsyncId == "" {
+				logs.WithContext(ctx).Info(fmt.Sprint("skipping async_id ", async_id, " - not in status ", aStatus, " (claimed by another worker)"))
+				continue
+			}
+			if err != nil {
 				failedCount = failedCount + 1
 				asyncStatus = "FAILED"
 			} else {
@@ -1119,7 +1124,18 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 							if asyncFuncData.EventMsg.ResVars != nil {
 								resVars = asyncFuncData.EventMsg.ResVars
 							}
-							response, funcVarsMap, err := funcGroup.Execute(ctx, eventReq, FuncThreads, LoopThreads, asyncFuncData.FuncStepName, "", true, reqVars, resVars)
+							var response *http.Response
+							var funcVarsMap map[string]functions.FuncTemplateVars
+							var err error
+							func() {
+								defer func() {
+									if r := recover(); r != nil {
+										err = fmt.Errorf("panic while executing func group %s : %v", asyncFuncData.FuncName, r)
+										logs.WithContext(ctx).Error(fmt.Sprint(err.Error(), "\nStack trace:\n", string(debug.Stack())))
+									}
+								}()
+								response, funcVarsMap, err = funcGroup.Execute(ctx, eventReq, FuncThreads, LoopThreads, asyncFuncData.FuncStepName, "", true, reqVars, resVars)
+							}()
 							if err != nil {
 								failedCount = failedCount + 1
 								asyncStatus = "FAILED"

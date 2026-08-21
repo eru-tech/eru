@@ -994,6 +994,9 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 
 			}
 
+			if routevars == nil {
+				routevars = &TemplateVars{}
+			}
 			safeSetVar(resVars, funcStep.GetRouteName(), routevars)
 			safeSetVar(resVars, funcStep.FuncKey, routevars)
 			if funcStep.Route.OnError == "STOP" && err != nil {
@@ -1516,6 +1519,9 @@ func (funcStep *FuncStep) transformResponse(ctx context.Context, response *http.
 	logs.WithContext(ctx).Debug("transformResponse - Start")
 	//utils.PrintResponseBody(response, "response printed from inside funcStep transformResponse")
 	vars = trResVars
+	if vars == nil {
+		vars = &TemplateVars{}
+	}
 	for _, h := range funcStep.ResponseHeaders {
 		response.Header.Set(h.Key, h.Value)
 	}
