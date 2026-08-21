@@ -1,6 +1,7 @@
 package messengers
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -739,7 +740,8 @@ func (slackTool *SlackTool) UploadMedia(ctx context.Context, params map[string]i
 		"filename": mediaFileNameStr,
 		"length":   strconv.Itoa(len(fileBytes)),
 	}
-	if altText, altTextOk := params["alt_text"]; altTextOk {
+	//alt_txt is defined for images only - slack leaves a non-image file unprocessed when it is sent
+	if altText, altTextOk := params["alt_text"]; altTextOk && strings.HasPrefix(fMime.String(), "image/") {
 		getUrlFormData["alt_txt"] = fmt.Sprintf("%v", altText)
 	}
 	if snippetType, snippetTypeOk := params["snippet_type"]; snippetTypeOk {
@@ -778,16 +780,27 @@ func (slackTool *SlackTool) UploadMedia(ctx context.Context, params map[string]i
 
 	logs.WithContext(ctx).Info(fmt.Sprintf("Uploading file to slack with file_id: %s", uploadUrlResponse.FileId))
 
-	_, _, _, _, err = utils.CallHttpWithFiles(ctx, http.MethodPost, uploadUrlResponse.UploadUrl, http.Header{}, map[string]string{}, []utils.FileData{{
-		FieldName:   "file",
-		FileName:    mediaFileNameStr,
-		Content:     fileBytes,
-		ContentType: fMime.String(),
-	}}, []*http.Cookie{}, map[string]string{})
+	uploadReq, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadUrlResponse.UploadUrl, bytes.NewReader(fileBytes))
 	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
+		err = logs.Err(ctx, fmt.Errorf("failed to create upload request: %s", err.Error()), "")
 		return nil, nil, false, err
 	}
+	uploadReq.Header.Set("Content-Type", fMime.String())
+	uploadReq.ContentLength = int64(len(fileBytes))
+
+	uploadClient := &http.Client{}
+	uploadResp, err := uploadClient.Do(uploadReq)
+	if err != nil {
+		err = logs.Err(ctx, fmt.Errorf("failed to upload file: %s", err.Error()), "")
+		return nil, nil, false, err
+	}
+	uploadRespBody, _ := io.ReadAll(uploadResp.Body)
+	uploadResp.Body.Close()
+	if uploadResp.StatusCode != http.StatusOK {
+		err = logs.Err(ctx, fmt.Errorf("file upload failed with status %d: %s", uploadResp.StatusCode, string(uploadRespBody)), "")
+		return nil, nil, false, err
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("Uploaded %d bytes to slack, response: %s", len(fileBytes), string(uploadRespBody)))
 
 	title := mediaFileNameStr
 	if titleParam, titleParamOk := params["title"]; titleParamOk {
@@ -801,46 +814,46 @@ func (slackTool *SlackTool) UploadMedia(ctx context.Context, params map[string]i
 		channel = fmt.Sprintf("%v", channelParam)
 	}
 
-	completePayload := map[string]interface{}{
-		"files": []map[string]interface{}{{"id": uploadUrlResponse.FileId, "title": title}},
-	}
-	if channel != "" {
-		completePayload["channel_id"] = channel
-	}
-	if initialComment, initialCommentOk := params["initial_comment"]; initialCommentOk {
-		completePayload["initial_comment"] = fmt.Sprintf("%v", initialComment)
-	}
-	if threadTs, threadTsOk := params["thread_ts"]; threadTsOk {
-		completePayload["thread_ts"] = fmt.Sprintf("%v", threadTs)
-	}
-
-	completeUrl := fmt.Sprintf("%s/files.completeUploadExternal", SLACK_BASE_URL)
-	completeHeaders := http.Header{}
-	completeHeaders.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
-	completeHeaders.Set("Content-Type", "application/json")
-
-	completeResponse, err := slackTool.completeUpload(ctx, completeUrl, completeHeaders, completePayload)
+	filesArgBytes, err := json.Marshal([]map[string]interface{}{{"id": uploadUrlResponse.FileId, "title": title}})
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, false, err
 	}
 
-	if !completeResponse.Ok && completeResponse.Error == "not_in_channel" && channel != "" {
-		logs.WithContext(ctx).Info("Not in channel, attempting to join and retry")
+	completeFormData := map[string]string{"files": string(filesArgBytes)}
+	if channel != "" {
+		completeFormData["channel_id"] = channel
+	}
+	if initialComment, initialCommentOk := params["initial_comment"]; initialCommentOk {
+		completeFormData["initial_comment"] = fmt.Sprintf("%v", initialComment)
+	}
+	if threadTs, threadTsOk := params["thread_ts"]; threadTsOk {
+		completeFormData["thread_ts"] = fmt.Sprintf("%v", threadTs)
+	}
+
+	completeUrl := fmt.Sprintf("%s/files.completeUploadExternal", SLACK_BASE_URL)
+	completeHeaders := http.Header{}
+	completeHeaders.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+	completeHeaders.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	//slack shares a file only into channels the app is a member of - chat:write.public does not cover file shares
+	if channel != "" {
 		joinParams := map[string]interface{}{"channel": channel}
 		if tokenType, tokenTypeOk := params["token_type"]; tokenTypeOk {
 			joinParams["token_type"] = tokenType
 		}
-		_, _, _, joinErr := slackTool.JoinChannel(ctx, joinParams)
+		joinResult, _, _, joinErr := slackTool.JoinChannel(ctx, joinParams)
 		if joinErr != nil {
-			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to join channel: %v", joinErr))
-			return nil, nil, false, fmt.Errorf("failed to join channel: %v", joinErr)
+			logs.WithContext(ctx).Info(fmt.Sprintf("could not join channel %s before sharing file: %v", channel, joinErr))
+		} else {
+			logs.WithContext(ctx).Info(fmt.Sprint("join channel result: ", joinResult["result"]))
 		}
-		completeResponse, err = slackTool.completeUpload(ctx, completeUrl, completeHeaders, completePayload)
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			return nil, nil, false, err
-		}
+	}
+
+	completeResponse, err := slackTool.completeUpload(ctx, completeUrl, completeHeaders, completeFormData)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
 	}
 
 	toolRequest = map[string]interface{}{"body": map[string]interface{}{
@@ -862,17 +875,78 @@ func (slackTool *SlackTool) UploadMedia(ctx context.Context, params map[string]i
 
 	toolResult["status"] = "uploaded"
 	if len(completeResponse.Files) > 0 {
-		toolResult["permalink"] = completeResponse.Files[0].Permalink
-		toolResult["url_private"] = completeResponse.Files[0].UrlPrivate
+		uploadedFile := completeResponse.Files[0]
+		toolResult["permalink"] = uploadedFile.Permalink
+		toolResult["url_private"] = uploadedFile.UrlPrivate
+		if channel != "" && !slackTool.isFileShared(ctx, uploadedFile) {
+			logs.WithContext(ctx).Info(fmt.Sprintf("file %s not shared by slack - confirming with files.info", uploadedFile.Id))
+			fileInfoResponse, fileInfoErr := slackTool.getFileInfo(ctx, accessToken, uploadedFile.Id)
+			if fileInfoErr == nil && slackTool.isFileShared(ctx, fileInfoResponse.File) {
+				logs.WithContext(ctx).Info("slack shared the file after all - no fallback needed")
+			} else {
+				logs.WithContext(ctx).Info(fmt.Sprintf("sharing file %s into %s by posting its permalink", uploadedFile.Id, channel))
+				shareErr := slackTool.shareFileByPermalink(ctx, params, channel, uploadedFile)
+				if shareErr != nil {
+					toolResult["status"] = "uploaded_not_shared"
+					toolResult["warning"] = fmt.Sprintf("file uploaded but could not be shared into %s : %s", channel, shareErr.Error())
+					logs.WithContext(ctx).Error(fmt.Sprintf("file %s uploaded but not shared into %s", uploadedFile.Id, channel))
+				} else {
+					toolResult["status"] = "uploaded_shared_via_link"
+				}
+			}
+		}
 	}
 
 	return toolResult, toolRequest, false, nil
 }
 
-func (slackTool *SlackTool) completeUpload(ctx context.Context, url string, headers http.Header, payload map[string]interface{}) (completeResponse SlackCompleteUploadResponse, err error) {
+func (slackTool *SlackTool) isFileShared(ctx context.Context, uploadedFile SlackUploadedFile) bool {
+	logs.WithContext(ctx).Debug("isFileShared - Start")
+	return len(uploadedFile.Channels) > 0 || len(uploadedFile.Groups) > 0 || len(uploadedFile.Ims) > 0
+}
+
+func (slackTool *SlackTool) shareFileByPermalink(ctx context.Context, params map[string]interface{}, channel string, uploadedFile SlackUploadedFile) (err error) {
+	logs.WithContext(ctx).Debug("shareFileByPermalink - Start")
+
+	if uploadedFile.Permalink == "" {
+		err = logs.Err(ctx, errors.New("slack did not return a permalink for the file"), "")
+		return err
+	}
+
+	text := uploadedFile.Permalink
+	if initialComment, initialCommentOk := params["initial_comment"]; initialCommentOk {
+		text = fmt.Sprint(initialComment, "\n", uploadedFile.Permalink)
+	}
+
+	messagePayload := map[string]interface{}{
+		"channel": channel,
+		"text":    text,
+	}
+	if threadTs, threadTsOk := params["thread_ts"]; threadTsOk {
+		messagePayload["thread_ts"] = fmt.Sprintf("%v", threadTs)
+	}
+
+	shareParams := map[string]interface{}{"message_payload": messagePayload}
+	if tokenType, tokenTypeOk := params["token_type"]; tokenTypeOk {
+		shareParams["token_type"] = tokenType
+	}
+
+	shareResult, _, _, err := slackTool.SendMessage(ctx, shareParams)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	if status, statusOk := shareResult["status"]; statusOk && status != "sent" {
+		err = logs.Err(ctx, fmt.Errorf("failed to post file permalink : %v", shareResult["error"]), "")
+		return err
+	}
+	return nil
+}
+
+func (slackTool *SlackTool) completeUpload(ctx context.Context, url string, headers http.Header, formData map[string]string) (completeResponse SlackCompleteUploadResponse, err error) {
 	logs.WithContext(ctx).Debug("completeUpload - Start")
 
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, formData, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return completeResponse, err
