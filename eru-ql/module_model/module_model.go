@@ -147,6 +147,7 @@ type GroupByConfig struct {
 	Active       bool                `json:"-"`
 	GroupBy      []string            `json:"group_by"`
 	Aggregations []AggregationConfig `json:"aggregations"`
+	GroupOrderBy []string            `json:"group_order_by"`
 }
 
 type QueryWrapConfig struct {

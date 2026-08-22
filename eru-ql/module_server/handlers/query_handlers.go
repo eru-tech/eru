@@ -436,6 +436,15 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 					}
 					delete(postBody, "aggregations")
 				}
+				if gobData, gobOk := postBody["group_order_by"]; gobOk {
+					gobBytes, mErr := json.Marshal(gobData)
+					if mErr == nil {
+						if uErr := json.Unmarshal(gobBytes, &groupByConfig.GroupOrderBy); uErr != nil {
+							logs.WithContext(r.Context()).Error(uErr.Error())
+						}
+					}
+					delete(postBody, "group_order_by")
+				}
 				qlInterface.SetGroupBy(groupByConfig)
 			}
 

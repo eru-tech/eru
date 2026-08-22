@@ -109,6 +109,11 @@ func (qld *QLData) wrapGroupBy(ctx context.Context, query string) (wrappedQuery 
 	}
 	var selectParts []string
 	selectParts = append(selectParts, qld.GroupBy.GroupBy...)
+	aggAliases := make(map[string]bool)
+	groupCols := make(map[string]bool)
+	for _, g := range qld.GroupBy.GroupBy {
+		groupCols[strings.TrimSpace(g)] = true
+	}
 	for _, agg := range aggregations {
 		fn := strings.ToLower(strings.TrimSpace(agg.Func))
 		if !groupByAggFuncs[fn] {
@@ -130,12 +135,35 @@ func (qld *QLData) wrapGroupBy(ctx context.Context, query string) (wrappedQuery 
 			return "", err
 		}
 		selectParts = append(selectParts, fmt.Sprint(fn, "(", field, ") \"", alias, "\""))
+		aggAliases[alias] = true
 	}
 	groupByClause := ""
 	if len(qld.GroupBy.GroupBy) > 0 {
 		groupByClause = fmt.Sprint(" group by ", strings.Join(qld.GroupBy.GroupBy, " , "))
 	}
-	wrappedQuery = fmt.Sprint("select ", strings.Join(selectParts, " , "), " from (", query, ") eru_grp", groupByClause)
+	orderByClause := ""
+	if len(qld.GroupBy.GroupOrderBy) > 0 {
+		var sorts []string
+		for _, o := range qld.GroupBy.GroupOrderBy {
+			dir := ""
+			col := strings.TrimSpace(o)
+			if strings.HasPrefix(col, "-") {
+				dir = " desc"
+				col = strings.TrimSpace(col[1:])
+			}
+			if aggAliases[col] {
+				sorts = append(sorts, fmt.Sprint("\"", col, "\"", dir))
+			} else if groupCols[col] {
+				sorts = append(sorts, fmt.Sprint(col, dir))
+			} else {
+				err = errors.New(fmt.Sprint("invalid group order by : ", o))
+				logs.WithContext(ctx).Error(err.Error())
+				return "", err
+			}
+		}
+		orderByClause = fmt.Sprint(" order by ", strings.Join(sorts, " , "))
+	}
+	wrappedQuery = fmt.Sprint("select ", strings.Join(selectParts, " , "), " from (", query, ") eru_grp", groupByClause, orderByClause)
 	return wrappedQuery, nil
 }
 
