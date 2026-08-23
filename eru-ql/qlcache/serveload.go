@@ -141,7 +141,7 @@ func hasVolatileTable(tables []string, volatile []string) bool {
 	}
 	vset := make(map[string]struct{}, len(volatile))
 	for _, v := range volatile {
-		vset[v] = struct{}{}
+		vset[NormalizeTableName(v)] = struct{}{}
 	}
 	for _, t := range tables {
 		if _, ok := vset[t]; ok {

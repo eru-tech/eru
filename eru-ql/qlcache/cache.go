@@ -206,7 +206,28 @@ func populateWithOverride(ctx context.Context, ds *module_model.DataSource, key 
 // Use DefaultSchemaName-prefixed table names so "orders" and "public.orders"
 // don't produce different tags.
 func TableTag(projectId, dsAlias, fqTable string) string {
-	return projectId + "::" + dsAlias + "::" + fqTable
+	return projectId + "::" + dsAlias + "::" + NormalizeTableName(fqTable)
+}
+
+// NormalizeTableName folds unquoted identifiers to lower case the same way
+// PostgreSQL resolves them, so a DML on "CRM_accounts" and a select on
+// "crm_accounts" produce the same tag. Quoted segments keep their case because
+// those are genuinely distinct tables.
+func NormalizeTableName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if !strings.Contains(name, `"`) {
+		return strings.ToLower(name)
+	}
+	segments := strings.Split(name, ".")
+	for i, segment := range segments {
+		if !strings.Contains(segment, `"`) {
+			segments[i] = strings.ToLower(segment)
+		}
+	}
+	return strings.Join(segments, ".")
 }
 
 func isMissErr(err error) bool {

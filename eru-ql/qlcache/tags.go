@@ -17,12 +17,12 @@ func TablesToTags(projectId, dsAlias string, tables module_model.TablesInQuery, 
 	seen := make(map[string]struct{}, len(tables.Tables))
 	tags := make([]string, 0, len(tables.Tables))
 	for _, t := range tables.Tables {
-		name := strings.TrimSpace(t.TableName)
+		name := NormalizeTableName(t.TableName)
 		if name == "" {
 			continue
 		}
 		if !strings.Contains(name, ".") && schemaPrefix != "" {
-			name = schemaPrefix + name
+			name = NormalizeTableName(schemaPrefix) + name
 		}
 		tag := TableTag(projectId, dsAlias, name)
 		if _, ok := seen[tag]; ok {

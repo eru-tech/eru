@@ -4,16 +4,17 @@ import (
 	"strings"
 )
 
-// QualifyTables prefixes any table lacking a schema with schemaPrefix.
+// QualifyTables prefixes any table lacking a schema with schemaPrefix and
+// normalizes identifier case via NormalizeTableName.
 func QualifyTables(tables []string, schemaPrefix string) []string {
 	out := make([]string, 0, len(tables))
 	for _, t := range tables {
-		t = strings.TrimSpace(t)
+		t = NormalizeTableName(t)
 		if t == "" {
 			continue
 		}
 		if !strings.Contains(t, ".") && schemaPrefix != "" {
-			t = schemaPrefix + t
+			t = NormalizeTableName(schemaPrefix) + t
 		}
 		out = append(out, t)
 	}
