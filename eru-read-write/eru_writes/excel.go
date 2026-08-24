@@ -55,10 +55,12 @@ type CellFormatter struct {
 }
 
 type CellStyle struct {
-	Font      *FontStyle      `json:"font,omitempty"`
-	Fill      *FillStyle      `json:"fill,omitempty"`
-	Border    []*BorderStyle  `json:"border,omitempty"`
-	Alignment *AlignmentStyle `json:"alignment,omitempty"`
+	Font           *FontStyle      `json:"font,omitempty"`
+	Fill           *FillStyle      `json:"fill,omitempty"`
+	Border         []*BorderStyle  `json:"border,omitempty"`
+	Alignment      *AlignmentStyle `json:"alignment,omitempty"`
+	NumberFormat   string          `json:"number_format,omitempty"`
+	NumberFormatId int             `json:"number_format_id,omitempty"`
 }
 
 type FontStyle struct {
@@ -150,6 +152,19 @@ func getDefaultDataStyle() CellStyle {
 			Horizontal: getDefaultHorizontalAlignment(DataTypeString),
 			Vertical:   "center",
 		},
+	}
+}
+
+func getDefaultNumberFormat(dataType string) string {
+	switch dataType {
+	case DataTypeDate:
+		return "dd-mmm-yyyy"
+	case DataTypeDateTime, DataTypeDateTimeWithZone:
+		return "dd-mmm-yyyy hh:mm:ss"
+	case DataTypeTime, DataTypeTimeWithZone:
+		return "hh:mm:ss"
+	default:
+		return ""
 	}
 }
 
@@ -404,18 +419,35 @@ func safeBool(value interface{}) (bool, bool) {
 	return false, false
 }
 
+var dateFormats = []string{
+	"2006-01-02",
+	"02-Jan-2006",
+	"02-Jan-06",
+	"2006/01/02",
+	"01/02/2006",
+	"02/01/2006",
+	"2006-01-02 15:04:05",
+	"02-Jan-2006 15:04:05",
+	"2006/01/02 15:04:05",
+	"2006-01-02 15:04:05.999999999 -0700 MST",
+	"2006-01-02 15:04:05 -0700 MST",
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02T15:04:05",
+	"15:04:05",
+	"15:04",
+}
+
 func safeDate(value interface{}) (time.Time, bool) {
+	if t, ok := value.(time.Time); ok {
+		return t, true
+	}
 	if str, ok := value.(string); ok {
-		// Try multiple date formats
-		formats := []string{
-			"2006-01-02",
-			"2006/01/02",
-			"01/02/2006",
-			"02/01/2006",
-			"2006-01-02 15:04:05",
-			"2006/01/02 15:04:05",
+		str = strings.TrimSpace(str)
+		if str == "" {
+			return time.Time{}, false
 		}
-		for _, format := range formats {
+		for _, format := range dateFormats {
 			if t, err := time.Parse(format, str); err == nil {
 				return t, true
 			}
@@ -508,11 +540,19 @@ func createStyle(f *excelize.File, style CellStyle) (int, error) {
 		}
 	}
 
+	if style.NumberFormat != "" {
+		numberFormat := style.NumberFormat
+		excelStyle.CustomNumFmt = &numberFormat
+	} else if style.NumberFormatId > 0 {
+		excelStyle.NumFmt = style.NumberFormatId
+	}
+
 	// Only create style if there's something to style
 	hasFill := excelStyle.Fill.Type != "" || len(excelStyle.Fill.Color) > 0 || excelStyle.Fill.Pattern > 0
 	hasBorder := len(excelStyle.Border) > 0
+	hasNumberFormat := excelStyle.CustomNumFmt != nil || excelStyle.NumFmt > 0
 	if excelStyle.Font == nil && !hasFill &&
-		!hasBorder && excelStyle.Alignment == nil {
+		!hasBorder && excelStyle.Alignment == nil && !hasNumberFormat {
 		return 0, nil // No style to apply
 	}
 
@@ -577,6 +617,13 @@ func mergeCellStyles(base, override CellStyle) CellStyle {
 		if override.Alignment.Vertical != "" {
 			result.Alignment.Vertical = override.Alignment.Vertical
 		}
+	}
+
+	if override.NumberFormat != "" {
+		result.NumberFormat = override.NumberFormat
+	}
+	if override.NumberFormatId > 0 {
+		result.NumberFormatId = override.NumberFormatId
 	}
 
 	return result
@@ -805,10 +852,15 @@ func (ewd *ExcelWriteData) WriteColumnar(ctx context.Context) (writeOutput []byt
 				if !ok {
 					continue
 				}
+				numberFormat := h.NumberFormat
+				if numberFormat == "" {
+					numberFormat = getDefaultNumberFormat(h.DataType)
+				}
 				dataAlignmentStyle := CellStyle{
 					Alignment: &AlignmentStyle{
 						Horizontal: getDefaultHorizontalAlignment(h.DataType),
 					},
+					NumberFormat: numberFormat,
 				}
 				// Merge with existing data style
 				mergedDataStyle := mergeCellStyles(ewd.CellFormat[k].DataStyle, dataAlignmentStyle)

@@ -20,8 +20,8 @@ const (
 	DefaultHtmlHeaderCharPx  = 8
 	DefaultHtmlCellPaddingPx = 6
 	DefaultHtmlPaddingPx     = 8
-	DefaultDateFormat        = "2006-01-02"
-	DefaultDateTimeFormat    = "2006-01-02 15:04:05"
+	DefaultDateFormat        = "02-Jan-2006"
+	DefaultDateTimeFormat    = "02-Jan-2006 15:04:05"
 	DefaultTimeFormat        = "15:04:05"
 )
 

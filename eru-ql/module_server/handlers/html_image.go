@@ -48,20 +48,23 @@ func buildColumnarWriteData(ctx context.Context, res []map[string]interface{}, q
 				mw := eru_writes.DefaultMaxColumnWidth
 				st := true
 				hl := dt.ColName
+				nf := ""
 				if _, exists := headers[dt.ColName]; exists {
 					mw = headers[dt.ColName].MaxWidth
 					st = headers[dt.ColName].SubTotal
+					nf = headers[dt.ColName].NumberFormat
 					hl = headers[dt.ColName].HeaderLabel
 					if hl == "" {
 						hl = dt.ColName
 					}
 				}
 				headers[dt.ColName] = eru_writes.ColumnHeaders{
-					HeaderName:  dt.ColName,
-					HeaderLabel: hl,
-					DataType:    dt.ColDatabaseTypeName,
-					MaxWidth:    mw,
-					SubTotal:    st,
+					HeaderName:   dt.ColName,
+					HeaderLabel:  hl,
+					DataType:     dt.ColDatabaseTypeName,
+					MaxWidth:     mw,
+					SubTotal:     st,
+					NumberFormat: nf,
 				}
 			}
 			for hk := range headers {
