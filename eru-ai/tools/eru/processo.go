@@ -834,19 +834,77 @@ func processoIsDropdown(datatype string) bool {
 	return datatype == ProcessoDatatypeDropdownSs || datatype == ProcessoDatatypeDropdownMs
 }
 
+type ProcessoFieldCommon struct {
+	CanEdit      bool   `json:"can_edit"`
+	ShowMobile   bool   `json:"show_mobile"`
+	Name         string `json:"name" eru:"required"`
+	Label        string `json:"label" eru:"required"`
+	Description  string `json:"description"`
+	Default      string `json:"default"`
+	Datatype     string `json:"datatype" eru:"required"`
+	TabName      string `json:"tab_name" eru:"required"`
+	CanGroup     bool   `json:"can_group"`
+	Mandatory    bool   `json:"mandatory"`
+	IsHidden     bool   `json:"is_hidden"`
+	Editable     bool   `json:"editable"`
+	IsUnique     bool   `json:"is_unique"`
+	UnqSa        bool   `json:"unq_sa"`
+	ShowGrid     string `json:"show_grid" eru:"required"`
+	GridIndex    int    `json:"grid_index"`
+	DefaultGroup bool   `json:"default_group"`
+	ToolTip      string `json:"tool_tip"`
+	IsPii        bool   `json:"is_pii"`
+	ToEncrypt    bool   `json:"to_encrypt"`
+	IsEphi       bool   `json:"is_ephi"`
+	IsPf         bool   `json:"is_pf"`
+	Dfc          bool   `json:"dfc"`
+	Ce           string `json:"ce"`
+	Cef          string `json:"cef"`
+	Cefa         string `json:"cefa"`
+	TfIdx        int    `json:"tf_idx"`
+}
+
+type ProcessoFieldTextbox struct {
+	ProcessoFieldCommon
+	UniqueFn        []string `json:"unique_fn"`
+	DataLength      string   `json:"data_length"`
+	DataLengthCheck string   `json:"data_length_check"`
+}
+
+type ProcessoFieldDate struct {
+	ProcessoFieldCommon
+	DateFormat string   `json:"date_format" eru:"required"`
+	AllowDays  []string `json:"allow_days" eru:"required"`
+}
+
+type ProcessoFieldEmail struct {
+	ProcessoFieldCommon
+	UniqueFn       []string `json:"unique_fn"`
+	SystemValidate string   `json:"system_validate" eru:"required"`
+	SsvApi         string   `json:"ssv_api"`
+}
+
+type ProcessoFieldDropdown struct {
+	ProcessoFieldCommon
+	OptionType string                `json:"option_type" eru:"required"`
+	ApiName    string                `json:"api_name"`
+	ApiField   string                `json:"api_field"`
+	EntityName string                `json:"entity_name"`
+	FieldName  string                `json:"field_name"`
+	Options    []ProcessoFieldOption `json:"options"`
+}
+
+type ProcessoFieldStatusDef struct {
+	ProcessoFieldCommon
+	OpenStatus  []ProcessoFieldStatus `json:"open_status" eru:"required"`
+	CloseStatus []ProcessoFieldStatus `json:"close_status" eru:"required"`
+	Sts         string                `json:"_sts"`
+}
+
 func processoValidateStatusList(listName string, statusList []ProcessoFieldStatus) error {
-	if len(statusList) == 0 {
-		return fmt.Errorf("%s must have at least one status for datatype %s", listName, ProcessoDatatypeStatus)
-	}
 	defaultCount := 0
 	for i, st := range statusList {
-		if st.StatusName == "" {
-			return fmt.Errorf("%s[%d].name is mandatory", listName, i)
-		}
-		if st.StatusColor == "" {
-			return fmt.Errorf("%s[%d].color is mandatory", listName, i)
-		}
-		if st.StatusColor[0] != '#' {
+		if st.StatusColor != "" && st.StatusColor[0] != '#' {
 			return fmt.Errorf("%s[%d].color must be a hex code starting with #", listName, i)
 		}
 		if st.StatusDf != nil && *st.StatusDf {
@@ -859,18 +917,9 @@ func processoValidateStatusList(listName string, statusList []ProcessoFieldStatu
 	return nil
 }
 
-func (processoTool *ProcessoTool) buildFieldBody(f ProcessoFieldDef) (map[string]interface{}, error) {
-	if f.Name == "" {
-		return nil, errors.New("field.name is mandatory")
-	}
-	if f.Label == "" {
-		return nil, errors.New("field.label is mandatory")
-	}
+func (processoTool *ProcessoTool) buildFieldBody(ctx context.Context, f ProcessoFieldDef) (interface{}, error) {
 	if f.Datatype == "" {
 		return nil, errors.New("field.datatype is mandatory")
-	}
-	if f.TabName == "" {
-		return nil, errors.New("field.tab_name is mandatory")
 	}
 	showGrid := f.ShowGrid
 	if showGrid == "" {
@@ -883,34 +932,34 @@ func (processoTool *ProcessoTool) buildFieldBody(f ProcessoFieldDef) (map[string
 	if tfIdx == 0 {
 		tfIdx = f.GridIndex
 	}
-	fieldBody := map[string]interface{}{
-		"can_edit":      f.CanEdit,
-		"show_mobile":   f.ShowMobile,
-		"name":          f.Name,
-		"label":         f.Label,
-		"description":   f.Description,
-		"default":       f.Default,
-		"datatype":      f.Datatype,
-		"tab_name":      f.TabName,
-		"can_group":     f.CanGroup,
-		"mandatory":     f.Mandatory,
-		"is_hidden":     f.IsHidden,
-		"editable":      f.Editable,
-		"is_unique":     f.IsUnique,
-		"unq_sa":        f.UnqSa,
-		"show_grid":     showGrid,
-		"grid_index":    f.GridIndex,
-		"default_group": f.DefaultGroup,
-		"tool_tip":      f.ToolTip,
-		"is_pii":        f.IsPii,
-		"to_encrypt":    f.ToEncrypt,
-		"is_ephi":       f.IsEphi,
-		"is_pf":         f.IsPf,
-		"dfc":           f.Dfc,
-		"ce":            f.Ce,
-		"cef":           f.Cef,
-		"cefa":          f.Cefa,
-		"tf_idx":        tfIdx,
+	commonField := ProcessoFieldCommon{
+		CanEdit:      f.CanEdit,
+		ShowMobile:   f.ShowMobile,
+		Name:         f.Name,
+		Label:        f.Label,
+		Description:  f.Description,
+		Default:      f.Default,
+		Datatype:     f.Datatype,
+		TabName:      f.TabName,
+		CanGroup:     f.CanGroup,
+		Mandatory:    f.Mandatory,
+		IsHidden:     f.IsHidden,
+		Editable:     f.Editable,
+		IsUnique:     f.IsUnique,
+		UnqSa:        f.UnqSa,
+		ShowGrid:     showGrid,
+		GridIndex:    f.GridIndex,
+		DefaultGroup: f.DefaultGroup,
+		ToolTip:      f.ToolTip,
+		IsPii:        f.IsPii,
+		ToEncrypt:    f.ToEncrypt,
+		IsEphi:       f.IsEphi,
+		IsPf:         f.IsPf,
+		Dfc:          f.Dfc,
+		Ce:           f.Ce,
+		Cef:          f.Cef,
+		Cefa:         f.Cefa,
+		TfIdx:        tfIdx,
 	}
 
 	uniqueFn := f.UniqueFn
@@ -918,6 +967,7 @@ func (processoTool *ProcessoTool) buildFieldBody(f ProcessoFieldDef) (map[string
 		uniqueFn = []string{}
 	}
 
+	var fieldPayload interface{}
 	switch f.Datatype {
 	case ProcessoDatatypeTextbox:
 		if f.DataLength != "" {
@@ -929,31 +979,27 @@ func (processoTool *ProcessoTool) buildFieldBody(f ProcessoFieldDef) (map[string
 				return nil, errors.New("field.data_length_check is mandatory when data_length is provided")
 			}
 		}
-		fieldBody["unique_fn"] = uniqueFn
-		fieldBody["data_length"] = f.DataLength
-		fieldBody["data_length_check"] = f.DataLengthCheck
-	case ProcessoDatatypeDate:
-		if f.DateFormat == "" {
-			return nil, fmt.Errorf("field.date_format is mandatory for datatype %s", ProcessoDatatypeDate)
+		fieldPayload = ProcessoFieldTextbox{
+			ProcessoFieldCommon: commonField,
+			UniqueFn:            uniqueFn,
+			DataLength:          f.DataLength,
+			DataLengthCheck:     f.DataLengthCheck,
 		}
+	case ProcessoDatatypeDate:
 		allowDays := f.AllowDays
 		if len(allowDays) == 0 {
 			allowDays = processoAllowedDays
 		}
 		for _, day := range allowDays {
-			isAllowed := false
-			for _, allowedDay := range processoAllowedDays {
-				if day == allowedDay {
-					isAllowed = true
-					break
-				}
-			}
-			if !isAllowed {
+			if utils.GetArrayPosition(processoAllowedDays, day) == -1 {
 				return nil, fmt.Errorf("field.allow_days has an invalid day %s - allowed values are %v", day, processoAllowedDays)
 			}
 		}
-		fieldBody["date_format"] = f.DateFormat
-		fieldBody["allow_days"] = allowDays
+		fieldPayload = ProcessoFieldDate{
+			ProcessoFieldCommon: commonField,
+			DateFormat:          f.DateFormat,
+			AllowDays:           allowDays,
+		}
 	case ProcessoDatatypeEmail:
 		systemValidate := f.SystemValidate
 		if systemValidate == "" {
@@ -965,9 +1011,12 @@ func (processoTool *ProcessoTool) buildFieldBody(f ProcessoFieldDef) (map[string
 		if systemValidate == "true" && f.SsvApi == "" {
 			return nil, errors.New("field.ssv_api is mandatory when system_validate is true")
 		}
-		fieldBody["unique_fn"] = uniqueFn
-		fieldBody["system_validate"] = systemValidate
-		fieldBody["ssv_api"] = f.SsvApi
+		fieldPayload = ProcessoFieldEmail{
+			ProcessoFieldCommon: commonField,
+			UniqueFn:            uniqueFn,
+			SystemValidate:      systemValidate,
+			SsvApi:              f.SsvApi,
+		}
 	case ProcessoDatatypeDropdownSs, ProcessoDatatypeDropdownMs:
 		options := f.Options
 		if options == nil {
@@ -977,11 +1026,6 @@ func (processoTool *ProcessoTool) buildFieldBody(f ProcessoFieldDef) (map[string
 		case "STATIC":
 			if len(options) == 0 {
 				return nil, errors.New("field.options must have at least one option when option_type is STATIC")
-			}
-			for i, option := range options {
-				if option.OptionName == "" {
-					return nil, fmt.Errorf("field.options[%d].name is mandatory", i)
-				}
 			}
 		case "ENTITY_DATA":
 			if f.OptionEntityName == "" || f.OptionFieldName == "" {
@@ -996,12 +1040,15 @@ func (processoTool *ProcessoTool) buildFieldBody(f ProcessoFieldDef) (map[string
 		default:
 			return nil, errors.New("field.option_type must be one of STATIC, ENTITY_DATA or API")
 		}
-		fieldBody["option_type"] = f.FieldOptionType
-		fieldBody["api_name"] = f.ApiName
-		fieldBody["api_field"] = f.ApiField
-		fieldBody["entity_name"] = f.OptionEntityName
-		fieldBody["field_name"] = f.OptionFieldName
-		fieldBody["options"] = options
+		fieldPayload = ProcessoFieldDropdown{
+			ProcessoFieldCommon: commonField,
+			OptionType:          f.FieldOptionType,
+			ApiName:             f.ApiName,
+			ApiField:            f.ApiField,
+			EntityName:          f.OptionEntityName,
+			FieldName:           f.OptionFieldName,
+			Options:             options,
+		}
 	case ProcessoDatatypeStatus:
 		if err := processoValidateStatusList("field.open_status", f.OpenStatus); err != nil {
 			return nil, err
@@ -1009,11 +1056,20 @@ func (processoTool *ProcessoTool) buildFieldBody(f ProcessoFieldDef) (map[string
 		if err := processoValidateStatusList("field.close_status", f.CloseStatus); err != nil {
 			return nil, err
 		}
-		fieldBody["open_status"] = f.OpenStatus
-		fieldBody["close_status"] = f.CloseStatus
-		fieldBody["_sts"] = f.Sts
+		fieldPayload = ProcessoFieldStatusDef{
+			ProcessoFieldCommon: commonField,
+			OpenStatus:          f.OpenStatus,
+			CloseStatus:         f.CloseStatus,
+			Sts:                 f.Sts,
+		}
+	default:
+		fieldPayload = commonField
 	}
-	return fieldBody, nil
+
+	if err := utils.ValidateStruct(ctx, fieldPayload, "field"); err != nil {
+		return nil, fmt.Errorf("incorrect field payload - mandatory attributes missing : %s", err.Error())
+	}
+	return fieldPayload, nil
 }
 
 func (processoTool *ProcessoTool) SaveField(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -1025,7 +1081,7 @@ func (processoTool *ProcessoTool) SaveField(ctx context.Context, projectId strin
 	if p.EntityName == "" {
 		return nil, nil, false, errors.New("entity_name is mandatory")
 	}
-	fieldBody, err := processoTool.buildFieldBody(p.Field)
+	fieldBody, err := processoTool.buildFieldBody(ctx, p.Field)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, false, err
