@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/eru-tech/eru/eru-ai/tools"
@@ -42,6 +43,16 @@ const (
 	VerifyDownloadRequestStatus = "verifydownloadrequeststatus"
 	BankStatementUpload         = "bankstatementupload"
 	BankStatementUploadStatus   = "bankstatementuploadstatus"
+	UploadInvoices              = "upload_invoices"
+	CheckInvoiceStatus          = "check_invoice_status"
+	FetchInvoiceInfo            = "fetch_invoice_info"
+)
+
+const (
+	UploadInvoiceEndpoint      = "/v1.0/invoiceverification/uploadinvoice"
+	CheckInvoiceStatusEndpoint = "/v1.0/invoiceverification/checkstatus"
+	FetchInvoiceJsonEndpoint   = "/v1.0/invoiceverification/fetchjson"
+	InvoiceStatusCompleted     = "completed"
 )
 
 type CygnetTool struct {
@@ -319,6 +330,52 @@ var cygnetToolActions = []tools.ToolAction{
 			Required: []string{"process_id"},
 		},
 	},
+	{
+		ActionName:   UploadInvoices,
+		Description:  "Upload invoice PDFs to Cygnet for verification and data extraction",
+		SystemPrompt: "Upload one or more invoice PDF files to the Cygnet invoice verification API. Returns an invoice_id used to check status and fetch the extracted data.",
+		OutputSchema: models.JSONSchema{},
+		Parameters: models.JSONSchema{
+			Type: "object",
+			Properties: map[string]models.JSONSchema{
+				"invoice_files": {
+					Type:        "array",
+					Description: "Invoice PDF files as base64 data URIs (e.g. 'data:@file/pdf; base64,<base64>'); max 15Mb each",
+					Items:       &models.JSONSchema{Type: "string"},
+				},
+				"res_type":    {Type: "integer", Description: "Result type; 1 = Extraction (default: 1)"},
+				"report_type": {Type: "integer", Description: "Report type; optional for non-consented validation, in which case output is returned as JSON"},
+				"validate":    {Type: "boolean", Description: "Validate against consented data (GST or Eway) if consented verification was opted for (default: false)"},
+			},
+			Required: []string{"invoice_files"},
+		},
+	},
+	{
+		ActionName:   CheckInvoiceStatus,
+		Description:  "Check the processing status of an uploaded invoice in Cygnet",
+		SystemPrompt: "Check the processing status of an invoice previously uploaded to the Cygnet invoice verification API.",
+		OutputSchema: models.JSONSchema{},
+		Parameters: models.JSONSchema{
+			Type: "object",
+			Properties: map[string]models.JSONSchema{
+				"invoice_id": {Type: "string", Description: "Invoice ID returned by the invoice upload"},
+			},
+			Required: []string{"invoice_id"},
+		},
+	},
+	{
+		ActionName:   FetchInvoiceInfo,
+		Description:  "Fetch extracted invoice data from Cygnet once processing has completed",
+		SystemPrompt: "Fetch the extracted JSON data for an uploaded invoice from Cygnet. Checks the processing status first and only fetches the data once the status is completed; otherwise returns the status response only.",
+		OutputSchema: models.JSONSchema{},
+		Parameters: models.JSONSchema{
+			Type: "object",
+			Properties: map[string]models.JSONSchema{
+				"invoice_id": {Type: "string", Description: "Invoice ID returned by the invoice upload"},
+			},
+			Required: []string{"invoice_id"},
+		},
+	},
 }
 
 func (cygnetTool *CygnetTool) GetActionsList() []tools.ActionInfo {
@@ -397,6 +454,12 @@ func (cygnetTool *CygnetTool) Execute(ctx context.Context, projectId string, ten
 		toolResult, toolRequest, persistStore, err = cygnetTool.BankStatementUpload(ctx, projectId, tenantId, params)
 	case BankStatementUploadStatus:
 		toolResult, toolRequest, persistStore, err = cygnetTool.BankStatementUploadStatus(ctx, projectId, tenantId, params)
+	case UploadInvoices:
+		toolResult, toolRequest, persistStore, err = cygnetTool.UploadInvoices(ctx, projectId, tenantId, params)
+	case CheckInvoiceStatus:
+		toolResult, toolRequest, persistStore, err = cygnetTool.CheckInvoiceStatus(ctx, projectId, tenantId, params)
+	case FetchInvoiceInfo:
+		toolResult, toolRequest, persistStore, err = cygnetTool.FetchInvoiceInfo(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -1089,6 +1152,179 @@ func (cygnetTool *CygnetTool) BankStatementUploadStatus(ctx context.Context, pro
 	toolResult = make(map[string]interface{})
 	toolResult["bankstatementuploadstatus_result"] = decryptedResponse
 	return toolResult, map[string]interface{}{"body": payload}, false, nil
+}
+
+func (cygnetTool *CygnetTool) invoiceVerificationPost(ctx context.Context, endpoint string, data map[string]interface{}) (decryptedResponse interface{}, payload map[string]interface{}, err error) {
+	encryptedData, rawKey, _, err := cygnetTool.encryptRequest(ctx, data)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	payload = map[string]interface{}{
+		"data": encryptedData,
+	}
+
+	url := fmt.Sprintf("%s%s", cygnetTool.BaseUrl, endpoint)
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Response-Type", "application/json")
+	headers.Set("Accept-Encoding", "identity")
+	headers.Set("clientid", cygnetTool.ClientId)
+	headers.Set("client-secret", cygnetTool.ClientSecret)
+	headers.Set("txn", Txn)
+	headers.Set("ip-usr", IpUse)
+	headers.Set("auth-token", cygnetTool.AuthToken)
+
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, map[string]string{}, []*http.Cookie{}, map[string]string{}, payload)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, err
+	}
+
+	decryptedResponse, err = cygnetTool.decryptResponse(ctx, res, rawKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return decryptedResponse, payload, nil
+}
+
+func (cygnetTool *CygnetTool) UploadInvoices(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("CygnetTool UploadInvoices - Start")
+
+	invoiceFiles, ok := toStringSlice(params["invoice_files"])
+	if !ok {
+		return nil, nil, false, fmt.Errorf("invoice_files is required and must be a non-empty base64 string or array of base64 strings")
+	}
+
+	uploadData := map[string]interface{}{
+		"InvoiceFile": invoiceFiles,
+		"resType":     1,
+		"validate":    false,
+	}
+
+	if v, ok := toInt(params["res_type"]); ok {
+		uploadData["resType"] = v
+	}
+	if v, ok := toInt(params["report_type"]); ok {
+		uploadData["reportType"] = v
+	}
+	if v, ok := params["validate"].(bool); ok {
+		uploadData["validate"] = v
+	}
+
+	decryptedResponse, payload, err := cygnetTool.invoiceVerificationPost(ctx, UploadInvoiceEndpoint, uploadData)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	toolResult = make(map[string]interface{})
+	toolResult["upload_invoices_result"] = decryptedResponse
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
+}
+
+func (cygnetTool *CygnetTool) CheckInvoiceStatus(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("CygnetTool CheckInvoiceStatus - Start")
+
+	invoiceId, ok := toStr(params["invoice_id"])
+	if !ok {
+		return nil, nil, false, fmt.Errorf("invoice_id is required and must be a non-empty string")
+	}
+
+	decryptedResponse, payload, err := cygnetTool.invoiceVerificationPost(ctx, CheckInvoiceStatusEndpoint, map[string]interface{}{
+		"invoice_id": invoiceId,
+	})
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	toolResult = make(map[string]interface{})
+	toolResult["check_invoice_status_result"] = decryptedResponse
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
+}
+
+func (cygnetTool *CygnetTool) FetchInvoiceInfo(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("CygnetTool FetchInvoiceInfo - Start")
+
+	invoiceId, ok := toStr(params["invoice_id"])
+	if !ok {
+		return nil, nil, false, fmt.Errorf("invoice_id is required and must be a non-empty string")
+	}
+
+	statusResult, statusRequest, _, err := cygnetTool.CheckInvoiceStatus(ctx, projectId, tenantId, params)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	if !isInvoiceStatusCompleted(statusResult["check_invoice_status_result"]) {
+		logs.WithContext(ctx).Info(fmt.Sprintf("invoice %s is not yet completed, returning status response", invoiceId))
+		return statusResult, statusRequest, false, nil
+	}
+
+	decryptedResponse, payload, err := cygnetTool.invoiceVerificationPost(ctx, FetchInvoiceJsonEndpoint, map[string]interface{}{
+		"invoice_id": invoiceId,
+	})
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	toolResult = make(map[string]interface{})
+	for k, v := range statusResult {
+		toolResult[k] = v
+	}
+	toolResult["fetch_invoice_info_result"] = decryptedResponse
+	return toolResult, map[string]interface{}{"body": payload}, false, nil
+}
+
+func isInvoiceStatusCompleted(statusResponse interface{}) bool {
+	responseMap, ok := statusResponse.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	status, ok := responseMap["status"].(string)
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(status), InvoiceStatusCompleted)
+}
+
+func toStr(v interface{}) (string, bool) {
+	if s, ok := v.(string); ok {
+		return s, s != ""
+	}
+	if i, ok := toInt(v); ok {
+		return fmt.Sprintf("%d", i), true
+	}
+	return "", false
+}
+
+func toStringSlice(v interface{}) ([]string, bool) {
+	switch val := v.(type) {
+	case string:
+		if val == "" {
+			return nil, false
+		}
+		return []string{val}, true
+	case []string:
+		if len(val) == 0 {
+			return nil, false
+		}
+		return val, true
+	case []interface{}:
+		result := make([]string, 0, len(val))
+		for _, item := range val {
+			s, ok := item.(string)
+			if !ok || s == "" {
+				return nil, false
+			}
+			result = append(result, s)
+		}
+		if len(result) == 0 {
+			return nil, false
+		}
+		return result, true
+	}
+	return nil, false
 }
 
 // toInt is a helper to coerce interface{} param values to int (handles float64 from JSON unmarshaling).
