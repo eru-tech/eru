@@ -16,53 +16,6 @@ import (
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
-type ProcessoSaveApiParams struct {
-	ApiName     string                 `json:"api_name" eru:"required" desc:"unique name of the api to save"`
-	ApiCategory string                 `json:"api_category" eru:"required" desc:"category of the api"`
-	OrgId       string                 `json:"org_id" eru:"required" desc:"organization id"`
-	ProcessId   string                 `json:"process_id" eru:"required" desc:"process id"`
-	ApiDef      map[string]interface{} `json:"api_def" eru:"required" desc:"api definition (function group json with func_category_name, func_group_name, func_steps)"`
-}
-
-type ProcessoExecuteApiParams struct {
-	ApiName   string                 `json:"api_name" eru:"required" desc:"name of the api to execute"`
-	OrgId     string                 `json:"org_id" eru:"required" desc:"organization id"`
-	ProcessId string                 `json:"process_id" eru:"required" desc:"process id"`
-	Body      map[string]interface{} `json:"body" desc:"additional key value pairs required by the api" default:"{}"`
-}
-
-type ProcessoGetApiParams struct {
-	OrgId     string `json:"org_id" eru:"required" desc:"organization id"`
-	ProcessId string `json:"process_id" eru:"required" desc:"process id"`
-	ApiId     string `json:"api_id" desc:"api id to fetch (either api_id or api_name must be provided)"`
-	ApiName   string `json:"api_name" desc:"api name to fetch (either api_id or api_name must be provided)"`
-}
-
-type ProcessoExecuteQueryParams struct {
-	OrgId     string                 `json:"org_id" eru:"required" desc:"organization id"`
-	ProcessId string                 `json:"process_id" eru:"required" desc:"process id"`
-	QueryName string                 `json:"query_name" eru:"required" desc:"name of the query to execute"`
-	Body      map[string]interface{} `json:"body" desc:"additional key value pairs (query variables) required by the query" default:"{}"`
-}
-
-type ProcessoSaveQueryParams struct {
-	QueryId     string `json:"query_id" desc:"query id (provided when updating an existing query)"`
-	OrgId       string `json:"org_id" eru:"required" desc:"organization id"`
-	ProcessId   string `json:"process_id" eru:"required" desc:"process id"`
-	QueryName   string `json:"query_name" eru:"required" desc:"name of the query"`
-	QueryString string `json:"query_string" eru:"required" desc:"the query string to save"`
-	DbAlias     string `json:"db_alias" eru:"required" desc:"database alias to execute the query against"`
-	QueryVars   string `json:"query_vars" desc:"query variables as a json string" default:"{}"`
-	QueryType   string `json:"query_type" eru:"required" desc:"type of the query (e.g. sql)"`
-}
-
-type ProcessoGetQueryParams struct {
-	OrgId     string `json:"org_id" eru:"required" desc:"organization id"`
-	ProcessId string `json:"process_id" eru:"required" desc:"process id"`
-	QueryId   string `json:"query_id" desc:"query id to fetch (either query_id or query_name must be provided)"`
-	QueryName string `json:"query_name" desc:"query name to fetch (either query_id or query_name must be provided)"`
-}
-
 type ProcessoEntityData struct {
 	Name        string `json:"name" eru:"required" desc:"unique name of the entity"`
 	Index       int    `json:"index" desc:"display order index of the entity"`
@@ -215,18 +168,31 @@ type ProcessoSaveEntityDownloadVisibilityParams struct {
 	MapRoles       []string `json:"map_roles" desc:"roles allowed to download - applicable when visibility_type is private"`
 }
 
+type ProcessoFetchPagesParams struct {
+	OrgId     string `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId string `json:"process_id" eru:"required" desc:"process id"`
+}
+
+type ProcessoFetchPageParams struct {
+	OrgId     string `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId string `json:"process_id" eru:"required" desc:"process id"`
+	PageId    string `json:"page_id" eru:"required" desc:"page id to fetch"`
+}
+
+type ProcessoSavePageParams struct {
+	OrgId     string                 `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId string                 `json:"process_id" eru:"required" desc:"process id"`
+	PageId    string                 `json:"page_id" eru:"required" desc:"page id to save"`
+	PageName  string                 `json:"page_name" eru:"required" desc:"page name"`
+	PageDef   map[string]interface{} `json:"page_def" eru:"required" desc:"page definition as JSON string"`
+}
+
 type ProcessoTool struct {
 	tools.Tool
 	ProjectId string `json:"project_id" desc:"processo project id used in the url path" default:"processo"`
 }
 
 const (
-	SaveApi                              = "save_api"
-	ExecuteApi                           = "execute_api"
-	GetApi                               = "get_api"
-	ProcessoExecQuery                    = "execute_query"
-	ProcessoSaveQueryGr                  = "save_query"
-	ProcessoGetQuery                     = "get_query"
 	ProcessoSaveEntity                   = "save_entity"
 	ProcessoSaveField                    = "save_field"
 	ProcessoSaveEntityData               = "save_entity_data"
@@ -234,69 +200,12 @@ const (
 	ProcessoSaveEntityVisibility         = "save_entity_visibility"
 	ProcessoSaveEntityRecordVisibility   = "save_entity_record_visibility"
 	ProcessoSaveEntityDownloadVisibility = "save_entity_download_visibility"
+	ProcessoFetchPages                   = "fetch_pages"
+	ProcessoFetchPage                    = "fetch_page"
+	ProcessoSavePage                     = "save_page"
 )
 
 var processoToolActions = []tools.ToolAction{
-	{
-		ActionName:   SaveApi,
-		Description:  "Save an api definition (function group) under processo for an org and process",
-		SystemPrompt: "This tool saves an api definition (function group) under processo for an org and process. The api_def follows the eru function group json structure with func_category_name, func_group_name and func_steps.",
-		OutputSchema: eru_models.JSONSchema{},
-		Parameters:   eru_models.JSONSchema{},
-		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoSaveApiParams{}), []string{})
-		},
-	},
-	{
-		ActionName:   ExecuteApi,
-		Description:  "Execute a previously saved processo api by name with additional key value pairs as required by the api",
-		SystemPrompt: "This tool executes a previously saved processo api by name. Pass api_name, org_id, process_id and any other key value pairs required by the api via the body attribute.",
-		OutputSchema: eru_models.JSONSchema{},
-		Parameters:   eru_models.JSONSchema{},
-		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoExecuteApiParams{}), []string{})
-		},
-	},
-	{
-		ActionName:   GetApi,
-		Description:  "Fetch a saved api definition for an org and process by api_id or api_name",
-		SystemPrompt: "This tool fetches a saved api definition for an org and process. Pass org_id, process_id and either api_id or api_name.",
-		OutputSchema: eru_models.JSONSchema{},
-		Parameters:   eru_models.JSONSchema{},
-		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoGetApiParams{}), []string{})
-		},
-	},
-	{
-		ActionName:   ProcessoExecQuery,
-		Description:  "Execute a saved processo query by name for an org and process",
-		SystemPrompt: "This tool executes a saved processo query by name. Pass org_id, process_id, query_name and any query variables via the body attribute.",
-		OutputSchema: eru_models.JSONSchema{},
-		Parameters:   eru_models.JSONSchema{},
-		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoExecuteQueryParams{}), []string{})
-		},
-	},
-	{
-		ActionName:   ProcessoSaveQueryGr,
-		Description:  "Save a query (query group) under processo for an org and process",
-		SystemPrompt: "This tool saves a query under processo for an org and process. Pass query_name, query_string, db_alias, query_type and optionally query_id and query_vars.",
-		OutputSchema: eru_models.JSONSchema{},
-		Parameters:   eru_models.JSONSchema{},
-		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoSaveQueryParams{}), []string{})
-		},
-	},
-	{
-		ActionName:   ProcessoGetQuery,
-		Description:  "Fetch a saved query for an org and process by query_id or query_name",
-		SystemPrompt: "This tool fetches a saved query for an org and process. Pass org_id, process_id and either query_id or query_name.",
-		OutputSchema: eru_models.JSONSchema{},
-		Parameters:   eru_models.JSONSchema{},
-		GetParameters: func() eru_models.JSONSchema {
-			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoGetQueryParams{}), []string{})
-		},
-	},
 	{
 		ActionName:   ProcessoSaveEntity,
 		Description:  "allows user to add/edit entities metadata",
@@ -365,6 +274,36 @@ var processoToolActions = []tools.ToolAction{
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
 			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoSaveEntityDownloadVisibilityParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoFetchPages,
+		Description:  "Fetch all pages for an org and process",
+		SystemPrompt: "This tool fetches all the pages of an org and process. Pass org_id and process_id.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoFetchPagesParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoFetchPage,
+		Description:  "Fetch a single page by id",
+		SystemPrompt: "This tool fetches a single page of an org and process by its id. Pass org_id, process_id and page_id.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoFetchPageParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoSavePage,
+		Description:  "Save a page definition",
+		SystemPrompt: "This tool saves a page definition of an org and process. Pass org_id, process_id, page_id, page_name and page_def.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoSavePageParams{}), []string{})
 		},
 	},
 }
@@ -530,18 +469,6 @@ func (processoTool *ProcessoTool) Execute(ctx context.Context, projectId string,
 	logs.WithContext(ctx).Debug("processoTool Execute - Start")
 	var toolRequest interface{}
 	switch actionName {
-	case SaveApi:
-		toolResult, toolRequest, persistStore, err = processoTool.SaveApi(ctx, projectId, tenantId, params)
-	case ExecuteApi:
-		toolResult, toolRequest, persistStore, err = processoTool.ExecuteApi(ctx, projectId, tenantId, params)
-	case GetApi:
-		toolResult, toolRequest, persistStore, err = processoTool.GetApi(ctx, projectId, tenantId, params)
-	case ProcessoExecQuery:
-		toolResult, toolRequest, persistStore, err = processoTool.ExecuteQuery(ctx, projectId, tenantId, params)
-	case ProcessoSaveQueryGr:
-		toolResult, toolRequest, persistStore, err = processoTool.SaveQuery(ctx, projectId, tenantId, params)
-	case ProcessoGetQuery:
-		toolResult, toolRequest, persistStore, err = processoTool.GetQuery(ctx, projectId, tenantId, params)
 	case ProcessoSaveEntity:
 		toolResult, toolRequest, persistStore, err = processoTool.SaveEntity(ctx, projectId, tenantId, params)
 	case ProcessoSaveField:
@@ -556,6 +483,12 @@ func (processoTool *ProcessoTool) Execute(ctx context.Context, projectId string,
 		toolResult, toolRequest, persistStore, err = processoTool.SaveEntityRecordVisibility(ctx, projectId, tenantId, params)
 	case ProcessoSaveEntityDownloadVisibility:
 		toolResult, toolRequest, persistStore, err = processoTool.SaveEntityDownloadVisibility(ctx, projectId, tenantId, params)
+	case ProcessoFetchPages:
+		toolResult, toolRequest, persistStore, err = processoTool.FetchPages(ctx, projectId, tenantId, params)
+	case ProcessoFetchPage:
+		toolResult, toolRequest, persistStore, err = processoTool.FetchPage(ctx, projectId, tenantId, params)
+	case ProcessoSavePage:
+		toolResult, toolRequest, persistStore, err = processoTool.SavePage(ctx, projectId, tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -601,193 +534,6 @@ func (processoTool *ProcessoTool) Execute(ctx context.Context, projectId string,
 	}, server.ContinueOnMaxRetries)
 
 	return toolResult, persistStore, err
-}
-
-func (processoTool *ProcessoTool) SaveApi(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
-	logs.WithContext(ctx).Debug("processoTool SaveApi - Start")
-	p := ProcessoSaveApiParams{}
-	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
-		return nil, nil, false, err
-	}
-	baseUrl, err := processoTool.getEruFuncBaseUrl(ctx)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	url := fmt.Sprint(baseUrl, "/", processoTool.projectIdSegment(), "/func/save_apis")
-	body := map[string]interface{}{
-		"api_name":     p.ApiName,
-		"api_category": p.ApiCategory,
-		"org_id":       p.OrgId,
-		"process_id":   p.ProcessId,
-		"api_def":      p.ApiDef,
-	}
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, nil, false, err
-	}
-	toolResult = map[string]interface{}{"result": res}
-	return toolResult, body, true, nil
-}
-
-func (processoTool *ProcessoTool) ExecuteApi(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
-	logs.WithContext(ctx).Debug("processoTool ExecuteApi - Start")
-	p := ProcessoExecuteApiParams{}
-	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
-		return nil, nil, false, err
-	}
-	baseUrl, err := processoTool.getEruFuncBaseUrl(ctx)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	url := fmt.Sprint(baseUrl, "/", processoTool.projectIdSegment(), "/func/exec_api")
-	body := map[string]interface{}{
-		"api_name":   p.ApiName,
-		"org_id":     p.OrgId,
-		"process_id": p.ProcessId,
-	}
-	for k, v := range p.Body {
-		if _, exists := body[k]; exists {
-			continue
-		}
-		body[k] = v
-	}
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, nil, false, err
-	}
-	toolResult = map[string]interface{}{"result": res}
-	return toolResult, body, true, nil
-}
-
-func (processoTool *ProcessoTool) GetApi(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
-	logs.WithContext(ctx).Debug("processoTool GetApi - Start")
-	p := ProcessoGetApiParams{}
-	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
-		return nil, nil, false, err
-	}
-	if p.ApiId == "" && p.ApiName == "" {
-		return nil, nil, false, errors.New("either api_id or api_name must be provided")
-	}
-	baseUrl, err := processoTool.getEruqlBaseUrl(ctx)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/fetch_api")
-	body := map[string]interface{}{
-		"org_id":     p.OrgId,
-		"process_id": p.ProcessId,
-	}
-	if p.ApiId != "" {
-		body["api_id"] = p.ApiId
-	}
-	if p.ApiName != "" {
-		body["api_name"] = p.ApiName
-	}
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, nil, false, err
-	}
-	toolResult = map[string]interface{}{"result": res}
-	return toolResult, body, true, nil
-}
-
-func (processoTool *ProcessoTool) ExecuteQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
-	logs.WithContext(ctx).Debug("processoTool ExecuteQuery - Start")
-	p := ProcessoExecuteQueryParams{}
-	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
-		return nil, nil, false, err
-	}
-	baseUrl, err := processoTool.getEruFuncBaseUrl(ctx)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	url := fmt.Sprint(baseUrl, "/", processoTool.projectIdSegment(), "/func/exec_queries")
-	body := map[string]interface{}{
-		"org_id":     p.OrgId,
-		"process_id": p.ProcessId,
-		"query_name": p.QueryName,
-	}
-	for k, v := range p.Body {
-		if _, exists := body[k]; exists {
-			continue
-		}
-		body[k] = v
-	}
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, nil, false, err
-	}
-	toolResult = map[string]interface{}{"result": res}
-	return toolResult, body, true, nil
-}
-
-func (processoTool *ProcessoTool) SaveQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
-	logs.WithContext(ctx).Debug("processoTool SaveQuery - Start")
-	p := ProcessoSaveQueryParams{}
-	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
-		return nil, nil, false, err
-	}
-	baseUrl, err := processoTool.getEruFuncBaseUrl(ctx)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	url := fmt.Sprint(baseUrl, "/", processoTool.projectIdSegment(), "/func/save_queries_grp")
-	body := map[string]interface{}{
-		"org_id":       p.OrgId,
-		"process_id":   p.ProcessId,
-		"query_name":   p.QueryName,
-		"query_string": p.QueryString,
-		"db_alias":     p.DbAlias,
-		"query_vars":   p.QueryVars,
-		"query_type":   p.QueryType,
-	}
-	if p.QueryId != "" {
-		body["query_id"] = p.QueryId
-	}
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, nil, false, err
-	}
-	toolResult = map[string]interface{}{"result": res}
-	return toolResult, body, true, nil
-}
-
-func (processoTool *ProcessoTool) GetQuery(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
-	logs.WithContext(ctx).Debug("processoTool GetQuery - Start")
-	p := ProcessoGetQueryParams{}
-	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
-		return nil, nil, false, err
-	}
-	if p.QueryId == "" && p.QueryName == "" {
-		return nil, nil, false, errors.New("either query_id or query_name must be provided")
-	}
-	baseUrl, err := processoTool.getEruFuncBaseUrl(ctx)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	url := fmt.Sprint(baseUrl, "/", processoTool.projectIdSegment(), "/func/get_queries_def")
-	body := map[string]interface{}{
-		"org_id":     p.OrgId,
-		"process_id": p.ProcessId,
-	}
-	if p.QueryId != "" {
-		body["query_id"] = p.QueryId
-	}
-	if p.QueryName != "" {
-		body["query_name"] = p.QueryName
-	}
-	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, nil, false, err
-	}
-	toolResult = map[string]interface{}{"result": res}
-	return toolResult, body, true, nil
 }
 
 func (processoTool *ProcessoTool) SaveEntity(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
@@ -1404,12 +1150,92 @@ func (processoTool *ProcessoTool) SaveEntityDownloadVisibility(ctx context.Conte
 	return toolResult, body, true, nil
 }
 
+func (processoTool *ProcessoTool) FetchPages(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool FetchPages - Start")
+	p := ProcessoFetchPagesParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	baseUrl, err := processoTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/", ProcessoFetchPages)
+	body := map[string]interface{}{
+		"org_id":     p.OrgId,
+		"process_id": p.ProcessId,
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, true, nil
+}
+
+func (processoTool *ProcessoTool) FetchPage(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool FetchPage - Start")
+	p := ProcessoFetchPageParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	baseUrl, err := processoTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/", ProcessoFetchPage)
+	body := map[string]interface{}{
+		"org_id":     p.OrgId,
+		"process_id": p.ProcessId,
+		"page_id":    p.PageId,
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, true, nil
+}
+
+func (processoTool *ProcessoTool) SavePage(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool SavePage - Start")
+	p := ProcessoSavePageParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	baseUrl, err := processoTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/", ProcessoSavePage)
+	body := map[string]interface{}{
+		"docs": []map[string]interface{}{
+			{
+				"page_id":    p.PageId,
+				"page_def":   p.PageDef,
+				"org_id":     p.OrgId,
+				"process_id": p.ProcessId,
+				"page_name":  p.PageName,
+			},
+		},
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, true, nil
+}
+
 func init() {
 	tools.RegisterToolCatalog(tools.ToolCatalogEntry{
 		Public:      false,
 		ToolType:    "PROCESSO",
 		Category:    "Data",
-		Description: "Processo tool to save and execute apis (function groups) for an org and process via eru-functions service",
+		Description: "Processo tool to manage entities, fields, entity records, their visibility and pages for an org and process",
 		Actions: func() []tools.ActionInfo {
 			infos := make([]tools.ActionInfo, len(processoToolActions))
 			for i, a := range processoToolActions {
