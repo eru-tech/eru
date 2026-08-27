@@ -82,6 +82,8 @@ type ModuleStoreI interface {
 	DownloadFileSmart(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (fileB64 string, mimeType string, fileName string, fileId string, fileMeta map[string]interface{}, candidates []map[string]interface{}, err error)
 	GdriveWatchChanges(ctx context.Context, projectId string, storageName string, channelId string, pushEndpoint string, expirationMs int64, s ModuleStoreI) (resourceId string, startPageToken string, expiration string, err error)
 	GdriveInspectFile(ctx context.Context, projectId string, storageName string, fileId string, s ModuleStoreI) (map[string]interface{}, error)
+	GdriveCreateSheetMirror(ctx context.Context, projectId string, storageName string, fileId string, copyName string, s ModuleStoreI) (map[string]interface{}, error)
+	GdriveReadSheetValues(ctx context.Context, projectId string, storageName string, fileId string, ranges []string, convertIfOffice bool, s ModuleStoreI) (map[string]interface{}, error)
 	GdriveWatchFile(ctx context.Context, projectId string, storageName string, fileId string, channelId string, pushEndpoint string, expirationMs int64, s ModuleStoreI) (resourceId string, expiration string, err error)
 	GdriveStopWatch(ctx context.Context, projectId string, storageName string, channelId string, resourceId string, s ModuleStoreI) error
 	GdriveListChanges(ctx context.Context, projectId string, storageName string, pageToken string, s ModuleStoreI) (changes []map[string]interface{}, newStartPageToken string, nextPageToken string, err error)
@@ -470,6 +472,22 @@ func (ms *ModuleStore) GdriveInspectFile(ctx context.Context, projectId string, 
 		return nil, gErr
 	}
 	return gd.InspectFile(ctx, projectId, fileId)
+}
+
+func (ms *ModuleStore) GdriveCreateSheetMirror(ctx context.Context, projectId string, storageName string, fileId string, copyName string, s ModuleStoreI) (map[string]interface{}, error) {
+	ctx, gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
+	if gErr != nil {
+		return nil, gErr
+	}
+	return gd.CreateSheetMirror(ctx, projectId, fileId, copyName)
+}
+
+func (ms *ModuleStore) GdriveReadSheetValues(ctx context.Context, projectId string, storageName string, fileId string, ranges []string, convertIfOffice bool, s ModuleStoreI) (map[string]interface{}, error) {
+	ctx, gd, gErr := ms.gdriveFromStorage(ctx, projectId, storageName, s)
+	if gErr != nil {
+		return nil, gErr
+	}
+	return gd.ReadSheetValues(ctx, projectId, fileId, ranges, convertIfOffice)
 }
 
 func (ms *ModuleStore) DownloadFileUnzip(ctx context.Context, projectId string, storageName string, fileDownloadRequest FileDownloadRequest, s ModuleStoreI) (files map[string]FileObj, err error) {

@@ -20,10 +20,12 @@ import (
 )
 
 const (
-	gdriveApiBase    = "https://www.googleapis.com/drive/v3"
-	gdriveUploadBase = "https://www.googleapis.com/upload/drive/v3"
-	gdriveFolderMime = "application/vnd.google-apps.folder"
-	gdriveDocsBase   = "https://docs.google.com"
+	gdriveApiBase         = "https://www.googleapis.com/drive/v3"
+	gdriveUploadBase      = "https://www.googleapis.com/upload/drive/v3"
+	gdriveFolderMime      = "application/vnd.google-apps.folder"
+	gdriveDocsBase        = "https://docs.google.com"
+	gdriveSheetsBase      = "https://sheets.googleapis.com/v4/spreadsheets"
+	gdriveNativeSheetMime = "application/vnd.google-apps.spreadsheet"
 )
 
 type GdriveStorage struct {
@@ -850,6 +852,156 @@ func (g *GdriveStorage) ListChanges(ctx context.Context, projectId, pageToken st
 	return
 }
 
+func (g *GdriveStorage) sheetsHeaders(accessToken string) http.Header {
+	h := http.Header{}
+	h.Set("Authorization", "Bearer "+accessToken)
+	h.Set("Content-Type", "application/json")
+	h.Set("Cache-Control", "no-cache, no-store, max-age=0")
+	h.Set("Pragma", "no-cache")
+	return h
+}
+
+func (g *GdriveStorage) sheetsMeta(ctx context.Context, accessToken, fileId string) (map[string]interface{}, error) {
+	res, _, _, status, err := utils.CallHttp(ctx, http.MethodGet, fmt.Sprintf("%s/%s", gdriveSheetsBase, fileId), g.sheetsHeaders(accessToken), map[string]string{}, nil, map[string]string{
+		"fields": "spreadsheetId,properties(title,timeZone),sheets(properties(sheetId,title,index,gridProperties(rowCount,columnCount)))",
+	}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("sheets api metadata failed (status %d): %w", status, err)
+	}
+	rm, _ := res.(map[string]interface{})
+	return rm, nil
+}
+
+func gdriveIsOfficeFileError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "must not be an Office file")
+}
+
+func (g *GdriveStorage) convertToSheet(ctx context.Context, accessToken, fileId, copyName string) (string, error) {
+	if copyName == "" {
+		copyName = "eru-tmp-sheet-" + ksuid.New().String()
+	}
+	body := map[string]interface{}{
+		"name":     copyName,
+		"mimeType": gdriveNativeSheetMime,
+	}
+	res, _, _, status, err := utils.CallHttp(ctx, http.MethodPost, fmt.Sprintf("%s/files/%s/copy", gdriveApiBase, fileId), g.sheetsHeaders(accessToken), map[string]string{}, nil, map[string]string{
+		"supportsAllDrives": "true",
+		"fields":            "id,mimeType",
+	}, body)
+	if err != nil {
+		return "", fmt.Errorf("drive convert copy failed (status %d): %w", status, err)
+	}
+	rm, _ := res.(map[string]interface{})
+	copyId, _ := rm["id"].(string)
+	if copyId == "" {
+		return "", errors.New("drive convert copy returned no file id")
+	}
+	return copyId, nil
+}
+
+func (g *GdriveStorage) deleteFile(ctx context.Context, accessToken, fileId string) {
+	_, _, _, status, err := utils.CallHttp(ctx, http.MethodDelete, fmt.Sprintf("%s/files/%s", gdriveApiBase, fileId), g.sheetsHeaders(accessToken), map[string]string{}, nil, map[string]string{"supportsAllDrives": "true"}, nil)
+	if err != nil {
+		logs.WithContext(ctx).Warn(fmt.Sprintf("failed to delete temp drive file %s (status %d): %s", fileId, status, err.Error()))
+	}
+}
+
+func (g *GdriveStorage) ReadSheetValues(ctx context.Context, projectId, fileId string, ranges []string, convertIfOffice bool) (map[string]interface{}, error) {
+	accessToken, err := g.getAccessToken(ctx, projectId)
+	if err != nil {
+		return nil, err
+	}
+	readId := fileId
+	readSource := "native_sheet"
+	meta, mErr := g.sheetsMeta(ctx, accessToken, fileId)
+	if mErr != nil {
+		if !convertIfOffice || !gdriveIsOfficeFileError(mErr) {
+			return nil, mErr
+		}
+		logs.WithContext(ctx).Info(fmt.Sprintf("file %s is an Office file - converting a temp copy to a native sheet to read live values", fileId))
+		copyId, cErr := g.convertToSheet(ctx, accessToken, fileId, "")
+		if cErr != nil {
+			return nil, fmt.Errorf("%s ; conversion fallback failed: %w", mErr.Error(), cErr)
+		}
+		defer g.deleteFile(ctx, accessToken, copyId)
+		readId = copyId
+		readSource = "converted_copy"
+		meta, mErr = g.sheetsMeta(ctx, accessToken, copyId)
+		if mErr != nil {
+			return nil, mErr
+		}
+	}
+	if len(ranges) == 0 {
+		sheets, _ := meta["sheets"].([]interface{})
+		for _, sh := range sheets {
+			shm, _ := sh.(map[string]interface{})
+			if shm == nil {
+				continue
+			}
+			props, _ := shm["properties"].(map[string]interface{})
+			if props == nil {
+				continue
+			}
+			if title, ok := props["title"].(string); ok && title != "" {
+				ranges = append(ranges, title)
+			}
+		}
+	}
+	if len(ranges) == 0 {
+		return nil, errors.New("no sheets found to read")
+	}
+	params := map[string]string{
+		"valueRenderOption":    "UNFORMATTED_VALUE",
+		"dateTimeRenderOption": "FORMATTED_STRING",
+		"majorDimension":       "ROWS",
+	}
+	qs := ""
+	for _, r := range ranges {
+		if qs == "" {
+			qs = "?ranges=" + url.QueryEscape(r)
+		} else {
+			qs = qs + "&ranges=" + url.QueryEscape(r)
+		}
+	}
+	valUrl := fmt.Sprintf("%s/%s/values:batchGet%s", gdriveSheetsBase, readId, qs)
+	res, _, _, status, vErr := utils.CallHttp(ctx, http.MethodGet, valUrl, g.sheetsHeaders(accessToken), map[string]string{}, nil, params, nil)
+	if vErr != nil {
+		return nil, fmt.Errorf("sheets api values.batchGet failed (status %d): %w", status, vErr)
+	}
+	rm, _ := res.(map[string]interface{})
+	out := map[string]interface{}{
+		"spreadsheet":  meta,
+		"ranges":       ranges,
+		"read_source":  readSource,
+		"read_file_id": readId,
+	}
+	if rm != nil {
+		out["value_ranges"] = rm["valueRanges"]
+	}
+	return out, nil
+}
+
+func (g *GdriveStorage) CreateSheetMirror(ctx context.Context, projectId, fileId, copyName string) (map[string]interface{}, error) {
+	accessToken, err := g.getAccessToken(ctx, projectId)
+	if err != nil {
+		return nil, err
+	}
+	copyId, cErr := g.convertToSheet(ctx, accessToken, fileId, copyName)
+	if cErr != nil {
+		return nil, cErr
+	}
+	out := map[string]interface{}{
+		"source_file_id": fileId,
+		"mirror_file_id": copyId,
+		"mirror_url":     fmt.Sprintf("%s/spreadsheets/d/%s/edit", gdriveDocsBase, copyId),
+		"next_step":      "open mirror_url once in a desktop browser as the storage account and click Allow access on the IMPORTRANGE prompt; after that read_sheet_values on mirror_file_id returns live data",
+	}
+	if sm, smErr := g.sheetsMeta(ctx, accessToken, copyId); smErr == nil {
+		out["spreadsheet"] = sm
+	}
+	return out, nil
+}
+
 func (g *GdriveStorage) InspectFile(ctx context.Context, projectId, fileId string) (map[string]interface{}, error) {
 	tok, err := g.getAccessToken(ctx, projectId)
 	if err != nil {
@@ -881,6 +1033,12 @@ func (g *GdriveStorage) InspectFile(ctx context.Context, projectId, fileId strin
 		out["revisions_error"] = fmt.Sprintf("status %d : %s", rStatus, rErr.Error())
 	} else if rm, ok := revRes.(map[string]interface{}); ok {
 		out["revisions"] = rm["revisions"]
+	}
+
+	if sm, smErr := g.sheetsMeta(ctx, tok, fileId); smErr != nil {
+		out["sheets_api_error"] = smErr.Error()
+	} else {
+		out["sheets_api"] = sm
 	}
 
 	if fileMeta != nil {

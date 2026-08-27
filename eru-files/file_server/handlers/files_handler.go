@@ -693,9 +693,9 @@ func GetStorageTokenHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 }
 
 type gdriveWatchChangesBody struct {
-	ChannelId     string `json:"channel_id"`
-	PushEndpoint  string `json:"push_endpoint"`
-	ExpirationMs  int64  `json:"expiration_ms"`
+	ChannelId    string `json:"channel_id"`
+	PushEndpoint string `json:"push_endpoint"`
+	ExpirationMs int64  `json:"expiration_ms"`
 }
 
 type gdriveWatchFileBody struct {
@@ -820,6 +820,63 @@ func GdriveInspectFileHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	}
 }
 
+type gdriveSheetValuesBody struct {
+	Ranges          []string `json:"ranges"`
+	ConvertIfOffice *bool    `json:"convert_if_office"`
+}
+
+type gdriveSheetMirrorBody struct {
+	Name string `json:"name"`
+}
+
+func GdriveCreateSheetMirrorHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		storageName := vars["storagename"]
+		fileId := vars["file_id"]
+		body := gdriveSheetMirrorBody{}
+		if r.Body != nil {
+			_ = json.NewDecoder(r.Body).Decode(&body)
+		}
+		res, err := sh.Store.GdriveCreateSheetMirror(r.Context(), projectId, storageName, fileId, body.Name, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(res)
+	}
+}
+
+func GdriveReadSheetValuesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		vars := mux.Vars(r)
+		projectId := vars["project"]
+		storageName := vars["storagename"]
+		fileId := vars["file_id"]
+		body := gdriveSheetValuesBody{}
+		if r.Body != nil {
+			_ = json.NewDecoder(r.Body).Decode(&body)
+		}
+		convertIfOffice := false
+		if body.ConvertIfOffice != nil {
+			convertIfOffice = *body.ConvertIfOffice
+		}
+		res, err := sh.Store.GdriveReadSheetValues(r.Context(), projectId, storageName, fileId, body.Ranges, convertIfOffice, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(res)
+	}
+}
+
 func GdriveListChangesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -845,9 +902,9 @@ func GdriveListChangesHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		}
 		server_handlers.FormatResponse(w, http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"changes":               changes,
-			"new_start_page_token":  newStartPageToken,
-			"next_page_token":       nextPageToken,
+			"changes":              changes,
+			"new_start_page_token": newStartPageToken,
+			"next_page_token":      nextPageToken,
 		})
 	}
 }

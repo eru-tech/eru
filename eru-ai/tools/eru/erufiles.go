@@ -33,6 +33,8 @@ const (
 	ErufilesUploadB64         = "upload_b64"
 	ErufilesDownload          = "download"
 	ErufilesInspectFile       = "inspect_file"
+	ErufilesReadSheetValues   = "read_sheet_values"
+	ErufilesCreateSheetMirror = "create_sheet_mirror"
 	ErufilesSubscribe         = "subscribe"
 	ErufilesSubscribeFile     = "subscribe_file"
 	ErufilesRenewSubscription = "renew_subscription"
@@ -73,6 +75,17 @@ type ErufilesDownloadParams struct {
 
 type ErufilesInspectFileParams struct {
 	FileId string `json:"file_id" eru:"required" desc:"GDrive file id to inspect"`
+}
+
+type ErufilesReadSheetValuesParams struct {
+	FileId          string   `json:"file_id" eru:"required" desc:"GDrive spreadsheet file id"`
+	Ranges          []string `json:"ranges" desc:"optional A1 ranges or sheet/tab names; all tabs are read when empty"`
+	ConvertIfOffice *bool    `json:"convert_if_office" desc:"when the file is an Excel/Office file, read it via a throwaway native-sheet copy (default false; IMPORTRANGE columns come back as #REF in a throwaway copy - use create_sheet_mirror instead)"`
+}
+
+type ErufilesCreateSheetMirrorParams struct {
+	FileId string `json:"file_id" eru:"required" desc:"GDrive Excel file id to mirror as a native Google Sheet"`
+	Name   string `json:"name" desc:"optional name for the mirror sheet"`
 }
 
 type ErufilesSubscribeParams struct {
@@ -136,6 +149,24 @@ var erufilesToolActions = []tools.ToolAction{
 		OutputSchema: eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
 			return utils.StructToJSONSchema(reflect.TypeOf(ErufilesInspectFileParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ErufilesReadSheetValues,
+		Description:  "Read live cell values of a Google Drive spreadsheet via the Sheets API. Returns current computed values including formula results such as IMPORTRANGE, which a file download cannot see because formula recalculation never rewrites the stored file. Use this instead of download for spreadsheet data.",
+		SystemPrompt: "Read current spreadsheet values from Drive using the Sheets API.",
+		OutputSchema: eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ErufilesReadSheetValuesParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ErufilesCreateSheetMirror,
+		Description:  "Create a persistent native Google Sheet mirror of an Excel file stored on Drive. Returns the mirror file id and url. A human must open the url once in a desktop browser and approve the IMPORTRANGE access prompt; afterwards read_sheet_values on the mirror id returns live data.",
+		SystemPrompt: "Create a native Google Sheet mirror of an Excel file so live formula values can be read.",
+		OutputSchema: eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ErufilesCreateSheetMirrorParams{}), []string{})
 		},
 	},
 	{
@@ -392,6 +423,10 @@ func (t *ErufilesTool) Execute(ctx context.Context, projectId string, tenantId s
 		toolResult, toolRequest, persistStore, err = t.Download(ctx, projectId, params)
 	case ErufilesInspectFile:
 		toolResult, toolRequest, persistStore, err = t.InspectFile(ctx, projectId, params)
+	case ErufilesReadSheetValues:
+		toolResult, toolRequest, persistStore, err = t.ReadSheetValues(ctx, projectId, params)
+	case ErufilesCreateSheetMirror:
+		toolResult, toolRequest, persistStore, err = t.CreateSheetMirror(ctx, projectId, params)
 	case ErufilesSubscribe:
 		toolResult, toolRequest, persistStore, err = t.Subscribe(ctx, projectId, tenantId, params, false)
 	case ErufilesSubscribeFile:
@@ -697,6 +732,77 @@ func (t *ErufilesTool) InspectFile(ctx context.Context, projectId string, params
 		rm = map[string]interface{}{"raw": res}
 	}
 	return rm, map[string]interface{}{"file_id": p.FileId}, false, nil
+}
+
+func (t *ErufilesTool) ReadSheetValues(ctx context.Context, projectId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("ErufilesTool ReadSheetValues - Start")
+	if t.StorageType != erufilesGdrive {
+		err = fmt.Errorf("read_sheet_values is only supported for GDRIVE storage")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	p := ErufilesReadSheetValuesParams{}
+	if err = unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	if p.FileId == "" {
+		err = errors.New("file_id is required")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	base, err := erufilesBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	valuesUrl := fmt.Sprintf("%s/files/%s/%s/gdrive/sheetvalues/%s", base, projectId, t.StorageName, url.PathEscape(p.FileId))
+	body := map[string]interface{}{"ranges": p.Ranges}
+	if p.ConvertIfOffice != nil {
+		body["convert_if_office"] = *p.ConvertIfOffice
+	}
+	res, _, _, status, callErr := utils.CallHttp(ctx, http.MethodPost, valuesUrl, t.buildHeaders(ctx), map[string]string{}, nil, map[string]string{}, body)
+	if callErr != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("erufiles gdrive sheetvalues failed (status %d): %s", status, callErr.Error()))
+		return nil, nil, false, callErr
+	}
+	rm, _ := res.(map[string]interface{})
+	if rm == nil {
+		rm = map[string]interface{}{"raw": res}
+	}
+	return rm, body, false, nil
+}
+
+func (t *ErufilesTool) CreateSheetMirror(ctx context.Context, projectId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("ErufilesTool CreateSheetMirror - Start")
+	if t.StorageType != erufilesGdrive {
+		err = fmt.Errorf("create_sheet_mirror is only supported for GDRIVE storage")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	p := ErufilesCreateSheetMirrorParams{}
+	if err = unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	if p.FileId == "" {
+		err = errors.New("file_id is required")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	base, err := erufilesBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	mirrorUrl := fmt.Sprintf("%s/files/%s/%s/gdrive/sheetmirror/%s", base, projectId, t.StorageName, url.PathEscape(p.FileId))
+	body := map[string]interface{}{"name": p.Name}
+	res, _, _, status, callErr := utils.CallHttp(ctx, http.MethodPost, mirrorUrl, t.buildHeaders(ctx), map[string]string{}, nil, map[string]string{}, body)
+	if callErr != nil {
+		logs.WithContext(ctx).Error(fmt.Sprintf("erufiles gdrive sheetmirror failed (status %d): %s", status, callErr.Error()))
+		return nil, nil, false, callErr
+	}
+	rm, _ := res.(map[string]interface{})
+	if rm == nil {
+		rm = map[string]interface{}{"raw": res}
+	}
+	return rm, body, false, nil
 }
 
 func (t *ErufilesTool) SubscribeFile(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, unsubscribe bool) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
