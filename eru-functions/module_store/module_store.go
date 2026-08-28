@@ -391,13 +391,13 @@ func (ms *ModuleStore) GetAndValidateRoute(ctx context.Context, routeName string
 	return cloneRoute, nil
 }
 
-func (ms *ModuleStore) resolveFunc(projectId string, tenantId string, funcName string) (funcGroup functions.FuncGroup, found bool) {
+func (ms *ModuleStore) resolveFunc(ctx context.Context, projectId string, tenantId string, funcName string) (funcGroup functions.FuncGroup, found bool) {
 	prg, ok := ms.Projects[projectId]
 	if !ok {
 		return
 	}
-	if tenantId != "" {
-		if tc, tcOk := prg.Tenants[tenantId]; tcOk {
+	for _, tid := range eru_utils.TenantLookupOrder(ctx, tenantId) {
+		if tc, tcOk := prg.Tenants[tid]; tcOk {
 			if fg, fgOk := tc.FuncGroups[funcName]; fgOk {
 				return fg, true
 			}
@@ -410,7 +410,7 @@ func (ms *ModuleStore) resolveFunc(projectId string, tenantId string, funcName s
 func (ms *ModuleStore) GetFunc(ctx context.Context, funcName string, projectId string, tenantId string, s ModuleStoreI) (cloneFunc functions.FuncGroup, err error) {
 	logs.WithContext(ctx).Debug("GetFunc - Start")
 	if _, ok := ms.Projects[projectId]; ok {
-		funcGroup, found := ms.resolveFunc(projectId, tenantId, funcName)
+		funcGroup, found := ms.resolveFunc(ctx, projectId, tenantId, funcName)
 		if !found {
 			return funcGroup, errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
 		}
@@ -421,7 +421,7 @@ func (ms *ModuleStore) GetFunc(ctx context.Context, funcName string, projectId s
 func (ms *ModuleStore) GetAndValidateFunc(ctx context.Context, funcName string, projectId string, tenantId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (cloneFunc functions.FuncGroup, err error) {
 	logs.WithContext(ctx).Debug("GetAndValidateFunc - Start")
 	if _, ok := ms.Projects[projectId]; ok {
-		funcGroup, found := ms.resolveFunc(projectId, tenantId, funcName)
+		funcGroup, found := ms.resolveFunc(ctx, projectId, tenantId, funcName)
 		if !found {
 			return funcGroup, errors.New(fmt.Sprint("Function ", funcName, " does not exists"))
 		}
@@ -751,10 +751,16 @@ func (ms *ModuleStore) GetFunctionNames(ctx context.Context, projectId string, t
 		return nil, err
 	}
 	if tenantId != "" {
-		if tc, tcOk := prg.Tenants[tenantId]; tcOk {
-			for k := range tc.FuncGroups {
-				functions = append(functions, k)
+		funcNames := make(map[string]bool)
+		for _, tid := range eru_utils.TenantLookupOrder(ctx, tenantId) {
+			if tc, tcOk := prg.Tenants[tid]; tcOk {
+				for k := range tc.FuncGroups {
+					funcNames[k] = true
+				}
 			}
+		}
+		for k := range funcNames {
+			functions = append(functions, k)
 		}
 		return
 	}

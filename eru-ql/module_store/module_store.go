@@ -17,6 +17,7 @@ import (
 	eru_writes "github.com/eru-tech/eru/eru-read-write/eru_writes"
 	"github.com/eru-tech/eru/eru-security-rule/security_rule"
 	"github.com/eru-tech/eru/eru-store/store"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 )
 
 const (
@@ -38,50 +39,71 @@ type MyQueryListItem struct {
 }
 
 // resolveDataSource returns the datasource for (projectId, tenantId, dbAlias), resolving
-// the tenant's datasources first and falling back to project-level datasources.
-func (ms *ModuleStore) resolveDataSource(projectId string, tenantId string, dbAlias string) (datasource *module_model.DataSource, isTenant bool, found bool) {
+// the route tenant's datasources first, then the default tenant's (when the route carried
+// one) and finally falling back to project-level datasources. resolvedTenantId is the tenant
+// the datasource was found under, or "" when it came from project level.
+func (ms *ModuleStore) resolveDataSource(ctx context.Context, projectId string, tenantId string, dbAlias string) (datasource *module_model.DataSource, resolvedTenantId string, found bool) {
 	prj, ok := ms.Projects[projectId]
 	if !ok {
-		return nil, false, false
+		return nil, "", false
 	}
-	if tenantId != "" {
-		if tc, ok := prj.Tenants[tenantId]; ok {
+	for _, tid := range eru_utils.TenantLookupOrder(ctx, tenantId) {
+		if tc, ok := prj.Tenants[tid]; ok {
 			if d, ok := tc.DataSources[dbAlias]; ok {
-				return d, true, true
+				return d, tid, true
 			}
 		}
 	}
 	if d, ok := prj.DataSources[dbAlias]; ok {
-		return d, false, true
+		return d, "", true
 	}
-	return nil, false, false
+	return nil, "", false
+}
+
+func (ms *ModuleStore) resolveDataSourceForWrite(projectId string, tenantId string, dbAlias string) (datasource *module_model.DataSource, resolvedTenantId string, found bool) {
+	prj, ok := ms.Projects[projectId]
+	if !ok {
+		return nil, "", false
+	}
+	if tenantId != "" {
+		if tc, ok := prj.Tenants[tenantId]; ok {
+			if d, ok := tc.DataSources[dbAlias]; ok {
+				return d, tenantId, true
+			}
+		}
+	}
+	if d, ok := prj.DataSources[dbAlias]; ok {
+		return d, "", true
+	}
+	return nil, "", false
 }
 
 // persistDataSource writes a single tenant datasource row, or the whole store for a project datasource.
-func (ms *ModuleStore) persistDataSource(ctx context.Context, projectId string, tenantId string, isTenant bool, datasource *module_model.DataSource, realStore ModuleStoreI) error {
-	if isTenant {
+func (ms *ModuleStore) persistDataSource(ctx context.Context, projectId string, tenantId string, datasource *module_model.DataSource, realStore ModuleStoreI) error {
+	if tenantId != "" {
 		return realStore.SaveTenantObject(ctx, StoreTenantDsTableName, "datasource_id", "db_name", projectId, tenantId, datasource.DbAlias, datasource, realStore)
 	}
 	return realStore.SaveStore(ctx, projectId, "", realStore)
 }
 
-// resolveMyQuery returns the query for (projectId, tenantId, queryName), tenant-first then project.
-func (ms *ModuleStore) resolveMyQuery(projectId string, tenantId string, queryName string) (myquery *module_model.MyQuery, isTenant bool, found bool) {
+// resolveMyQuery returns the query for (projectId, tenantId, queryName), route tenant first,
+// then the default tenant carried on the route, then project level.
+func (ms *ModuleStore) resolveMyQuery(ctx context.Context, projectId string, tenantId string, queryName string) (myquery *module_model.MyQuery, resolvedTenantId string, found bool) {
 	prj, ok := ms.Projects[projectId]
 	if !ok {
-		return nil, false, false
+		return nil, "", false
 	}
-	if tenantId != "" {
-		if tc, ok := prj.Tenants[tenantId]; ok {
+	for _, tid := range eru_utils.TenantLookupOrder(ctx, tenantId) {
+		if tc, ok := prj.Tenants[tid]; ok {
 			if q, ok := tc.MyQueries[queryName]; ok {
-				return q, true, true
+				return q, tid, true
 			}
 		}
 	}
 	if q, ok := prj.MyQueries[queryName]; ok {
-		return q, false, true
+		return q, "", true
 	}
-	return nil, false, false
+	return nil, "", false
 }
 
 // ensureTenant returns the tenant config for a project, creating it if missing.
@@ -483,23 +505,23 @@ func (ms *ModuleStore) SaveDataSource(ctx context.Context, projectId string, ten
 		}
 	}
 	logs.WithContext(ctx).Info("SaveStore called from SaveDataSource")
-	return ms.persistDataSource(ctx, projectId, tenantId, tenantId != "", datasource, realStore)
+	return ms.persistDataSource(ctx, projectId, tenantId, datasource, realStore)
 }
 
 func (ms *ModuleStore) RemoveDataSource(ctx context.Context, projectId string, tenantId string, dbAlias string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Debug("RemoveDataSource - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
-	datasource, isTenant, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	datasource, resolvedTenantId, found := ms.resolveDataSourceForWrite(projectId, tenantId, dbAlias)
 	if !found {
 		err := errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
-	if isTenant {
-		delete(ms.Projects[projectId].Tenants[tenantId].DataSources, dbAlias)
+	if resolvedTenantId != "" {
+		delete(ms.Projects[projectId].Tenants[resolvedTenantId].DataSources, dbAlias)
 		logs.WithContext(ctx).Info("RemoveTenantObject called from RemoveDataSource")
-		return realStore.RemoveTenantObject(ctx, StoreTenantDsTableName, "datasource_id", "db_name", projectId, tenantId, dbAlias, realStore)
+		return realStore.RemoveTenantObject(ctx, StoreTenantDsTableName, "datasource_id", "db_name", projectId, resolvedTenantId, dbAlias, realStore)
 	}
 	delete(ms.Projects[projectId].DataSources, dbAlias)
 	_ = datasource
@@ -509,7 +531,7 @@ func (ms *ModuleStore) RemoveDataSource(ctx context.Context, projectId string, t
 
 func (ms *ModuleStore) GetDataSource(ctx context.Context, projectId string, tenantId string, dbAlias string) (datasource *module_model.DataSource, err error) {
 	logs.WithContext(ctx).Debug("GetDataSource - Start")
-	datasource, _, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	datasource, _, found := ms.resolveDataSource(ctx, projectId, tenantId, dbAlias)
 	if !found {
 		err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -529,8 +551,9 @@ func (ms *ModuleStore) GetDataSources(ctx context.Context, projectId string, ten
 	for k, v := range ms.Projects[projectId].DataSources {
 		datasources[k] = v
 	}
-	if tenantId != "" {
-		if tc, ok := ms.Projects[projectId].Tenants[tenantId]; ok {
+	lookupOrder := eru_utils.TenantLookupOrder(ctx, tenantId)
+	for i := len(lookupOrder) - 1; i >= 0; i-- {
+		if tc, ok := ms.Projects[projectId].Tenants[lookupOrder[i]]; ok {
 			for k, v := range tc.DataSources {
 				datasources[k] = v
 			}
@@ -548,9 +571,12 @@ func (ms *ModuleStore) GetDataSourcesList(ctx context.Context, projectId string,
 	}
 	datasources = make(map[string]*module_model.DataSource)
 	if tenantId != "" {
-		if tc, ok := ms.Projects[projectId].Tenants[tenantId]; ok {
-			for k, v := range tc.DataSources {
-				datasources[k] = v
+		lookupOrder := eru_utils.TenantLookupOrder(ctx, tenantId)
+		for i := len(lookupOrder) - 1; i >= 0; i-- {
+			if tc, ok := ms.Projects[projectId].Tenants[lookupOrder[i]]; ok {
+				for k, v := range tc.DataSources {
+					datasources[k] = v
+				}
 			}
 		}
 		return datasources, nil
@@ -565,7 +591,7 @@ func (ms *ModuleStore) CheckTableExists(ctx context.Context, projectId string, t
 	logs.WithContext(ctx).Debug("CheckTableExists - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
-	datasource, _, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	datasource, _, found := ms.resolveDataSource(ctx, projectId, tenantId, dbAlias)
 	if !found {
 		err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -597,7 +623,7 @@ func (ms *ModuleStore) UpdateSchemaTables(ctx context.Context, projectId string,
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
 	var tmpList []string
-	datasource, isTenant, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	datasource, resolvedTenantId, found := ms.resolveDataSourceForWrite(projectId, tenantId, dbAlias)
 	if !found {
 		err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -621,13 +647,13 @@ func (ms *ModuleStore) UpdateSchemaTables(ctx context.Context, projectId string,
 		delete(datasource.OtherTables, tmpList[i])
 	}
 	logs.WithContext(ctx).Info("SaveStore called from UpdateSchemaTables")
-	return datasource, ms.persistDataSource(ctx, projectId, tenantId, isTenant, datasource, realStore)
+	return datasource, ms.persistDataSource(ctx, projectId, resolvedTenantId, datasource, realStore)
 }
 func (ms *ModuleStore) AddSchemaTable(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string, realStore ModuleStoreI) (tables map[string]interface{}, err error) {
 	logs.WithContext(ctx).Debug("AddSchemaTable - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
-	datasource, isTenant, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	datasource, resolvedTenantId, found := ms.resolveDataSourceForWrite(projectId, tenantId, dbAlias)
 	if !found {
 		err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -676,7 +702,7 @@ func (ms *ModuleStore) AddSchemaTable(ctx context.Context, projectId string, ten
 			}
 		}
 		logs.WithContext(ctx).Info("SaveStore called from AddSchemaTable")
-		err = ms.persistDataSource(ctx, projectId, tenantId, isTenant, datasource, realStore)
+		err = ms.persistDataSource(ctx, projectId, resolvedTenantId, datasource, realStore)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
@@ -695,7 +721,7 @@ func (ms *ModuleStore) RemoveSchemaTable(ctx context.Context, projectId string, 
 	logs.WithContext(ctx).Debug("RemoveSchemaTable - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
-	datasource, isTenant, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	datasource, resolvedTenantId, found := ms.resolveDataSourceForWrite(projectId, tenantId, dbAlias)
 	if !found {
 		err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -716,7 +742,7 @@ func (ms *ModuleStore) RemoveSchemaTable(ctx context.Context, projectId string, 
 			}
 		}
 		logs.WithContext(ctx).Info("SaveStore called from RemoveSchemaTable")
-		err = ms.persistDataSource(ctx, projectId, tenantId, isTenant, datasource, realStore)
+		err = ms.persistDataSource(ctx, projectId, resolvedTenantId, datasource, realStore)
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
@@ -736,7 +762,7 @@ func (ms *ModuleStore) AddSchemaJoin(ctx context.Context, projectId string, tena
 	logs.WithContext(ctx).Debug("AddSchemaJoin - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
-	datasource, isTenant, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	datasource, resolvedTenantId, found := ms.resolveDataSourceForWrite(projectId, tenantId, dbAlias)
 	if !found {
 		err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -744,7 +770,7 @@ func (ms *ModuleStore) AddSchemaJoin(ctx context.Context, projectId string, tena
 	}
 	datasource.AddTableJoins(ctx, tj)
 	logs.WithContext(ctx).Info("SaveStore called from AddSchemaJoin")
-	err = ms.persistDataSource(ctx, projectId, tenantId, isTenant, datasource, realStore)
+	err = ms.persistDataSource(ctx, projectId, resolvedTenantId, datasource, realStore)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
@@ -756,7 +782,7 @@ func (ms *ModuleStore) RemoveSchemaJoin(ctx context.Context, projectId string, t
 	logs.WithContext(ctx).Debug("RemoveSchemaJoin - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
-	datasource, isTenant, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	datasource, resolvedTenantId, found := ms.resolveDataSourceForWrite(projectId, tenantId, dbAlias)
 	if !found {
 		err = errors.New(fmt.Sprint("Datasource ", dbAlias, " not found"))
 		logs.WithContext(ctx).Error(err.Error())
@@ -764,7 +790,7 @@ func (ms *ModuleStore) RemoveSchemaJoin(ctx context.Context, projectId string, t
 	}
 	datasource.RemoveTableJoins(ctx, tj)
 	logs.WithContext(ctx).Info("SaveStore called from RemoveSchemaJoin")
-	err = ms.persistDataSource(ctx, projectId, tenantId, isTenant, datasource, realStore)
+	err = ms.persistDataSource(ctx, projectId, resolvedTenantId, datasource, realStore)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, err
@@ -912,10 +938,23 @@ func (ms *ModuleStore) RemoveMyQuery(ctx context.Context, projectId string, tena
 	}
 }
 
+func (ms *ModuleStore) tenantMyQueries(ctx context.Context, projectId string, tenantId string) map[string]*module_model.MyQuery {
+	queries := make(map[string]*module_model.MyQuery)
+	lookupOrder := eru_utils.TenantLookupOrder(ctx, tenantId)
+	for i := len(lookupOrder) - 1; i >= 0; i-- {
+		if tc, tcOk := ms.Projects[projectId].Tenants[lookupOrder[i]]; tcOk {
+			for k, v := range tc.MyQueries {
+				queries[k] = v
+			}
+		}
+	}
+	return queries
+}
+
 func (ms *ModuleStore) GetMyQuery(ctx context.Context, projectId string, tenantId string, queryName string) (myquery module_model.MyQuery, err error) {
 	logs.WithContext(ctx).Debug("GetMyQuery - Start")
 	if _, ok := ms.Projects[projectId]; ok {
-		if myqueryPointer, _, found := ms.resolveMyQuery(projectId, tenantId, queryName); found {
+		if myqueryPointer, _, found := ms.resolveMyQuery(ctx, projectId, tenantId, queryName); found {
 			myquery = *myqueryPointer
 			return myquery, nil
 		} else {
@@ -940,11 +979,7 @@ func (ms *ModuleStore) GetMyQueries(ctx context.Context, projectId string, tenan
 		queriesToReturn := make(map[string]module_model.MyQuery)
 		queries := ms.Projects[projectId].MyQueries
 		if tenantId != "" {
-			if tc, tcOk := ms.Projects[projectId].Tenants[tenantId]; tcOk {
-				queries = tc.MyQueries
-			} else {
-				queries = nil
-			}
+			queries = ms.tenantMyQueries(ctx, projectId, tenantId)
 		}
 		for k, mq := range queries {
 			if strings.EqualFold(mq.QueryType, queryType) {
@@ -966,11 +1001,7 @@ func (ms *ModuleStore) GetMyQueriesNames(ctx context.Context, projectId string, 
 	if _, ok := ms.Projects[projectId]; ok {
 		queries := ms.Projects[projectId].MyQueries
 		if tenantId != "" {
-			if tc, tcOk := ms.Projects[projectId].Tenants[tenantId]; tcOk {
-				queries = tc.MyQueries
-			} else {
-				queries = nil
-			}
+			queries = ms.tenantMyQueries(ctx, projectId, tenantId)
 		}
 		for k, mq := range queries {
 			myqueries = append(myqueries, MyQueryListItem{QueryName: k, QueryType: mq.QueryType})
@@ -1144,7 +1175,7 @@ func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, te
 	defer realStore.GetMutex().Unlock()
 	tableExists := false
 	oldTableObj := make(map[string]common_types.TableColsMetaData)
-	db, isTenant, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	db, resolvedTenantId, found := ms.resolveDataSourceForWrite(projectId, tenantId, dbAlias)
 	if _, projOk := ms.Projects[projectId]; projOk {
 		if found {
 			if to, ok := db.SchemaTables[tableName]; ok {
@@ -1214,7 +1245,7 @@ func (ms *ModuleStore) SaveSchemaTable(ctx context.Context, projectId string, te
 					db.SchemaTables[tn] = tableObj
 				}
 			}
-			err = ms.persistDataSource(ctx, projectId, tenantId, isTenant, db, realStore)
+			err = ms.persistDataSource(ctx, projectId, resolvedTenantId, db, realStore)
 			if err != nil {
 				err = logs.Err(ctx, err, "error saving store")
 				return err
@@ -1240,7 +1271,7 @@ func (ms *ModuleStore) SaveTableSecurity(ctx context.Context, projectId string, 
 	logs.WithContext(ctx).Debug("SaveTableSecurity - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
-	db, isTenant, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	db, resolvedTenantId, found := ms.resolveDataSourceForWrite(projectId, tenantId, dbAlias)
 	if _, projOk := ms.Projects[projectId]; projOk {
 		if found {
 			if _, ok := db.SchemaTables[tableName]; ok || securityRules.IsTemplate {
@@ -1274,14 +1305,14 @@ func (ms *ModuleStore) SaveTableSecurity(ctx context.Context, projectId string, 
 		return err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from SaveTableSecurity ", tableName))
-	return ms.persistDataSource(ctx, projectId, tenantId, isTenant, db, realStore)
+	return ms.persistDataSource(ctx, projectId, resolvedTenantId, db, realStore)
 }
 
 func (ms *ModuleStore) RemoveTableSecurity(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("RemoveTableSecurity - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
-	db, isTenant, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	db, resolvedTenantId, found := ms.resolveDataSourceForWrite(projectId, tenantId, dbAlias)
 	if _, projOk := ms.Projects[projectId]; projOk {
 		if found {
 			if _, ok := db.SchemaTablesSecurity[tableName]; ok {
@@ -1312,14 +1343,14 @@ func (ms *ModuleStore) RemoveTableSecurity(ctx context.Context, projectId string
 		return err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from SaveTableSecurity ", tableName))
-	return ms.persistDataSource(ctx, projectId, tenantId, isTenant, db, realStore)
+	return ms.persistDataSource(ctx, projectId, resolvedTenantId, db, realStore)
 }
 
 func (ms *ModuleStore) SaveColumnMasking(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string, colName string, columnMasking common_types.ColumnMasking, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveColumnMasking - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
-	db, isTenant, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	db, resolvedTenantId, found := ms.resolveDataSourceForWrite(projectId, tenantId, dbAlias)
 	if _, projOk := ms.Projects[projectId]; projOk {
 		if found {
 			if tb, ok := db.SchemaTables[tableName]; ok {
@@ -1351,13 +1382,13 @@ func (ms *ModuleStore) SaveColumnMasking(ctx context.Context, projectId string, 
 		return err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from SaveColumnMasking ", tableName))
-	return ms.persistDataSource(ctx, projectId, tenantId, isTenant, db, realStore)
+	return ms.persistDataSource(ctx, projectId, resolvedTenantId, db, realStore)
 }
 func (ms *ModuleStore) SaveTableTransformation(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string, transformRules module_model.TransformRules, realStore ModuleStoreI) (err error) {
 	logs.WithContext(ctx).Debug("SaveTableTransformation - Start")
 	realStore.GetMutex().Lock()
 	defer realStore.GetMutex().Unlock()
-	db, isTenant, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	db, resolvedTenantId, found := ms.resolveDataSourceForWrite(projectId, tenantId, dbAlias)
 	if _, projOk := ms.Projects[projectId]; projOk {
 		if found {
 			if _, ok := db.SchemaTables[tableName]; ok {
@@ -1385,17 +1416,17 @@ func (ms *ModuleStore) SaveTableTransformation(ctx context.Context, projectId st
 		return err
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("SaveStore called from SaveTableTransformation ", tableName))
-	return ms.persistDataSource(ctx, projectId, tenantId, isTenant, db, realStore)
+	return ms.persistDataSource(ctx, projectId, resolvedTenantId, db, realStore)
 }
 
 func (ms *ModuleStore) GetTableTransformation(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string) (transformRules module_model.TransformRules, err error) {
 	logs.WithContext(ctx).Debug("GetTableTransformation - Start")
-	db, _, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	db, _, found := ms.resolveDataSource(ctx, projectId, tenantId, dbAlias)
 	if _, projOk := ms.Projects[projectId]; projOk {
 		if found {
 			if _, ok := db.SchemaTables[tableName]; ok {
 				transformRules = db.SchemaTablesTransformation[tableName]
-			} else if _, _, qFound := ms.resolveMyQuery(projectId, tenantId, tableName); qFound {
+			} else if _, _, qFound := ms.resolveMyQuery(ctx, projectId, tenantId, tableName); qFound {
 				//do nothing as there are no transform rule feature for my query TODO check feasibility
 			} else {
 				err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
@@ -1423,7 +1454,7 @@ func (ms *ModuleStore) GetTableTransformation(ctx context.Context, projectId str
 
 func (ms *ModuleStore) GetTableSecurity(ctx context.Context, projectId string, tenantId string, dbAlias string, tableName string) (securityRules module_model.SecurityRules, err error) {
 	logs.WithContext(ctx).Debug("GetTableSecurity - Start")
-	db, _, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	db, _, found := ms.resolveDataSource(ctx, projectId, tenantId, dbAlias)
 	if _, projOk := ms.Projects[projectId]; projOk {
 		if found {
 			if sr, srOk := db.SchemaTablesSecurity[tableName]; srOk {
@@ -1435,7 +1466,7 @@ func (ms *ModuleStore) GetTableSecurity(ctx context.Context, projectId string, t
 			if !securityRules.IsTemplate {
 				if _, ok := db.SchemaTables[tableName]; ok {
 					//do nothing
-				} else if mq, _, qFound := ms.resolveMyQuery(projectId, tenantId, tableName); qFound {
+				} else if mq, _, qFound := ms.resolveMyQuery(ctx, projectId, tenantId, tableName); qFound {
 					securityRules.Query = mq.SecurityRule
 				} else {
 					err = errors.New(fmt.Sprint("Table ", tableName, " not found"))
@@ -1467,7 +1498,7 @@ func (ms *ModuleStore) DropSchemaTable(ctx context.Context, projectId string, te
 	tableExists := false
 	//TODO - to check if drop is allowed
 
-	db, isTenant, found := ms.resolveDataSource(projectId, tenantId, dbAlias)
+	db, resolvedTenantId, found := ms.resolveDataSourceForWrite(projectId, tenantId, dbAlias)
 	if _, projOk := ms.Projects[projectId]; projOk {
 		if found {
 			tn := fmt.Sprint(db.DbConfig.DefaultSchema, ".", tableName)
@@ -1487,7 +1518,7 @@ func (ms *ModuleStore) DropSchemaTable(ctx context.Context, projectId string, te
 					return err
 				}
 				delete(db.SchemaTables, tn)
-				err = ms.persistDataSource(ctx, projectId, tenantId, isTenant, db, realStore)
+				err = ms.persistDataSource(ctx, projectId, resolvedTenantId, db, realStore)
 				if err != nil {
 					err = logs.Err(ctx, err, "error saving store")
 					return err

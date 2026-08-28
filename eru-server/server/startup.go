@@ -250,5 +250,6 @@ func Init(ctx context.Context, store store.StoreI) (*mux.Router, *Server, error)
 	s := new(Server)
 	s.Store = store
 	serverRouter := s.GetRouter()
+	serverRouter.Use(tenantMiddleWare)
 	return serverRouter, s, nil
 }

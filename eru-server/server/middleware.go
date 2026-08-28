@@ -14,7 +14,9 @@ import (
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -24,7 +26,53 @@ import (
 const (
 	claimsKey       string = "claims"
 	eruqlbaseurlKey string = "eruqlbaseurl"
+	tenantHeaderKey string = "tenant_id"
 )
+
+var tenantRouteVars = []string{"tenant", "tenantId"}
+
+func tenantMiddleWare(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defaultTenantId := ""
+		vars := mux.Vars(r)
+		var newVars map[string]string
+		for _, varName := range tenantRouteVars {
+			routeTenant, ok := vars[varName]
+			if !ok {
+				continue
+			}
+			tenantId, routeDefaultTenantId := eru_utils.ParseTenantRoute(routeTenant)
+			if tenantId != routeTenant {
+				if newVars == nil {
+					newVars = make(map[string]string, len(vars))
+					for k, v := range vars {
+						newVars[k] = v
+					}
+				}
+				newVars[varName] = tenantId
+			}
+			if routeDefaultTenantId != "" {
+				defaultTenantId = routeDefaultTenantId
+			}
+		}
+		if headerTenant := r.Header.Get(tenantHeaderKey); headerTenant != "" {
+			tenantId, headerDefaultTenantId := eru_utils.ParseTenantRoute(headerTenant)
+			if tenantId != headerTenant {
+				r.Header.Set(tenantHeaderKey, tenantId)
+			}
+			if headerDefaultTenantId != "" {
+				defaultTenantId = headerDefaultTenantId
+			}
+		}
+		if newVars != nil {
+			r = mux.SetURLVars(r, newVars)
+		}
+		if defaultTenantId != "" {
+			r = r.WithContext(eru_utils.WithDefaultTenant(r.Context(), defaultTenantId))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func requestIdMiddleWare(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

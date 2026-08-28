@@ -20,6 +20,7 @@ import (
 	eru_models "github.com/eru-tech/eru/eru-models"
 	scheduler "github.com/eru-tech/eru/eru-scheduler/scheduler"
 	"github.com/eru-tech/eru/eru-store/store"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 	vectorstore "github.com/eru-tech/eru/eru-vectorstore/vectorstore"
 )
 
@@ -29,6 +30,25 @@ var Eruqlbaseurl = "http://localhost:8087"
 var Eruaibaseurl = "http://localhost:8088"
 var Erufilesbaseurl = "http://localhost:8082"
 var Eruaiport = "8088"
+
+func tenantLookupOrder(ctx context.Context, projectId string, tenantId string) []string {
+	return eru_utils.TenantLookupOrder(ctx, tenantId, projectId)
+}
+
+func tenantWriteOrder(projectId string, tenantId string) []string {
+	if tenantId == "" || tenantId == projectId {
+		return []string{projectId}
+	}
+	return []string{tenantId, projectId}
+}
+
+func tenantVisibilitySet(ctx context.Context, projectId string, tenantId string) map[string]bool {
+	visible := make(map[string]bool)
+	for _, tid := range tenantLookupOrder(ctx, projectId, tenantId) {
+		visible[tid] = true
+	}
+	return visible
+}
 
 type StoreHolder struct {
 	sync.RWMutex
@@ -247,22 +267,28 @@ func (ms *ModuleStore) GetModelClone(ctx context.Context, projectId string, tena
 		err = errors.New("tenant " + tenantId + " not found")
 		logs.WithContext(ctx).Error(err.Error())
 		return
-	} else if modelObj, ok = prj.Tenants[tenantId].Models[modelName]; !ok {
-		if projectModelObj, ok := prj.Tenants[projectId].Models[modelName]; ok {
-			modelObj = projectModelObj
-		} else {
-			tenantModels := make([]string, 0, len(prj.Tenants[tenantId].Models))
-			for mn := range prj.Tenants[tenantId].Models {
-				tenantModels = append(tenantModels, mn)
-			}
-			projectModels := make([]string, 0)
-			for mn := range prj.Tenants[projectId].Models {
-				projectModels = append(projectModels, mn)
-			}
-			logs.WithContext(ctx).Error(fmt.Sprint("model ", modelName, " not found - searched project=", projectId, " tenant=", tenantId, " tenant_models=", tenantModels, " project_models=", projectModels))
-			err = errors.New("model " + modelName + " not found")
-			return
+	}
+	lookupOrder := tenantLookupOrder(ctx, projectId, tenantId)
+	found := false
+	for _, tid := range lookupOrder {
+		if mo, ok := prj.Tenants[tid].Models[modelName]; ok {
+			modelObj = mo
+			found = true
+			break
 		}
+	}
+	if !found {
+		searched := make([]string, 0, len(lookupOrder))
+		for _, tid := range lookupOrder {
+			modelNames := make([]string, 0, len(prj.Tenants[tid].Models))
+			for mn := range prj.Tenants[tid].Models {
+				modelNames = append(modelNames, mn)
+			}
+			searched = append(searched, fmt.Sprint(tid, "=", modelNames))
+		}
+		logs.WithContext(ctx).Error(fmt.Sprint("model ", modelName, " not found - searched project=", projectId, " tenant=", tenantId, " models=", searched))
+		err = errors.New("model " + modelName + " not found")
+		return
 	}
 	modelObjClone, err = ms.GetModelCloneObject(ctx, projectId, tenantId, modelObj, s)
 	return
@@ -358,15 +384,11 @@ func (ms *ModuleStore) GetToolClone(ctx context.Context, projectId string, tenan
 	}
 	var toolObj tools.Tooling
 	var ok bool
-	tenant, tenantExists := prj.Tenants[tenantId]
-	if tenantExists {
-		toolObj, ok = tenant.Tools[toolName]
-	}
-	if !ok {
-		if projectTenant, projectTenantExists := prj.Tenants[projectId]; projectTenantExists {
-			if projectToolObj, projectToolOk := projectTenant.Tools[toolName]; projectToolOk {
-				toolObj = projectToolObj
-				ok = true
+	_, tenantExists := prj.Tenants[tenantId]
+	for _, tid := range tenantLookupOrder(ctx, projectId, tenantId) {
+		if tenant, tenantOk := prj.Tenants[tid]; tenantOk {
+			if toolObj, ok = tenant.Tools[toolName]; ok {
+				break
 			}
 		}
 	}
@@ -577,14 +599,19 @@ func (ms *ModuleStore) GetAgentClone(ctx context.Context, projectId string, tena
 		err = errors.New("tenant " + tenantId + " not found")
 		logs.WithContext(ctx).Error(err.Error())
 		return
-	} else if agentObj, ok = prj.Tenants[tenantId].Agents[agentName]; !ok {
-		if projectAgentObj, ok := prj.Tenants[projectId].Agents[agentName]; ok {
-			agentObj = projectAgentObj
-		} else {
-			err = errors.New("agent " + agentName + " not found")
-			logs.WithContext(ctx).Error(err.Error())
-			return
+	}
+	agentFound := false
+	for _, tid := range tenantLookupOrder(ctx, projectId, tenantId) {
+		if ao, ok := prj.Tenants[tid].Agents[agentName]; ok {
+			agentObj = ao
+			agentFound = true
+			break
 		}
+	}
+	if !agentFound {
+		err = errors.New("agent " + agentName + " not found")
+		logs.WithContext(ctx).Error(err.Error())
+		return
 	}
 	agentObjClone, err = ms.GetAgentCloneObject(ctx, projectId, tenantId, conversationId, agentObj, s)
 	if err != nil {
@@ -893,9 +920,15 @@ func (ms *ModuleStore) RemoveTenants() {
 func (ms *ModuleStore) GetAgentNames(ctx context.Context, projectId string, tenantId string) (agentNames []string, err error) {
 	logs.WithContext(ctx).Debug("GetAgentNames - Start")
 	if prj, ok := ms.Projects[projectId]; ok {
+		visible := tenantVisibilitySet(ctx, projectId, tenantId)
+		seen := make(map[string]bool)
 		for _, tenant := range prj.Tenants {
-			if tenantId == "" || tenantId == tenant.TenantId || projectId == tenant.TenantId {
+			if tenantId == "" || visible[tenant.TenantId] {
 				for agentName := range tenant.Agents {
+					if seen[agentName] {
+						continue
+					}
+					seen[agentName] = true
 					agentNames = append(agentNames, agentName)
 				}
 			}
@@ -912,9 +945,15 @@ func (ms *ModuleStore) GetToolNames(ctx context.Context, projectId string, tenan
 	logs.WithContext(ctx).Debug("GetToolNames - Start")
 
 	if prj, ok := ms.Projects[projectId]; ok {
+		visible := tenantVisibilitySet(ctx, projectId, tenantId)
+		seen := make(map[string]bool)
 		for _, tenant := range prj.Tenants {
-			if tenantId == "" || tenantId == tenant.TenantId || projectId == tenant.TenantId {
+			if tenantId == "" || visible[tenant.TenantId] {
 				for toolName := range tenant.Tools {
+					if seen[toolName] {
+						continue
+					}
+					seen[toolName] = true
 					toolNames = append(toolNames, toolName)
 				}
 			}
@@ -1007,17 +1046,14 @@ func (ms *ModuleStore) GetVectorStore(ctx context.Context, projectId string, ten
 			logs.WithContext(ctx).Error(err.Error())
 			return
 		}
-		if vs, ok := prj.Tenants[tenantId].VectorStores[vectorStoreName]; !ok {
-			if vs, ok = prj.Tenants[projectId].VectorStores[vectorStoreName]; !ok {
-				err = errors.New("VectorStore " + vectorStoreName + " does not exists")
-				logs.WithContext(ctx).Info(err.Error())
-				return
-			} else {
+		for _, tid := range tenantLookupOrder(ctx, projectId, tenantId) {
+			if vs, ok := prj.Tenants[tid].VectorStores[vectorStoreName]; ok {
 				return vs, nil
 			}
-		} else {
-			return vs, nil
 		}
+		err = errors.New("VectorStore " + vectorStoreName + " does not exists")
+		logs.WithContext(ctx).Info(err.Error())
+		return
 	} else {
 		err = errors.New("Project " + projectId + " does not exists")
 		logs.WithContext(ctx).Info(err.Error())
@@ -1070,9 +1106,12 @@ func (ms *ModuleStore) SaveVectors(ctx context.Context, vectorRecords vectorstor
 			logs.WithContext(ctx).Error(err.Error())
 			return err
 		}
-		vs, ok := prj.Tenants[tenantId].VectorStores[vectorName]
-		if !ok {
-			vs, ok = prj.Tenants[projectId].VectorStores[vectorName]
+		var vs vectorstore.VectorStoreI
+		var ok bool
+		for _, tid := range tenantWriteOrder(projectId, tenantId) {
+			if vs, ok = prj.Tenants[tid].VectorStores[vectorName]; ok {
+				break
+			}
 		}
 		if !ok {
 			err = errors.New("VectorStore " + vectorName + " does not exists")
@@ -1135,9 +1174,12 @@ func (ms *ModuleStore) RemoveVectors(ctx context.Context, vectorRecordsDelete ve
 			logs.WithContext(ctx).Error(err.Error())
 			return err
 		}
-		vs, ok := prj.Tenants[tenantId].VectorStores[vectorName]
-		if !ok {
-			vs, ok = prj.Tenants[projectId].VectorStores[vectorName]
+		var vs vectorstore.VectorStoreI
+		var ok bool
+		for _, tid := range tenantWriteOrder(projectId, tenantId) {
+			if vs, ok = prj.Tenants[tid].VectorStores[vectorName]; ok {
+				break
+			}
 		}
 		if !ok {
 			err = errors.New("VectorStore " + vectorName + " does not exists")
@@ -1171,9 +1213,12 @@ func (ms *ModuleStore) ListVectors(ctx context.Context, vectorRecordsList vector
 			logs.WithContext(ctx).Error(err.Error())
 			return vectorstore.VectorResults{}, err
 		}
-		vs, ok := prj.Tenants[tenantId].VectorStores[vectorName]
-		if !ok {
-			vs, ok = prj.Tenants[projectId].VectorStores[vectorName]
+		var vs vectorstore.VectorStoreI
+		var ok bool
+		for _, tid := range tenantLookupOrder(ctx, projectId, tenantId) {
+			if vs, ok = prj.Tenants[tid].VectorStores[vectorName]; ok {
+				break
+			}
 		}
 		if !ok {
 			err = errors.New("VectorStore " + vectorName + " does not exists")
@@ -1208,9 +1253,12 @@ func (ms *ModuleStore) SearchVectors(ctx context.Context, vectorRecords vectorst
 			logs.WithContext(ctx).Error(err.Error())
 			return vectorstore.VectorResults{}, err
 		}
-		vs, ok := prj.Tenants[tenantId].VectorStores[vectorName]
-		if !ok {
-			vs, ok = prj.Tenants[projectId].VectorStores[vectorName]
+		var vs vectorstore.VectorStoreI
+		var ok bool
+		for _, tid := range tenantLookupOrder(ctx, projectId, tenantId) {
+			if vs, ok = prj.Tenants[tid].VectorStores[vectorName]; ok {
+				break
+			}
 		}
 		if !ok {
 			err = errors.New("VectorStore " + vectorName + " does not exists")
@@ -1266,9 +1314,18 @@ func (ms *ModuleStore) GetVectorStoreNames(ctx context.Context, projectId string
 	logs.WithContext(ctx).Debug("GetVectorStoreNames - Start")
 
 	if prj, ok := ms.Projects[projectId]; ok {
+		visible := make(map[string]bool)
+		for _, tid := range eru_utils.TenantLookupOrder(ctx, tenantId) {
+			visible[tid] = true
+		}
+		seen := make(map[string]bool)
 		for _, tenant := range prj.Tenants {
-			if tenantId == "" || tenantId == tenant.TenantId {
+			if tenantId == "" || visible[tenant.TenantId] {
 				for vectorStoreName := range tenant.VectorStores {
+					if seen[vectorStoreName] {
+						continue
+					}
+					seen[vectorStoreName] = true
 					vectorStoreNames = append(vectorStoreNames, vectorStoreName)
 				}
 			}
