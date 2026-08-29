@@ -13,6 +13,11 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	MCPProjectHeaderKey string = "x-project-id"
+	MCPTenantHeaderKey  string = "x-tenant-id"
+)
+
 type MCPMessage struct {
 	JSONRPCVersion string          `json:"jsonrpc"`
 	ID             interface{}     `json:"id,omitempty"`
@@ -342,8 +347,8 @@ func CreateMCPHttpHandler(server MCPServer) http.HandlerFunc {
 				http.Error(w, "Bad request", http.StatusBadRequest)
 				return
 			}
-			projectId := r.Header.Get("project_id")
-			tenantId := r.Header.Get("tenant_id")
+			projectId := r.Header.Get(MCPProjectHeaderKey)
+			tenantId := r.Header.Get(MCPTenantHeaderKey)
 			handler := manager.GetOrCreate(sessionId)
 			response, err := handler.HandleMessage(ctx, body, projectId, tenantId)
 			if err != nil {
@@ -424,8 +429,8 @@ func CreateMCPWebSocketHandler(server MCPServer, config ...WebSocketConfig) http
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		projectId := r.Header.Get("project_id")
-		tenantId := r.Header.Get("tenant_id")
+		projectId := r.Header.Get(MCPProjectHeaderKey)
+		tenantId := r.Header.Get(MCPTenantHeaderKey)
 		sessionId := uuid.New().String()
 		messageHandler := NewMCPMessageHandler(server, sessionId)
 		wsHandler := NewWebSocketHandler(func(ctx context.Context, data []byte) ([]byte, error) {

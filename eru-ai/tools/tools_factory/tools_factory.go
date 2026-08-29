@@ -72,6 +72,8 @@ func GetTool(toolType string) tools.Tooling {
 		return new(saas.ZohoDeskTool)
 	case "MASSIVE":
 		return new(stocks.MassiveTool)
+	case "SMARTVALUES":
+		return new(stocks.SmartvaluesTool)
 	case "OZONE":
 		return new(telecom.OzoneTool)
 	case "PICHAIN":
