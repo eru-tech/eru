@@ -80,15 +80,15 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context, projectId string, tenant
 				continue
 			}
 
-			for _, tenant := range project.Tenants {
-				if tenantId == "" || tenant.TenantId == tenantId || tenant.TenantId == projectId {
-					toolNames, err := s.store.Store.GetToolNames(ctx, projectName, tenant.TenantId)
+			for tenantKey := range project.Tenants {
+				if tenantId == "" || tenantKey == tenantId || tenantKey == projectId {
+					toolNames, err := s.store.Store.GetToolNames(ctx, projectName, tenantKey)
 					if err != nil {
 						continue
 					}
 
 					for _, toolName := range toolNames {
-						tool, err := s.store.Store.GetTool(ctx, projectName, tenant.TenantId, toolName, "", s.store.Store)
+						tool, err := s.store.Store.GetTool(ctx, projectName, tenantKey, toolName, "", s.store.Store)
 						if err != nil {
 							continue
 						}
@@ -132,13 +132,13 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context, projectId string, tenant
 						}
 					}
 
-					agentNames, err := s.store.Store.GetAgentNames(ctx, projectName, tenant.TenantId)
+					agentNames, err := s.store.Store.GetAgentNames(ctx, projectName, tenantKey)
 					if err != nil {
 						continue
 					}
 
 					for _, agentName := range agentNames {
-						agent, err := s.store.Store.GetAgent(ctx, projectName, tenant.TenantId, "", agentName, s.store.Store)
+						agent, err := s.store.Store.GetAgent(ctx, projectName, tenantKey, "", agentName, s.store.Store)
 						if err != nil {
 							continue
 						}
