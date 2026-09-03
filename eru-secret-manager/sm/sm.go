@@ -44,7 +44,6 @@ func GetSm(storageType string) SmStoreI {
 	default:
 		return nil
 	}
-	return nil
 }
 
 func (smStore *SmStore) Init(ctx context.Context) (err error) {

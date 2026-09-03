@@ -372,7 +372,8 @@ func GenericFuncMap(ctx context.Context) map[string]interface{} {
 			dt, err := time.Parse("2006-01-02", dtStr)
 			switch dtPart {
 			case "DAY":
-				datePart = string(dt.Day())
+				dStr := strconv.Itoa(dt.Day())
+				datePart = strings.Repeat("0", 2-len(dStr)) + dStr
 			case "MONTHN":
 				mStr := strconv.Itoa(int(dt.Month()))
 				datePart = strings.Repeat("0", 2-len(mStr)) + mStr

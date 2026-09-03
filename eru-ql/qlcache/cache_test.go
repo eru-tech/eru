@@ -19,6 +19,7 @@ func TestMain(m *testing.M) {
 func newEnabledDS() *module_model.DataSource {
 	ds := &module_model.DataSource{ProjectId: "p1", DbAlias: "primary"}
 	ds.QueryCache = cache.NewInMemoryCache()
+	ds.QueryCacheClone = ds.QueryCache
 	ds.QueryCacheConfig.Enabled = true
 	ds.QueryCacheConfig.DefaultTTLSec = 300
 	return ds
@@ -97,6 +98,7 @@ func TestServe_BypassWhenNoCache(t *testing.T) {
 func TestServe_BypassWhenDisabled(t *testing.T) {
 	ds := &module_model.DataSource{DbAlias: "x"}
 	ds.QueryCache = cache.NewInMemoryCache()
+	ds.QueryCacheClone = ds.QueryCache
 	ds.QueryCacheConfig.Enabled = false
 	hit, _, key := Serve(context.Background(), ds, "", "select 1")
 	if hit || key != "" {

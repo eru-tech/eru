@@ -340,9 +340,9 @@ func (m *mockModuleStore) RemoveTenantObject(_ context.Context, _, _, _, _, _, _
 }
 func (m *mockModuleStore) SetStoreTenantLoadQuery(_ string) {}
 func (m *mockModuleStore) SetDbType(_ string)               {}
-func (m *mockModuleStore) CreateConn() error  { return nil }
-func (m *mockModuleStore) GetConn() *sqlx.DB  { return nil }
-func (m *mockModuleStore) GetDbType() string  { return "STANDALONE" }
+func (m *mockModuleStore) CreateConn() error                { return nil }
+func (m *mockModuleStore) GetConn() *sqlx.DB                { return nil }
+func (m *mockModuleStore) GetDbType() string                { return "STANDALONE" }
 func (m *mockModuleStore) ExecuteDbSave(_ context.Context, _ []store.Queries) ([][]map[string]interface{}, error) {
 	return nil, nil
 }
@@ -443,10 +443,13 @@ func (m *mockModuleStore) SetCacheValue(_ context.Context, _, _ string, _ interf
 func (m *mockModuleStore) ValidateJSON(_ context.Context, _ validator.Schema, data []interface{}) ([]interface{}, []interface{}) {
 	return data, nil
 }
+func (m *mockModuleStore) GetProjectSecret(_ context.Context, _ string, _ string) (string, error) {
+	return "", nil
+}
 func (m *mockModuleStore) FetchEvents(_ context.Context, _ string) (map[string]events.EventI, error) {
 	return nil, nil
 }
-func (m *mockModuleStore) FetchEvent(_ context.Context, _, _ string) (events.EventI, error) {
+func (m *mockModuleStore) FetchEvent(_ context.Context, _, _ string, _ store.StoreI) (events.EventI, error) {
 	return nil, nil
 }
 func (m *mockModuleStore) SaveEvent(_ context.Context, _ string, _ events.EventI, _ store.StoreI, _ bool) error {
@@ -478,11 +481,10 @@ func (m *mockModuleStore) GetRequests(_ context.Context, _, _, _ string, _ store
 func (m *mockModuleStore) RemoveRequest(_ context.Context, _ string, _ store.StoreI) error {
 	return nil
 }
-func (m *mockModuleStore) SetServiceName(_ string)     {}
-func (m *mockModuleStore) SetInstanceId(_ string)      {}
-func (m *mockModuleStore) SetBaseUrl(_ string)         {}
-func (m *mockModuleStore) SetConfigSyncEvent(_ string) {}
-func (m *mockModuleStore) GetUpdateTime() time.Time    { return time.Now() }
+func (m *mockModuleStore) SetServiceName(_ string)  {}
+func (m *mockModuleStore) SetInstanceId(_ string)   {}
+func (m *mockModuleStore) SetBaseUrl(_ string)      {}
+func (m *mockModuleStore) GetUpdateTime() time.Time { return time.Now() }
 
 func newTestStoreHolder() *module_store.StoreHolder {
 	ms := newMockModuleStore()

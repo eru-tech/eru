@@ -11,6 +11,7 @@ func (s *Server) GetRouter() *mux.Router {
 	router := mux.NewRouter()
 	router.Methods(http.MethodGet).Path("/hello").HandlerFunc(handlers.HelloHandler)
 	router.Methods(http.MethodGet).Path("/state").HandlerFunc(handlers.StateHandler(s.Store))
+	router.Methods(http.MethodGet).Path("/config/status").HandlerFunc(handlers.ConfigStatusHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/env/{env}").HandlerFunc(handlers.EnvHandler(s.Store))
 	router.Methods(http.MethodGet).Path("/echo").HandlerFunc(handlers.EchoHandler(s.Store))
 

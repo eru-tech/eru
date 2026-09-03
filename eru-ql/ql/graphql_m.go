@@ -254,7 +254,7 @@ func (sqlObj *SQLObjectM) processMutationDoc(ctx context.Context, d interface{},
 
 		insertDoc, err := doc.(map[string]interface{})
 		if !err {
-			return nil, errors.New(fmt.Sprintf("error while parsing document at index ", i))
+			return nil, fmt.Errorf("error while parsing document at index %d", i)
 		}
 		logs.WithContext(ctx).Info(fmt.Sprint("parentTableName = ", parentTableName))
 		logs.WithContext(ctx).Info(fmt.Sprint(owDoc))

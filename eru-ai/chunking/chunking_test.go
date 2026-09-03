@@ -183,8 +183,8 @@ func TestDefaultChunkingConfig(t *testing.T) {
 	if config.Strategy != "recursive" {
 		t.Errorf("Expected default strategy 'recursive', got '%s'", config.Strategy)
 	}
-	if config.MaxTokens != 8000 {
-		t.Errorf("Expected default MaxTokens 8000, got %d", config.MaxTokens)
+	if config.MaxTokens != 4000 {
+		t.Errorf("Expected default MaxTokens 4000, got %d", config.MaxTokens)
 	}
 	if config.Language != "en" {
 		t.Errorf("Expected default language 'en', got '%s'", config.Language)

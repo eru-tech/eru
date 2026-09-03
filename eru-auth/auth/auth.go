@@ -481,7 +481,7 @@ func (auth *Auth) LoginApi(ctx context.Context, refreshToken string, userId stri
 
 	outhConfig, ocErr := auth.Hydra.GetOauthConfig(ctx, hydraClientId)
 	if ocErr != nil {
-		logs.WithContext(ctx).Error(fmt.Sprint("fetch ouathcofig failed: %v", err.Error()))
+		logs.WithContext(ctx).Error(fmt.Sprintf("fetch ouathcofig failed: %v", err.Error()))
 		err = ocErr
 		return
 	}
@@ -503,7 +503,6 @@ func (auth *Auth) LoginApi(ctx context.Context, refreshToken string, userId stri
 	//		return nil, ierr
 	//	}
 	//	return auth.makeTokens(ctx, identity)
-	return
 }
 
 func (auth *Auth) makeTokens(ctx context.Context, identity Identity) (eruTokens LoginSuccess, err error) {
@@ -574,7 +573,6 @@ func GetAuth(authType string) AuthI {
 	default:
 		return new(Auth)
 	}
-	return nil
 }
 
 func getTokenAttributes(ctx context.Context, token map[string]interface{}) (tokenObj map[string]interface{}, tokenErr bool) {

@@ -215,7 +215,7 @@ func processTemplate(ctx context.Context, templateName string, templateString st
 			templateStr = fmt.Sprint("{{ .", ruleValue[1], " }}")
 		}
 		templateStr = eru_utils.ReplaceVariables(ctx, templateStr, vars)
-		goTmpl := gotemplate.GoTemplate{templateName, templateStr}
+		goTmpl := gotemplate.GoTemplate{Name: templateName, Template: templateStr}
 		outputObj, err := goTmpl.Execute(ctx, vars["token"], outputType)
 		if err != nil {
 			err = logs.Err(ctx, err, "")

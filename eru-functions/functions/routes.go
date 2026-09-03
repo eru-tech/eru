@@ -102,7 +102,7 @@ type TargetHost struct {
 
 type Headers struct {
 	Key        string `json:"key" eru:"required"`
-	Value      string `json:"value"eru:"required"`
+	Value      string `json:"value" eru:"required"`
 	IsTemplate bool   `json:"is_template"`
 }
 
@@ -340,7 +340,7 @@ func (route *Route) Execute(ctx context.Context, request *http.Request, url stri
 	if route.LoopVariable != "" {
 		loopArray, lerr = trReqVars.LoopVars.([]interface{})
 		if !lerr {
-			resErr = logs.Err(ctx, fmt.Errorf("func loop variable is not an array : %w", lerr), "")
+			resErr = logs.Err(ctx, errors.New("func loop variable is not an array"), "")
 			response = errorResponse(ctx, resErr.Error(), request)
 			return
 		}

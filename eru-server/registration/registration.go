@@ -18,7 +18,7 @@ type RegistryClient struct {
 }
 
 // NewRegistryClient creates a new client for the service registry.
-func NewRegistryClient(registryURL, serviceName, port, instanceId string, heartbeatTTL time.Time, configUpdateAt string) (*RegistryClient, error) {
+func NewRegistryClient(registryURL, serviceName, port, instanceId string) (*RegistryClient, error) {
 	// Automatically detect service address
 	serviceAddress, err := eru_utils.GetServiceAddress(context.Background(), port)
 	if err != nil {
@@ -28,11 +28,9 @@ func NewRegistryClient(registryURL, serviceName, port, instanceId string, heartb
 	return &RegistryClient{
 		RegistryURL: registryURL,
 		Instance: eru_models.ServiceInstance{
-			Id:             instanceId,
-			Name:           serviceName,
-			Address:        serviceAddress,
-			HeartbeatTTL:   heartbeatTTL,
-			ConfigUpdateAt: configUpdateAt,
+			Id:      instanceId,
+			Name:    serviceName,
+			Address: serviceAddress,
 		},
 	}, nil
 }
@@ -81,20 +79,15 @@ func (c *RegistryClient) StartHeartbeat(ctx context.Context, interval time.Durat
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	// Send initial heartbeat immediately
-	err = c.sendHeartbeat(ctx)
-	if err != nil {
+	if err = c.sendHeartbeat(ctx); err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to send initial heartbeat: %v", err))
-		return err
 	}
 
 	for {
 		select {
 		case <-ticker.C:
-			err = c.sendHeartbeat(ctx)
-			if err != nil {
-				logs.WithContext(ctx).Error(fmt.Sprintf("Failed to send heartbeat: %v", err))
-				return err
+			if err = c.sendHeartbeat(ctx); err != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("Failed to send heartbeat, will retry on next tick: %v", err))
 			}
 		case <-ctx.Done():
 			logs.WithContext(ctx).Info("Heartbeat stopped.")

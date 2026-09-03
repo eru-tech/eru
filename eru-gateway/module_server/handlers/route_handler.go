@@ -7,13 +7,28 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/eru-tech/eru/eru-gateway/config_sync"
 	"github.com/eru-tech/eru/eru-gateway/module_store"
+	"github.com/eru-tech/eru/eru-gateway/user_events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	"github.com/eru-tech/eru/eru-templates/gotemplate"
 	utils "github.com/eru-tech/eru/eru-utils"
 )
+
+var userEventLogger *user_events.Logger
+
+func SetUserEventLogger(l *user_events.Logger) {
+	userEventLogger = l
+}
+
+var configSyncNotifier *config_sync.Notifier
+
+func SetConfigSyncNotifier(n *config_sync.Notifier) {
+	configSyncNotifier = n
+}
 
 var httpClient = http.Client{
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -25,6 +40,21 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		logs.WithContext(r.Context()).Debug("RouteHandler - Start")
+
+		logEvent := userEventLogger.ShouldLog(r)
+		var userEvent user_events.UserEvent
+		if logEvent {
+			startTime := time.Now()
+			userEvent = userEventLogger.NewEvent(r, w, startTime)
+			recorder := user_events.NewRecorder(w)
+			w = recorder
+			defer func() {
+				userEvent.Status = recorder.Status()
+				userEvent.DurationMs = int(time.Since(startTime).Milliseconds())
+				userEventLogger.Log(userEvent)
+			}()
+		}
+
 		host, url := extractHostUrl(r)
 		logs.WithContext(r.Context()).Info(host)
 		logs.WithContext(r.Context()).Info(url)
@@ -34,6 +64,9 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "suspicious activity"})
 			return
+		}
+		if logEvent {
+			userEvent.TargetHost = tg.Host
 		}
 		logs.WithContext(r.Context()).Info(fmt.Sprint("authorizer.AuthorizerName = ", authorizer.AuthorizerName))
 		if authorizer.AuthorizerName != "" {
@@ -110,6 +143,12 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 				return
 			}
 
+			if logEvent {
+				if sub, subOk := accessSub.(string); subOk {
+					userEvent.UserId = sub
+				}
+			}
+
 			claimsBytes, err := json.Marshal(claims)
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
@@ -133,7 +172,7 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 		for _, v := range addHeaders {
 			headerValue := ""
 			if v.IsTemplate {
-				goTmpl := gotemplate.GoTemplate{v.Key, v.Value}
+				goTmpl := gotemplate.GoTemplate{Name: v.Key, Template: v.Value}
 				outputObj, err := goTmpl.Execute(r.Context(), *r, "string")
 				if err != nil {
 					err = logs.Err(r.Context(), err, "")
@@ -219,6 +258,14 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 			return
 		}
 		//defer response.Body.Close()
+
+		configService := response.Header.Get(config_sync.ConfigUpdatedHeader)
+		configInstance := response.Header.Get(config_sync.ConfigInstanceHeader)
+		response.Header.Del(config_sync.ConfigUpdatedHeader)
+		response.Header.Del(config_sync.ConfigInstanceHeader)
+		if configService != "" {
+			configSyncNotifier.Notify(configService, configInstance)
+		}
 
 		corsHeaders := []string{
 			"Access-Control-Allow-Credentials",

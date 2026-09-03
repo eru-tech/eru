@@ -93,8 +93,8 @@ type GraphqlResult struct {
 	idx  int
 }
 
-var DefaultDriverConfig = module_model.DriverConfig{10, 2, time.Hour}
-var DefaultOtherConfig = module_model.OtherDbConfig{1000, 60}
+var DefaultDriverConfig = module_model.DriverConfig{MaxOpenConns: 10, MaxIdleConns: 2, ConnMaxLifetime: time.Hour}
+var DefaultOtherConfig = module_model.OtherDbConfig{RowLimit: 1000, QueryTimeOut: 60}
 var DefaultReadPolicy = module_model.ReadPolicy{
 	Strategy:           StrategyRoundRobin,
 	IncludeMainInReads: false,
@@ -102,7 +102,17 @@ var DefaultReadPolicy = module_model.ReadPolicy{
 	FailoverToMain:     true,
 }
 var emptyCustomRule = security_rule.CustomRule{}
-var DefaultDbSecurityRules = module_model.SecurityRules{security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Deny", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Deny", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, security_rule.SecurityRule{"Allow", emptyCustomRule, nil, ""}, false}
+var DefaultDbSecurityRules = module_model.SecurityRules{
+	Create:     security_rule.SecurityRule{RuleType: "Allow", CustomRule: emptyCustomRule},
+	Drop:       security_rule.SecurityRule{RuleType: "Deny", CustomRule: emptyCustomRule},
+	Alter:      security_rule.SecurityRule{RuleType: "Allow", CustomRule: emptyCustomRule},
+	Insert:     security_rule.SecurityRule{RuleType: "Allow", CustomRule: emptyCustomRule},
+	Update:     security_rule.SecurityRule{RuleType: "Allow", CustomRule: emptyCustomRule},
+	Delete:     security_rule.SecurityRule{RuleType: "Deny", CustomRule: emptyCustomRule},
+	Select:     security_rule.SecurityRule{RuleType: "Allow", CustomRule: emptyCustomRule},
+	Query:      security_rule.SecurityRule{RuleType: "Allow", CustomRule: emptyCustomRule},
+	IsTemplate: false,
+}
 
 type SqlMakerI interface {
 	GetReturnAlias(ctx context.Context) string

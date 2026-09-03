@@ -43,7 +43,6 @@ func (awsKmsStore *AwsKmsStore) GetAttribute(ctx context.Context, attrName strin
 		logs.WithContext(ctx).Error(err.Error())
 		return "", err
 	}
-	return
 }
 
 func (awsKmsStore *AwsKmsStore) Init(ctx context.Context) (err error) {

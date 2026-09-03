@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"github.com/eru-tech/eru/eru-cache/cache"
+	"github.com/eru-tech/eru/eru-gateway/config_sync"
 	"github.com/eru-tech/eru/eru-gateway/module_server"
 	"github.com/eru-tech/eru/eru-gateway/module_server/handlers"
 	"github.com/eru-tech/eru/eru-gateway/module_store"
 	"github.com/eru-tech/eru/eru-gateway/registry"
+	"github.com/eru-tech/eru/eru-gateway/user_events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eruotel "github.com/eru-tech/eru/eru-logs/eru-otel"
 	"github.com/eru-tech/eru/eru-server/server"
@@ -34,6 +36,7 @@ func main() {
 
 	// Setup OpenTelemetry tracing
 	var tp interface{ Shutdown(context.Context) error }
+	var userEventLogger *user_events.Logger
 
 	// Production-ready panic handler (normal defer will handle cleanup)
 	defer func() {
@@ -46,6 +49,7 @@ func main() {
 
 	// Common cleanup function for all exit scenarios
 	cleanup := func() {
+		userEventLogger.Close(context.Background())
 		if tp != nil {
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer shutdownCancel()
@@ -82,6 +86,14 @@ func main() {
 	sh := new(module_store.StoreHolder)
 	sh.Store = store
 
+	userEventLogger, e = user_events.New(ctx, sh.Store)
+	if e != nil {
+		logs.WithContext(ctx).Error(e.Error())
+		logs.WithContext(ctx).Error("Failed to Start Server - error while setting up user event logger")
+		return
+	}
+	handlers.SetUserEventLogger(userEventLogger)
+
 	// Create the service registry
 	registryType := os.Getenv("REGISTRY_TYPE")
 	if registryType == "" {
@@ -97,6 +109,7 @@ func main() {
 	}
 	serviceRegistry := registry.NewRegistry(registryCache, 90*time.Second)
 	rh := &handlers.RegistryHandler{Registry: serviceRegistry}
+	handlers.SetConfigSyncNotifier(config_sync.New(serviceRegistry))
 
 	sr, _, e := server.Init(ctx, sh.Store)
 	if e != nil {

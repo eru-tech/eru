@@ -24,8 +24,8 @@ type invalidateMsg struct {
 }
 
 var (
-	invalidateQueue chan invalidateMsg
-	invalidateOnce  sync.Once
+	invalidateQueue   chan invalidateMsg
+	invalidateOnce    sync.Once
 	invalidateStarted atomic.Bool
 	invalidateDropCnt atomic.Int64
 )

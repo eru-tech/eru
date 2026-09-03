@@ -417,7 +417,7 @@ func FileUploadHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			err = r.ParseForm()
 		}
 		if err != nil {
-			logs.WithContext(r.Context()).Error(fmt.Sprint("Could not parse form: %s", err))
+			logs.WithContext(r.Context()).Error(fmt.Sprintf("Could not parse form: %v", err))
 			return
 		}
 	}
@@ -489,7 +489,7 @@ func ExcelToJsonHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			err = r.ParseForm()
 		}
 		if err != nil {
-			logs.WithContext(r.Context()).Error(fmt.Sprint("Could not parse form: %s", err))
+			logs.WithContext(r.Context()).Error(fmt.Sprintf("Could not parse form: %v", err))
 			return
 		}
 	}

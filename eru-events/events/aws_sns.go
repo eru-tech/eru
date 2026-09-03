@@ -5,36 +5,17 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/xml"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
-	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
 )
-
-type AwsSnsEnvelope struct {
-	Type              string                                 `json:"Type"`
-	MessageId         string                                 `json:"MessageId"`
-	TopicArn          string                                 `json:"TopicArn"`
-	Subject           string                                 `json:"Subject"`
-	Message           string                                 `json:"Message"`
-	Timestamp         string                                 `json:"Timestamp"`
-	SignatureVersion  string                                 `json:"SignatureVersion"`
-	Signature         string                                 `json:"Signature"`
-	SigningCertURL    string                                 `json:"SigningCertURL"`
-	UnsubscribeURL    string                                 `json:"UnsubscribeURL"`
-	Token             string                                 `json:"Token"`        // for subscription confirmation
-	SubscribeURL      string                                 `json:"SubscribeURL"` // for subscription confirmation
-	MessageAttributes map[string]types.MessageAttributeValue `json:"MessageAttributes"`
-}
 
 // Subscriber represents an SNS subscription configuration
 type AwsSnsSubscriber struct {
@@ -62,17 +43,6 @@ type AWS_SNS_Event struct {
 	Fifo                      bool `json:"fifo" eru:"optional"`                        // Enable FIFO topic with message ordering
 	ContentBasedDeduplication bool `json:"content_based_deduplication" eru:"optional"` // Enable automatic deduplication based on message content
 	HighThroughputFIFO        bool `json:"high_throughput_fifo" eru:"optional"`        // Enable High Throughput FIFO for improved performance (up to 300 msg/sec without batching)
-}
-
-// ConfirmSubscriptionResponse represents the XML response from SNS subscription confirmation
-type ConfirmSubscriptionResponse struct {
-	XMLName                   xml.Name `xml:"ConfirmSubscriptionResponse"`
-	ConfirmSubscriptionResult struct {
-		SubscriptionArn string `xml:"SubscriptionArn"`
-	} `xml:"ConfirmSubscriptionResult"`
-	ResponseMetadata struct {
-		RequestId string `xml:"RequestId"`
-	} `xml:"ResponseMetadata"`
 }
 
 func (aws_sns_event *AWS_SNS_Event) Init(ctx context.Context) (err error) {
@@ -429,102 +399,4 @@ func (aws_sns_event *AWS_SNS_Event) ListSubscriptions(ctx context.Context) (subs
 	}
 
 	return subscriptions, nil
-}
-func (aws_sns_event *AWS_SNS_Event) ProcessNotification(ctx context.Context, msg interface{}, endPoint string) (notification map[string]EventNotification, confirmation bool, err error) {
-	confirmation = false
-	msgBytes, err := json.Marshal(msg)
-	if err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return
-	}
-	var msgEnvelope AwsSnsEnvelope
-	if err = json.Unmarshal(msgBytes, &msgEnvelope); err != nil {
-		logs.WithContext(ctx).Error(err.Error())
-		return
-	}
-
-	switch msgEnvelope.Type {
-	case "SubscriptionConfirmation":
-		logs.Logger.Info(fmt.Sprintf("SNS SubscriptionConfirmation for topic %s", msgEnvelope.TopicArn))
-		// Confirm by calling SubscribeURL
-		if msgEnvelope.SubscribeURL != "" {
-			//go func(url string) {
-			url := msgEnvelope.SubscribeURL
-			resp, _, _, respStatus, err := eru_utils.CallHttp(ctx, http.MethodGet, url, nil, nil, nil, nil, nil)
-			if err != nil {
-				logs.Logger.Error(fmt.Sprintf("confirm http.MethodGet failed: %v", err))
-				return nil, confirmation, err
-			}
-			respMap, respMapOk := resp.(map[string]interface{})
-			if !respMapOk {
-				logs.Logger.Error("subscription confirmation response is not a map")
-				return nil, confirmation, err
-			}
-			respBody, respBodyOk := respMap["body"]
-			if !respBodyOk {
-				logs.Logger.Error("subscription confirmation response body not found")
-				return nil, confirmation, err
-			}
-
-			// Parse XML response to extract subscription ARN
-			var confirmResp ConfirmSubscriptionResponse
-			respBodyStr, respBodyStrOk := respBody.(string)
-			if !respBodyStrOk {
-				logs.Logger.Error("response body is not a string")
-				return nil, confirmation, err
-			}
-			logs.Logger.Info(fmt.Sprintf("response: %s", respBodyStr))
-			if err := xml.Unmarshal([]byte(respBodyStr), &confirmResp); err != nil {
-				logs.Logger.Error(fmt.Sprintf("failed to parse XML response: %v", err))
-				return nil, confirmation, err
-			}
-
-			subscriptionArn := confirmResp.ConfirmSubscriptionResult.SubscriptionArn
-			if subscriptionArn == "" {
-				logs.Logger.Error("subscription ARN not found in response")
-				return nil, confirmation, err
-			}
-			found := false
-			for i, sub := range aws_sns_event.Subscribers {
-				if sub.Endpoint == endPoint {
-					aws_sns_event.Subscribers[i].SubscriptionArn = subscriptionArn
-					aws_sns_event.Subscribers[i].UnsubscribeURL = msgEnvelope.UnsubscribeURL
-					found = true
-					break
-				}
-			}
-			if !found {
-				aws_sns_event.Subscribers = append(aws_sns_event.Subscribers, AwsSnsSubscriber{
-					SubscriptionArn: subscriptionArn,
-					Endpoint:        endPoint,
-					Protocol:        "https",
-					UnsubscribeURL:  msgEnvelope.UnsubscribeURL,
-				})
-			}
-			confirmation = true
-			logs.Logger.Info(fmt.Sprintf("Subscription confirmed (GET %s -> %d) SubscriptionArn: %s", url, respStatus, subscriptionArn))
-			//}(msgEnvelope.SubscribeURL)
-			return nil, confirmation, nil
-		}
-		return nil, confirmation, err
-	case "Notification":
-		logs.Logger.Info(fmt.Sprintf("SNS Notification %s subject=%q", msgEnvelope.MessageId, msgEnvelope.Subject))
-		// Print attributes (if any)
-		notification = make(map[string]EventNotification)
-		for k, v := range msgEnvelope.MessageAttributes {
-			notification[k] = EventNotification{
-				DataType:    *v.DataType,
-				BinaryValue: v.BinaryValue,
-				StringValue: *v.StringValue,
-			}
-		}
-	case "UnsubscribeConfirmation":
-		logs.Logger.Info(fmt.Sprintf("[SNS] UnsubscribeConfirmation: %s", msgEnvelope.UnsubscribeURL))
-		return nil, confirmation, err
-	default:
-		err = fmt.Errorf("[SNS] Unknown Type=%s", msgEnvelope.Type)
-		logs.WithContext(ctx).Error(err.Error())
-		return nil, confirmation, err
-	}
-	return notification, confirmation, nil
 }

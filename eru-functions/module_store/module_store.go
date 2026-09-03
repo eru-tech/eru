@@ -845,7 +845,6 @@ func (ms *ModuleStore) GetWf(ctx context.Context, wfName string, projectId strin
 	} else {
 		return wfObj, errors.New(fmt.Sprint("Project ", projectId, " does not exists"))
 	}
-	return
 }
 
 func (ms *ModuleStore) GetWfCloneObject(ctx context.Context, projectId string, wfObj functions.Workflow, s ModuleStoreI) (cloneWf functions.Workflow, err error) {

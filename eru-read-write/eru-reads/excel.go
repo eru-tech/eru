@@ -261,7 +261,7 @@ func columnNumberToName(n int) string {
 	columnName := ""
 	for n > 0 {
 		n--
-		columnName = string('A'+(n%26)) + columnName
+		columnName = string(rune('A'+(n%26))) + columnName
 		n /= 26
 	}
 	return columnName

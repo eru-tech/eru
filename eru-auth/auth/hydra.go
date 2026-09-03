@@ -87,7 +87,7 @@ func (hydra HydraConfig) GetLoginChallenge(ctx context.Context) (loginChallenge 
 	b := make([]byte, 32)
 	_, err = rand.Read(b)
 	if err != nil {
-		logs.WithContext(ctx).Error(fmt.Sprint("generate state failed: %v", err.Error()))
+		logs.WithContext(ctx).Error(fmt.Sprintf("generate state failed: %v", err.Error()))
 		return
 	}
 	state := base64.StdEncoding.EncodeToString(b)
@@ -99,7 +99,7 @@ func (hydra HydraConfig) GetLoginChallenge(ctx context.Context) (loginChallenge 
 	}
 	outhConfig, ocErr := hydra.GetOauthConfig(ctx, hydraClientId)
 	if ocErr != nil {
-		logs.WithContext(ctx).Error(fmt.Sprint("fetch ouathcofig failed: %v", err.Error()))
+		logs.WithContext(ctx).Error(fmt.Sprintf("fetch ouathcofig failed: %v", err.Error()))
 		err = ocErr
 		return
 	}
@@ -513,7 +513,7 @@ func (hydraConfig HydraConfig) AcceptConsentRequest(ctx context.Context, identit
 				token, tokenErr := outhConfig.Exchange(ctx, code)
 				if tokenErr != nil {
 					err = tokenErr
-					logs.WithContext(ctx).Error(fmt.Sprint("unable to exchange code for token: %s\n", err.Error()))
+					logs.WithContext(ctx).Error(fmt.Sprintf("unable to exchange code for token: %s", err.Error()))
 					return
 				}
 				idt := token.Extra("id_token")

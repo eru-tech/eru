@@ -65,7 +65,6 @@ func GetStorage(storageType string) StorageI {
 	default:
 		return nil
 	}
-	return nil
 }
 
 func (storage *Storage) CreateStorage(ctx context.Context, projectId string, cloneStorage StorageI, persist bool) (err error) {

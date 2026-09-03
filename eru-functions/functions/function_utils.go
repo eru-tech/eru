@@ -242,7 +242,7 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 
 func processTemplate(ctx context.Context, templateName string, templateString string, vars *FuncTemplateVars, outputType string, tokenHeaderKey string) (output []byte, err error) {
 	logs.WithContext(ctx).Debug("processTemplate - Start")
-	goTmpl := gotemplate.GoTemplate{templateName, templateString}
+	goTmpl := gotemplate.GoTemplate{Name: templateName, Template: templateString}
 	outputObj, err := goTmpl.Execute(ctx, vars, outputType)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error()) // send original error as consumer has to handle <no value> string
@@ -783,7 +783,7 @@ func stripSingleElement(obj interface{}) interface{} {
 func protect(f func()) {
 	defer func() {
 		if err := recover(); err != nil {
-			logs.Logger.Panic(fmt.Sprint("Recovered: %v", err))
+			logs.Logger.Panic(fmt.Sprintf("Recovered: %v", err))
 		}
 	}()
 

@@ -10,7 +10,6 @@ func GetQL(queryType string) QL {
 		return nil
 		//do nothing
 	}
-	return nil
 }
 
 type OrderedMap struct {

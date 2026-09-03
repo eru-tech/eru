@@ -51,7 +51,7 @@ func ExecuteTemplateHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		logs.WithContext(r.Context()).Info(fmt.Sprint(tmplBody.Name))
 		logs.WithContext(r.Context()).Info(fmt.Sprint(tmplBody.Template))
 		logs.WithContext(r.Context()).Info(fmt.Sprint(tmplBody.Object))
-		goTmpl := gotemplate.GoTemplate{tmplBody.Name, tmplBody.Template}
+		goTmpl := gotemplate.GoTemplate{Name: tmplBody.Name, Template: tmplBody.Template}
 		str, err := goTmpl.Execute(r.Context(), tmplBody.Object, "json")
 		if err != nil {
 			logs.WithContext(r.Context()).Error(err.Error())

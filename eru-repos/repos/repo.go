@@ -84,7 +84,6 @@ func GetRepo(repoType string) RepoI {
 	default:
 		return new(Repo)
 	}
-	return nil
 }
 
 func (repo *Repo) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {

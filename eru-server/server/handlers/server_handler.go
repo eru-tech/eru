@@ -29,7 +29,6 @@ var InstanceId = "unkown"
 var RepoName = "unkown.json"
 var AllowedOrigins = ""
 var RequestIdKey = "request_id"
-var ConfigSyncEvent = "unknown"
 var BaseUrl = ""
 var EruqlBaseUrl = ""
 
@@ -43,7 +42,7 @@ func HelloHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 		return
 	}
-	fmt.Fprintf(w, fmt.Sprint("Hello ", ServerName))
+	fmt.Fprint(w, "Hello ", ServerName)
 }
 func SetInstanceId() {
 	InstanceId = fmt.Sprintf("%s-%s", ServerName, uuid.New().String())

@@ -36,8 +36,12 @@ func generateKey(serviceID string) string {
 }
 
 // Register adds a new service instance to the registry with a TTL.
+// AliveUntil is stamped here rather than trusted from the caller so that
+// every write path - register, re-register and heartbeat - records the same
+// thing: the instant this instance stops counting as alive.
 func (r *Registry) Register(ctx context.Context, instance eru_models.ServiceInstance) error {
 	key := generateKey(instance.Id)
+	instance.AliveUntil = time.Now().Add(r.heartbeatTTL)
 	return r.cache.SetWithTTL(ctx, key, instance, r.heartbeatTTL)
 }
 
@@ -68,7 +72,7 @@ func (r *Registry) Heartbeat(ctx context.Context, serviceID string) error {
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
-	instance.HeartbeatTTL = instance.HeartbeatTTL.Add(r.heartbeatTTL)
+	instance.AliveUntil = time.Now().Add(r.heartbeatTTL)
 	// Set it again to refresh the TTL
 	return r.cache.SetWithTTL(ctx, key, instance, r.heartbeatTTL)
 }

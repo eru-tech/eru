@@ -14,7 +14,6 @@ func SetServiceName() {
 }
 func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
-	serverRouter.Methods(http.MethodPost).Path("/{event_name}").HandlerFunc(module_handlers.ConfigSyncHandler(sh))
 	//store functions specific to files
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 	storeRouter.Methods(http.MethodGet).Path("/load").HandlerFunc(module_handlers.StoreLoadHandler(sh))

@@ -83,6 +83,10 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder, rh 
 	registryRouter.Methods(http.MethodPost).Path("/heartbeat/{serviceid}").HandlerFunc(rh.HeartbeatHandler)
 	registryRouter.Methods(http.MethodGet).Path("/services").HandlerFunc(rh.ListServicesHandler)
 	registryRouter.Methods(http.MethodGet).Path("/services/{servicename}").HandlerFunc(rh.ListServicesHandler)
+	registryRouter.Methods(http.MethodGet).Path("/config/status").HandlerFunc(module_handlers.ConfigStatusHandler)
+	registryRouter.Methods(http.MethodGet).Path("/config/status/{servicename}").HandlerFunc(module_handlers.ConfigStatusHandler)
+	registryRouter.Methods(http.MethodPost).Path("/config/sync").HandlerFunc(module_handlers.ConfigForceSyncHandler)
+	registryRouter.Methods(http.MethodPost).Path("/config/sync/{servicename}").HandlerFunc(module_handlers.ConfigForceSyncHandler)
 
 	serverRouter.PathPrefix("/").HandlerFunc(module_handlers.RouteHandler(sh, rh))
 }

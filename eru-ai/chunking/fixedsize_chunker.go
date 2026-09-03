@@ -59,8 +59,11 @@ func (fsc *FixedSizeChunker) ChunkText(text string, chunkingConfig ChunkingConfi
 		startByte := runeStarts[r]
 		endByte := runeStarts[targetRunes]
 
-		// Try to backtrack to previous whitespace to avoid chopping a word
-		softEnd := backtrackToWhitespace(text, startByte, endByte)
+		// Only soft-wrap when the text is actually being cut short of its end
+		softEnd := endByte
+		if endByte < len(text) {
+			softEnd = backtrackToWhitespace(text, startByte, endByte)
+		}
 		if softEnd > startByte {
 			endByte = softEnd
 			// align endByte to rune boundary (already safe because we only moved left across ASCII space)

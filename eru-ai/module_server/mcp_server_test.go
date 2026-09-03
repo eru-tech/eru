@@ -104,7 +104,7 @@ func TestEruAIMCPServerListToolsAll(t *testing.T) {
 	foundTool := false
 	foundAgent := false
 	for _, tool := range result.Tools {
-		if tool.Name == "tool__search" {
+		if tool.Name == "search" {
 			foundTool = true
 		}
 		if tool.Name == "agent__chatbot" {
@@ -112,7 +112,7 @@ func TestEruAIMCPServerListToolsAll(t *testing.T) {
 		}
 	}
 	if !foundTool {
-		t.Errorf("expected tool 'tool__search' in results, got: %v", toolNames(result.Tools))
+		t.Errorf("expected tool 'search' in results, got: %v", toolNames(result.Tools))
 	}
 	if !foundAgent {
 		t.Errorf("expected agent 'agent__chatbot' in results, got: %v", toolNames(result.Tools))

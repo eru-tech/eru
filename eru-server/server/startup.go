@@ -2,17 +2,14 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	events "github.com/eru-tech/eru/eru-events/events"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-server/registration"
 	handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -28,6 +25,8 @@ type Server struct {
 func Launch(serverRouter *mux.Router, port string, store store.StoreI) {
 	LaunchWithContext(context.Background(), serverRouter, port, store)
 }
+
+const DefaultHeartbeatInterval = 30 * time.Second
 
 func LaunchWithContext(ctx context.Context, serverRouter *mux.Router, port string, store store.StoreI) {
 
@@ -56,7 +55,7 @@ func LaunchWithContext(ctx context.Context, serverRouter *mux.Router, port strin
 
 		if registryURL != "" {
 			var err error
-			regClient, err = registration.NewRegistryClient(registryURL, handlers.ServerName, port, handlers.InstanceId, time.Now(), fmt.Sprintf("%v", store.GetUpdateTime()))
+			regClient, err = registration.NewRegistryClient(registryURL, handlers.ServerName, port, handlers.InstanceId)
 			if err != nil {
 				logs.Logger.Error(fmt.Sprintf("Failed to create registry client: %v", err))
 				err = nil
@@ -68,7 +67,7 @@ func LaunchWithContext(ctx context.Context, serverRouter *mux.Router, port strin
 				} else {
 					// Start heartbeating with non-critical restart behavior - keep service alive even if heartbeat fails
 					gm.SafeGoWithRestartBehavior("heartbeat", func(ctx context.Context) {
-						interval := 1 * time.Hour
+						interval := DefaultHeartbeatInterval
 						if os.Getenv("HEARTBEAT_INTERVAL") != "" {
 							//expected format: 30s, 1m, 1h, 1d
 							//if not valid, use default 1h
@@ -96,8 +95,8 @@ func LaunchWithContext(ctx context.Context, serverRouter *mux.Router, port strin
 	logs.Logger.Info(fmt.Sprint("AllowedOrigins = ", handlers.AllowedOrigins))
 	corsObj := handlers.MakeCorsObject()
 
-	//r := otelhttp.NewHandler(corsObj.Handler(panicRecoveryMiddleware(concurrencyLimitMiddleware(contextCancellationMiddleware(requestIdMiddleWare(otelMiddleWare(serverRouter)))))), handlers.ServerName)
-	r := otelhttp.NewHandler(corsObj.Handler(requestIdMiddleWare(panicRecoveryMiddleware(contextCancellationMiddleware(otelMiddleWare(serverRouter))))), handlers.ServerName)
+	//r := otelhttp.NewHandler(corsObj.Handler(panicRecoveryMiddleware(concurrencyLimitMiddleware(contextCancellationMiddleware(requestIdMiddleWare(otelMiddleWare(configChangeMiddleware(serverRouter))))))), handlers.ServerName)
+	r := otelhttp.NewHandler(corsObj.Handler(requestIdMiddleWare(panicRecoveryMiddleware(contextCancellationMiddleware(otelMiddleWare(configChangeMiddleware(serverRouter)))))), handlers.ServerName)
 	http.Handle("/", r)
 
 	// Start HTTP server with critical restart behavior - shutdown service if server fails
@@ -129,39 +128,12 @@ func LaunchWithContext(ctx context.Context, serverRouter *mux.Router, port strin
 
 		// Deregister from gateway if applicable
 		if regClient != nil {
-			logs.Logger.Info("Attempting to deregister service and unsubscribe from config sync event")
+			logs.Logger.Info("Attempting to deregister service")
 			deregisterCtx, deregisterCancel := context.WithTimeout(ctx, 5*time.Second)
 			defer deregisterCancel()
 
 			if err := regClient.Deregister(deregisterCtx); err != nil {
 				logs.Logger.Error(fmt.Sprintf("Deregistration error: %v", err))
-			}
-
-			// Config sync cleanup
-			project_id := ""
-			event_name := ""
-
-			splitEventText := strings.Split(handlers.ConfigSyncEvent, "__")
-			if len(splitEventText) == 2 {
-				project_id = splitEventText[0]
-				event_name = splitEventText[1]
-			}
-
-			if project_id != "" && event_name != "" {
-				eventI, err := store.FetchEvent(ctx, project_id, event_name, store)
-				if err != nil {
-					logs.Logger.Error(fmt.Sprintf("Failed to fetch event for cleanup: %v", err))
-				} else {
-					err = eventI.Unsubscribe(ctx, handlers.InstanceId)
-					if err != nil {
-						logs.Logger.Error(fmt.Sprintf("Failed to unsubscribe from config sync: %v", err))
-					} else {
-						err = store.SaveStore(ctx, "", "", store)
-						if err != nil {
-							logs.Logger.Error(fmt.Sprintf("Failed to save store during cleanup: %v", err))
-						}
-					}
-				}
 			}
 		}
 
@@ -178,27 +150,6 @@ func LaunchWithContext(ctx context.Context, serverRouter *mux.Router, port strin
 	logs.Logger.Info("Server shutdown completed")
 }
 
-func InitConfigSync(ctx context.Context, store store.StoreI, configEvent events.EventI, subscription map[string]interface{}, project_id string) {
-	gm := GetGlobalGoroutineManager(ctx)
-
-	gm.SafeGoWithRestartBehavior("config-sync-subscription", func(ctx context.Context) {
-		time.Sleep(10 * time.Second)
-		logs.Logger.Info(fmt.Sprintf("Subscribing to config sync event: %v", subscription))
-
-		err := configEvent.Subscribe(ctx, subscription)
-		if err != nil {
-			logs.Logger.Error(fmt.Sprintf("Failed to subscribe to config sync event: %v", err))
-			return
-		}
-
-		logs.WithContext(ctx).Info(fmt.Sprintf("Subscribed to config sync event: %v", configEvent))
-		err = store.SaveStore(ctx, project_id, "", store)
-		if err != nil {
-			logs.Logger.Error(fmt.Sprintf("Failed to save store after subscribing to %s event: %v", handlers.ConfigSyncEvent, err))
-		}
-
-	}, ShutdownOnMaxRetries)
-}
 func Init(ctx context.Context, store store.StoreI) (*mux.Router, *Server, error) {
 	_ = store.LoadSmValue(ctx, "")
 	_ = store.LoadEnvValue(ctx, "")
@@ -207,45 +158,7 @@ func Init(ctx context.Context, store store.StoreI) (*mux.Router, *Server, error)
 	store.SetServiceName(handlers.ServerName)
 	store.SetInstanceId(handlers.InstanceId)
 	store.SetBaseUrl(handlers.BaseUrl)
-	handlers.ConfigSyncEvent = os.Getenv("CONFIG_SYNC_EVENT")
-	store.SetConfigSyncEvent(handlers.ConfigSyncEvent)
-
-	logs.Logger.Info(fmt.Sprintf("Config sync event: %s", handlers.ConfigSyncEvent))
 	logs.Logger.Info(fmt.Sprintf("Base url: %s", handlers.BaseUrl))
-	if handlers.ConfigSyncEvent != "unknown" && handlers.BaseUrl != "" {
-		project_id := ""
-		event_name := ""
-
-		splitEventText := strings.Split(handlers.ConfigSyncEvent, "__")
-		if len(splitEventText) == 2 {
-			project_id = splitEventText[0]
-			event_name = splitEventText[1]
-		}
-		configEvent, err := store.FetchEvent(ctx, project_id, event_name, store)
-		if err != nil {
-			logs.Logger.Error(fmt.Sprintf("Failed to fetch config event: %v", err))
-			err = nil
-		} else {
-
-			fp := map[string][]string{
-				"service_name": {handlers.ServerName},
-			}
-			fpJson, err := json.Marshal(fp)
-			if err != nil {
-				logs.Logger.Error(fmt.Sprintf("Failed to marshal filter policy: %v", err))
-				err = nil
-			}
-			logs.Logger.Info(fmt.Sprintf("Config sync endpoint: %s/%s?instance_id=%s", handlers.BaseUrl, handlers.ConfigSyncEvent, handlers.InstanceId))
-			subscription := map[string]interface{}{
-				"protocol":      "https",
-				"endpoint":      fmt.Sprintf("%s/%s?instance_id=%s", handlers.BaseUrl, handlers.ConfigSyncEvent, handlers.InstanceId),
-				"filter_policy": string(fpJson),
-			}
-
-			// Use InitConfigSync to handle subscription properly
-			InitConfigSync(ctx, store, configEvent, subscription, project_id)
-		}
-	}
 
 	s := new(Server)
 	s.Store = store

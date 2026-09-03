@@ -49,5 +49,4 @@ func GetGateway(gatewayType string) GatewayI {
 	default:
 		return nil
 	}
-	return nil
 }

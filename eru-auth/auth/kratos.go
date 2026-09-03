@@ -142,7 +142,7 @@ type KratosIdentityAddress struct {
 	Status     string    `json:"status"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
-	VerifiedAt time.Time `json:"verified_at""`
+	VerifiedAt time.Time `json:"verified_at"`
 }
 
 func (kratosHydraAuth *KratosHydraAuth) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
@@ -835,7 +835,6 @@ func (kratosHydraAuth *KratosHydraAuth) Login(ctx context.Context, loginPostBody
 		logs.WithContext(ctx).Info(err.Error())
 		return
 	}
-	return
 }
 
 func (kratosConfig KratosConfig) getPublicUrl() (url string) {

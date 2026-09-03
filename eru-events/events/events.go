@@ -30,7 +30,6 @@ type EventI interface {
 	Subscribe(ctx context.Context, subscription map[string]interface{}) (err error)
 	Unsubscribe(ctx context.Context, subscriptionId string) (err error)
 	ListSubscriptions(ctx context.Context) (subscriptions []map[string]interface{}, err error)
-	ProcessNotification(ctx context.Context, msg interface{}, endPoint string) (notification map[string]EventNotification, confirmation bool, err error)
 }
 
 type EventNotification struct {
@@ -145,11 +144,6 @@ func (event *Event) Unsubscribe(ctx context.Context, subscriptionId string) (err
 
 func (event *Event) ListSubscriptions(ctx context.Context) (subscriptions []map[string]interface{}, err error) {
 	err = errors.New("this event does not support subscriptions")
-	logs.WithContext(ctx).Error(err.Error())
-	return
-}
-func (event *Event) ProcessNotification(ctx context.Context, msg interface{}, endPoint string) (notification map[string]EventNotification, confirmation bool, err error) {
-	err = errors.New("this event does not support notification")
 	logs.WithContext(ctx).Error(err.Error())
 	return
 }

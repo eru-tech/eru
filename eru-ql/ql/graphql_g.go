@@ -150,7 +150,7 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 	//var tempArrayG []string
 	//var tempArrayC []string
 
-	tiq := module_model.Tables{strings.Replace(tableName, ".", "___", 1), false, ""}
+	tiq := module_model.Tables{Name: strings.Replace(tableName, ".", "___", 1), Nested: false, SqlQuery: ""}
 
 	if len(sqlObj.tables) == level {
 		sqlObj.tables = append(sqlObj.tables, []module_model.Tables{})
@@ -171,8 +171,8 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 			} else {
 				colStrArray := strings.Split(rv.(string), ",")
 				for _, str := range colStrArray {
-					n := ast.Name{field.Kind, field.Loc, str}
-					f := ast.Field{field.Kind, field.Loc, field.Alias, &n, field.Arguments, field.Directives, field.SelectionSet}
+					n := ast.Name{Kind: field.Kind, Loc: field.Loc, Value: str}
+					f := ast.Field{Kind: field.Kind, Loc: field.Loc, Alias: field.Alias, Name: &n, Arguments: field.Arguments, Directives: field.Directives, SelectionSet: field.SelectionSet}
 					newSel = append(newSel, &f)
 				}
 			}
@@ -207,9 +207,9 @@ func (sqlObj *SQLObjectQ) processColumnList(ctx context.Context, sel []ast.Selec
 							}
 
 							jc := sqlMaker.MakeJsonColumn(fv, cs_c)
-							n := ast.Name{field.Kind, field.Loc, jc}
-							al := ast.Name{field.Kind, field.Loc, fmt.Sprint(cs_a)}
-							f := ast.Field{field.Kind, field.Loc, &al, &n, field.Arguments, field.Directives, field.SelectionSet}
+							n := ast.Name{Kind: field.Kind, Loc: field.Loc, Value: jc}
+							al := ast.Name{Kind: field.Kind, Loc: field.Loc, Value: fmt.Sprint(cs_a)}
+							f := ast.Field{Kind: field.Kind, Loc: field.Loc, Alias: &al, Name: &n, Arguments: field.Arguments, Directives: field.Directives, SelectionSet: field.SelectionSet}
 							if jc != "" {
 								newSel = append(newSel, &f)
 							}

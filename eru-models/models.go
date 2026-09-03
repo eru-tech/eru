@@ -40,9 +40,8 @@ type SampleRequest struct {
 
 // ServiceInstance represents the data sent to the registry.
 type ServiceInstance struct {
-	Id             string    `json:"id"`
-	Name           string    `json:"name"`
-	Address        string    `json:"address"`
-	HeartbeatTTL   time.Time `json:"heartbeat_ttl"`
-	ConfigUpdateAt string    `json:"config_update_at"`
+	Id         string    `json:"id"`
+	Name       string    `json:"name"`
+	Address    string    `json:"address"`
+	AliveUntil time.Time `json:"alive_until"`
 }

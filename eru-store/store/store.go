@@ -36,7 +36,6 @@ const (
 var InstanceId = "unknown"
 var ServiceName = "unknown"
 var BaseUrl = "unknown"
-var ConfigSyncEvent = "unknown"
 
 type StoreI interface {
 	LoadStore(fp string, ms StoreI) (err error)
@@ -108,7 +107,6 @@ type StoreI interface {
 	SetServiceName(serviceName string)
 	SetInstanceId(instanceId string)
 	SetBaseUrl(baseUrl string)
-	SetConfigSyncEvent(configSyncEvent string)
 	GetUpdateTime() time.Time
 }
 
@@ -1654,7 +1652,6 @@ func (store *Store) SetCacheValue(ctx context.Context, projectId string, key str
 		err = errors.New("cache store is not defined")
 		return
 	}
-	return
 }
 
 func (store *Store) ValidateJSON(ctx context.Context, schema validator.Schema, data []interface{}) (records []interface{}, errRecords []interface{}) {
@@ -1802,7 +1799,4 @@ func (store *Store) SetInstanceId(instanceId string) {
 }
 func (store *Store) SetBaseUrl(baseUrl string) {
 	BaseUrl = baseUrl
-}
-func (store *Store) SetConfigSyncEvent(configSyncEvent string) {
-	ConfigSyncEvent = configSyncEvent
 }

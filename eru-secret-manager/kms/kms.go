@@ -37,7 +37,6 @@ func GetKms(storageType string) KmsStoreI {
 	default:
 		return nil
 	}
-	return nil
 }
 
 func (kmsStore *KmsStore) Init(ctx context.Context) (err error) {
