@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/eru-tech/eru/eru-store/store"
+	"github.com/jmoiron/sqlx"
 )
 
 type Sink interface {
@@ -23,11 +24,14 @@ type dbSink struct {
 }
 
 func newDbSink(ctx context.Context, s store.StoreI, tableName string, autoCreate bool) (sink Sink, err error) {
-	if s == nil || s.GetConn() == nil {
-		err = errors.New("user event logging requires STORE_TYPE=POSTGRES - no database connection available")
+	if s == nil {
+		err = errors.New("user event logging requires STORE_TYPE=POSTGRES - no config store available")
 		return
 	}
 	d := &dbSink{store: s, tableName: tableName}
+	if _, err = d.conn(); err != nil {
+		return nil, err
+	}
 	if autoCreate {
 		if err = d.ensureTable(ctx); err != nil {
 			return
@@ -40,10 +44,25 @@ func (d *dbSink) Name() string {
 	return fmt.Sprint("db:", d.tableName)
 }
 
-func (d *dbSink) ensureTable(ctx context.Context) (err error) {
-	db := d.store.GetConn()
+func (d *dbSink) conn() (db *sqlx.DB, err error) {
+	db = d.store.GetConn()
+	if db != nil {
+		return
+	}
+	if err = d.store.CreateConn(); err != nil {
+		return nil, fmt.Errorf("user event logging could not open a database connection : %w", err)
+	}
+	db = d.store.GetConn()
 	if db == nil {
-		return errors.New("no database connection available")
+		return nil, errors.New("user event logging requires STORE_TYPE=POSTGRES - no database connection available")
+	}
+	return
+}
+
+func (d *dbSink) ensureTable(ctx context.Context) (err error) {
+	db, err := d.conn()
+	if err != nil {
+		return
 	}
 	ddl := fmt.Sprintf(`create table if not exists %s (
 		id bigserial primary key,
@@ -77,9 +96,9 @@ func (d *dbSink) Write(ctx context.Context, events []UserEvent) (err error) {
 	if len(events) == 0 {
 		return
 	}
-	db := d.store.GetConn()
-	if db == nil {
-		return errors.New("no database connection available")
+	db, err := d.conn()
+	if err != nil {
+		return
 	}
 	query, vals := buildInsert(d.tableName, events)
 	_, err = db.ExecContext(ctx, query, vals...)
