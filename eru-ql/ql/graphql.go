@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -50,6 +51,42 @@ func (gqd *GraphQLData) parseGraphQL(ctx context.Context) (d *ast.Document, err 
 		return nil, err
 	}
 	return d, err
+}
+
+var graphQLColAliasRegex = regexp.MustCompile(`"([^"]*)"\s*$`)
+
+func groupByColMap(cols SQLCols) (colMap map[string]string) {
+	colMap = make(map[string]string)
+	count := len(cols.ColNames)
+	if len(cols.ColWithAlias) < count {
+		count = len(cols.ColWithAlias)
+	}
+	for i := 0; i < count; i++ {
+		match := graphQLColAliasRegex.FindStringSubmatch(cols.ColWithAlias[i])
+		if match == nil {
+			continue
+		}
+		colMap[cols.ColNames[i]] = fmt.Sprint("\"", match[1], "\"")
+	}
+	return colMap
+}
+
+func renameResultKey(result map[string]interface{}, from string, to string) (renamed map[string]interface{}) {
+	if from == to {
+		return result
+	}
+	v, ok := result[from]
+	if !ok {
+		return result
+	}
+	renamed = make(map[string]interface{}, len(result))
+	for k, rv := range result {
+		if k != from {
+			renamed[k] = rv
+		}
+	}
+	renamed[to] = v
+	return renamed
 }
 
 func (gqd *GraphQLData) getSqlForQuery(ctx context.Context, projectId string, datasources map[string]*module_model.DataSource, query string, s module_store.ModuleStoreI, tokenObj map[string]interface{}, isPublic bool) (err error) {
@@ -209,8 +246,20 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					}
 				}
 
-				if len(gqd.GroupBy.GroupBy) > 0 {
-					groupQuery, gErr := gqd.wrapGroupBy(ctx, sqlObj.WithQuery)
+				sqlObj.GroupByMode = gqd.GroupBy.Active
+				err = sqlObj.ProcessGraphQL(ctx, v, datasource, graphQLs[i], gqd.FinalVariables, s, gqd.ExecuteFlag) //TODO to handle if err recd.
+				//TODO : test this error handling
+				if err != nil {
+					return nil, nil, err
+				}
+
+				queryObj.Query = sqlObj.DBQuery
+				queryObj.Cols = strings.Join(sqlObj.Columns.ColNames, " , ")
+				mainAliasNames = append(mainAliasNames, sqlObj.MainAliasName)
+
+				if gqd.GroupBy.Active {
+					gqd.SetGroupByColMap(groupByColMap(sqlObj.Columns))
+					groupQuery, gErr := gqd.wrapGroupBy(ctx, sqlObj.DBQuery)
 					if gErr != nil {
 						return nil, nil, gErr
 					}
@@ -220,7 +269,6 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					}
 					queryObj.Query = groupQuery
 					queryObj.Cols = strings.Join(gqd.GroupBy.GroupBy, " , ")
-					mainAliasNames = append(mainAliasNames, sqlObj.MainAliasName)
 					if gqd.ExecuteFlag {
 						ctxw := ds.WithUseWriter(ctx, false)
 						if eru_writes.IsColumnarOutput(gqd.OutputType) {
@@ -245,9 +293,14 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 								return r, names, nil
 							}
 							result, err = qlcache.ServeOrLoad(ctxw, datasource, gqd.TenantId, groupQuery, graphQLs[i].DefaultSchemaName(), loader, qlcache.Options{})
+							if result != nil {
+								result = renameResultKey(result, "Results", strings.Replace(sqlObj.MainAliasName, ".", "___", 1))
+							}
 						}
 						if err != nil {
 							err = logs.Err(ctx, err, "")
+							errMsg = err.Error()
+							errFound = true
 						}
 						if result != nil {
 							res = append(res, result)
@@ -256,16 +309,6 @@ func (gqd *GraphQLData) Execute(ctx context.Context, projectId string, datasourc
 					queryObjs = append(queryObjs, queryObj)
 					continue
 				}
-
-				err = sqlObj.ProcessGraphQL(ctx, v, datasource, graphQLs[i], gqd.FinalVariables, s, gqd.ExecuteFlag) //TODO to handle if err recd.
-				//TODO : test this error handling
-				if err != nil {
-					return nil, nil, err
-				}
-
-				queryObj.Query = sqlObj.DBQuery
-				queryObj.Cols = strings.Join(sqlObj.Columns.ColNames, " , ")
-				mainAliasNames = append(mainAliasNames, sqlObj.MainAliasName)
 				if gqd.ExecuteFlag {
 					qrm := module_model.QueryResultMaker{}
 					qrm.MainTableName = sqlObj.MainTableName

@@ -32,6 +32,7 @@ type QLData struct {
 	Formatter      eru_writes.CellFormatter     `json:"formatter,omitempty"`
 	UseWriter      bool                         `json:"use_writer,omitempty"`
 	GroupBy        module_model.GroupByConfig   `json:"-"`
+	GroupByColMap  map[string]string            `json:"-"`
 	WrapConfig     module_model.QueryWrapConfig `json:"-"`
 }
 
@@ -57,6 +58,7 @@ type QL interface {
 	SetQLData(ctx context.Context, mq module_model.MyQuery, vars map[string]interface{}, executeFlag bool, tokenObj map[string]interface{}, isPublic bool, outputType string)
 	SetTenantId(tenantId string)
 	SetGroupBy(gb module_model.GroupByConfig)
+	SetGroupByColMap(colMap map[string]string)
 	SetWrapConfig(w module_model.QueryWrapConfig)
 	ProcessTransformRule(ctx context.Context, tr module_model.TransformRule, docs interface{}) (outputObj map[string]interface{}, err error)
 }
@@ -67,6 +69,27 @@ func (qld *QLData) SetTenantId(tenantId string) {
 
 func (qld *QLData) SetGroupBy(gb module_model.GroupByConfig) {
 	qld.GroupBy = gb
+}
+
+func (qld *QLData) SetGroupByColMap(colMap map[string]string) {
+	qld.GroupByColMap = colMap
+}
+
+func groupBySelectPart(expr string, name string) string {
+	if groupByAliasRegex.MatchString(name) {
+		return fmt.Sprint(expr, " \"", name, "\"")
+	}
+	return expr
+}
+
+func (qld *QLData) resolveGroupByCol(ctx context.Context, name string) (expr string, err error) {
+	if mapped, ok := qld.GroupByColMap[name]; ok {
+		return mapped, nil
+	}
+	if err = validateGroupByIdentifier(ctx, name); err != nil {
+		return "", err
+	}
+	return name, nil
 }
 
 func (qld *QLData) SetWrapConfig(w module_model.QueryWrapConfig) {
@@ -98,21 +121,26 @@ func (qld *QLData) wrapGroupBy(ctx context.Context, query string) (wrappedQuery 
 	if !qld.GroupBy.Active {
 		return query, nil
 	}
-	for _, g := range qld.GroupBy.GroupBy {
-		if err = validateGroupByIdentifier(ctx, g); err != nil {
-			return "", err
-		}
-	}
 	aggregations := qld.GroupBy.Aggregations
 	if len(aggregations) == 0 {
 		aggregations = []module_model.AggregationConfig{{Func: "count", Field: "1", Alias: "cnt"}}
 	}
 	var selectParts []string
-	selectParts = append(selectParts, qld.GroupBy.GroupBy...)
 	aggAliases := make(map[string]bool)
 	groupCols := make(map[string]bool)
+	var groupByCols []string
 	for _, g := range qld.GroupBy.GroupBy {
-		groupCols[strings.TrimSpace(g)] = true
+		g = strings.TrimSpace(g)
+		var expr string
+		expr, err = qld.resolveGroupByCol(ctx, g)
+		if err != nil {
+			return "", err
+		}
+		selectParts = append(selectParts, groupBySelectPart(expr, g))
+		if !groupCols[expr] {
+			groupCols[expr] = true
+			groupByCols = append(groupByCols, expr)
+		}
 	}
 	for _, agg := range aggregations {
 		fn := strings.ToLower(strings.TrimSpace(agg.Func))
@@ -122,11 +150,6 @@ func (qld *QLData) wrapGroupBy(ctx context.Context, query string) (wrappedQuery 
 			return "", err
 		}
 		field := strings.TrimSpace(agg.Field)
-		if !(fn == "count" && field == "1") {
-			if err = validateGroupByIdentifier(ctx, field); err != nil {
-				return "", err
-			}
-		}
 		alias := strings.TrimSpace(agg.Alias)
 		if alias == "" {
 			alias = fmt.Sprint(fn, "_", field)
@@ -134,12 +157,14 @@ func (qld *QLData) wrapGroupBy(ctx context.Context, query string) (wrappedQuery 
 		if err = validateGroupByAlias(ctx, alias); err != nil {
 			return "", err
 		}
+		if !(fn == "count" && field == "1") {
+			field, err = qld.resolveGroupByCol(ctx, field)
+			if err != nil {
+				return "", err
+			}
+		}
 		selectParts = append(selectParts, fmt.Sprint(fn, "(", field, ") \"", alias, "\""))
 		aggAliases[alias] = true
-	}
-	groupByCols := make([]string, 0, len(qld.GroupBy.GroupBy))
-	for _, g := range qld.GroupBy.GroupBy {
-		groupByCols = append(groupByCols, strings.TrimSpace(g))
 	}
 	orderByClause := ""
 	if len(qld.GroupBy.GroupOrderBy) > 0 {
@@ -155,14 +180,17 @@ func (qld *QLData) wrapGroupBy(ctx context.Context, query string) (wrappedQuery 
 				sorts = append(sorts, fmt.Sprint("\"", col, "\"", dir))
 				continue
 			}
-			if err = validateGroupByIdentifier(ctx, col); err != nil {
+			var expr string
+			expr, err = qld.resolveGroupByCol(ctx, col)
+			if err != nil {
 				return "", err
 			}
-			if !groupCols[col] {
-				groupCols[col] = true
-				groupByCols = append(groupByCols, col)
+			if !groupCols[expr] {
+				groupCols[expr] = true
+				groupByCols = append(groupByCols, expr)
+				selectParts = append(selectParts, groupBySelectPart(expr, col))
 			}
-			sorts = append(sorts, fmt.Sprint(col, dir))
+			sorts = append(sorts, fmt.Sprint(expr, dir))
 		}
 		orderByClause = fmt.Sprint(" order by ", strings.Join(sorts, " , "))
 	}

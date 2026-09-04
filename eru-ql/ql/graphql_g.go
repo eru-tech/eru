@@ -42,6 +42,7 @@ type SQLObjectQ struct {
 	OverwriteDoc    map[string]map[string]interface{} `json:"-"`
 	SecurityClause  map[string]string                 `json:"-"`
 	WithQuery       string                            `json:"-"`
+	GroupByMode     bool                              `json:"-"`
 }
 
 type SQLCols struct {
@@ -881,7 +882,10 @@ func (sqlObj *SQLObjectQ) MakeQuery(ctx context.Context, sqlMaker ds.SqlMakerI, 
 		strWhereClause = fmt.Sprint(" where ", strWhereClause)
 	}
 
-	strSortClause := sqlObj.processSortClause(ctx, sqlObj.SortClause)
+	strSortClause := ""
+	if !sqlObj.GroupByMode {
+		strSortClause = sqlObj.processSortClause(ctx, sqlObj.SortClause)
+	}
 	if sqlObj.HasAggregate && len(sqlObj.Columns.GroupClause) > 0 {
 		strGroupClause = fmt.Sprint(" group by ", strings.Join(sqlObj.Columns.GroupClause, " , "))
 	}
@@ -896,7 +900,9 @@ func (sqlObj *SQLObjectQ) MakeQuery(ctx context.Context, sqlMaker ds.SqlMakerI, 
 	}
 	sqlObj.DBQuery = fmt.Sprint(withClause, "select ", strDistinct, strColums, " from ", fromTable, " ", strJoinClause, " ", strWhereClause, " ", strGroupClause, strSortClause)
 
-	sqlObj.DBQuery = sqlMaker.AddLimitSkipClause(ctx, sqlObj.DBQuery, sqlObj.Limit, sqlObj.Skip, 1000)
+	if !sqlObj.GroupByMode || sqlObj.Limit > 0 || sqlObj.Skip > 0 {
+		sqlObj.DBQuery = sqlMaker.AddLimitSkipClause(ctx, sqlObj.DBQuery, sqlObj.Limit, sqlObj.Skip, 1000)
+	}
 
 	makeJsonArrayFnStrKeyWord, err := sqlMaker.GetMakeJsonArrayFnStr()
 	if err != nil {
