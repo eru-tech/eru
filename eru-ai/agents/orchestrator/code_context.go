@@ -171,6 +171,12 @@ What was sent:
 		sb.WriteString(fmt.Sprint("  Agents that produce this shape of output: ", strings.Join(candidates, ", "),
 			" (a hint, not an instruction - confirm against the user's request)\n"))
 	}
+	if revisers := codeCapableAgents(discovered); len(revisers) > 0 {
+		sb.WriteString(fmt.Sprint("  Agents that declare a \"code\" params key (the only ones that can revise an artifact): ",
+			strings.Join(revisers, ", "), "\n"))
+	} else {
+		sb.WriteString("  No available agent declares a \"code\" params key, so no step in this plan can revise the artifact - do not route it anywhere.\n")
+	}
 	if cc.Truncated {
 		sb.WriteString(fmt.Sprint("  Preview (first ", codePreviewLimit, " characters, TRUNCATED - the step you route it to receives the whole artifact):\n"))
 	} else {
@@ -194,6 +200,9 @@ HOW TO DECIDE, per step:
 - If the artifact was clearly produced by an agent you are NOT using in this plan,
   do not route it at all.
 
+Only an agent whose "Params keys this agent READS" line includes "code" can receive
+it. Passing params.code to any other agent silently discards it.
+
 HOW TO PASS IT (by reference - never paste the artifact into the template):
   "transform_request": "{{stringify (dict \"content\" .Vars.Body.content \"params\" (dict \"code\" .Vars.Body.params.code))}}"
 
@@ -208,6 +217,19 @@ WRONG:
 CHECKLIST ADDITION:
 [ ] params.code is passed - by .Vars.Body.params.code reference - only to the step(s) that revise the artifact described above, and to no other step`)
 	return sb.String()
+}
+
+func codeCapableAgents(discovered []agents.DiscoveredAgent) []string {
+	var names []string
+	for _, ad := range discovered {
+		for _, key := range ad.ParamKeys() {
+			if key == codeParamKey {
+				names = append(names, ad.AgentName)
+				break
+			}
+		}
+	}
+	return names
 }
 
 // candidateAgents names the discovered agents whose declared output looks like

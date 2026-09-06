@@ -50,6 +50,24 @@ func (eruStudioAgent *EruStudioAgent) GetOutputSchema(_ context.Context) eru_mod
 	return buildEruPageOutputSchema()
 }
 
+func (eruStudioAgent *EruStudioAgent) GetInputSchema(_ context.Context) eru_models.JSONSchema {
+	return agents.AgentInputSchema(map[string]eru_models.JSONSchema{
+		"code": agents.CodeParamSchema("EruPage JSON"),
+		"context": {
+			Type:        "string",
+			Description: "Stringified JSON of the data the page must render (rows fetched by an earlier step, sample data, entity hints). Drives component types, field names and component `data` properties. Pass the upstream value itself - never a paraphrase or a sample you typed.",
+		},
+		"entities": {
+			Type:        "string",
+			Description: "Stringified JSON array of the entities and their fields available to this page. Used to wire `name`, `entity_name` and form-field `identifier`.",
+		},
+		"apis": {
+			Type:        "string",
+			Description: "Stringified JSON array of the api names available to this page. Used to wire `call-api` events and chart `api` properties; the agent will not invent api names.",
+		},
+	}, nil)
+}
+
 func (eruStudioAgent *EruStudioAgent) GetSystemPrompt() string {
 	return eruStudioSystemPrompt
 }

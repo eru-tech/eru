@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"sync"
 	"time"
 
@@ -238,6 +239,116 @@ func (m *mockModuleStore) GetAgent(_ context.Context, projectId, tenantId, _ str
 		}
 	}
 	return nil, errors.New("agent not found: " + agentName)
+}
+
+func (m *mockModuleStore) DiscoverAgents(ctx context.Context, projectId, tenantId, selfName string, allowedNames []string, s module_store.ModuleStoreI) []agents.DiscoveredAgent {
+	names, _ := m.GetAgentNames(ctx, projectId, tenantId)
+	allow := make(map[string]bool)
+	for _, n := range allowedNames {
+		allow[n] = true
+	}
+	var discovered []agents.DiscoveredAgent
+	for _, name := range names {
+		if name == selfName {
+			continue
+		}
+		if len(allow) > 0 && !allow[name] {
+			continue
+		}
+		agentObj, err := m.GetAgent(ctx, projectId, tenantId, "", name, s)
+		if err != nil {
+			continue
+		}
+		description := ""
+		if d, derr := agentObj.GetAttribute(ctx, "description"); derr == nil {
+			description, _ = d.(string)
+		}
+		if description == "" {
+			description = "AI Agent: " + name
+		}
+		agentType := ""
+		if at, aerr := agentObj.GetAttribute(ctx, "agent_type"); aerr == nil {
+			agentType, _ = at.(string)
+		}
+		discovered = append(discovered, agents.DiscoveredAgent{
+			AgentName:      name,
+			AgentType:      agentType,
+			Description:    description,
+			TenantId:       tenantId,
+			InputSchema:    module_store.AgentInputSchema(ctx, agentObj),
+			OutputSchema:   module_store.AgentOutputSchema(ctx, agentObj),
+			Tools:          module_store.AgentToolNames(ctx, agentObj),
+			IsOrchestrator: agentType == "ORCHESTRATOR",
+		})
+	}
+	return discovered
+}
+
+func (m *mockModuleStore) DiscoverTools(ctx context.Context, projectId, tenantId string, allowed map[string][]string, s module_store.ModuleStoreI) []agents.DiscoveredTool {
+	toolNames := make([]string, 0, len(allowed))
+	if len(allowed) > 0 {
+		for toolName := range allowed {
+			toolNames = append(toolNames, toolName)
+		}
+	} else {
+		names, err := m.GetToolNames(ctx, projectId, tenantId)
+		if err != nil {
+			return nil
+		}
+		toolNames = names
+	}
+	sort.Strings(toolNames)
+	var discovered []agents.DiscoveredTool
+	for _, toolName := range toolNames {
+		toolObj, err := m.GetTool(ctx, projectId, tenantId, toolName, "", s)
+		if err != nil {
+			continue
+		}
+		actionSet := make(map[string]bool)
+		for _, a := range allowed[toolName] {
+			actionSet[a] = true
+		}
+		toolDescription := ""
+		if d, derr := toolObj.GetAttribute(ctx, "description"); derr == nil {
+			toolDescription, _ = d.(string)
+		}
+		actions := toolObj.GetActions()
+		if len(actions) == 0 {
+			discovered = append(discovered, agents.DiscoveredTool{
+				ToolName:    toolName,
+				Description: toolDescription,
+				InputSchema: toolObj.GetParameters(),
+				TenantId:    tenantId,
+			})
+			continue
+		}
+		for _, action := range actions {
+			if len(actionSet) > 0 && !actionSet[action.ActionName] {
+				continue
+			}
+			inputSchema := action.Parameters
+			if action.GetParameters != nil {
+				inputSchema = action.GetParameters()
+			}
+			description := toolDescription
+			if action.Description != "" {
+				if description != "" {
+					description = description + " - " + action.Description
+				} else {
+					description = action.Description
+				}
+			}
+			discovered = append(discovered, agents.DiscoveredTool{
+				ToolName:     toolName,
+				ActionName:   action.ActionName,
+				Description:  description,
+				InputSchema:  inputSchema,
+				OutputSchema: action.OutputSchema,
+				TenantId:     tenantId,
+			})
+		}
+	}
+	return discovered
 }
 
 func (m *mockModuleStore) SaveProject(_ context.Context, _ string, _ module_store.ModuleStoreI, _ bool) error {

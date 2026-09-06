@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -108,16 +109,110 @@ type AgentTools struct {
 	Tool           tools.Tooling `json:"-"`
 }
 type DiscoveredAgent struct {
-	AgentName    string                `json:"agent_name"`
-	AgentType    string                `json:"agent_type"`
-	Description  string                `json:"description"`
-	TenantId     string                `json:"tenant_id"`
-	OutputSchema eru_models.JSONSchema `json:"output_schema"`
+	AgentName             string                `json:"agent_name"`
+	AgentType             string                `json:"agent_type"`
+	Description           string                `json:"description"`
+	TenantId              string                `json:"tenant_id"`
+	InputSchema           eru_models.JSONSchema `json:"input_schema"`
+	OutputSchema          eru_models.JSONSchema `json:"output_schema"`
+	Tools                 []string              `json:"tools,omitempty"`
+	Guardrail             string                `json:"guardrail,omitempty"`
+	SupportsClarification bool                  `json:"supports_clarification"`
+	IsOrchestrator        bool                  `json:"is_orchestrator"`
+}
+
+func (da DiscoveredAgent) HasStructuredOutput() bool {
+	return da.OutputSchema.Type != ""
+}
+
+func (da DiscoveredAgent) ParamKeys() []string {
+	params, ok := da.InputSchema.Properties[AgentInputParamsKey]
+	if !ok || len(params.Properties) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(params.Properties))
+	for k := range params.Properties {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 type AgentDiscovery interface {
 	AllowedAgentNames() []string
 	SetDiscoveredAgents(discovered []DiscoveredAgent)
+}
+
+const (
+	AgentInputContentKey = "content"
+	AgentInputParamsKey  = "params"
+	AgentInputFilesKey   = "files"
+)
+
+type AgentInputSchemaProvider interface {
+	GetInputSchema(ctx context.Context) eru_models.JSONSchema
+}
+
+// AgentResponseSchemaProvider is implemented by agent types whose
+// SystemPromptProvider.GetOutputSchema describes the schema they PLAN with rather
+// than the body they RESPOND with - an orchestrator plans a FuncGroup but answers
+// with whatever its sub-steps produced.
+type AgentResponseSchemaProvider interface {
+	GetResponseSchema(ctx context.Context) eru_models.JSONSchema
+}
+
+type ClarificationCapable interface {
+	ClarificationEnabled() bool
+}
+
+func AgentInputSchema(params map[string]eru_models.JSONSchema, requiredParams []string) eru_models.JSONSchema {
+	paramsSchema := eru_models.JSONSchema{
+		Type:        "object",
+		Description: "This agent reads no params keys - everything it needs must be in content.",
+	}
+	if len(params) > 0 {
+		paramsSchema = eru_models.JSONSchema{
+			Type:        "object",
+			Description: "Side-channel inputs this agent reads. Only the keys listed here are read; any other key is silently discarded.",
+			Properties:  params,
+			Required:    requiredParams,
+		}
+	}
+	return eru_models.JSONSchema{
+		Type: "object",
+		Properties: map[string]eru_models.JSONSchema{
+			AgentInputContentKey: {
+				Type:        "string",
+				Description: "The instruction, question or task for the agent. Always required.",
+			},
+			AgentInputParamsKey: paramsSchema,
+			AgentInputFilesKey: {
+				Type:        "array",
+				Description: "Optional files to attach to the message (images, documents, etc.).",
+				Items: &eru_models.JSONSchema{
+					Type: "object",
+					Properties: map[string]eru_models.JSONSchema{
+						"name":      {Type: "string", Description: "File name including extension (e.g. invoice.pdf)."},
+						"content":   {Type: "string", Description: "Base64-encoded file contents."},
+						"mime_type": {Type: "string", Description: "MIME type of the file (e.g. application/pdf, image/png)."},
+					},
+					Required: []string{"name", "content"},
+				},
+			},
+		},
+		Required: []string{AgentInputContentKey},
+	}
+}
+
+func CodeParamSchema(artifact string) eru_models.JSONSchema {
+	return eru_models.JSONSchema{
+		Type:        "string",
+		Description: fmt.Sprint("An existing ", artifact, " produced by an earlier run, as a JSON/text string. Pass it when this call should revise that artifact instead of starting from scratch."),
+	}
+}
+
+func (agent *Agent) GetInputSchema(_ context.Context) eru_models.JSONSchema {
+	return AgentInputSchema(nil, nil)
 }
 
 type DiscoveredTool struct {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -87,6 +88,8 @@ type ModuleStoreI interface {
 	IsTenantTool(ctx context.Context, projectId string, tenantId string, toolName string) bool
 	GetAgentNames(ctx context.Context, projectID string, tenantID string) (agentNames []string, err error)
 	GetToolNames(ctx context.Context, projectID string, tenantID string) (toolNames []string, err error)
+	DiscoverAgents(ctx context.Context, projectId string, tenantId string, selfName string, allowedNames []string, s ModuleStoreI) []agents.DiscoveredAgent
+	DiscoverTools(ctx context.Context, projectId string, tenantId string, allowed map[string][]string, s ModuleStoreI) []agents.DiscoveredTool
 }
 
 type ModuleStore struct {
@@ -721,11 +724,11 @@ func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId 
 	agent.SetModel(model)
 
 	if discoveryAgent, ok := agent.(agents.AgentDiscovery); ok {
-		discoveryAgent.SetDiscoveredAgents(ms.discoverAgents(ctx, projectId, tenantId, agentName, discoveryAgent.AllowedAgentNames(), s))
+		discoveryAgent.SetDiscoveredAgents(ms.DiscoverAgents(ctx, projectId, tenantId, agentName, discoveryAgent.AllowedAgentNames(), s))
 	}
 
 	if toolDiscoveryAgent, ok := agent.(agents.ToolDiscovery); ok {
-		toolDiscoveryAgent.SetDiscoveredTools(ms.discoverTools(ctx, projectId, tenantId, toolDiscoveryAgent.AllowedToolActions(), s))
+		toolDiscoveryAgent.SetDiscoveredTools(ms.DiscoverTools(ctx, projectId, tenantId, toolDiscoveryAgent.AllowedToolActions(), s))
 	}
 
 	agent.InitializeConversationManager(ctx)
@@ -751,8 +754,8 @@ func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId 
 	return agent, nil
 }
 
-func (ms *ModuleStore) discoverAgents(ctx context.Context, projectId string, tenantId string, selfName string, allowedNames []string, s ModuleStoreI) []agents.DiscoveredAgent {
-	logs.WithContext(ctx).Debug("discoverAgents - Start")
+func (ms *ModuleStore) DiscoverAgents(ctx context.Context, projectId string, tenantId string, selfName string, allowedNames []string, s ModuleStoreI) []agents.DiscoveredAgent {
+	logs.WithContext(ctx).Debug("DiscoverAgents - Start")
 	allowSet := make(map[string]bool)
 	for _, n := range allowedNames {
 		allowSet[n] = true
@@ -762,7 +765,7 @@ func (ms *ModuleStore) discoverAgents(ctx context.Context, projectId string, ten
 		logs.WithContext(ctx).Error(err.Error())
 		return nil
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("discoverAgents - project=", projectId, " tenant=", tenantId, " allowed=", allowedNames, " found_in_tenant=", agentNames))
+	logs.WithContext(ctx).Info(fmt.Sprint("DiscoverAgents - project=", projectId, " tenant=", tenantId, " allowed=", allowedNames, " found_in_tenant=", agentNames))
 	var discovered []agents.DiscoveredAgent
 	for _, agentName := range agentNames {
 		if agentName == selfName {
@@ -790,38 +793,140 @@ func (ms *ModuleStore) discoverAgents(ctx context.Context, projectId string, ten
 				agentType = atStr
 			}
 		}
-		var outputSchema eru_models.JSONSchema
-		if os, oerr := agentObj.GetAttribute(ctx, "output_schema"); oerr == nil {
-			if oss, ok := os.(eru_models.JSONSchema); ok {
-				outputSchema = oss
+		guardrail := ""
+		if gp, gerr := agentObj.GetAttribute(ctx, "guardrail_prompt"); gerr == nil {
+			if gpStr, ok := gp.(string); ok {
+				guardrail = strings.TrimSpace(gpStr)
 			}
 		}
+		supportsClarification := false
+		if capable, ok := agentObj.(agents.ClarificationCapable); ok {
+			supportsClarification = capable.ClarificationEnabled()
+		}
 		discovered = append(discovered, agents.DiscoveredAgent{
-			AgentName:    agentName,
-			AgentType:    agentType,
-			Description:  description,
-			TenantId:     tenantId,
-			OutputSchema: outputSchema,
+			AgentName:             agentName,
+			AgentType:             agentType,
+			Description:           description,
+			TenantId:              tenantId,
+			InputSchema:           AgentInputSchema(ctx, agentObj),
+			OutputSchema:          AgentOutputSchema(ctx, agentObj),
+			Tools:                 AgentToolNames(ctx, agentObj),
+			Guardrail:             guardrail,
+			SupportsClarification: supportsClarification,
+			IsOrchestrator:        agentType == "ORCHESTRATOR",
 		})
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("discoverAgents - resolved ", len(discovered), " agent(s) for orchestrator ", selfName))
+	logs.WithContext(ctx).Info(fmt.Sprint("DiscoverAgents - resolved ", len(discovered), " agent(s) for orchestrator ", selfName))
 	return discovered
 }
 
-func (ms *ModuleStore) discoverTools(ctx context.Context, projectId string, tenantId string, allowed map[string][]string, s ModuleStoreI) []agents.DiscoveredTool {
-	logs.WithContext(ctx).Debug("discoverTools - Start")
+// AgentOutputSchema resolves the schema the agent actually responds with.
+// Provider-backed agent types (ERU_STUDIO, ERU_FUNC, ...) build theirs at runtime
+// and leave the stored output_schema attribute blank, so the provider is asked
+// first - except where the agent declares a separate response schema because what
+// it plans with is not what it answers with.
+func AgentOutputSchema(ctx context.Context, agentObj agents.AgentI) eru_models.JSONSchema {
+	if responder, ok := agentObj.(agents.AgentResponseSchemaProvider); ok {
+		return responder.GetResponseSchema(ctx)
+	}
+	if provider := agentObj.GetProvider(); provider != nil {
+		if js := provider.GetOutputSchema(ctx); js.Type != "" {
+			return js
+		}
+	}
+	if os, oerr := agentObj.GetAttribute(ctx, "output_schema"); oerr == nil {
+		if js, ok := os.(eru_models.JSONSchema); ok {
+			return js
+		}
+	}
+	return eru_models.JSONSchema{}
+}
+
+// AgentInputSchema resolves the request contract the agent accepts, including the
+// params keys its type actually reads.
+func AgentInputSchema(ctx context.Context, agentObj agents.AgentI) eru_models.JSONSchema {
+	if provider, ok := agentObj.(agents.AgentInputSchemaProvider); ok {
+		return provider.GetInputSchema(ctx)
+	}
+	return agents.AgentInputSchema(nil, nil)
+}
+
+// AgentToolNames lists the tool actions an agent can call itself, so a caller can
+// tell what the agent is capable of beyond its one-line description.
+func AgentToolNames(ctx context.Context, agentObj agents.AgentI) []string {
+	atI, err := agentObj.GetAttribute(ctx, "agent_tools")
+	if err != nil {
+		return nil
+	}
+	agentTools, ok := atI.([]agents.AgentTools)
+	if !ok {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var names []string
+	var collect func(list []agents.AgentTools)
+	collect = func(list []agents.AgentTools) {
+		for _, at := range list {
+			name := at.ToolName
+			if at.ActionName != "" {
+				name = fmt.Sprint(at.ToolName, ".", at.ActionName)
+			}
+			if name != "" && !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+			collect(at.DependentTools)
+		}
+	}
+	collect(agentTools)
+	sort.Strings(names)
+	return names
+}
+
+func (ms *ModuleStore) DiscoverTools(ctx context.Context, projectId string, tenantId string, allowed map[string][]string, s ModuleStoreI) []agents.DiscoveredTool {
+	logs.WithContext(ctx).Debug("DiscoverTools - Start")
+	toolNames := make([]string, 0, len(allowed))
+	if len(allowed) > 0 {
+		for toolName := range allowed {
+			toolNames = append(toolNames, toolName)
+		}
+	} else {
+		names, err := ms.GetToolNames(ctx, projectId, tenantId)
+		if err != nil {
+			logs.WithContext(ctx).Error(err.Error())
+			return nil
+		}
+		toolNames = names
+	}
+	sort.Strings(toolNames)
 	var discovered []agents.DiscoveredTool
-	for toolName, allowedActions := range allowed {
+	for _, toolName := range toolNames {
 		toolObj, err := ms.GetToolClone(ctx, projectId, tenantId, toolName, "", s)
 		if err != nil {
-			logs.WithContext(ctx).Error(fmt.Sprint("discoverTools - tool ", toolName, " not found: ", err.Error()))
+			logs.WithContext(ctx).Error(fmt.Sprint("DiscoverTools - tool ", toolName, " not found: ", err.Error()))
 			continue
 		}
 		actionSet := make(map[string]bool)
-		for _, a := range allowedActions {
+		for _, a := range allowed[toolName] {
 			actionSet[a] = true
 		}
-		for _, action := range toolObj.GetActions() {
+		toolDescription := ""
+		if desc, derr := toolObj.GetAttribute(ctx, "description"); derr == nil {
+			if descStr, ok := desc.(string); ok {
+				toolDescription = descStr
+			}
+		}
+		actions := toolObj.GetActions()
+		if len(actions) == 0 {
+			discovered = append(discovered, agents.DiscoveredTool{
+				ToolName:    toolName,
+				Description: toolDescription,
+				InputSchema: toolObj.GetParameters(),
+				TenantId:    tenantId,
+			})
+			continue
+		}
+		for _, action := range actions {
 			if len(actionSet) > 0 && !actionSet[action.ActionName] {
 				continue
 			}
@@ -829,17 +934,25 @@ func (ms *ModuleStore) discoverTools(ctx context.Context, projectId string, tena
 			if action.GetParameters != nil {
 				inputSchema = action.GetParameters()
 			}
+			description := toolDescription
+			if action.Description != "" {
+				if description != "" {
+					description = description + " - " + action.Description
+				} else {
+					description = action.Description
+				}
+			}
 			discovered = append(discovered, agents.DiscoveredTool{
 				ToolName:     toolName,
 				ActionName:   action.ActionName,
-				Description:  action.Description,
+				Description:  description,
 				InputSchema:  inputSchema,
 				OutputSchema: action.OutputSchema,
 				TenantId:     tenantId,
 			})
 		}
 	}
-	logs.WithContext(ctx).Info(fmt.Sprint("discoverTools - resolved ", len(discovered), " tool action(s)"))
+	logs.WithContext(ctx).Info(fmt.Sprint("DiscoverTools - resolved ", len(discovered), " tool action(s)"))
 	return discovered
 }
 

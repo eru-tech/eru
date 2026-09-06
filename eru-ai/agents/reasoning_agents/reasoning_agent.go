@@ -292,6 +292,19 @@ func buildCodeAugmentation(params map[string]interface{}) string {
 	return b.String()
 }
 
+func (ra *ReasoningAgent) ClarificationEnabled() bool {
+	return ra.EnableClarification
+}
+
+func (ra *ReasoningAgent) GetInputSchema(ctx context.Context) eru_models.JSONSchema {
+	if ra.getOutputSchema(ctx).Type == "" {
+		return agents.AgentInputSchema(nil, nil)
+	}
+	return agents.AgentInputSchema(map[string]eru_models.JSONSchema{
+		"code": agents.CodeParamSchema("structured output of this agent"),
+	}, nil)
+}
+
 func (ra *ReasoningAgent) getOutputSchema(ctx context.Context) eru_models.JSONSchema {
 	outputSchema := ra.OutputSchema
 	if ra.GetProvider() != nil {

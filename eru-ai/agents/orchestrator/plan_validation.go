@@ -9,6 +9,7 @@ import (
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	functions "github.com/eru-tech/eru/eru-functions/functions"
+	eru_models "github.com/eru-tech/eru/eru-models"
 	gotemplate "github.com/eru-tech/eru/eru-templates/gotemplate"
 )
 
@@ -66,8 +67,202 @@ func validatePlan(ctx context.Context, plan map[string]interface{}, allowedAgent
 	issues := validateStepTemplates(ctx, "", funcGroup.FuncSteps)
 	issues = append(issues, validateStepReferences(ctx, funcGroup.FuncSteps)...)
 	issues = append(issues, validateStepIdentity(funcGroup.FuncSteps, allowedAgents, allowedTools)...)
+	issues = append(issues, validateStepPayload(ctx, funcGroup.FuncSteps, allowedAgents, allowedTools)...)
 	issues = append(issues, validateCodeRouting(ctx, funcGroup.FuncSteps, cc)...)
 	return issues
+}
+
+var agentRequestKeys = []string{"content", "params", "files", "code", "conversation_id"}
+
+// validateStepPayload checks each step's transform_request against the request
+// contract of the agent or tool action it targets, so a plan that would silently
+// drop its inputs is repaired before it runs rather than producing invented data.
+func validateStepPayload(ctx context.Context, steps map[string]*functions.FuncStep, allowedAgents []agents.DiscoveredAgent, allowedTools []agents.DiscoveredTool) []planIssue {
+	agentByName := make(map[string]agents.DiscoveredAgent, len(allowedAgents))
+	for _, discovered := range allowedAgents {
+		agentByName[discovered.AgentName] = discovered
+	}
+	toolByAction := make(map[string]agents.DiscoveredTool, len(allowedTools))
+	for _, discovered := range allowedTools {
+		toolByAction[fmt.Sprint(discovered.ToolName, ".", discovered.ActionName)] = discovered
+	}
+
+	var issues []planIssue
+	walkSteps(steps, "", func(stepPath string, stepKey string, step *functions.FuncStep) {
+		switch {
+		case step.AgentName != "":
+			agentSpec, known := agentByName[step.AgentName]
+			if !known {
+				return
+			}
+			issues = append(issues, validateAgentStepPayload(ctx, stepPath, step, agentSpec)...)
+		case step.ToolName != "":
+			toolSpec, known := toolByAction[fmt.Sprint(step.ToolName, ".", step.ToolAction)]
+			if !known {
+				return
+			}
+			issues = append(issues, validateToolStepPayload(ctx, stepPath, step, toolSpec)...)
+		}
+	})
+	return issues
+}
+
+func validateAgentStepPayload(ctx context.Context, stepPath string, step *functions.FuncStep, agentSpec agents.DiscoveredAgent) []planIssue {
+	template := strings.TrimSpace(step.TransformRequest)
+	if template == "" {
+		return []planIssue{{
+			StepPath: stepPath,
+			Field:    "transform_request",
+			Err: fmt.Sprint("agent step has no transform_request - it is mandatory. Render the agent request body, e.g. ",
+				`"{{stringify (dict \"content\" .Vars.Body.content)}}"`),
+		}}
+	}
+	if !strings.Contains(template, `"content"`) {
+		return []planIssue{{
+			StepPath: stepPath,
+			Field:    "transform_request",
+			Template: template,
+			Err: fmt.Sprint("agent \"", agentSpec.AgentName, "\" is called without a \"content\" key - every agent request body must be a JSON object containing content. ",
+				`Build it as {{stringify (dict \"content\" ...)}}`),
+		}}
+	}
+
+	root := rootTemplateDict(ctx, stepPath, "transform_request", template)
+	if root == nil || root.Dynamic || !root.HasKey("content") {
+		return nil
+	}
+
+	var issues []planIssue
+	for _, key := range root.Keys {
+		if !containsString(agentRequestKeys, key) {
+			issues = append(issues, planIssue{
+				StepPath: stepPath,
+				Field:    "transform_request",
+				Template: template,
+				Err: fmt.Sprint("\"", key, "\" is not part of the agent request body - the agent rejects unknown top-level keys. Allowed keys: ",
+					strings.Join(agentRequestKeys, ", "), ". Move that value into content or into an accepted params key"),
+			})
+		}
+	}
+
+	paramsDict := root.Child("params")
+	allowedParams := agentSpec.ParamKeys()
+	if paramsDict == nil || paramsDict.Dynamic || len(allowedParams) == 0 {
+		return issues
+	}
+	for _, key := range paramsDict.Keys {
+		if containsString(allowedParams, key) {
+			continue
+		}
+		issues = append(issues, planIssue{
+			StepPath: stepPath,
+			Field:    "transform_request",
+			Template: template,
+			Err: fmt.Sprint("agent \"", agentSpec.AgentName, "\" does not read params.", key,
+				" - it is silently discarded and the agent never sees that data. Params keys it reads: ",
+				strings.Join(allowedParams, ", "), ". Pass this value inside content instead"),
+		})
+	}
+	return issues
+}
+
+func validateToolStepPayload(ctx context.Context, stepPath string, step *functions.FuncStep, toolSpec agents.DiscoveredTool) []planIssue {
+	template := strings.TrimSpace(step.TransformRequest)
+	if template == "" {
+		return []planIssue{{
+			StepPath: stepPath,
+			Field:    "transform_request",
+			Err: fmt.Sprint("tool step has no transform_request - it is mandatory. Render the action input inside a root params object, e.g. ",
+				`"{{stringify (dict \"params\" (dict ...))}}"`),
+		}}
+	}
+	if !strings.Contains(template, `"params"`) {
+		return []planIssue{{
+			StepPath: stepPath,
+			Field:    "transform_request",
+			Template: template,
+			Err: fmt.Sprint("tool action \"", toolSpec.ToolName, ".", toolSpec.ActionName,
+				"\" is called without a root \"params\" object - a tool request body must be {\"params\": { ...action input fields... }}"),
+		}}
+	}
+
+	root := rootTemplateDict(ctx, stepPath, "transform_request", template)
+	if root == nil || root.Dynamic || !root.HasKey("params") {
+		return nil
+	}
+
+	var issues []planIssue
+	for _, key := range root.Keys {
+		if key == "params" {
+			continue
+		}
+		issues = append(issues, planIssue{
+			StepPath: stepPath,
+			Field:    "transform_request",
+			Template: template,
+			Err:      fmt.Sprint("\"", key, "\" is not accepted at the root of a tool request body - only \"params\" is. Move it inside params if the action's input schema declares it"),
+		})
+	}
+
+	paramsDict := root.Child("params")
+	if paramsDict == nil || paramsDict.Dynamic || len(toolSpec.InputSchema.Required) == 0 {
+		return issues
+	}
+	var missing []string
+	for _, required := range toolSpec.InputSchema.Required {
+		if !paramsDict.HasKey(required) {
+			missing = append(missing, required)
+		}
+	}
+	if len(missing) > 0 {
+		issues = append(issues, planIssue{
+			StepPath: stepPath,
+			Field:    "transform_request",
+			Template: template,
+			Err: fmt.Sprint("params is missing required field(s) ", strings.Join(missing, ", "), " of tool action \"",
+				toolSpec.ToolName, ".", toolSpec.ActionName, "\" - add them inside the params object"),
+		})
+	}
+	if len(toolSpec.InputSchema.Properties) > 0 {
+		var unknown []string
+		for _, key := range paramsDict.Keys {
+			if _, ok := toolSpec.InputSchema.Properties[key]; !ok {
+				unknown = append(unknown, key)
+			}
+		}
+		if len(unknown) > 0 {
+			issues = append(issues, planIssue{
+				StepPath: stepPath,
+				Field:    "transform_request",
+				Template: template,
+				Err: fmt.Sprint("params contains field(s) ", strings.Join(unknown, ", "), " that tool action \"",
+					toolSpec.ToolName, ".", toolSpec.ActionName, "\" does not accept - its input schema declares: ",
+					strings.Join(schemaPropertyNames(toolSpec.InputSchema), ", ")),
+			})
+		}
+	}
+	return issues
+}
+
+// rootTemplateDict returns the outermost dict(...) the template builds, or nil
+// when the template does not build one or cannot be parsed. Callers must confirm
+// the returned dict really is the request envelope before acting on it.
+func rootTemplateDict(ctx context.Context, stepPath string, fieldName string, template string) *gotemplate.TemplateDict {
+	goTmpl := gotemplate.GoTemplate{Name: fmt.Sprint(stepPath, ".", fieldName), Template: template}
+	root, err := goTmpl.RootDict(ctx)
+	if err != nil {
+		return nil
+	}
+	return root
+}
+
+func schemaPropertyNames(schema eru_models.JSONSchema) []string {
+	names := make([]string, 0, len(schema.Properties))
+	for name := range schema.Properties {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // validateCodeRouting checks how the plan handled the caller's existing

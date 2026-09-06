@@ -9,9 +9,9 @@ import (
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_models "github.com/eru-tech/eru/eru-models"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
-	//eru_models "github.com/eru-tech/eru/eru-models"
 )
 
 const templateVarsSchemaString = `{"type":"object","properties":{"Headers":{"type":"object"},"FormData":{"type":"object"},"FileData":{"type":"object"},"Params":{"type":"object"},"Vars":{"type":"object","properties":{"Body":{"type":"object"},"OrgBody":{"type":"object"}},"required":[]},"Body":{"type":"object"},"OrgBody":{"type":"object"},"Token":{"type":"object"},"FormDataKeyArray":{"type":"array","items":[{"type":"string"}]},"LoopVars":{"type":"array","items":[{"type":"object"}]},"LoopVar":{"type":"object"},"Cookies":{"type":"object"},"ResponseStatus":{"type":"integer"}},"required":[]}`
@@ -22,6 +22,16 @@ type EruWidgetAgent struct {
 
 func (EruWidgetAgent *EruWidgetAgent) GetSpec() agents.AgentI {
 	return EruWidgetAgent
+}
+
+func (EruWidgetAgent *EruWidgetAgent) GetInputSchema(_ context.Context) eru_models.JSONSchema {
+	return agents.AgentInputSchema(map[string]eru_models.JSONSchema{
+		"context": {
+			Type:        "string",
+			Description: "Stringified JSON of the data the widget must render. The agent derives the template variable schema from it, so pass the upstream value itself - never a paraphrase or a sample you typed.",
+		},
+		"code": agents.CodeParamSchema("widget template"),
+	}, nil)
 }
 
 func (EruWidgetAgent *EruWidgetAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (agents.AgentMessage, error) {

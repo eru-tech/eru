@@ -9,9 +9,9 @@ import (
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	models "github.com/eru-tech/eru/eru-ai/models"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_models "github.com/eru-tech/eru/eru-models"
 	gotemplate "github.com/eru-tech/eru/eru-templates/gotemplate"
 	eru_utils "github.com/eru-tech/eru/eru-utils"
-	//eru_models "github.com/eru-tech/eru/eru-models"
 )
 
 type GoTemplateAgent struct {
@@ -20,6 +20,16 @@ type GoTemplateAgent struct {
 
 func (goTemplateAgent *GoTemplateAgent) GetSpec() agents.AgentI {
 	return goTemplateAgent
+}
+
+func (goTemplateAgent *GoTemplateAgent) GetInputSchema(_ context.Context) eru_models.JSONSchema {
+	return agents.AgentInputSchema(map[string]eru_models.JSONSchema{
+		"context": {
+			Type:        "string",
+			Description: "Stringified JSON of the data the go template will be executed against. The agent derives the template variable schema from it, so pass the upstream value itself - never a paraphrase or a sample you typed.",
+		},
+		"code": agents.CodeParamSchema("go template"),
+	}, nil)
 }
 
 func (goTemplateAgent *GoTemplateAgent) Execute(ctx context.Context, agentMessage agents.AgentMessage, conversationId string, projectId string, tenantId string) (agents.AgentMessage, error) {

@@ -667,6 +667,133 @@ func collectBranchFieldReferences(branch parse.BranchNode, refs *[][]string) {
 	}
 }
 
+type TemplateDict struct {
+	Keys     []string
+	Dynamic  bool
+	Children map[string]*TemplateDict
+}
+
+func (td *TemplateDict) HasKey(key string) bool {
+	if td == nil {
+		return false
+	}
+	for _, k := range td.Keys {
+		if k == key {
+			return true
+		}
+	}
+	return false
+}
+
+func (td *TemplateDict) Child(key string) *TemplateDict {
+	if td == nil || td.Children == nil {
+		return nil
+	}
+	return td.Children[key]
+}
+
+func (goTmpl *GoTemplate) RootDict(ctx context.Context) (rootDict *TemplateDict, err error) {
+	logs.WithContext(ctx).Debug("RootDict - Start")
+	t := template.New(goTmpl.Name).Funcs(sprig.FuncMap()).Funcs(GenericFuncMap(ctx))
+	t, err = t.Parse(strings.ReplaceAll(goTmpl.Template, "\n", ""))
+	if err != nil {
+		return nil, err
+	}
+	for _, tmpl := range t.Templates() {
+		if tmpl.Tree == nil {
+			continue
+		}
+		if cmd := findDictCommand(tmpl.Tree.Root); cmd != nil {
+			return buildTemplateDict(cmd), nil
+		}
+	}
+	return nil, nil
+}
+
+func findDictCommand(node parse.Node) *parse.CommandNode {
+	switch n := node.(type) {
+	case nil:
+		return nil
+	case *parse.ListNode:
+		if n == nil {
+			return nil
+		}
+		for _, child := range n.Nodes {
+			if found := findDictCommand(child); found != nil {
+				return found
+			}
+		}
+	case *parse.ActionNode:
+		return findDictCommand(n.Pipe)
+	case *parse.PipeNode:
+		if n == nil {
+			return nil
+		}
+		for _, cmd := range n.Cmds {
+			if found := findDictCommand(cmd); found != nil {
+				return found
+			}
+		}
+	case *parse.CommandNode:
+		if len(n.Args) > 0 {
+			if id, ok := n.Args[0].(*parse.IdentifierNode); ok && id.Ident == "dict" {
+				return n
+			}
+		}
+		for _, arg := range n.Args {
+			if found := findDictCommand(arg); found != nil {
+				return found
+			}
+		}
+	case *parse.IfNode:
+		return findBranchDictCommand(n.BranchNode)
+	case *parse.RangeNode:
+		return findBranchDictCommand(n.BranchNode)
+	case *parse.WithNode:
+		return findBranchDictCommand(n.BranchNode)
+	case *parse.TemplateNode:
+		return findDictCommand(n.Pipe)
+	}
+	return nil
+}
+
+func findBranchDictCommand(branch parse.BranchNode) *parse.CommandNode {
+	if found := findDictCommand(branch.Pipe); found != nil {
+		return found
+	}
+	if branch.List != nil {
+		if found := findDictCommand(branch.List); found != nil {
+			return found
+		}
+	}
+	if branch.ElseList != nil {
+		if found := findDictCommand(branch.ElseList); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func buildTemplateDict(cmd *parse.CommandNode) *TemplateDict {
+	td := &TemplateDict{Children: make(map[string]*TemplateDict)}
+	args := cmd.Args[1:]
+	if len(args)%2 != 0 {
+		td.Dynamic = true
+	}
+	for i := 0; i+1 < len(args); i += 2 {
+		key, ok := args[i].(*parse.StringNode)
+		if !ok {
+			td.Dynamic = true
+			continue
+		}
+		td.Keys = append(td.Keys, key.Text)
+		if child := findDictCommand(args[i+1]); child != nil {
+			td.Children[key.Text] = buildTemplateDict(child)
+		}
+	}
+	return td
+}
+
 func (goTmpl *GoTemplate) Execute(ctx context.Context, obj interface{}, outputFormat string) (output interface{}, err error) {
 	logs.WithContext(ctx).Debug("Execute - Start")
 	buf := &bytes.Buffer{}

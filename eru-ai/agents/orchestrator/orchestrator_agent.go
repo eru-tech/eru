@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -70,7 +71,13 @@ func (oa *OrchestratorAgent) AllowedToolActions() map[string][]string {
 }
 
 func (oa *OrchestratorAgent) SetDiscoveredTools(discovered []agents.DiscoveredTool) {
-	oa.discoveredTools = discovered
+	oa.discoveredTools = nil
+	for _, dt := range discovered {
+		if dt.ActionName == "" {
+			continue
+		}
+		oa.discoveredTools = append(oa.discoveredTools, dt)
+	}
 }
 
 func (oa *OrchestratorAgent) GetSpec() agents.AgentI {
@@ -804,6 +811,10 @@ func (oa *OrchestratorAgent) buildDecompositionTools(ctx context.Context) map[st
 	return toolsMap
 }
 
+func (oa *OrchestratorAgent) GetResponseSchema(_ context.Context) eru_models.JSONSchema {
+	return oa.OutputSchema
+}
+
 func (oa *OrchestratorAgent) GetOutputSchema(ctx context.Context) eru_models.JSONSchema {
 	sampleFuncGroup := functions.FuncGroup{
 		FuncCategoryName:        "sample",
@@ -908,6 +919,17 @@ You may also include "params" (object) and "files" (array) ONLY if needed.
 ANY other/unknown top-level key is REJECTED by the agent (unknown field error),
 and a bare string or number is REJECTED (it must be a JSON object).
 
+The exact contract for EACH agent is printed in the AVAILABLE AGENTS section above:
+  - "Params keys this agent READS" is the CLOSED list of params keys it consumes,
+    and "Params schema" gives their exact types and meaning.
+    A params key that is not on that agent's list is silently DISCARDED - the step
+    still succeeds, the data just never reaches the agent, and the agent then makes
+    something up. If the data you need to pass has no matching params key on that
+    agent, put it in "content" instead. Never invent a params key.
+  - "Response" says whether it answers with named output fields or free text, and
+    "Output schema" gives the exact fields. Read the response only by those paths -
+    do not guess a field name that is not in that agent's schema.
+
 Therefore EVERY step MUST set "transform_request" to a Go template that renders
 a JSON object of the form {"content":"..."}. Build it with the dict function and
 ALWAYS pipe the result through stringify so it renders as a JSON string (a bare
@@ -947,10 +969,10 @@ single content string, e.g.:
 RULE #2b — PASS FETCHED DATA IN params.context, NOT PROSE
 ============================================================
 
-When a step's job is to RENDER or ANALYSE data produced by an earlier step (UI /
-page / widget / chart agents such as eru_studio, report or summary agents), the
-rows MUST be passed as "params" -> "context", with "content" carrying only the
-instruction. These agents read params.context as their data source:
+When a step's job is to RENDER or ANALYSE data produced by an earlier step, check
+that agent's "Params keys this agent READS" line in AVAILABLE AGENTS. If it lists
+a "context" key, the rows MUST be passed as "params" -> "context", with "content"
+carrying only the instruction - that key IS the agent's data channel:
 
   "transform_request": "{{stringify (dict \"content\" .Vars.Body.content \"params\" (dict \"context\" (stringify .ResVars.<data_step>.Body)))}}"
 
@@ -962,6 +984,11 @@ inventing plausible ones.
 If the plan produces data and then displays it, the displaying step MUST reference
 the data step through .ResVars. A display step whose transform_request contains no
 .ResVars reference to the data step is WRONG — it will render fabricated data.
+
+If the receiving agent does NOT declare a "context" params key, pass the rows inside
+"content" instead (e.g. via printf) - do not add a params key it does not read.
+Some agents declare further data channels of their own ("entities", "apis", ...);
+use exactly the keys listed for that agent, and no others.
 
 ============================================================
 RULE #3 — TOOL STEP INPUT / OUTPUT (different from agents)
@@ -1169,6 +1196,11 @@ CHECKLIST (verify before outputting)
 [ ] wait_for only references sibling step keys, not nested ones
 [ ] EVERY .ResVars/.ReqVars reference names an EXACT func_steps key of an earlier step (not an agent name, tool name or invented short form)
 [ ] A step that renders or analyses earlier data receives it via params.context and references that step through .ResVars (Rule #2b)
+[ ] EVERY step has a non-empty transform_request
+[ ] EVERY agent step's transform_request renders a "content" key
+[ ] EVERY params key used on an agent step appears in that agent's "Params keys this agent READS" list
+[ ] EVERY tool step's transform_request renders a root "params" object containing all of that action's Required params
+[ ] EVERY field read off an agent response exists in that agent's Output schema
 
 --- GUIDELINES ---
 {{GUIDELINES_PLACEHOLDER}}
@@ -1187,22 +1219,113 @@ func (oa *OrchestratorAgent) buildAgentDescriptions() string {
 	var sb strings.Builder
 	for _, ad := range oa.discoveredAgents {
 		sb.WriteString(fmt.Sprintf("Agent: %s\n", ad.AgentName))
-		sb.WriteString(fmt.Sprintf("  Type: %s\n", ad.AgentType))
-		sb.WriteString(fmt.Sprintf("  Tenant: %s\n", ad.TenantId))
+		sb.WriteString(fmt.Sprintf("  Type: %s   Tenant: %s\n", ad.AgentType, ad.TenantId))
 		sb.WriteString(fmt.Sprintf("  Description: %s\n", ad.Description))
-		if fields := outputFieldNames(ad.OutputSchema); len(fields) > 0 {
-			sb.WriteString(fmt.Sprintf("  Output fields (in actions[0].action): %s\n", strings.Join(fields, ", ")))
+		if len(ad.Tools) > 0 {
+			sb.WriteString(fmt.Sprintf("  Can call these tools itself: %s (do NOT duplicate them as separate steps)\n", strings.Join(ad.Tools, ", ")))
+		}
+		if guardrail := summariseGuardrail(ad.Guardrail); guardrail != "" {
+			sb.WriteString(fmt.Sprintf("  Scope limits: %s\n", guardrail))
+		}
+		if ad.IsOrchestrator {
+			sb.WriteString("  This agent is itself an orchestrator - it plans and runs its own sub-steps.\n")
+		}
+		if ad.SupportsClarification {
+			sb.WriteString("  May ask the user a clarifying question, which pauses the plan until answered.\n")
+		}
+		if keys := ad.ParamKeys(); len(keys) > 0 {
+			sb.WriteString(fmt.Sprintf("  Params keys this agent READS: %s - any other params key is silently discarded, so put that information in content instead\n", strings.Join(keys, ", ")))
+			sb.WriteString(fmt.Sprintf("  Params schema: %s\n", renderSchemaJSON(ad.InputSchema.Properties[agents.AgentInputParamsKey], agentSchemaRenderLimit)))
+		} else {
+			sb.WriteString("  Params keys this agent READS: none - everything it needs must be in content\n")
+		}
+		if ad.HasStructuredOutput() {
+			fields := outputFieldNames(ad.OutputSchema)
+			sb.WriteString(fmt.Sprintf("  Response: structured - read it as (index .ResVars.%s.Body.actions 0).action.<field>\n", ad.AgentName))
+			if len(fields) > 0 {
+				sb.WriteString(fmt.Sprintf("  Output fields (in actions[0].action): %s\n", strings.Join(fields, ", ")))
+			}
+			sb.WriteString(fmt.Sprintf("  Output schema: %s\n", renderSchemaJSON(ad.OutputSchema, agentSchemaRenderLimit)))
+		} else if ad.IsOrchestrator {
+			sb.WriteString(fmt.Sprintf("  Response: one or more actions produced by its own sub-steps - the field names depend on the plan it builds, so do NOT index into them. To chain it, pass {{stringify .ResVars.%s.Body.actions}}\n", ad.AgentName))
+		} else {
+			sb.WriteString(fmt.Sprintf("  Response: free text - it declares NO output fields. Plain text lands at (index .ResVars.%s.Body.actions 0).action.output ; to chain it safely pass {{stringify (index .ResVars.%s.Body.actions 0).action}}\n", ad.AgentName, ad.AgentName))
 		}
 		sb.WriteString("\n")
 	}
 	return sb.String()
 }
 
+const (
+	agentSchemaRenderLimit = 3000
+	toolSchemaRenderLimit  = 3000
+	guardrailSummaryLimit  = 240
+)
+
+func summariseGuardrail(guardrail string) string {
+	guardrail = strings.Join(strings.Fields(guardrail), " ")
+	if guardrail == "" {
+		return ""
+	}
+	if len(guardrail) <= guardrailSummaryLimit {
+		return guardrail
+	}
+	return guardrail[:guardrailSummaryLimit] + " ..."
+}
+
+// renderSchemaJSON inlines a schema into the planning prompt, shrinking it by
+// dropping nesting levels when the full schema would swamp the prompt (page and
+// FuncGroup schemas run to tens of kilobytes).
+func renderSchemaJSON(schema eru_models.JSONSchema, limit int) string {
+	if schema.Type == "" && len(schema.Properties) == 0 {
+		return "{}"
+	}
+	full, err := json.Marshal(schema)
+	if err != nil {
+		return "{}"
+	}
+	if len(full) <= limit {
+		return string(full)
+	}
+	for depth := 3; depth >= 1; depth-- {
+		trimmed, terr := json.Marshal(trimSchemaDepth(schema, depth))
+		if terr == nil && len(trimmed) <= limit {
+			return string(trimmed) + "   (nested detail omitted - follow the field descriptions)"
+		}
+	}
+	return fmt.Sprint("{\"type\":\"", schema.Type, "\",\"top_level_fields\":[", strings.Join(outputFieldNames(schema), ", "), "]}   (schema too large to inline)")
+}
+
+func trimSchemaDepth(schema eru_models.JSONSchema, depth int) eru_models.JSONSchema {
+	trimmed := eru_models.JSONSchema{
+		Type:        schema.Type,
+		Description: schema.Description,
+		Format:      schema.Format,
+		Enum:        schema.Enum,
+		Required:    schema.Required,
+	}
+	if depth <= 0 {
+		return trimmed
+	}
+	if len(schema.Properties) > 0 {
+		trimmed.Properties = make(map[string]eru_models.JSONSchema, len(schema.Properties))
+		for name, prop := range schema.Properties {
+			trimmed.Properties[name] = trimSchemaDepth(prop, depth-1)
+		}
+	}
+	if schema.Items != nil {
+		items := trimSchemaDepth(*schema.Items, depth-1)
+		trimmed.Items = &items
+	}
+	return trimmed
+}
+
 func outputFieldNames(schema eru_models.JSONSchema) []string {
-	var fields []string
+	fields := make([]string, 0, len(schema.Properties))
 	for k := range schema.Properties {
 		fields = append(fields, k)
 	}
+	sort.Strings(fields)
 	return fields
 }
 
@@ -1288,15 +1411,14 @@ func (oa *OrchestratorAgent) buildToolDescriptions() string {
 		sb.WriteString(fmt.Sprintf("Tool: %s  Action: %s\n", dt.ToolName, dt.ActionName))
 		sb.WriteString(fmt.Sprintf("  Tenant: %s\n", dt.TenantId))
 		sb.WriteString(fmt.Sprintf("  Description: %s\n", dt.Description))
-		if inb, err := json.Marshal(dt.InputSchema); err == nil {
-			sb.WriteString(fmt.Sprintf("  Input schema (transform_request must produce this): %s\n", string(inb)))
+		sb.WriteString(fmt.Sprintf("  Input schema (goes inside the root \"params\" object of transform_request): %s\n", renderSchemaJSON(dt.InputSchema, toolSchemaRenderLimit)))
+		if len(dt.InputSchema.Required) > 0 {
+			sb.WriteString(fmt.Sprintf("  Required params: %s\n", strings.Join(dt.InputSchema.Required, ", ")))
 		}
 		if dt.OutputSchema.Type != "" {
-			if outb, err := json.Marshal(dt.OutputSchema); err == nil {
-				sb.WriteString(fmt.Sprintf("  Output schema (result at .ResVars.<step>.Body): %s\n", string(outb)))
-			}
+			sb.WriteString(fmt.Sprintf("  Output schema (result at .ResVars.<step>.Body): %s\n", renderSchemaJSON(dt.OutputSchema, toolSchemaRenderLimit)))
 		} else {
-			sb.WriteString("  Output: dynamic — to chain, pass {{stringify .ResVars.<step>.Body}} to a downstream agent or synthesis\n")
+			sb.WriteString("  Output: dynamic - to chain, pass {{stringify .ResVars.<step>.Body}} to a downstream agent or synthesis\n")
 		}
 		sb.WriteString("\n")
 	}

@@ -67,152 +67,28 @@ func (s *EruAIMCPServer) Initialize(ctx context.Context, params server.MCPInitia
 func (s *EruAIMCPServer) ListTools(ctx context.Context, projectId string, tenantId string) (server.MCPListToolsResult, error) {
 	var mcpTools []server.MCPTool
 
-	projectList := s.store.Store.GetProjectList(ctx)
-
-	for _, projectInfo := range projectList {
+	for _, projectInfo := range s.store.Store.GetProjectList(ctx) {
 		projectName, ok := projectInfo["project_name"].(string)
 		if !ok {
 			continue
 		}
-		if projectId == "" || projectName == projectId {
-			project, err := s.store.Store.GetProjectConfig(ctx, projectName)
-			if err != nil {
+		if projectId != "" && projectName != projectId {
+			continue
+		}
+		project, err := s.store.Store.GetProjectConfig(ctx, projectName)
+		if err != nil {
+			continue
+		}
+		for tenantKey := range project.Tenants {
+			if tenantId != "" && tenantKey != tenantId && tenantKey != projectId {
 				continue
 			}
-
-			for tenantKey := range project.Tenants {
-				if tenantId == "" || tenantKey == tenantId || tenantKey == projectId {
-					toolNames, err := s.store.Store.GetToolNames(ctx, projectName, tenantKey)
-					if err != nil {
-						continue
-					}
-
-					for _, toolName := range toolNames {
-						tool, err := s.store.Store.GetTool(ctx, projectName, tenantKey, toolName, "", s.store.Store)
-						if err != nil {
-							continue
-						}
-
-						toolDescription := ""
-						if desc, err := tool.GetAttribute(ctx, "description"); err == nil {
-							if descStr, ok := desc.(string); ok {
-								toolDescription = descStr
-							}
-						}
-						toolMCPName := toolName
-						if projectId == tenantId && projectId != "" {
-							toolMCPName = strings.Join([]string{projectId, toolName}, mcpNameSep)
-						}
-
-						actions := tool.GetActions()
-						if len(actions) > 0 {
-							for _, action := range actions {
-								actionDescription := toolDescription
-								if action.Description != "" {
-									actionDescription = toolDescription + " - " + action.Description
-								}
-								var actionSchema interface{}
-								if action.GetParameters != nil {
-									actionSchema = map[string]interface{}{"params": action.GetParameters()}
-								} else {
-									actionSchema = action.Parameters
-								}
-								mcpTools = append(mcpTools, server.MCPTool{
-									Name:        toolMCPName + mcpActionSep + action.ActionName,
-									Description: actionDescription,
-									InputSchema: s.convertSchemaToInputSchema(actionSchema),
-								})
-							}
-						} else {
-							mcpTools = append(mcpTools, server.MCPTool{
-								Name:        toolMCPName,
-								Description: toolDescription,
-								InputSchema: s.convertSchemaToInputSchema(tool.GetParameters()),
-							})
-						}
-					}
-
-					agentNames, err := s.store.Store.GetAgentNames(ctx, projectName, tenantKey)
-					if err != nil {
-						continue
-					}
-
-					for _, agentName := range agentNames {
-						agent, err := s.store.Store.GetAgent(ctx, projectName, tenantKey, "", agentName, s.store.Store)
-						if err != nil {
-							continue
-						}
-
-						description := ""
-						if desc, err := agent.GetAttribute(ctx, "description"); err == nil {
-							if descStr, ok := desc.(string); ok {
-								description = descStr
-							}
-						}
-
-						if description == "" {
-							description = fmt.Sprintf("AI Agent: %s", agentName)
-						}
-						agentPrefix := "agent"
-						if projectId == tenantId && projectId != "" {
-							agentPrefix = strings.Join([]string{"agent", projectId}, mcpNameSep)
-						}
-
-						properties := map[string]interface{}{
-							"content": map[string]interface{}{
-								"type":        "string",
-								"description": "Input message for the agent",
-							},
-							"params": map[string]interface{}{
-								"type":        "object",
-								"description": "Additional parameters for the agent",
-							},
-							"conversation_id": map[string]interface{}{
-								"type":        "string",
-								"description": "Optional conversation id to continue an existing conversation. When provided, the agent loads the prior conversation history for this id and appends the new message to it. Omit (or leave empty) to start a fresh conversation — the agent will generate a new id and return it in the response.",
-							},
-							"files": map[string]interface{}{
-								"type":        "array",
-								"description": "Optional list of files to attach to the agent message (images, documents, etc.).",
-								"items": map[string]interface{}{
-									"type": "object",
-									"properties": map[string]interface{}{
-										"name": map[string]interface{}{
-											"type":        "string",
-											"description": "File name including extension (e.g. invoice.pdf).",
-										},
-										"content": map[string]interface{}{
-											"type":        "string",
-											"description": "Base64-encoded file contents.",
-										},
-										"mime_type": map[string]interface{}{
-											"type":        "string",
-											"description": "MIME type of the file (e.g. application/pdf, image/png).",
-										},
-									},
-									"required": []string{"name", "content"},
-								},
-							},
-						}
-						if s.agentHasStructuredOutput(ctx, agent) {
-							properties["code"] = map[string]interface{}{
-								"type":        "string",
-								"description": "Existing structured output (as a JSON string) that the agent should build on top of. Provide this when modifying or extending an output produced earlier — especially when the prior conversation history is not available to the caller. The agent will treat this as the baseline and apply the new instruction on top of it.",
-							}
-						}
-
-						mcpTool := server.MCPTool{
-							Name:        strings.Join([]string{agentPrefix, agentName}, mcpNameSep),
-							Description: description,
-							InputSchema: map[string]interface{}{
-								"type":       "object",
-								"properties": properties,
-								"required":   []string{"content"},
-							},
-						}
-						mcpTools = append(mcpTools, mcpTool)
-					}
-				}
+			prefixed := projectId == tenantId && projectId != ""
+			for _, dt := range s.store.Store.DiscoverTools(ctx, projectName, tenantKey, nil, s.store.Store) {
+				mcpTools = append(mcpTools, s.toolToMCPTool(dt, prefixed))
+			}
+			for _, da := range s.store.Store.DiscoverAgents(ctx, projectName, tenantKey, "", nil, s.store.Store) {
+				mcpTools = append(mcpTools, s.agentToMCPTool(da, prefixed))
 			}
 		}
 	}
@@ -224,6 +100,98 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context, projectId string, tenant
 	return server.MCPListToolsResult{
 		Tools: mcpTools,
 	}, nil
+}
+
+// toolToMCPTool advertises a tool action the way executeToolAction actually reads
+// it: the action's own fields always sit inside a root "params" object.
+func (s *EruAIMCPServer) toolToMCPTool(dt agents.DiscoveredTool, prefixed bool) server.MCPTool {
+	name := dt.ToolName
+	if prefixed {
+		name = strings.Join([]string{dt.TenantId, dt.ToolName}, mcpNameSep)
+	}
+	if dt.ActionName != "" {
+		name = name + mcpActionSep + dt.ActionName
+	}
+	mcpTool := server.MCPTool{
+		Name:        name,
+		Description: dt.Description,
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"params": s.jsonSchemaToMap(dt.InputSchema),
+			},
+			"required": []string{"params"},
+		},
+	}
+	if dt.OutputSchema.Type != "" {
+		mcpTool.OutputSchema = s.jsonSchemaToMap(dt.OutputSchema)
+	}
+	return mcpTool
+}
+
+// agentToMCPTool advertises an agent using the same input contract the
+// orchestrator plans against, plus the transport-only conversation_id and code
+// arguments that only the MCP entry point accepts.
+func (s *EruAIMCPServer) agentToMCPTool(da agents.DiscoveredAgent, prefixed bool) server.MCPTool {
+	agentPrefix := "agent"
+	if prefixed {
+		agentPrefix = strings.Join([]string{"agent", da.TenantId}, mcpNameSep)
+	}
+
+	inputSchema := s.jsonSchemaToMap(da.InputSchema)
+	properties, _ := inputSchema["properties"].(map[string]interface{})
+	if properties == nil {
+		properties = map[string]interface{}{}
+		inputSchema["properties"] = properties
+	}
+	properties["conversation_id"] = map[string]interface{}{
+		"type":        "string",
+		"description": "Optional conversation id to continue an existing conversation. When provided, the agent loads the prior conversation history for this id and appends the new message to it. Omit (or leave empty) to start a fresh conversation — the agent will generate a new id and return it in the response.",
+	}
+	if da.HasStructuredOutput() {
+		properties["code"] = map[string]interface{}{
+			"type":        "string",
+			"description": "Existing structured output (as a JSON string) that the agent should build on top of. Provide this when modifying or extending an output produced earlier — especially when the prior conversation history is not available to the caller. The agent will treat this as the baseline and apply the new instruction on top of it.",
+		}
+	}
+
+	mcpTool := server.MCPTool{
+		Name:        strings.Join([]string{agentPrefix, da.AgentName}, mcpNameSep),
+		Description: agentMCPDescription(da),
+		InputSchema: inputSchema,
+	}
+	if da.HasStructuredOutput() {
+		mcpTool.OutputSchema = s.jsonSchemaToMap(da.OutputSchema)
+	}
+	return mcpTool
+}
+
+// agentMCPDescription tells the calling client what the agent can do beyond its
+// configured one-liner, so it can choose between agents without calling them.
+func agentMCPDescription(da agents.DiscoveredAgent) string {
+	var sb strings.Builder
+	sb.WriteString(da.Description)
+	if len(da.Tools) > 0 {
+		sb.WriteString(fmt.Sprint("\n\nCan call these tools itself: ", strings.Join(da.Tools, ", "), "."))
+	}
+	if keys := da.ParamKeys(); len(keys) > 0 {
+		sb.WriteString(fmt.Sprint("\nReads these params keys: ", strings.Join(keys, ", "), ". Any other params key is ignored."))
+	}
+	if da.SupportsClarification {
+		sb.WriteString("\nMay reply with a clarifying question instead of an answer.")
+	}
+	if da.IsOrchestrator {
+		sb.WriteString("\nOrchestrates other agents and tools to complete the task.")
+	}
+	switch {
+	case da.HasStructuredOutput():
+		sb.WriteString("\nResponds with structured output described by outputSchema, wrapped as {\"actions\":[{\"action\":{...}}]}.")
+	case da.IsOrchestrator:
+		sb.WriteString("\nResponds with one action per sub-step it ran; the field names depend on the plan it builds.")
+	default:
+		sb.WriteString("\nResponds with free text, wrapped as {\"actions\":[{\"action\":{\"output\":\"...\"}}]}.")
+	}
+	return sb.String()
 }
 
 func (s *EruAIMCPServer) CallTool(ctx context.Context, conversationId string, params server.MCPCallToolParams, projectId string, tenantId string) (server.MCPCallToolResult, error) {
@@ -404,51 +372,6 @@ func (s *EruAIMCPServer) GetServerInfo() server.MCPServerInfo {
 // Agent names use the format: project__tenant__agent__agentname
 func (s *EruAIMCPServer) parseToolName(toolName string) []string {
 	return strings.Split(toolName, mcpNameSep)
-}
-
-func (s *EruAIMCPServer) agentHasStructuredOutput(ctx context.Context, agent agents.AgentI) bool {
-	if schemaI, err := agent.GetAttribute(ctx, "output_schema"); err == nil {
-		if js, ok := schemaI.(eru_models.JSONSchema); ok && js.Type != "" {
-			return true
-		}
-	}
-	if provider := agent.GetProvider(); provider != nil {
-		if js := provider.GetOutputSchema(ctx); js.Type != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *EruAIMCPServer) convertSchemaToInputSchema(schema interface{}) map[string]interface{} {
-	defaultSchema := map[string]interface{}{
-		"type":       "object",
-		"properties": map[string]interface{}{},
-	}
-
-	switch v := schema.(type) {
-	case eru_models.JSONSchema:
-		return s.jsonSchemaToMap(v)
-	case map[string]interface{}:
-		properties := map[string]interface{}{}
-		required := []string{}
-		for name, val := range v {
-			if js, ok := val.(eru_models.JSONSchema); ok {
-				properties[name] = s.jsonSchemaToMap(js)
-				required = append(required, name)
-			}
-		}
-		out := map[string]interface{}{
-			"type":       "object",
-			"properties": properties,
-		}
-		if len(required) > 0 {
-			out["required"] = required
-		}
-		return out
-	default:
-		return defaultSchema
-	}
 }
 
 func (s *EruAIMCPServer) jsonSchemaToMap(jsonSchema eru_models.JSONSchema) map[string]interface{} {
