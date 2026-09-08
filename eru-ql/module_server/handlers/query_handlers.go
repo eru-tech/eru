@@ -453,13 +453,6 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 					}
 					delete(postBody, "group_order_by")
 				}
-				if len(groupByConfig.GroupBy) == 0 && len(groupByConfig.Aggregations) == 0 {
-					err = errors.New("group_by or aggregations is mandatory for executegroup")
-					server_handlers.FormatResponse(w, 400)
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
-					logs.WithContext(r.Context()).Error(err.Error())
-					return
-				}
 				qlInterface.SetGroupBy(groupByConfig)
 			}
 

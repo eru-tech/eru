@@ -21,7 +21,7 @@ HARD CONSTRAINTS — READ THESE FIRST
 5. Properties MUST live under properties.base (and optionally sm/md/lg/xl/2xl). Styles MUST live under styles.{classes, responsive_classes, responsive_styles, custom}.
 6. Children MUST live in children[]. Do not create ad-hoc keys like left, right, center, header, footer, sections, items, sidebar, topbar, tabs, etc.
 7. "components" MUST be a real JSON array of EruComponent objects — e.g. "components": [ { ... } ]. NEVER pass it as a stringified JSON string (e.g. "components": "[{...}]"). The same applies to every array/object field ("children", "events", "state", "styles", "properties"): emit real JSON arrays/objects, not strings.
-8. NEVER invent data values. Component "data"/"seriesData"/"xAxisData"/options must contain only rows you were actually given; when there are none, use "[]" and render an explicit empty state (see INTERACTING WITH DATA).
+8. NEVER invent data values. Component "data"/"options"/"static_options" must contain only rows you were actually given; when there are none, use "[]" and render an explicit empty state (see INTERACTING WITH DATA).
 9. The ENTIRE argument to structured_output MUST be a single valid, parseable JSON value. Every control character inside a string value (newline, tab, double-quote, backslash) MUST be escaped (\n, \t, \", \\). Do not place raw/unescaped newlines or control characters inside any string. If your output cannot be parsed as JSON it will be rejected and you will be asked to regenerate it.
 
 FORBIDDEN PATTERNS (the model has gotten these wrong before — do not repeat them)
@@ -43,6 +43,13 @@ RENAMED / RETIRED PROPERTY KEYS (older pages used the left-hand name — ALWAYS 
   priority.value ("low"|"medium"|"high" enum) -> priority.options (status_options array) + priority.value (an option label)
   Any component-level "value_source": "field" is still valid; "label"/"static" are ONLY valid on the
   components explicitly listed as owning their own value_source.
+
+CHANGED DEFAULTS (the runtime default moved; emit the key explicitly when you need the old behaviour)
+  number.decimal        default is now 0 (was 2). currency.decimal is still 2.
+  chips.removable       default is now false (was true).
+  date.date_format      default is now "" = inherit the bound field's format (was "dd-MM-yyyy").
+  datetime.datetime_format  default is now "" = inherit the bound field's format.
+  grid_container        justify_items/align_items default "stretch"; justify_content/align_content default "start".
 
 ITERATIVE EDITING (MOST IMPORTANT BEHAVIOR)
 - If an EXISTING ERU PAGE JSON is supplied, treat it as the starting point and produce the FULL updated EruPage.
@@ -199,6 +206,8 @@ image:
 button_toggle:
   toggle_options (string: "Label=value,Label=value" or just "Label,Label"),
   toggle_icons (comma-separated material icon names matched positionally to options; leave a slot empty to skip),
+  display_mode ("icon_label"|"icon_only"|"label_only"; default "icon_label" — icon_only keeps each option's value and
+    turns the label into a tooltip),
   icon_scale (number; default 1.2), selected_bg_color, selected_text_color,
   multiple (bool; allow multiple selections), hide_selection_indicator (bool),
   default_selection (value selected by default; comma-separated when multiple).
@@ -211,13 +220,34 @@ badge:
   value_path (path into a JSON value; when value_source is "field" or "state"),
   badge_position ("above after"|"above before"|"below after"|"below before"|"before"|"after"; default "above after").
 
-chips:
-  value_source ("static"|"field"; default "static"),
-  chips (comma-separated chip labels; when value_source="static"),
-  removable (bool; default true).
+chips (a chip list; also the standard filter-bar control):
+  value_source ("static"|"field"|"state"; default "static"),
+  chips (comma-separated chip labels; only when value_source="static"),
+  state_key (page-state variable holding the list — an array of strings OR of objects; when value_source="state"),
+  display_keys (comma-separated keys to render for a list of OBJECTS, e.g. "stage,cnt"; each renders as its own
+    segment and they are never concatenated; blank shows every key; when value_source is "field"/"state"),
+  value_key (key whose value is emitted on click and held as the selection; defaults to the first display key;
+    when value_source is "field"/"state"),
+  color_source ("none"|"model_field"|"ranges"; default "none"),
+  color_field (entity field whose data-model option colours supply the palette — a tag/select/status field;
+    blank uses this component's own bound field; only when color_source="model_field"),
+  color_key (key matched against that field's options to pick the colour; defaults to value_key;
+    only when color_source="model_field"),
+  color_ranges (array; see color_ranges below — colour by numeric band; only when color_source="ranges"),
+  selection_mode ("none"|"single"|"multi"; default "none" — makes chips clickable filters; clicking the active chip clears it),
+  selection_state_key (page-state variable the selection is written to; point a grid/query at it, then wire the
+    chipClick event to refresh-grid; only when selection_mode is single/multi),
+  default_selected (array of chip values that start selected; only when value_source="static"),
+  selected_key (key on each item marking it selected to begin with — true, 1 or "yes"; read once, not kept in sync;
+    when value_source is "field"/"state"),
+  emit_on_default (bool; default false — fire chipClick for the default selection on load),
+  removable (bool; default false).
 
 icon:
-  icon_name (material name; default "star"),
+  value_source ("static"|"state"; default "static"),
+  state_key (page-state key holding the icon name; when value_source="state"),
+  value_path (path into a JSON state value; when value_source="state"),
+  icon_name (material name; default "star"; when value_source="static"),
   font_set (""|"material-icons-outlined"|"material-icons-round"|"material-icons-sharp"|"material-icons-two-tone"|"material-symbols-outlined"|"material-symbols-rounded"|"material-symbols-sharp"; default ""),
   color (""|"primary"|"accent"|"warn"; default "" = inherit), inline (bool), tooltip, aria_label, aria_hidden (bool; default true).
   (styles.responsive_styles.font_size sets the icon size in px.)
@@ -233,18 +263,48 @@ progress_spinner:
   value (0..100), diameter (px; default 40), stroke_width (px; default 4).
 
 tile (rich KPI / metric tile):
-  variant ("metric"|"progress"|"gauge"|"card"; default "metric"),
+  LAYOUT
+  layout ("preset"|"page"; default "preset") — preset draws the built-in tile; page renders a saved page as the
+    tile body, the same way a board card does,
+  card_page_id (page id used as the tile body; required when layout="page"),
+  variant ("metric"|"progress"|"gauge"|"card"; default "metric"; only when layout="preset") — chooses the VALUE
+    VISUAL only. Icon, badge, subtitle, secondary value, sparkline and alert are available to every variant.
+
+  DATA SOURCE
   data_source ("page_data"|"query"|"static"; default "page_data"),
   entity_name (when data_source="page_data"), query (when data_source="query"),
-  title, title_field, subtitle,
-  primary_value_field, primary_value_label, secondary_value_field, secondary_value_label,
-  dynamic_number (bool; abbreviate numbers), display_number_as ("lacs"|"mn"; when dynamic_number), number_decimals (default 2),
-  currency_symbol_field, currency_symbol,
+
+  CONTENT (each *_field names a field/column; the matching *_path digs into it when it holds a JSON object/array)
+  title, title_field, title_path, subtitle,
+  primary_value_field, primary_value_path, primary_value_label,
+  secondary_value_field, secondary_value_path, secondary_value_label,
+  currency_symbol_field, currency_symbol_path, currency_symbol,
+  badge_text, badge_text_path, badge_color, badge_text_color,
+  alert_text, alert_text_path, alert_icon (default "warning"),
   icon (material name; default "analytics"), icon_color,
-  badge_text, badge_color, badge_text_color, alert_text, alert_icon (default "warning"),
   show_graph (bool; sparkline), graph_data_field,
+
+  NUMBER FORMATTING
+  dynamic_number (bool; abbreviate numbers), display_number_as ("lacs"|"mn"; default "lacs"; only when dynamic_number),
+  number_decimals (default 2),
+  seperator (""=default | "none" | "thousands" (Indian 1,00,00,000) | "millions" (Western 10,000,000); default ""),
+  negative_display ("as_is"|"colored"|"colored_abs"|"parentheses"; default "as_is"),
+  negative_color (colour used when negative_display is not "as_is"; default "#d32f2f"),
+
+  SIZE & PROPORTION (prefer these over hand-tuned font sizes — they keep the whole tile in ratio)
+  density ("compact"|"comfortable"|"spacious"; default "comfortable") — padding and gaps,
+  emphasis ("sm"|"md"|"lg"|"xl"; default "md") — size of the primary value; title/subtitle follow at fixed ratios,
+  title_emphasis / subtitle_emphasis / label_emphasis (""|"xs"|"sm"|"md"|"lg"|"xl"|"2xl"; default "" = follow emphasis),
+  icon_position ("top"|"left"|"right"; default "top" — top keeps the icon on the badge row, left/right place it
+    beside the whole value/title block),
+  icon_size (""|"xs"|"sm"|"md"|"lg"|"xl"|"2xl"; default "" = follow emphasis),
+  label_position (""|"below"|"above"; default "" = variant default) — where the value label sits,
+  stats_layout ("auto"|"inline"|"row"; default "auto") — how the secondary stat is placed,
+  scale (number; default 1) — multiplies the whole ramp on top of density and emphasis,
+
+  COLOUR
   color_rules (stringified JSON array, e.g. [{"min":0,"max":30,"bg":"#fee2e2","text":"#ef4444"}]),
-  bg_color, text_color, scale (number; default 1).
+  bg_color, text_color.
 
 timer:
   duration (seconds; default 300), display_format ("seconds"|"mm:ss"; default "seconds"), auto_start (bool).
@@ -263,10 +323,12 @@ flex_container:
 grid_container:
   layout_type ("grid"|"flex"; default "grid"),
   grid_template_columns (e.g. "repeat(auto-fit, minmax(250px, 1fr))", "1fr 2fr"),
+  collapse_below_width (px; below this container width the grid collapses to a single column — the simplest way to
+    make a grid responsive without breakpoint overrides),
   grid_template_rows ("auto", "100px 1fr"), grid_template_areas (string),
-  gap, row_gap, column_gap,
-  justify_items/align_items ("start"|"end"|"center"|"stretch"),
-  justify_content/align_content ("start"|"end"|"center"|"stretch"|"space-around"|"space-between"|"space-evenly"),
+  gap, row_gap, column_gap (default 0),
+  justify_items/align_items ("start"|"end"|"center"|"stretch"; default "stretch"),
+  justify_content/align_content ("start"|"end"|"center"|"stretch"|"space-around"|"space-between"|"space-evenly"; default "start"),
   grid_auto_flow ("row"|"column"|"row dense"|"column dense"), grid_auto_columns, grid_auto_rows,
   (child-item overrides) grid_column, grid_row, grid_area, justify_self, align_self ("auto"|"start"|"end"|"center"|"stretch").
 
@@ -304,6 +366,8 @@ page_ref (embeds another EruPage — primary mechanism for nested pages, drill-i
     inline      = render nested page directly in layout
     popup       = open in MatDialog
     side_panel  = right-side overlay
+  panel_width (any CSS width — "420px", "50vw", "40%"; only when display_type is popup/side_panel;
+    blank = default 420px for a side panel, 80vw capped at 900px for a popup),
   auto_open (bool; only meaningful when display_type="side_panel"): true = pinned open, false = opened via an event (open/toggle-side-panel with fieldNames=[page_ref_id]),
   page (string, required) — id of target EruPage,
   nesting_type ("none"|"object"|"array"|"nested_object"|"nested_array"; default "object"),
@@ -315,7 +379,9 @@ page_ref (embeds another EruPage — primary mechanism for nested pages, drill-i
   api_name (when data_source="api"), function_name (when data_source="function"), query_name (when data_source="query"),
   query_result_path (path into the query response to the record/array, e.g. "0.Results"; blank = raw response; when data_source="query"),
   api_payload_fields (string[]; outer state vars / page-data fields sent as payload; when data_source is api/function/query),
-  state_field (outer-page state key; when data_source="state"),
+  state_scope ("page"|"app"; default "page"; when data_source="state") — which store the field is read from,
+  state_field (outer-page state key; when data_source="state" AND state_scope="page"),
+  app_state_field (app-state key; when data_source="state" AND state_scope="app"),
   state_result_path (path inside the state value to the record/array, e.g. "program_data.changes" or "0.items"; when data_source="state"),
   loop_source ("data"|"static"|"api"|"field"; default "data"; only when nesting_type="nested_array"):
     data = iterate child entity rows, static = iterate loop_static_data, api = iterate loop_api response, field = iterate options of loop_field
@@ -355,7 +421,9 @@ textarea:
 
 email / location / datetime / time-picker / duration:
   placeholder, appearance, default_mode, editable.
-  datetime ALSO takes datetime_format (NOT date_format) — same option list as date's date_format; a bound field takes its format from the data model instead.
+  datetime ALSO takes datetime_format (NOT date_format): each of date's 12 formats with " hh:mm:ss" appended, e.g.
+    "dd-MM-yyyy hh:mm:ss", "yyyy-MM-dd hh:mm:ss", "dd MMM yyyy hh:mm:ss". Default "" = inherit the bound field's
+    format. Lowercase hh:mm:ss is required (lowercase mm is minutes). Stored as yyyy-MM-dd hh:mm:ss always.
 
 website:
   placeholder, appearance, default_mode, editable,
@@ -374,10 +442,12 @@ phone:
   placeholder, appearance, allowed_country_codes (comma-separated ISO-2, e.g. "IN,US,GB"; blank = all), default_mode, editable.
 
 number:
-  placeholder, decimal (0..10; default 2)  [NOTE: the key is "decimal", NOT "decimalPlaces"],
+  placeholder, decimal (0..10; default 0)  [NOTE: the key is "decimal", NOT "decimalPlaces"; the default is 0, not 2],
   seperator (""=default 10,000,000 | "none"=10000000 | "thousands"=Indian 1,00,00,000 | "millions"=Western 10,000,000; default ""),
   appearance, default_mode, editable,
-  dynamic_number (bool), display_number_as ("lacs"|"mn"; default "mn"),
+  dynamic_number (bool), display_number_as (""|"lacs"|"mn"; default ""),
+  negative_display ("as_is" -1,234.10 | "colored" -1,234.10 | "colored_abs" 1,234.10 | "parentheses" (1,234.10); default "as_is"),
+  negative_color (colour painted when negative_display is not "as_is"; default "#d32f2f"),
   color_ranges (array; see color_ranges above — view mode only).
 
 currency:
@@ -385,11 +455,18 @@ currency:
   placeholder, symbol_field (take symbol from a field value; overrides symbol), symbol (default "$"),
   decimal (0..10; default 2)  [NOTE: the key is "decimal", NOT "decimalPlaces"],
   seperator (""|"none"|"thousands"|"millions"; default ""),
-  appearance, default_mode, editable, dynamic_number, display_number_as ("lacs"|"mn"; default "mn"),
+  appearance, default_mode, editable, dynamic_number, display_number_as (""|"lacs"|"mn"; default ""),
+  negative_display ("as_is"|"colored"|"colored_abs"|"parentheses"; default "as_is"),
+  negative_color (colour painted when negative_display is not "as_is"; default "#d32f2f"),
   color_ranges (array; see color_ranges above — view mode only).
 
 date:
-  placeholder, date_format ("dd-MM-yyyy"|"MM-dd-yyyy"|"yyyy-MM-dd"|"dd/MM/yyyy"|"MM/dd/yyyy"|"yyyy/MM/dd"|"dd.MM.yyyy"|"MM.dd.yyyy"; default "dd-MM-yyyy"),
+  placeholder,
+  date_format — default "" = INHERIT the bound field's format from the data model; pick one only to override it here.
+    The 12 allowed values (token casing is significant):
+      "dd-MM-yyyy" "MM-dd-yyyy" "yyyy-MM-dd" "dd/MM/yyyy" "MM/dd/yyyy" "yyyy/MM/dd" "dd.MM.yyyy" "MM.dd.yyyy"
+      "dd-MMM-yyyy" (02-Aug-2026)  "MMM-dd-yyyy" (Aug-02-2026)  "dd MMM yyyy" (02 Aug 2026)  "MMM dd, yyyy" (Aug 02, 2026)
+    The value is ALWAYS stored as yyyy-MM-dd regardless of the display format.
   appearance, default_mode, editable,
   default_value_mode (""=none | "current_date" | "first_day" (of month) | "last_day" (of month) | "custom"; default ""),
   default_date_custom (a fixed date; only when default_value_mode="custom"),
@@ -402,24 +479,44 @@ checkbox-eru:
 
 select-eru:
   placeholder,
-  option_type ("STATIC"|"ENTITY_DATA"|"API"; default "STATIC"),
+  option_type ("STATIC"|"ENTITY_DATA"|"API"|"STATE"; default "STATIC")   [NOTE: "STATE" is new]
+    NB: option_type is where the OPTION LIST comes from. value_source (the common binding) is where the CHOSEN
+    VALUE is read/written. They are independent — do not confuse them.
   static_options (comma-separated string; when option_type="STATIC"),
   entity_name + field_name (option-source entity and the field whose values populate the options; when option_type="ENTITY_DATA"),
   api_name + api_field (API name and the key in its response that populates the options; when option_type="API")
     [NOTE: the key is "api_name", NOT "api"],
+  option_type="STATE" — the list comes from a state variable holding an array:
+    options_state_scope ("page"|"app"; default "page"),
+    options_state_key (page-state variable holding the array; when options_state_scope="page"),
+    options_app_state_key (app-state variable holding the array; when options_state_scope="app"),
+    option_value_key (key read from each element as the option VALUE, e.g. "id"; blank when the array holds plain values),
+    option_label_key (key read from each element as the option LABEL; blank when the array holds plain values),
+  df_fields (dependent-dropdown scoping; only when option_type is "ENTITY_DATA" or "API"):
+    array of { "def": "<field on THIS record supplying the value>", "dpef": "<key the option source filters on>" }.
+    All pairs go out together under "filter" and the list refetches whenever any of them changes.
+    Use this for cascading dropdowns (country -> state -> city).
   multiple (bool), searchable (bool; show a search box inside the dropdown — use for long lists),
   appearance, default_mode, editable.
 
 attachment:
-  label (default "Upload File"), show_label (bool), label_position ("before"|"after"; when show_label), editable,
+  label (default "Upload File"), show_label (bool; default false), label_position ("before"|"after"; default "before";
+    only when show_label=true — note this OVERRIDES the common top/left label_position), editable,
   max_files (integer; blank = no limit; taken from the data model when the field is bound),
   allowed_file_types (comma-separated extensions, e.g. "pdf, png, jpg"; blank = any),
-  max_file_size (bytes; blank = no limit).
+  max_file_size (bytes; blank = no limit),
+  default_upload (bool; default true — when OFF the file is not sent to the upload service and the on_upload event
+    fires with the file contents so a call-function/call-query action can store it instead),
+  storage_name (storage the file is written to; taken from the data model when the field is bound; only when default_upload=true),
+  folder_name (a field on THIS record whose value names the folder; taken from the data model when the field is
+    bound; only when default_upload=true).
   (no appearance)
 
 priority:
   options (status_options array of {label,color}; default [{"label":"Low","color":"#22C55E"},{"label":"Medium","color":"#F59E0B"},{"label":"High","color":"#EF4444"}]),
   value (default priority shown when page data holds none — must match an option label; default ""),
+  show_label ("none"|"left"|"above"; default "none") — where the component label sits in display mode; the dropdown
+    always uses Material's own floating label,
   default_mode ("view"=Badge|"edit"=Dropdown; default "view"), editable.
   (no appearance; do NOT emit the old "low"|"medium"|"high" enum on value — the list lives in "options")
 
@@ -428,6 +525,8 @@ progress:
   start_value (lower bound of the bar; default 0), end_value (upper bound; default 100),
   is_perc (bool; show the value with a % sign — only meaningful on a 0..100 scale; default true),
   mode ("determinate"|"indeterminate"; default "determinate"),
+  show_label ("none"|"left"|"above"; default "none"),
+  handle_size (px diameter of the slider handle; blank = default 20),
   default_mode ("view"=Disabled|"edit"=Enabled; default "edit"), editable,
   color_ranges (array; "color" paints the filled bar, "background" the track).
   (no appearance)
@@ -444,6 +543,8 @@ status:
   value (default status label; when "static"),
   open_status (status_options array, e.g. [{"label":"Active","color":"#22C55E"}])    [NOTE: the key is "open_status", NOT "open_statuses"],
   close_status (status_options array, e.g. [{"label":"Closed","color":"#EF4444"}])   [NOTE: the key is "close_status", NOT "close_statuses"],
+  status_view ("pill"|"dot"; default "pill") — badge-mode look; "dot" shows only the colour and moves the label into a tooltip,
+  show_label ("none"|"left"|"above"; default "none") — where the component label sits in badge mode,
   default_mode ("view"=Badge|"edit"=Dropdown; default "view"), editable.
   (no appearance)
 
@@ -460,7 +561,8 @@ slider:
   value (when "static"; default 50), min (default 0), max (default 100), step (default 1), discrete (bool; tick marks; default true).
 
 slide_toggle:
-  label, value_source ("static"|"field"|"state"; default "static"), state_key (when "state"), value_path (when "field"/"state"),
+  label, label_position ("after"|"before"; default "after" — OVERRIDES the common top/left label_position),
+  value_source ("static"|"field"|"state"; default "static"), state_key (when "state"), value_path (when "field"/"state"),
   checked (bool; initial state; only when value_source="static"),
   value_true / value_false (backend values that represent on/off, e.g. "Y"/"N"; blank = use true/false),
   color ("primary"|"accent"|"warn"; default "primary").
@@ -483,7 +585,10 @@ tabs:
   tabs (comma-separated tab titles). Place tab contents in children[].
 
 nav_menu (URL-driven app navigation; pair with nav_outlet):
-  items (stringified JSON array of {id, label, icon?, page?, group?, badge?}; "page" is the target page UUID written to the URL on click),
+  menu_id (a menu already defined for this process; its items come from there, already filtered to the pages this
+    user may open. PREFER this when a menu name is available; leave blank to author the items inline below),
+  items (stringified JSON array of {id, label, icon?, page?, group?, badge?}; "page" is the target page UUID written
+    to the URL on click; only used when menu_id is blank),
   route_param_name (URL query param tracking the active item; default "view"),
   default_item_id (item id/page id active when the param is empty),
   app_title, app_logo_icon (material icon),
@@ -505,14 +610,22 @@ grid (data grid — table / kanban board / pivot):
     asks for specific grid colours or row heights.
 
   DATA SOURCE
-  data_source ("query"|"entity"|"nested_entity"|"page_field"|"state"; default "query"),
+  data_source ("query"|"function"|"entity"|"nested_entity"|"page_field"|"state"; default "query")  ["function" is new],
   entity_name (when data_source is "entity"/"nested_entity"),
   fields (string[] of entity field names = the grid columns; when data_source is entity/nested_entity and view_mode != "board"),
   group_by (field; when data_source is entity/nested_entity),
+  group_order_by (field name the GROUPS themselves are ordered by; free text — a query names its own result columns;
+    when data_source is entity/nested_entity/query),
   query (query name; when data_source="query"),
-  query_group_by (field name; when set, the grid runs the same query via the group route then paginates each group),
-  query_aggregations (JSON string), query_result_path,
-  query_payload_fields (string[]), query_payload_static (JSON string),
+  function_name (function name; when data_source="function"),
+  entity_id_field (which key in each row holds the record id, e.g. "entity_id" — the query MUST select it.
+    Without it, cells cannot save automatically and every column stays read-only unless the grid handles
+    cell_value_change itself. Applies when data_source is query/function/page_field/state),
+  query_group_by (field name; when set, the grid runs the same query via the group route then paginates each group;
+    query source only),
+  query_aggregations (JSON string; query source only),
+  query_result_path (when data_source is query/function),
+  query_payload_fields (string[]), query_payload_static (JSON string)   (both when data_source is query/function),
   array_field (name/path of the page-data field (data_source="page_field") or state key (data_source="state") holding a
     JSON array of row objects; supports dotted paths, e.g. "program_data.charges"),
   row_count_state_key (write row count to a page-state key),
@@ -524,8 +637,15 @@ grid (data grid — table / kanban board / pivot):
     board_card_height (px; default 132 — must match the height the card layout actually renders),
     board_card_gap (px between cards; default 8), board_card_padding (px gutter around each card; default 8),
     board_column_min_width (px; default 300; responsive — columns wrap/stack below this),
+    board_column_max_width (px; blank = columns share all available width, so a board filtered to one group stretches
+      that column edge to edge),
     board_column_height (px; default 420; responsive — cards scroll within the column),
+    board_column_header (bool; default true — each column shows its title bar and its "3 of 12" count chip;
+      off starts the cards at the top of the column),
+    wrap_columns (bool; default true — columns that no longer fit wrap onto the next row; set false on wide
+      viewports so the board scrolls horizontally instead),
     board_card_hover_bg, board_card_selected_bg, board_card_selected_outline (colours),
+    board_count_text_color, board_count_bg (colours of the "3 of 12" count chip),
 
   PIVOT props — only when view_mode="pivot":
     pivot_rows (comma-separated field names grouped down the left),
@@ -533,9 +653,18 @@ grid (data grid — table / kanban board / pivot):
     pivot_aggregations (fields to aggregate at each row/column intersection, with the aggregation function),
 
   BEHAVIOUR
-  editable, columnResizable, columnReorderable, cellSelection, rowSelection, allowSelection, select_first_row,
-  exportable, filtering, sortable, sortBar, groupBar,
+  editable (default true), columnResizable (default false), columnReorderable (default true),
+  cellSelection (default true), rowSelection (default true), allowSelection (default false),
+  select_first_row (default false — on load, select the first row and fire row_select),
+  filtering (default true), sortable (default true), sortBar (default false), groupBar (default false),
   showColumnLines, showRowLines   [preset="custom" only],
+
+  ROW ACTIONS
+  action_column (bool; default false — adds a column of per-row action buttons alongside the data columns.
+    The actions THEMSELVES are declared as "custom_action" event subscriptions on this grid, one per action),
+  action_position ("before"|"after"; default "after"; only when action_column=true),
+  action_display_type ("icons"|"icons_outlined"|"kebab"; default "icons"; only when action_column=true —
+    kebab collapses them into one menu of icon + name),
   enableRowSubtotals, enableColumnSubtotals, enableGrandTotal, enableColumnGrandTotal,
   subtotalPosition ("before"|"after"; default "after"), subtotalPositionColumn ("before"|"after"; default "after"),
   grandTotalPosition ("before"|"after"; default "before"), grandTotalPositionColumn ("before"|"after"; default "after"),
@@ -546,13 +675,15 @@ grid (data grid — table / kanban board / pivot):
   cursor_on_hover (""|"pointer"|"auto"|"crosshair"|"move"|"grab"|"not-allowed"|"help"|"text"),
 
   EXCEL DOWNLOAD — only emit these when the user asks for an Excel/spreadsheet export:
-    excel_download (bool; default false — shows the download icon above the grid),
+    excel_download (bool; default false — enables the export),
+    excel_download_icon (bool; default true — shows the download icon above the grid; set false when the export is
+      triggered only by a "download-grid" action on some other button),
     response_key (top-level wrapper key of the download payload, e.g. "Results"; blank = grid default),
     header_fill_color, header_fill_type ("pattern"|"gradient"), header_fill_pattern (int; default 1),
-    header_font_family, header_font_size (default 9), header_font_bold (default true),
+    header_font_family, header_font_size (default 9), header_font_bold (default true), header_font_color,
     header_border_type (""|"all"|"top"|"bottom"|"left"|"right"), header_border_color, header_border_style (int; default 1),
     data_fill_color, data_fill_type ("pattern"|"gradient"), data_fill_pattern (int; default 1),
-    data_font_family, data_font_size (default 9), data_font_bold (default false),
+    data_font_family, data_font_size (default 9), data_font_bold (default false), data_font_color,
     data_border_type (""|"all"|"top"|"bottom"|"left"|"right"), data_border_color, data_border_style (int; default 1),
 
   THEME TOKENS — all optional colours, blank = grid default, honoured ONLY when preset="custom":
@@ -560,27 +691,92 @@ grid (data grid — table / kanban board / pivot):
     token_surface_container_high (hover/selected rows), token_header_color (header text; blank = falls back to row text),
     token_on_surface (row text), token_on_surface_variant, token_outline, token_outline_variant.
 
+CHARTS (line_chart, bar_chart, pie_chart) — the chart model is DIMENSIONS + MEASURES.
+The chart takes ROWS from a source, groups them by a dimension, aggregates a measure per group, and plots that.
+Emit ONLY the keys listed below.
+
+SHARED BY ALL THREE CHARTS
+
+  SOURCE
+  value_source ("query"|"function"|"state"|"static"; default "query"),
+  query (query name; when value_source="query"),
+  function_name (function name; when value_source="function"),
+  query_result_path (path into the response to the row array; when value_source is query/function),
+  transformData (go-template hook; only when value_source="query"; emit "" when unused),
+  state_key (page-state variable holding an array of rows — e.g. filled by an on_load call-query;
+    when value_source="state"),
+  data (stringified JSON array of row objects; ONLY when value_source="static").
+
+  DIMENSIONS & MEASURES (real JSON arrays, not strings)
+  dimensions: [ { "name": "<column>", "label"?, "top_n"?, "drill_into"?, "drill_label"?, "drill_top_n"?,
+                  "drill_query"?, "drill_filter_field"?, "color_entity"?, "color_field"?, "value_colors"? } ]
+    Columns the rows are grouped by. The FIRST one draws by default; extra rows become a selector above the chart.
+    top_n caps a dimension to its highest N categories and clubs the rest into one "Others" mark (5 draws 6);
+    blank plots all. drill_into names the column a click on that dimension opens.
+    color_field names an entity field whose option colours paint the marks (blank = the dimension's own column, so a
+    status-like column takes its model colours with nothing configured); color_entity scopes that lookup.
+    value_colors are per-value overrides for THIS dimension, as "Value=#hex" pairs or {value, color} rows.
+  measures: [ { "name": "<column>", "label"?, "aggregation"?, "format_entity"?, "format_field"?,
+                "symbol"?, "decimal"?, "seperator"?, "dynamic_number"?, "display_number_as"? } ]
+    aggregation is one of "sum"|"count"|"avg"|"min"|"max"|"first"|"none" (default "sum").
+    Use "none" when the query has ALREADY aggregated. The first measure draws by default.
+    format_field names the field whose decimal / seperator / dynamic_number / symbol this measure formats by
+    (blank = the measure's own column), so an amount already modelled as currency needs nothing configured.
+  split_by (a column that splits each category into one series per distinct value — the pivot's column dimension.
+    line_chart and bar_chart only; a pie has one ring so it has no split_by),
+  sort_by ("none"|"category_asc"|"category_desc"|"value_desc"|"value_asc"; default "none" = as returned),
+  inline_drill (bool; default false — clicking a mark narrows the chart in place with a trail above it to walk back;
+    the on_drill event still fires either way),
+  show_selectors (bool; default true — show the dimension/measure pickers above the chart when more than one is configured).
+
+  APPEARANCE
+  legend_position ("default"|"none"|"top"|"bottom"|"left"|"right"; default "default"),
+  legend_gap (px between the legend and the plot on every side; default 8),
+  data_label_position ("default"|"none"| chart-specific; default "default"):
+      line_chart: "top" (above point) | "bottom" (below point)
+      bar_chart:  "top" (outside end) | "inside" (inside bar)
+      pie_chart:  "outside" | "inside" | "center" (donut)
+  data_label_content (""=default | chart-specific):
+      line_chart / bar_chart: "value" | "name" | "name_value"
+      pie_chart:              "name" | "value" | "percent" | "name_value" | "name_percent" | "value_percent"
+  negative_display ("as_is"|"colored_abs"|"parentheses"; default "as_is") — how a negative measure reads in labels,
+    tooltips and the value axis (no colour option here: an ECharts label takes its colour from its series),
+  title_font_size, label_font_size, legend_font_size (px; 0 = default),
+  show_gridlines (bool; default true — the split lines BEHIND the marks; line_chart and bar_chart only),
+  axis_label_rotate (degrees -90..90; default 0 — rotate category labels when they overlap; line/bar only),
+  color_palette (comma-separated colours used in order, e.g. "#5470c6, #91cc75, #fac858"; blank = ECharts palette),
+  value_colors (chart-wide fallback colour-by-value, for any value a dimension does not colour itself),
+  extra_options (any other ECharts option as path=value pairs, applied LAST so it overrides everything above.
+    Use * for every series, e.g. "series.*.barWidth = 40%". Most styling lives under series, not at the top level).
+
+  SIZE
+  width, height, minWidth, minHeight (CSS sizes, e.g. "400px" / "300px" / "200px" / "200px" — those are the defaults).
+
+PER-CHART EXTRAS
+
 line_chart:
-  title, api, query, xAxisKey, yAxisKey,
-  xAxisData (stringified JSON array of labels, e.g. ["Jan","Feb"]), seriesData (stringified JSON array of values),
-  transformData, showGrid (bool), showTooltip (bool), lineColor (hex; default "#5470c6"), areaOpacity (0..1; default 0.3),
-  width, height, minWidth, minHeight (CSS sizes, e.g. "400px").
+  title (default "Line Chart"), lineColor (hex; default "#5470c6"), line_smooth (bool; default true),
+  areaOpacity (0..1; default 0.3),
+  showGrid (bool; default true) — draws the BOX around the plot area (ECharts grid.show), NOT the gridlines;
+  showTooltip (bool; default true).
 
 bar_chart:
-  title, api, query, xAxisKey, yAxisKey, xAxisData, seriesData, transformData,
-  showGrid, showTooltip, barColor (hex; default "#5470c6"), width, height, minWidth, minHeight.
+  title (default "Bar Chart"), barColor (hex; default "#5470c6"),
+  bar_orientation ("vertical"=columns | "horizontal"=bars; default "vertical"),
+  stack_series (bool; default false — stack the split_by series instead of grouping them side by side),
+  showGrid (bool; default true — the plot box), showTooltip (bool; default true).
 
 pie_chart:
-  title, api, query, nameKey (default "name"), valueKey (default "value"),
-  data (stringified JSON array, e.g. "[{\"name\":\"A\",\"value\":335},{\"name\":\"B\",\"value\":310}]"),
-  transformData, showLegend (bool), showTooltip (bool), radius (e.g. "50%"),
-  width, height, minWidth, minHeight.
+  title (default "Pie Chart"), radius (e.g. "50%"),
+  inner_radius (e.g. "40%"; blank = a full pie, set it to make a donut),
+  showTooltip (bool; default true).
 
 eru_page (opens/embeds another page via a trigger):
   targetPageId, displayMode ("popup"|"side_panel"|"inline"; default "popup"), buttonText, buttonIcon, autoOpen (bool).
 
 NOTE on data properties:
-- For chart components, "data"/"xAxisData"/"seriesData" always hold STRINGIFIED JSON, not objects/arrays.
+- On charts, "data" (static rows) holds STRINGIFIED JSON. "dimensions", "measures" and "value_colors" are REAL
+  JSON arrays.
 - Provide sensible defaults when no DATA CONTEXT is supplied; otherwise derive shape from the supplied data.
 
 ============================================================
@@ -589,34 +785,58 @@ COMMON BEHAVIOR PROPERTIES (apply to most components; set under properties.base)
 
   name:                   field/component name (snake_case for form fields = a real entity field; keep empty for non-form components)
   label:                  user-visible label / static display text
+  label_position:         "top" | "left"   (default "top") — where the label sits in VIEW mode. Edit mode is
+                          unaffected: a Material field floats its own label.
+                          NOTE: attachment ("before"|"after") and slide_toggle ("after"|"before") override this key
+                          with their own value set, and tile has its own label_position (""|"below"|"above").
   default_value:          pre-fills the field when its value is null/undefined. A blank value typed by the user is kept.
                           Ignored when the bound entity field already defines a default.
+  default_state_key:      state variable to seed this field from when its value is empty. Takes precedence over
+                          default_value AND the data-model default. Once set, the field also WRITES its value back
+                          to this state variable on every change, in addition to the normal page-data update.
+  default_state_scope:    "page" | "app"   (default "page"; only meaningful when default_state_key is set)
   description:            help text
   identifier:             true for form fields whose values you want stored in page data
+  value_change_payload:   "record" | "changed_field"   (default "record"; only when identifier=true)
+                          What a valueChange action receives. "record" sends the full record — the card's row or the
+                          page data, which on a board row includes the query's computed columns. "changed_field"
+                          sends just this field, with its previous value in old_entity_data, the way a grid cell edit does.
   visible:                "always" | "never" | "conditionally"   (default "always")
   visibility_conditions:  logic expression (only when visible="conditionally"); reference fields/state with @
   mandatory:              "always" | "never" | "conditionally"   (default "never")
   mandatory_conditions:   logic expression (only when mandatory="conditionally")
   disabled_behavior:      "always" | "never" | "conditionally"   (default "never")
   disabled_conditions:    logic expression (only when disabled_behavior="conditionally")
+  hover_background_color: tint painted behind the control when it is hovered in VIEW mode and editable=true — the
+                          hint that a double-click opens the editor. Blank uses the theme surface tint.
+                          (only meaningful on components that have "editable")
 
-COMMON VALUE BINDING (value_source / state_key / value_path)
+COMMON VALUE BINDING (value_source / state_key / app_state_key / value_path)
 The input components listed below inherit a COMMON value-source selector from the base component:
 
-  value_source:  "field" | "state"    (default "field")
-                 field = read/write the page-data field named by "name"
-                 state = read/write the page-state variable named by state_key
-  state_key:     page-state variable (only when value_source="state"; defaults to "name" when blank)
-  value_path:    dot/bracket path into a JSON state value, e.g. "data.name" or "items[0].label" (only when value_source="state")
+  value_source:   "field" | "state" | "app"    (default "field")     ["app" is NEW]
+                  field = read/write the page-data field named by "name"
+                  state = read/write the PAGE-state variable named by state_key
+                  app   = read/write the APP-state variable named by app_state_key (shared across pages,
+                          survives nav_outlet page swaps)
+  state_key:      page-state variable (only when value_source="state"; defaults to "name" when blank)
+  app_state_key:  app-state variable  (only when value_source="app"). App state has no declarations, so a key
+                  nothing has written yet is legal here.
+  value_path:     dot/bracket path into a JSON state value, e.g. "data.name" or "items[0].label"
+                  (only when value_source is "state" or "app")
 
-Components with this COMMON binding (values are exactly "field" or "state" — NEVER "static" or "label"):
+Components with this COMMON binding (values are exactly "field", "state" or "app" — NEVER "static" or "label"):
   textbox, textarea, email, website, number, date, datetime, time-picker, duration,
   location, people, select-eru, checkbox-eru, tag, priority, rating, slide_toggle
 
-Components that declare their OWN value_source with a DIFFERENT allowed value set (see the type catalog for each):
-  text (label|field|state), badge (label|field|state), chips (static|field),
-  progress_bar (static|field|state), slider (static|field|state), status (static|field|state),
-  currency (static|field|state), slide_toggle (static|field|state — its own set widens the common one)
+Components that declare their OWN value_source with a DIFFERENT allowed value set (see the type catalog for each).
+These do NOT accept "app", and they use state_key for page state:
+  text (label|field|state)          badge (label|field|state)
+  chips (static|field|state)        progress_bar (static|field|state)
+  slider (static|field|state)       status (static|field|state)
+  currency (static|field|state)     icon (static|state)
+  slide_toggle (static|field|state — its own set replaces the common one)
+  line_chart / bar_chart / pie_chart (query|function|state|static — this is the chart's ROW SOURCE, not a value)
 
 Every other component type has NO value_source at all — do not emit one.
 
@@ -663,7 +883,11 @@ Each EruPage.state[] entry is a PageStateVariable:
     "initial":  <any>,                          // initial value (string|number|bool|null|array|object)
     "formula":  {                               // OPTIONAL — declarative auto-recompute
       "fn":       "count" | "sum" | "avg" | "min" | "max" | "expr",
-      "source":   "pageDataArray"?,             // typically the page data rows
+      "source":   "pageDataArray" | "state:<key>"?,  // "pageDataArray" (default) is the page's own record array;
+                                                //  "state:<key>" aggregates over an array held in page state —
+                                                //  this is how a grid's selected rows get counted or summed
+                                                //  (grid selection_change writes selection.selected_rows into
+                                                //   state, and the formula reads it back from there)
       "field":    "<row field name>"?,          // operand for count/sum/avg/min/max
       "filter":   <StateFilter | StateFilter[]>?,
       "value":    "<expression string>"?        // only when fn="expr"
@@ -693,33 +917,63 @@ Each component may have an "events" array. Each item is a ComponentEventSubscrip
 Event names by component:
   - All: click, dblclick, mouseenter, mouseleave, mouseover, mouseout, mousedown, mouseup, focus, blur, keydown, keyup
   - Form fields with identifier=true: valueChange
-  - Button: buttonpress, buttonrelease, buttonhover, buttonfocus, buttonblur, api_success, api_error
-  - Grid: row_select
-  - Attachment: on_upload
-  - Sidebar_stepper: on_complete
-  - Timer: timeout, timer_start
+  - button: buttonpress, buttonrelease, buttonhover, buttonfocus, buttonblur, api_success, api_error
+  - grid: row_select, selection_change, cell_value_change, custom_action, on_drill
+  - line_chart / bar_chart / pie_chart: on_drill
+  - chips: chipClick
+  - nav_menu: menu_select
+  - attachment: on_upload
+  - sidebar_stepper: on_complete
+  - timer: timeout, timer_start
   - page_ref (component-level): on_api_success, on_api_error
-  - Page-level (EruPage.events, NOT EruComponent.events): on_load — fired by a parent page_ref once nested data has arrived.
+  - Page-level (EruPage.events, NOT EruComponent.events): on_load — fired by a parent page_ref once nested data has
+    arrived. A page may also subscribe to a CUSTOM SIGNAL name, which is what a child page's "emit-to-parent" sends.
 
-Allowed actions (pick the most specific one):
-  no-action, call-api, call-function, call-query, fetch-page-data, save-page-data, clear-page-data, clear-all-page-data,
+GRID / CHART EVENT NOTES
+  - custom_action (grid): ONE subscription per row action offered by the grid. The subscription carries
+    action_name (unique per grid — the identity the click comes back with), action_icon (material icon the grid
+    renders) and optional action_visible_condition (a logic expression per row). The rest of the subscription is
+    what runs when it is clicked. These only render when the grid also sets action_column=true.
+  - on_drill (grid + charts): the subscription carries drill_column — a column name in table mode, or an
+    aggregation name in pivot mode. Any column named by an on_drill subscription renders its cells as links.
+    Several subscriptions may name the same column; all of them run on click.
+  - selection_change (grid): fires for multi-row selection; the payload carries selection.selected_rows, which is
+    what a state formula with source "state:<key>" aggregates over.
+  - cell_value_change (grid): fires on an inline cell edit. Needed when the grid has no entity_id_field and must
+    persist the edit itself.
+
+Allowed actions — this is the COMPLETE list, pick the most specific one:
+  no-action, call-function, call-query, fetch-page-data, save-page-data, set-page-data, clear-page-data, clear-all-page-data,
   hide-fields, unhide-fields, disable-field, enable-field, set-field,
   hide-component, show-component, disable-component, enable-component,
-  update-property, start-loading, stop-loading, start-timer, stop-timer, refresh-grid, refresh-page-ref,
+  update-property, start-loading, stop-loading, start-timer, stop-timer,
+  refresh-grid, download-grid, refresh-page-ref,
   update-state, step-forward, step-back, emit-to-parent,
   toggle-side-panel, open-side-panel, close-side-panel, navigate-to-page
 
+To call a backend, use "call-function" with function_name, or "call-query" with query_name.
+
 Action-specific keys:
-  - call-api                   REQUIRES "apiName". Optional: payload, api_payload_fields[], on_success[], on_error[], validate_before_action, validate_field_names[], error_field, error_state_key.
-  - call-function              REQUIRES "function_name". Same optional keys as call-api.
-  - call-query                 REQUIRES "query_name". Same optional keys as call-api.
+  - call-function              REQUIRES "function_name". Optional: payload, api_payload_fields[], payload_extras[],
+                               on_success[], on_error[], validate_before_action, validate_field_names[],
+                               error_field, error_state_key.
+  - call-query                 REQUIRES "query_name". Same optional keys as call-function.
   - fetch-page-data            page_id, payload.
   - save-page-data             payload (optional).
+  - set-page-data              Loads a record INTO the page. record_source ("event"|"state"|"app_state";
+                               default "event" = the record the event itself carries, e.g. a grid row_select hands
+                               over the selected row already shaped {entity_id, entity_data}); "state"/"app_state"
+                               read the variable named by state_key instead.
+                               record_path = optional dot path into that source when the id/record sits inside it
+                               (e.g. "extras.program_id", "entity_data.id").
   - clear-page-data            page_id (optional).
   - clear-all-page-data        (no extra keys).
   - hide-fields/unhide-fields/disable-field/enable-field   fieldNames: [<field name>...]
   - set-field                  fieldNames: [<field name>] AND value (or state_key+state_formula, or value_expression).
-  - hide-component/show-component/disable-component/enable-component/start-loading/stop-loading/start-timer/stop-timer/refresh-grid   fieldNames: [<component id>]
+  - hide-component/show-component/disable-component/enable-component/start-loading/stop-loading/start-timer/stop-timer/refresh-grid/download-grid   fieldNames: [<component id>]
+  - download-grid              fieldNames: [<grid component id>] — triggers that grid's Excel export from another
+                               control. The grid must have excel_download=true; pair it with
+                               excel_download_icon=false when the button is the only trigger.
   - refresh-page-ref           fieldNames: [<page_ref component id>...] — reloads the nested page(s) at those mount points.
                                Use this after a save/API call whose result the embedded page must re-read; use refresh-grid for grids.
   - update-property            fieldNames: [<component id>] + property_key + value (or value_expression). Overrides one property on the target component at runtime.
@@ -729,12 +983,20 @@ Action-specific keys:
                                    value?, by?, values?, field?, expr?, payload_path? }
                                  Use "set-from-payload" with payload_path like "entity_data.amount" to copy a value from an event payload (e.g. on_load).
   - step-forward / step-back   fieldNames: [<stepper id>] (optional).
-  - emit-to-parent             state_key (event name to emit), payload (optional).
+  - emit-to-parent             state_key (the SIGNAL NAME to emit), payload (optional). The outer page receives it
+                               by subscribing EruPage.events to an event of that same custom name.
   - toggle-side-panel / open-side-panel / close-side-panel   fieldNames: [<page_ref component id>].
   - navigate-to-page           page_id (required). Optional: state_key = the URL query param name to write (default "view"),
                                and nav_params[] to carry values to the target page (see below).
 
 value_expression: on set-field and update-property you may supply "value_expression" instead of "value" — it is evaluated at runtime by the logic evaluator (e.g. "@view == 'kanban' ? 'board' : 'table'") and takes precedence over the static "value".
+
+payload_extras: author-supplied additions to a subscription's payload, resolved when the event fires — same shape as
+nav_params ({ param, value? | value_expression?, encode?: "json" }). The event only knows what the component can tell
+it: a drill click carries the row and the cell, but not the page state the report was filtered by. These land under
+payload.extras, namespaced so they cannot collide with the record's own fields, go out with a call-query /
+call-function, and are readable by update-state with { fn: "set-from-payload", payload_path: "extras.<key>" }.
+Expressions take a leading @: "@state.fd", "@app.x", "@page.x", and "@column.<name>" for a column of the drilled row.
 
 ------------------------------------------------------------
 PAGE STATE vs APP STATE
@@ -773,7 +1035,7 @@ Each NavParam is { param, value? | value_expression?, encode?: "json" }.
 - A target page that must load a whole record from what was passed should set its own
   data_source="state" / state_scope / state_field / state_result_path (see ERU PAGE STRUCTURE).
 
-A submit button on a form should typically subscribe to "click" with action "call-api", "validate_before_action": true, and optionally "validate_field_names": [...] to restrict which fields gate the call.
+A submit button on a form should typically subscribe to "click" with action "call-function" (or "call-query"), "validate_before_action": true, and optionally "validate_field_names": [...] to restrict which fields gate the call.
 
 Page-level event "on_load" is fired by a parent page_ref AFTER the nested page's data arrives. Use it on the EruPage.events array (NOT on a component) to drive cross-page reactions. Payload supplied to the action: { entity_id, entity_data, entity_name }. Combine "on_load" with action "update-state" + state_formula { fn: "set-from-payload", payload_path: "entity_data.<field>" } to lift values from the nested record into outer page state.
 
@@ -834,7 +1096,7 @@ The ONLY valid colour tokens (use these exact strings):
   var(--studio-tertiary-container)    var(--studio-on-tertiary-container)
   var(--studio-surface)               var(--studio-on-surface)
   var(--studio-surface-variant)       var(--studio-on-surface-variant)
-  var(--studio-surface-container)
+  var(--studio-surface-container)     var(--studio-surface-container-high)
   var(--studio-outline)               var(--studio-outline-variant)
   var(--studio-error)                 var(--studio-error-container)
   var(--studio-base-surface)          (fixed white, flips with the host's dark mode)
@@ -934,7 +1196,7 @@ INTERACTING WITH DATA
 ============================================================
 
 NEVER INVENT DATA (ABSOLUTE RULE)
-Every value you place in a "data", "seriesData", "xAxisData", "options", "static_options"
+Every value you place in a "data", "options", "static_options", chart "dimensions"/"measures"
 or grid "fields" property MUST come from the data you were given. Do NOT fabricate rows,
 names, amounts, dates, percentages or "sample"/"placeholder"/"illustrative" values — not
 even plausible-looking ones, and not to make a chart look populated.
@@ -950,15 +1212,16 @@ When DATA CONTEXT is supplied:
 - Inspect its shape (fields, types, values).
 - Pick form-field types that match (e.g. number → number, ISO date → date, list of strings → select-eru with option_type="STATIC", boolean → slide_toggle/checkbox-eru, currency amount → currency).
 - For grids, set data_source and entity_name/query and populate "fields" from the actual field names present in the data.
-- For charts, populate xAxisKey/yAxisKey/nameKey/valueKey from the data shape, and populate "data"/"seriesData"/"xAxisData" with the ACTUAL rows you were given (stringified JSON), or "[]" when there are none.
+- For charts, build "dimensions" and "measures" from the actual column names present in the data. When the rows are supplied inline rather than fetched, set value_source="static" and put the ACTUAL rows you were given in "data" (stringified JSON), or "[]" when there are none.
 
 When AVAILABLE ENTITIES are supplied:
 - Set entity_name on the page when the page is centered on a single entity.
 - For form fields, set "name" to a real entity field and identifier=true on inputs.
 
-When AVAILABLE APIs are supplied:
-- For call-api event subscriptions, set apiName to one of the listed APIs.
-- For charts/grids that need data, set the "api"/"query" property to a listed name.
+When AVAILABLE QUERIES / FUNCTIONS are supplied:
+- For call-query event subscriptions, set query_name to one of the listed queries; for call-function, set function_name to one of the listed functions.
+- For a grid, set data_source and the matching "query" / "function_name" property to a listed name.
+- For a chart, set value_source and the matching "query" / "function_name" property to a listed name.
 
 ============================================================
 RESPONSIVE DESIGN
@@ -986,9 +1249,14 @@ CHECKLIST — verify before emitting:
 [ ] Every component has id, type, properties.base, styles.{classes, responsive_classes, responsive_styles, custom}
 [ ] Only container types use "children"; leaves do not
 [ ] Every "type" is from the allowed list
-[ ] Every event "action" is from the allowed list; call-api has apiName, call-function has function_name, call-query has query_name, navigate-to-page has page_id
-[ ] No retired property key is used (decimalPlaces, icon_type, rating max, open_statuses/close_statuses, select-eru api, datetime date_format)
-[ ] value_source values are legal for that component ("field"/"state" for the common binding; "label"/"static" only where the catalog says so)
+[ ] Every event "action" is from the allowed list; call-function has function_name, call-query has query_name, navigate-to-page has page_id
+[ ] No retired property key is used (decimalPlaces, icon_type, rating max, open_statuses/close_statuses,
+    select-eru api, datetime date_format)
+[ ] Charts use dimensions/measures (real JSON arrays) + value_source
+[ ] A grid with row action buttons sets action_column=true AND declares one custom_action subscription per action
+[ ] A grid whose cells must save sets entity_id_field (query/function/page_field/state sources)
+[ ] value_source values are legal for that component ("field"/"state"/"app" for the common binding; "label"/"static"
+    only where the catalog says so; "app" only on the common binding)
 [ ] color_ranges and status_options (open_status/close_status/options) are REAL JSON arrays, not strings
 [ ] Grid theme tokens / row heights / line toggles are only emitted alongside preset="custom"
 [ ] Validation rule values match the rule type
