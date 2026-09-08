@@ -168,6 +168,8 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			if err != nil {
 				return nil, nil, err
 			}
+		} else if err = sqd.verifyWrapApplicable(ctx); err != nil {
+			return nil, nil, err
 		}
 		logs.WithContext(ctx).Info(sqd.Query)
 		ctx = ds.WithUseWriter(ctx, sqd.UseWriter || qlcache.IsDML(sqd.Query))
@@ -234,6 +236,8 @@ func (sqd *SQLData) Execute(ctx context.Context, projectId string, datasources m
 			if err != nil {
 				return nil, nil, err
 			}
+		} else if err = sqd.verifyWrapApplicable(ctx); err != nil {
+			return nil, nil, err
 		}
 		res = append(res, map[string]interface{}{"sql": secureQuery})
 	}

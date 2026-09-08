@@ -1,6 +1,7 @@
 package qlcache
 
 import (
+	"regexp"
 	"strings"
 )
 
@@ -72,10 +73,12 @@ func stripLeadingNoise(sql string) string {
 }
 
 // cteHasWrite scans a lowercased WITH-prefixed statement for a writable inner
-// statement. Substring match is conservative on purpose: a CTE that selects
-// `updated_at` will be classified as write and forced to main, which is safe.
-// Only WITH-prefixed queries reach here, so the over-match surface is narrow.
+// statement. Keywords are matched on word boundaries so that identifiers like
+// `updated_by` or `deleted_at` are not mistaken for writes, while still being
+// conservative: a keyword appearing inside a string literal classifies the
+// statement as a write and forces it to main, which is safe.
 func cteHasWrite(s string) bool {
-	return strings.Contains(s, "insert") || strings.Contains(s, "update") ||
-		strings.Contains(s, "delete") || strings.Contains(s, "merge")
+	return cteWriteRegex.MatchString(s)
 }
+
+var cteWriteRegex = regexp.MustCompile(`\b(insert|update|delete|merge)\b`)

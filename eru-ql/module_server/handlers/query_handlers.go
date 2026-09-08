@@ -264,6 +264,14 @@ func ProjectMyQueryASTHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	}
 }
 
+func remarshal(data interface{}, target interface{}) (err error) {
+	b, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(b, target)
+}
+
 type contextKey string
 
 const groupByModeKey contextKey = "groupByMode"
@@ -419,31 +427,38 @@ func ProjectMyQueryExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc
 			if groupMode {
 				groupByConfig := module_model.GroupByConfig{Active: true}
 				if gbData, gbOk := postBody["group_by"]; gbOk {
-					gbBytes, mErr := json.Marshal(gbData)
-					if mErr == nil {
-						if uErr := json.Unmarshal(gbBytes, &groupByConfig.GroupBy); uErr != nil {
-							logs.WithContext(r.Context()).Error(uErr.Error())
-						}
+					if gErr := remarshal(gbData, &groupByConfig.GroupBy); gErr != nil {
+						server_handlers.FormatResponse(w, 400)
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("invalid group_by : ", gErr.Error())})
+						logs.WithContext(r.Context()).Error(gErr.Error())
+						return
 					}
 					delete(postBody, "group_by")
 				}
 				if aggData, aggOk := postBody["aggregations"]; aggOk {
-					aggBytes, mErr := json.Marshal(aggData)
-					if mErr == nil {
-						if uErr := json.Unmarshal(aggBytes, &groupByConfig.Aggregations); uErr != nil {
-							logs.WithContext(r.Context()).Error(uErr.Error())
-						}
+					if gErr := remarshal(aggData, &groupByConfig.Aggregations); gErr != nil {
+						server_handlers.FormatResponse(w, 400)
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("invalid aggregations : ", gErr.Error())})
+						logs.WithContext(r.Context()).Error(gErr.Error())
+						return
 					}
 					delete(postBody, "aggregations")
 				}
 				if gobData, gobOk := postBody["group_order_by"]; gobOk {
-					gobBytes, mErr := json.Marshal(gobData)
-					if mErr == nil {
-						if uErr := json.Unmarshal(gobBytes, &groupByConfig.GroupOrderBy); uErr != nil {
-							logs.WithContext(r.Context()).Error(uErr.Error())
-						}
+					if gErr := remarshal(gobData, &groupByConfig.GroupOrderBy); gErr != nil {
+						server_handlers.FormatResponse(w, 400)
+						_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": fmt.Sprint("invalid group_order_by : ", gErr.Error())})
+						logs.WithContext(r.Context()).Error(gErr.Error())
+						return
 					}
 					delete(postBody, "group_order_by")
+				}
+				if len(groupByConfig.GroupBy) == 0 && len(groupByConfig.Aggregations) == 0 {
+					err = errors.New("group_by or aggregations is mandatory for executegroup")
+					server_handlers.FormatResponse(w, 400)
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+					logs.WithContext(r.Context()).Error(err.Error())
+					return
 				}
 				qlInterface.SetGroupBy(groupByConfig)
 			}

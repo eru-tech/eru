@@ -202,6 +202,23 @@ func (qld *QLData) wrapGroupBy(ctx context.Context, query string) (wrappedQuery 
 	return wrappedQuery, nil
 }
 
+func (qld *QLData) hasWrapConfig() bool {
+	w := qld.WrapConfig
+	return len(w.Filter) > 0 || len(w.Sort) > 0 || w.Limit != 0 || w.Skip != 0
+}
+
+func (qld *QLData) verifyWrapApplicable(ctx context.Context) (err error) {
+	if qld.GroupBy.Active {
+		err = errors.New("group by is not supported for a query which is not a plain select")
+	} else if qld.hasWrapConfig() {
+		err = errors.New("qfilter , qsort , qlimit and qskip are not supported for a query which is not a plain select")
+	}
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+	}
+	return
+}
+
 func (qld *QLData) wrapQuery(ctx context.Context, query string, sr ds.SqlMakerI) (wrappedQuery string, err error) {
 	logs.WithContext(ctx).Debug("wrapQuery - Start")
 	w := qld.WrapConfig
