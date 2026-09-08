@@ -12,13 +12,15 @@ import (
 )
 
 type StepTrace struct {
-	Iteration   int                    `json:"iteration"`
-	Thinking    string                 `json:"thinking,omitempty"`
-	ToolName    string                 `json:"tool_name,omitempty"`
-	ToolInput   map[string]interface{} `json:"tool_input,omitempty"`
-	ToolResult  map[string]interface{} `json:"tool_result,omitempty"`
-	Content     string                 `json:"content,omitempty"`
-	Timestamp   time.Time              `json:"timestamp"`
+	Iteration  int                    `json:"iteration"`
+	Thinking   string                 `json:"thinking,omitempty"`
+	ToolName   string                 `json:"tool_name,omitempty"`
+	ToolInput  map[string]interface{} `json:"tool_input,omitempty"`
+	ToolResult map[string]interface{} `json:"tool_result,omitempty"`
+	Content    string                 `json:"content,omitempty"`
+	Timestamp  time.Time              `json:"timestamp"`
+	Agent      string                 `json:"agent,omitempty"`
+	Step       string                 `json:"step,omitempty"`
 }
 
 type ToolExecutor func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error)

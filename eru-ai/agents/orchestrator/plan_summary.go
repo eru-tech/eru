@@ -103,8 +103,25 @@ func clientTraces(ctx context.Context, traces []models.StepTrace) []models.StepT
 		if sanitized[i].ToolName == models.TerminalToolStructuredOutput {
 			sanitized[i].ToolInput = nil
 		}
+		sanitized[i].Thinking = truncateTraceText(sanitized[i].Thinking)
+		sanitized[i].Content = truncateTraceText(sanitized[i].Content)
 	}
 	return sanitized
+}
+
+// traceTextLimit caps how much of a single trace's reasoning text goes on the
+// wire. Merging sub-agent traces multiplies the volume of thinking text in a
+// response, so the client copy is trimmed while the conversation keeps the whole
+// thing; ?raw=true returns it untrimmed.
+const traceTextLimit = 4000
+
+const traceTruncationNote = "\n... [truncated - full text is kept in the saved conversation; call with ?raw=true for the untrimmed trace]"
+
+func truncateTraceText(text string) string {
+	if len(text) <= traceTextLimit {
+		return text
+	}
+	return text[:traceTextLimit] + traceTruncationNote
 }
 
 // terminalStepName returns the name of the step that produced the FuncGroup's

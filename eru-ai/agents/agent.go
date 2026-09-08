@@ -450,6 +450,14 @@ func (agent *Agent) ExecuteAgentFunctionResumable(ctx context.Context, agentMess
 	if claims != "" {
 		headers.Add("claims", claims.(string))
 	}
+	// The sub-agent runs in its own request on any pod, so everything it needs to
+	// report back travels as headers. eru-functions passes unknown headers through
+	// untouched, which is what makes this work without changing the func engine.
+	headers.Set(HeaderAgentChain, FormatAgentChain(ChainWith(AgentChain(ctx), agent.AgentName)))
+	if target, ok := GetStreamTarget(ctx); ok {
+		headers.Set(HeaderStreamId, target.StreamId)
+		headers.Set(HeaderStreamCallback, target.CallbackUrl)
+	}
 	r := &http.Request{
 		Method:        "POST",
 		URL:           &url.URL{Scheme: "http", Host: "", Path: ""},

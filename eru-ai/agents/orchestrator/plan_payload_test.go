@@ -266,3 +266,67 @@ func TestOrchestratorResponseSchemaIsNotThePlanSchema(t *testing.T) {
 		t.Errorf("expected an unset response schema, got %+v", response)
 	}
 }
+
+func TestValidateStepKeyUniquenessRejectsCrossBranchDuplicate(t *testing.T) {
+	plan := planWithSteps(t, map[string]interface{}{
+		"branch_a": map[string]interface{}{
+			"agent_name":        "branch_a",
+			"tenant_id":         "processo",
+			"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+			"func_steps": map[string]interface{}{
+				"generate_sql": map[string]interface{}{
+					"agent_name":        "generate_sql",
+					"tenant_id":         "processo",
+					"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+				},
+			},
+		},
+		"branch_b": map[string]interface{}{
+			"agent_name":        "branch_b",
+			"tenant_id":         "processo",
+			"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+			"func_steps": map[string]interface{}{
+				"generate_sql": map[string]interface{}{
+					"agent_name":        "generate_sql",
+					"tenant_id":         "processo",
+					"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+				},
+			},
+		},
+	})
+	issues := validatePlanTemplates(context.Background(), plan)
+	found := false
+	for _, issue := range issues {
+		if strings.Contains(issue.Err, `step key "generate_sql" is used 2 times`) {
+			found = true
+			if !strings.Contains(issue.StepPath, "branch_a.generate_sql") || !strings.Contains(issue.StepPath, "branch_b.generate_sql") {
+				t.Errorf("issue should name both offending paths : %s", issue.StepPath)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected a duplicate step key issue, got %v", issues)
+	}
+}
+
+func TestValidateStepKeyUniquenessAcceptsSuffixedDuplicates(t *testing.T) {
+	plan := planWithSteps(t, map[string]interface{}{
+		"generate_sql": map[string]interface{}{
+			"agent_name":        "generate_sql",
+			"tenant_id":         "processo",
+			"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+			"func_steps": map[string]interface{}{
+				"generate_sql2": map[string]interface{}{
+					"agent_name":        "generate_sql",
+					"tenant_id":         "processo",
+					"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+				},
+			},
+		},
+	})
+	for _, issue := range validatePlanTemplates(context.Background(), plan) {
+		if strings.Contains(issue.Err, "is used") {
+			t.Fatalf("suffixed duplicates are legal : %v", issue)
+		}
+	}
+}

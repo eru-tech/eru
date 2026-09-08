@@ -66,6 +66,7 @@ func validatePlan(ctx context.Context, plan map[string]interface{}, allowedAgent
 
 	issues := validateStepTemplates(ctx, "", funcGroup.FuncSteps)
 	issues = append(issues, validateStepReferences(ctx, funcGroup.FuncSteps)...)
+	issues = append(issues, validateStepKeyUniqueness(funcGroup.FuncSteps)...)
 	issues = append(issues, validateStepIdentity(funcGroup.FuncSteps, allowedAgents, allowedTools)...)
 	issues = append(issues, validateStepPayload(ctx, funcGroup.FuncSteps, allowedAgents, allowedTools)...)
 	issues = append(issues, validateCodeRouting(ctx, funcGroup.FuncSteps, cc)...)
@@ -381,6 +382,39 @@ func validateStepReferences(ctx context.Context, steps map[string]*functions.Fun
 		}
 	})
 	return issues
+}
+
+// validateStepKeyUniqueness rejects a step key used more than once anywhere in
+// the plan. Step results live in one flat namespace keyed by the step key
+// (eru-functions merges every branch's vars back by bare key), so duplicates
+// overwrite each other and downstream .ResVars references resolve to whichever
+// branch finished last.
+func validateStepKeyUniqueness(steps map[string]*functions.FuncStep) []planIssue {
+	paths := make(map[string][]string)
+	walkSteps(steps, "", func(stepPath string, stepKey string, step *functions.FuncStep) {
+		paths[stepKey] = append(paths[stepKey], stepPath)
+	})
+	var issues []planIssue
+	for _, stepKey := range sortedKeys(duplicateKeySet(paths)) {
+		issues = append(issues, planIssue{
+			StepPath: strings.Join(paths[stepKey], ", "),
+			Field:    "func_steps",
+			Err: fmt.Sprint("step key \"", stepKey, "\" is used ", len(paths[stepKey]),
+				" times in this plan - step keys share one flat namespace, so these steps overwrite each other. Give each occurrence a unique key by appending a numeric suffix (\"",
+				stepKey, "2\", \"", stepKey, "3\") and update every .ResVars/.ReqVars/wait_for reference to match"),
+		})
+	}
+	return issues
+}
+
+func duplicateKeySet(paths map[string][]string) map[string]bool {
+	duplicates := make(map[string]bool)
+	for stepKey, stepPaths := range paths {
+		if len(stepPaths) > 1 {
+			duplicates[stepKey] = true
+		}
+	}
+	return duplicates
 }
 
 // validateStepIdentity enforces the step-key naming rule and that every step

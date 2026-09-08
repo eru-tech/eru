@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	agents_factory "github.com/eru-tech/eru/eru-ai/agents/agents_factory"
@@ -745,6 +746,15 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		isStream := strings.HasSuffix(r.URL.Path, "/stream")
 		isRaw := strings.EqualFold(r.URL.Query().Get("raw"), "true")
 
+		chain := agents.ParseAgentChain(r.Header.Get(agents.HeaderAgentChain))
+		if len(chain) >= agents.MaxAgentChainDepth {
+			err := fmt.Errorf("agent delegation depth limit of %d reached (chain: %s) - refusing to call %s", agents.MaxAgentChainDepth, agents.FormatAgentChain(chain), agentName)
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
 		agent, err := sh.Store.GetAgent(r.Context(), projectId, tenantId, conversationId, agentName, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
@@ -776,9 +786,21 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 
 		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
 		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+		r = r.WithContext(agents.WithAgentChain(r.Context(), chain))
 		if isRaw {
 			logs.WithContext(r.Context()).Info(fmt.Sprint("AgentExecuteHandler - raw output requested for agent ", agentName))
 			r = r.WithContext(agents.WithRawOutput(r.Context(), true))
+		}
+
+		// A sub-agent: it holds no SSE connection of its own, so its live events are
+		// relayed to the pod that does. The same headers keep travelling downward, so
+		// this agent's own children report to that same original stream.
+		inheritedTarget, hasInheritedTarget := parseStreamTarget(r)
+		if hasInheritedTarget && !isStream {
+			r = r.WithContext(agents.WithStreamTarget(r.Context(), inheritedTarget))
+			forwarder := newStreamForwarder(inheritedTarget, projectId, tenantId, agentName, chain)
+			defer forwarder.Close()
+			r = r.WithContext(agents.WithStreamCallback(r.Context(), forwarder.Callback()))
 		}
 
 		if isStream {
@@ -788,8 +810,7 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			w.WriteHeader(http.StatusOK)
 
 			flusher, canFlush := w.(http.Flusher)
-
-			sendSSE := func(event agents.StreamEvent) {
+			writeSSE := func(event agents.StreamEvent) {
 				data, err := json.Marshal(event)
 				if err != nil {
 					return
@@ -800,19 +821,43 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				}
 			}
 
-			streamCb := agents.StreamCallback(func(event agents.StreamEvent) {
-				sendSSE(event)
-			})
+			// This request owns the client's connection. Sub-agents on this and other
+			// pods post their events to activeStreams under streamId; the writer
+			// goroutine below is the only thing that ever touches w while the agent runs.
+			streamId := uuid.New().String()
+			sink := activeStreams.open(streamId)
+			writerDone := make(chan struct{})
+			go func() {
+				defer close(writerDone)
+				sink.drain(writeSSE)
+			}()
 
-			ctx := agents.WithStreamCallback(r.Context(), streamCb)
-			agentResult, err := agent.Execute(ctx, agentMessage, conversationId, projectId, tenantId)
-			if err != nil {
-				sendSSE(agents.StreamEvent{Event: agents.StreamEventError, Data: err.Error()})
-				return
+			var seq int64
+			ctx := agents.WithStreamCallback(r.Context(), func(event agents.StreamEvent) {
+				event = event.Attribute(agentName, chain)
+				event.Seq = atomic.AddInt64(&seq, 1)
+				sink.send(event)
+			})
+			if callbackUrl := streamCallbackUrl(); callbackUrl != "" {
+				ctx = agents.WithStreamTarget(ctx, agents.StreamTarget{StreamId: streamId, CallbackUrl: callbackUrl})
+			} else if hasInheritedTarget {
+				ctx = agents.WithStreamTarget(ctx, inheritedTarget)
 			}
 
+			agentResult, execErr := agent.Execute(ctx, agentMessage, conversationId, projectId, tenantId)
+
+			// Stop accepting relayed events, let the writer flush what is queued, and
+			// only then write the terminal event directly - by now this goroutine is the
+			// sole owner of w, so the final payload can never be dropped or interleaved.
+			activeStreams.close(streamId)
+			<-writerDone
+
+			if execErr != nil {
+				writeSSE(agents.StreamEvent{Event: agents.StreamEventError, Data: execErr.Error(), Agent: agentName})
+				return
+			}
 			agentResult.ConversationId = conversationId
-			sendSSE(agents.StreamEvent{Event: agents.StreamEventDone, Data: agentResult})
+			writeSSE(agents.StreamEvent{Event: agents.StreamEventDone, Data: agentResult, Agent: agentName})
 		} else {
 			agentResult, err := agent.Execute(r.Context(), agentMessage, conversationId, projectId, tenantId)
 			if err != nil {

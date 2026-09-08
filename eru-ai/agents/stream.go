@@ -23,6 +23,23 @@ type StreamEvent struct {
 	Event     string      `json:"event"`
 	Data      interface{} `json:"data,omitempty"`
 	Iteration int         `json:"iteration,omitempty"`
+	Agent     string      `json:"agent,omitempty"`
+	Chain     string      `json:"chain,omitempty"`
+	Seq       int64       `json:"seq,omitempty"`
+}
+
+// Attribute stamps an event with the agent that produced it and that agent's
+// delegation chain, so a client receiving interleaved events from parallel
+// sub-agents can tell them apart. Set only when empty: the deepest agent to touch
+// an event owns it, and relaying hops must not relabel it.
+func (e StreamEvent) Attribute(agentName string, chain []string) StreamEvent {
+	if e.Agent == "" {
+		e.Agent = agentName
+	}
+	if e.Chain == "" {
+		e.Chain = FormatAgentChain(ChainWith(chain, agentName))
+	}
+	return e
 }
 
 type StreamCallback func(event StreamEvent)

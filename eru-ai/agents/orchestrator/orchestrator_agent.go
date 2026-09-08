@@ -242,6 +242,8 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		return agents.AgentMessage{}, fmt.Errorf("orchestration failed after %d attempts: %w", oa.MaxReplans+1, execErr)
 	}
 
+	allTraces = append(allTraces, collectSubAgentTraces(funcVarsMap)...)
+
 	if oa.EnableClarification {
 		if pr, merged, paused := buildPendingResume(decompositionResult, funcVarsMap, agentMessage.MessageId); paused {
 			return oa.emitClarification(ctx, merged, &pr, allTraces, agentMessage, conversation, projectId, tenantId)
@@ -265,7 +267,7 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	agentOutput := agents.AgentMessage{
 		Role:             "assistant",
 		Actions:          agentActions,
-		Traces:           allTraces,
+		Traces:           labelOwnTraces(allTraces, oa.AgentName),
 		MessageId:        agentMessage.MessageId,
 		MessageTimestamp: time.Now(),
 	}
@@ -448,6 +450,7 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 		if err != nil {
 			return agents.AgentMessage{}, fmt.Errorf("branch resume %s failed: %w", branch.StartStep, err)
 		}
+		allTraces = append(allTraces, collectSubAgentTraces(fvm)...)
 		for k, v := range extractResVars(fvm) {
 			merged[k] = v
 		}
@@ -459,6 +462,7 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 		if err != nil {
 			return agents.AgentMessage{}, fmt.Errorf("join resume %s failed: %w", pr.JoinStep, err)
 		}
+		allTraces = append(allTraces, collectSubAgentTraces(fvm)...)
 		for k, v := range extractResVars(fvm) {
 			merged[k] = v
 		}
@@ -487,7 +491,7 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 	agentOutput := agents.AgentMessage{
 		Role:             "assistant",
 		Actions:          resumeActions,
-		Traces:           allTraces,
+		Traces:           labelOwnTraces(allTraces, oa.AgentName),
 		MessageId:        agentMessage.MessageId,
 		MessageTimestamp: time.Now(),
 	}
@@ -876,7 +880,15 @@ WRONG:
   {"step1": {"agent_name": "classifier", "tenant_id": "t1"}}
   {"classify_data": {"agent_name": "classifier", "tenant_id": "t1"}}
 
-Duplicates at the same level: append numeric suffix — "classifier", "classifier2".
+STEP KEYS MUST BE UNIQUE ACROSS THE WHOLE PLAN — not just within one func_steps
+map. Step results are stored in ONE FLAT namespace keyed by the step key, so two
+steps sharing a key (even in different branches, at different nesting depths)
+OVERWRITE each other and every downstream .ResVars reference to that key reads
+whichever branch happened to finish last.
+
+If the same agent or tool action is needed more than once ANYWHERE in the plan,
+give each occurrence a numeric suffix — "classifier", "classifier2",
+"classifier3" — and reference each one by its own exact key.
 
 ============================================================
 FUNCGROUP STRUCTURE
@@ -1196,6 +1208,7 @@ CHECKLIST (verify before outputting)
 [ ] wait_for only references sibling step keys, not nested ones
 [ ] EVERY .ResVars/.ReqVars reference names an EXACT func_steps key of an earlier step (not an agent name, tool name or invented short form)
 [ ] A step that renders or analyses earlier data receives it via params.context and references that step through .ResVars (Rule #2b)
+[ ] EVERY func_step key is unique across the ENTIRE plan (all branches, all depths)
 [ ] EVERY step has a non-empty transform_request
 [ ] EVERY agent step's transform_request renders a "content" key
 [ ] EVERY params key used on an agent step appears in that agent's "Params keys this agent READS" list
