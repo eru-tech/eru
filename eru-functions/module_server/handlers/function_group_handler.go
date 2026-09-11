@@ -105,7 +105,6 @@ func AsyncFuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		host, url := extractHostUrl(r)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
-		tenantId := vars["tenant"]
 		eventName := vars["eventname"]
 		eventId := vars["eventid"]
 		eventI, err := sh.Store.FetchEvent(r.Context(), projectId, eventName, sh.Store)
@@ -152,6 +151,7 @@ func AsyncFuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				eventResponseBytes, _ = json.Marshal(map[string]interface{}{"error": errMsg})
 				logs.WithContext(ctx).Error(errMsg)
 			} else {
+				ctx, rowProjectId, rowTenantId := module_store.AsyncTenantContext(ctx, asyncFuncData, projectId)
 				bodyMap := make(map[string]interface{})
 
 				bodyMapOk := false
@@ -160,7 +160,7 @@ func AsyncFuncHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 						logs.WithContext(ctx).Error("Request Body count not be retrieved, setting it as blank")
 					}
 				}
-				funcGroup, err := sh.Store.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, tenantId, host, url, r.Method, r.Header, bodyMap, sh.Store, true, "")
+				funcGroup, err := sh.Store.GetAndValidateFunc(ctx, asyncFuncData.FuncName, rowProjectId, rowTenantId, host, url, r.Method, r.Header, bodyMap, sh.Store, true, "")
 				//	logs.FileLogger.Info(fmt.Sprint("AsyncFuncHandler for GetAndValidateFunc"))
 				if err != nil {
 					failedCount = failedCount + 1
@@ -287,6 +287,7 @@ func FuncScheduleHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		// Extract the host and url from incoming request
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		funcName := vars["funcname"]
 
 		reqContentType := strings.Split(r.Header.Get("Content-type"), ";")[0]
@@ -321,6 +322,8 @@ func FuncScheduleHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to unmarshal schedule map"})
 			return
 		}
+		// the tenant the schedule runs against comes from the route, which tenantMiddleWare
+		// has already split into the tenant and the default tenant on the context.
 		if err := utils.ValidateStruct(ctx, funcSchedule, ""); err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -337,7 +340,7 @@ func FuncScheduleHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 
 		tokenStr := r.Header.Get(projectSettings.ClaimsKey)
 
-		jobId, err := sh.Store.ScheduleFunc(ctx, funcSchedule, projectId, funcName, bodyMap, tokenStr, sh.Store)
+		jobId, err := sh.Store.ScheduleFunc(ctx, funcSchedule, projectId, tenantId, funcName, bodyMap, tokenStr, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -357,9 +360,10 @@ func FuncUnScheduleHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		// Extract the host and url from incoming request
 		vars := mux.Vars(r)
 		projectId := vars["project"]
+		tenantId := vars["tenant"]
 		jobId := vars["jobid"]
 
-		err := sh.Store.UnScheduleFunc(ctx, projectId, jobId, sh.Store)
+		err := sh.Store.UnScheduleFunc(ctx, projectId, tenantId, jobId, sh.Store)
 		if err != nil {
 			server_handlers.FormatResponse(w, http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})

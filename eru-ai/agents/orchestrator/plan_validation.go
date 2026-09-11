@@ -70,6 +70,96 @@ func validatePlan(ctx context.Context, plan map[string]interface{}, allowedAgent
 	issues = append(issues, validateStepIdentity(funcGroup.FuncSteps, allowedAgents, allowedTools)...)
 	issues = append(issues, validateStepPayload(ctx, funcGroup.FuncSteps, allowedAgents, allowedTools)...)
 	issues = append(issues, validateCodeRouting(ctx, funcGroup.FuncSteps, cc)...)
+	issues = append(issues, validateParamForwarding(funcGroup.FuncSteps, allowedAgents, cc)...)
+	issues = append(issues, validateClarificationForwarding(funcGroup.FuncSteps, allowedAgents)...)
+	return issues
+}
+
+// validateClarificationForwarding keeps a sub-agent's questions answerable.
+//
+// When a sub-agent asks the user something, the answer comes back to the
+// orchestrator and is handed to that step on resume - but only through the
+// step's own request body. A step that does not forward
+// params.clarification_answers re-runs with the question unanswered, and the
+// agent either asks again or guesses: the observed failure was an agent reading
+// a different option than the user picked. A missing key renders as null and is
+// ignored, so forwarding it always is safe on the calls where nothing was asked.
+func validateClarificationForwarding(steps map[string]*functions.FuncStep, allowedAgents []agents.DiscoveredAgent) []planIssue {
+	if len(allowedAgents) == 0 {
+		return nil
+	}
+	asks := map[string]bool{}
+	for _, agent := range allowedAgents {
+		if agent.SupportsClarification {
+			asks[agent.AgentName] = true
+		}
+	}
+	if len(asks) == 0 {
+		return nil
+	}
+
+	var issues []planIssue
+	walkSteps(steps, "", func(stepPath string, stepKey string, step *functions.FuncStep) {
+		if step.AgentName == "" || !asks[step.AgentName] {
+			return
+		}
+		if strings.Contains(step.TransformRequest, agents.ClarificationAnswersParamKey) {
+			return
+		}
+		issues = append(issues, planIssue{
+			StepPath: stepPath,
+			Field:    "transform_request",
+			Template: step.TransformRequest,
+			Err: fmt.Sprint("agent \"", step.AgentName, "\" can ask the user a question, but this step does not forward the answer back. ",
+				"Without it the agent re-runs with its question unanswered and guesses. Add it to the step's params: \"",
+				agents.ClarificationAnswersParamKey, "\": {{stringify .Vars.Body.params.", agents.ClarificationAnswersParamKey,
+				"}} - it renders as null on the calls where nothing was asked, which the agent ignores."),
+		})
+	})
+	return issues
+}
+
+// validateParamForwarding holds the plan to the response shape the caller asked
+// for. A param like output_mode decides which protocol the answer arrives in;
+// when the caller sets it and the target agent reads it, a step that does not
+// forward it succeeds while answering in the wrong shape - the failure mode that
+// looks like the feature was never built.
+func validateParamForwarding(steps map[string]*functions.FuncStep, allowedAgents []agents.DiscoveredAgent, cc codeContext) []planIssue {
+	if len(cc.ForwardParams) == 0 || len(allowedAgents) == 0 {
+		return nil
+	}
+	byName := map[string]agents.DiscoveredAgent{}
+	for _, agent := range allowedAgents {
+		byName[agent.AgentName] = agent
+	}
+
+	var issues []planIssue
+	walkSteps(steps, "", func(stepPath string, stepKey string, step *functions.FuncStep) {
+		if step.AgentName == "" {
+			return
+		}
+		agent, known := byName[step.AgentName]
+		if !known {
+			return
+		}
+		template := step.TransformRequest
+		for _, name := range cc.ForwardParams {
+			if !containsString(agent.ParamKeys(), name) {
+				continue
+			}
+			if strings.Contains(template, name) {
+				continue
+			}
+			issues = append(issues, planIssue{
+				StepPath: stepPath,
+				Field:    "transform_request",
+				Template: template,
+				Err: fmt.Sprint("the caller set params.", name, " and agent \"", step.AgentName,
+					"\" reads it, but this step does not forward it - the agent would answer in a different shape than the caller asked for. ",
+					"Add it to the step's params: \"", name, "\": {{stringify .Vars.Body.params.", name, "}}"),
+			})
+		}
+	})
 	return issues
 }
 
@@ -596,7 +686,79 @@ func validateStepTemplate(ctx context.Context, stepPath string, fieldName string
 	}
 	goTmpl := gotemplate.GoTemplate{Name: fmt.Sprint(stepPath, ".", fieldName), Template: templateString}
 	if err := goTmpl.Validate(ctx); err != nil {
-		return planIssue{StepPath: stepPath, Field: fieldName, Template: templateString, Err: err.Error()}, false
+		return planIssue{
+			StepPath: stepPath,
+			Field:    fieldName,
+			Template: templateString,
+			Err:      err.Error() + templateParseRemedy(templateString),
+		}, false
 	}
 	return planIssue{}, true
+}
+
+// templateParseRemedy turns a Go template parse error into something the planner
+// can act on.
+//
+// A bare parse error makes the model rewrite the same nested "stringify (dict
+// ...)" expression and mis-balance it somewhere else - observed three times in a
+// row on one request, each attempt failing at a different paren. Naming the
+// actual cause, and pointing at the JSON body form that avoids the nesting
+// altogether, is what breaks that loop.
+func templateParseRemedy(templateString string) string {
+	var remedies []string
+
+	if start := strings.Index(templateString, "{{"); start >= 0 {
+		if action, ok := firstTemplateAction(templateString); ok {
+			if literalNewlineInQuotes(action) {
+				remedies = append(remedies, "The template has a real line break inside a quoted string. A Go template string literal cannot span lines: write \\n instead of an actual newline.")
+			}
+			if strings.Contains(action, "}") {
+				remedies = append(remedies, "There is a \"}\" inside the {{...}} action: a dict( was closed with } instead of ). Braces are JSON; a template action closes with ).")
+			}
+			if opens, closes := strings.Count(action, "("), strings.Count(action, ")"); opens != closes {
+				remedies = append(remedies, fmt.Sprint("The {{...}} action has ", opens, " \"(\" and ", closes, " \")\" - the parentheses do not balance. Every dict( must be closed before the action ends."))
+			}
+		}
+	}
+
+	remedies = append(remedies, "Do NOT retry the same nested \"{{stringify (dict ...)}}\" expression - rewriting it tends to mis-balance somewhere else. "+
+		"Write the request body as JSON instead, with {{...}} only where a value has to be interpolated. That is a valid template and there is nothing to balance:\n"+
+		`  "transform_request": "{\"content\": \"your instruction, with \\n for line breaks\", \"params\": {\"code\": {{stringify .Vars.Body.params.code}}}}"`+"\n"+
+		"Use the JSON form whenever the content is long, spans lines, or contains quotes.")
+
+	return "\n    " + strings.Join(remedies, "\n    ")
+}
+
+// firstTemplateAction returns the text inside the first {{ }} of a template.
+func firstTemplateAction(templateString string) (string, bool) {
+	start := strings.Index(templateString, "{{")
+	if start < 0 {
+		return "", false
+	}
+	end := strings.Index(templateString[start:], "}}")
+	if end < 0 {
+		// An unterminated action: everything after {{ is the action.
+		return templateString[start+2:], true
+	}
+	return templateString[start+2 : start+end], true
+}
+
+// literalNewlineInQuotes reports a real line break inside a quoted string, which
+// Go's template lexer rejects.
+func literalNewlineInQuotes(action string) bool {
+	inQuotes := false
+	escaped := false
+	for _, r := range action {
+		switch {
+		case escaped:
+			escaped = false
+		case r == '\\':
+			escaped = true
+		case r == '"':
+			inQuotes = !inQuotes
+		case (r == '\n' || r == '\r') && inQuotes:
+			return true
+		}
+	}
+	return false
 }

@@ -51,10 +51,22 @@ type ErufuncExecuteTemplateParams struct {
 	Object   interface{} `json:"object" desc:"object passed as template data"`
 }
 
+type ErufuncScheduleConfigParams struct {
+	ExecutionTime  string   `json:"execution_time" eru:"required" desc:"time of day to run the function, as HH:MM in 24 hour clock"`
+	SchedulerName  string   `json:"scheduler_name" eru:"required" desc:"name of the scheduler configured on the project"`
+	SchedulerLabel string   `json:"scheduler_label" eru:"required" desc:"label identifying this schedule"`
+	StartDate      string   `json:"start_date" eru:"required" desc:"date the schedule starts, as YYYY-MM-DD"`
+	EndDate        string   `json:"end_date" desc:"date the schedule ends, as YYYY-MM-DD - defaults to 2099-12-31"`
+	RepeatEvery    int      `json:"repeat_every" desc:"number of frequency units between two runs"`
+	Frequency      string   `json:"frequency" eru:"required" desc:"how often to run: daily, weekly, monthly, quarterly or yearly"`
+	FrequencyDay   []string `json:"frequency_day" desc:"days of the week to run on when frequency is weekly, for example monday"`
+	FrequencyDate  int      `json:"frequency_date" desc:"day of the month to run on when frequency is monthly, quarterly or yearly"`
+}
+
 type ErufuncScheduleFuncParams struct {
-	FuncName string                 `json:"func_name" eru:"required" desc:"name of the function to schedule"`
-	Schedule map[string]interface{} `json:"schedule" eru:"required" desc:"schedule configuration object"`
-	Body     map[string]interface{} `json:"body" desc:"additional body data to pass to the scheduled function" default:"{}"`
+	FuncName string                      `json:"func_name" eru:"required" desc:"name of the function to schedule"`
+	Schedule ErufuncScheduleConfigParams `json:"schedule" eru:"required" desc:"schedule configuration - the tenant the schedule runs against comes from the action, not from here"`
+	Body     map[string]interface{}      `json:"body" desc:"additional body data to pass to the scheduled function" default:"{}"`
 }
 
 type ErufuncUnScheduleFuncParams struct {
@@ -81,7 +93,15 @@ const (
 	UnScheduleFunc  = "unschedule_func"
 )
 
-var erufunctionsToolActions = []tools.ToolAction{
+var erufunctionsWriteActions = map[string]bool{
+	SaveFunc:     true,
+	RemoveFunc:   true,
+	ScheduleFunc: true,
+}
+
+var erufunctionsToolActions, erufunctionsActionScopes = tools.ExpandScopedActions(erufunctionsBaseActions, erufunctionsWriteActions)
+
+var erufunctionsBaseActions = []tools.ToolAction{
 	{
 		ActionName:   SaveFunc,
 		Description:  "Save the function defination json under a project",
@@ -320,13 +340,17 @@ func (erufuncTool *ErufunctionsTool) buildHeaders(ctx context.Context) http.Head
 func (erufuncTool *ErufunctionsTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("erufuncTool Execute - Start")
 	var toolRequest interface{}
-	switch actionName {
+	scopedAction, scopedActionOk := erufunctionsActionScopes[actionName]
+	if !scopedActionOk {
+		return nil, false, fmt.Errorf("action %s not found", actionName)
+	}
+	switch scopedAction.BaseName {
 	case SaveFunc:
-		toolResult, toolRequest, persistStore, err = erufuncTool.SaveFunc(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = erufuncTool.SaveFunc(ctx, projectId, tenantId, params, scopedAction.Scope)
 	case ValidateFunc:
 		toolResult, toolRequest, persistStore, err = erufuncTool.ValidateFunc(ctx, projectId, tenantId, params)
 	case RemoveFunc:
-		toolResult, toolRequest, persistStore, err = erufuncTool.RemoveFunc(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = erufuncTool.RemoveFunc(ctx, projectId, tenantId, params, scopedAction.Scope)
 	case FetchFunc:
 		toolResult, toolRequest, persistStore, err = erufuncTool.FetchFunc(ctx, projectId, tenantId, params)
 	case RunFunc:
@@ -344,7 +368,7 @@ func (erufuncTool *ErufunctionsTool) Execute(ctx context.Context, projectId stri
 	case ListTools:
 		toolResult, toolRequest, persistStore, err = erufuncTool.ListTools(ctx, projectId, tenantId, params)
 	case ScheduleFunc:
-		toolResult, toolRequest, persistStore, err = erufuncTool.ScheduleFunc(ctx, projectId, tenantId, params)
+		toolResult, toolRequest, persistStore, err = erufuncTool.ScheduleFunc(ctx, projectId, tenantId, params, scopedAction.Scope)
 	case UnScheduleFunc:
 		toolResult, toolRequest, persistStore, err = erufuncTool.UnScheduleFunc(ctx, projectId, tenantId, params)
 	default:
@@ -405,7 +429,7 @@ func (erufuncTool *ErufunctionsTool) unmarshalParams(ctx context.Context, params
 	return nil
 }
 
-func (erufuncTool *ErufunctionsTool) SaveFunc(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+func (erufuncTool *ErufunctionsTool) SaveFunc(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, scope tools.TenantScope) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("erufuncTool SaveFunc - Start")
 	p := ErufuncSaveFuncParams{}
 	if err = erufuncTool.unmarshalParams(ctx, params, &p); err != nil {
@@ -415,7 +439,11 @@ func (erufuncTool *ErufunctionsTool) SaveFunc(ctx context.Context, projectId str
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/func/save")
+	routeTenant, err := tools.WriteTenantRoute(ctx, tenantId, scope)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := tools.TenantPath(fmt.Sprint(baseUrl, "/store"), projectId, routeTenant, "func/save")
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, p.FuncGroup)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -445,7 +473,7 @@ func (erufuncTool *ErufunctionsTool) ValidateFunc(ctx context.Context, projectId
 	return toolResult, p.FuncGroup, true, nil
 }
 
-func (erufuncTool *ErufunctionsTool) RemoveFunc(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+func (erufuncTool *ErufunctionsTool) RemoveFunc(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, scope tools.TenantScope) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("erufuncTool RemoveFunc - Start")
 	p := ErufuncRemoveFuncParams{}
 	if err = erufuncTool.unmarshalParams(ctx, params, &p); err != nil {
@@ -455,7 +483,11 @@ func (erufuncTool *ErufunctionsTool) RemoveFunc(ctx context.Context, projectId s
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/func/remove/", p.FuncName)
+	routeTenant, err := tools.WriteTenantRoute(ctx, tenantId, scope)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := tools.TenantPath(fmt.Sprint(baseUrl, "/store"), projectId, routeTenant, "func/remove", p.FuncName)
 	reqBody := map[string]interface{}{"project_id": projectId, "func_name": p.FuncName}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodDelete, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -476,7 +508,7 @@ func (erufuncTool *ErufunctionsTool) FetchFunc(ctx context.Context, projectId st
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/func/fetch/", p.FuncName)
+	url := tools.FetchTenantPath(ctx, fmt.Sprint(baseUrl, "/store"), projectId, tenantId, "func/fetch", p.FuncName)
 	reqBody := map[string]interface{}{"project_id": projectId, "func_name": p.FuncName}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -540,7 +572,7 @@ func (erufuncTool *ErufunctionsTool) ExecuteFunc(ctx context.Context, projectId 
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/", projectId, "/", tenantId, "/func/", p.FuncName)
+	url := tools.FetchTenantPath(ctx, baseUrl, projectId, tenantId, "func", p.FuncName)
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, p.Body)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -581,7 +613,7 @@ func (erufuncTool *ErufunctionsTool) ListMyQueries(ctx context.Context, projectI
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/myquery/list")
+	url := tools.FetchTenantPath(ctx, fmt.Sprint(baseUrl, "/store"), projectId, tenantId, "myquery/list")
 	reqBody := map[string]interface{}{"project_id": projectId}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -598,7 +630,7 @@ func (erufuncTool *ErufunctionsTool) ListFuncs(ctx context.Context, projectId st
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/func/list")
+	url := tools.FetchTenantPath(ctx, fmt.Sprint(baseUrl, "/store"), projectId, tenantId, "func/list")
 	reqBody := map[string]interface{}{"project_id": projectId}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -615,7 +647,7 @@ func (erufuncTool *ErufunctionsTool) ListAgents(ctx context.Context, projectId s
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/agent/list")
+	url := tools.FetchTenantPath(ctx, fmt.Sprint(baseUrl, "/store"), projectId, tenantId, "agent/list")
 	reqBody := map[string]interface{}{"project_id": projectId, "tenant_id": tenantId}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -632,7 +664,7 @@ func (erufuncTool *ErufunctionsTool) ListTools(ctx context.Context, projectId st
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/store/", projectId, "/", tenantId, "/tool/list")
+	url := tools.FetchTenantPath(ctx, fmt.Sprint(baseUrl, "/store"), projectId, tenantId, "tool/list")
 	reqBody := map[string]interface{}{"project_id": projectId, "tenant_id": tenantId}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodGet, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {
@@ -643,7 +675,7 @@ func (erufuncTool *ErufunctionsTool) ListTools(ctx context.Context, projectId st
 	return toolResult, reqBody, true, nil
 }
 
-func (erufuncTool *ErufunctionsTool) ScheduleFunc(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+func (erufuncTool *ErufunctionsTool) ScheduleFunc(ctx context.Context, projectId string, tenantId string, params map[string]interface{}, scope tools.TenantScope) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("erufuncTool ScheduleFunc - Start")
 	p := ErufuncScheduleFuncParams{}
 	if err = erufuncTool.unmarshalParams(ctx, params, &p); err != nil {
@@ -653,7 +685,11 @@ func (erufuncTool *ErufunctionsTool) ScheduleFunc(ctx context.Context, projectId
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/", projectId, "/", tenantId, "/schedule/func/", p.FuncName)
+	routeTenant, err := tools.WriteTenantRoute(ctx, tenantId, scope)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := tools.TenantPath(baseUrl, projectId, routeTenant, "schedule/func", p.FuncName)
 	body := map[string]interface{}{"schedule": p.Schedule}
 	for k, v := range p.Body {
 		if k == "schedule" {
@@ -680,7 +716,7 @@ func (erufuncTool *ErufunctionsTool) UnScheduleFunc(ctx context.Context, project
 	if err != nil {
 		return nil, nil, false, err
 	}
-	url := fmt.Sprint(baseUrl, "/", projectId, "/", tenantId, "/unschedule/func/", p.JobId)
+	url := tools.FetchTenantPath(ctx, baseUrl, projectId, tenantId, "unschedule/func", p.JobId)
 	reqBody := map[string]interface{}{"project_id": projectId, "job_id": p.JobId}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodDelete, url, erufuncTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, nil)
 	if err != nil {

@@ -2,6 +2,7 @@ package eru_utils
 
 import (
 	"context"
+	"fmt"
 	"strings"
 )
 
@@ -55,4 +56,25 @@ func TenantLookupOrder(ctx context.Context, tenantId string, extraFallbacks ...s
 		candidates = append(candidates, candidate)
 	}
 	return candidates
+}
+
+// JoinTenantRoute builds the route form of a tenant, the inverse of ParseTenantRoute.
+// It returns "defaultTenantId___tenantId" when a distinct default tenant applies, so the
+// receiving service can rebuild the same fallback order, and the plain tenant otherwise.
+func JoinTenantRoute(defaultTenantId string, tenantId string) string {
+	defaultTenantId = strings.ToLower(strings.TrimSpace(defaultTenantId))
+	tenantId = strings.ToLower(strings.TrimSpace(tenantId))
+	if tenantId == "" {
+		return defaultTenantId
+	}
+	if defaultTenantId == "" || defaultTenantId == tenantId {
+		return tenantId
+	}
+	return fmt.Sprint(defaultTenantId, TenantSeparator, tenantId)
+}
+
+// FetchTenantRoute builds the route tenant to forward on a read call so the callee keeps
+// the route tenant -> default tenant -> project level fallback this request came in with.
+func FetchTenantRoute(ctx context.Context, tenantId string) string {
+	return JoinTenantRoute(DefaultTenant(ctx), tenantId)
 }

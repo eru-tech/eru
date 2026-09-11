@@ -390,14 +390,37 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 
 		var msg anthropic.Message
 		var currentThinking string
+		// Which tool each content block belongs to, so an argument delta can say
+		// what it is arguments for.
+		toolBlockNames := map[int64]string{}
 
 		for stream.Next() {
 			event := stream.Current()
 			msg.Accumulate(event)
 
+			if event.Type == "content_block_start" {
+				start := event.AsContentBlockStart()
+				if start.ContentBlock.Type == "tool_use" {
+					toolBlockNames[start.Index] = start.ContentBlock.Name
+				}
+			}
+
 			if event.Type == "content_block_delta" {
 				delta := event.AsContentBlockDelta()
 				switch delta.Delta.Type {
+				case "input_json_delta":
+					// The arguments of a tool call as they are written. For a
+					// structured-output agent this is the answer itself arriving,
+					// which is what lets a client render before the model is done.
+					if streamCb != nil {
+						streamCb(ModelStreamEvent{
+							Type:       StreamToolInputDelta,
+							Content:    delta.Delta.AsInputJSONDelta().PartialJSON,
+							ToolName:   toolBlockNames[delta.Index],
+							Iteration:  iteration,
+							BlockIndex: int(delta.Index),
+						})
+					}
 				case "thinking_delta":
 					chunk := delta.Delta.AsThinkingDelta().Thinking
 					currentThinking += chunk

@@ -33,7 +33,7 @@ You may ask the user for clarification using the ask_user tool. Use it ONLY when
 When you ask:
 - Keep it to the fewest questions needed (ideally one).
 - For each question provide 2-4 concrete, mutually exclusive options (value + human label).
-- Set allow_free_text=true whenever the options may not be exhaustive, so the user can type their own answer.
+- The user can always type their own answer instead of picking an option - that is added for you. So options are the likely answers, not the only ones: never write an option meaning "none of these", and never tell the user their situation is not covered.
 - Set multi_select=true only when more than one option can legitimately be chosen.
 Calling ask_user ends your turn; the user's answers will arrive as a follow-up message in the same conversation, after which you continue.`
 
@@ -86,12 +86,19 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 
 	if answers, ok := agentMessage.ClarificationAnswers(); ok {
 		var req agents.ClarificationRequest
+		resumeContext := ""
 		if priorConv, lerr := ra.LoadConversationHistory(ctx, conversationId, projectId, tenantId); lerr == nil && priorConv != nil {
 			if _, qa, found := agents.PendingQuestion(priorConv); found {
 				req, _ = agents.ParseClarificationRequest(qa.Action)
+				resumeContext = agents.ResumeContextFrom(qa.Action)
 			}
 		}
 		answerText := agents.FormatAnswersForModel(req, answers)
+		// Hand back the lookups the agent had already made before it asked, so
+		// answering a question resumes the work instead of restarting it.
+		if resumeContext != "" {
+			answerText = resumeContext + "\n\n" + answerText
+		}
 		if strings.TrimSpace(agentMessage.Content) != "" {
 			agentMessage.Content = agentMessage.Content + "\n\n" + answerText
 		} else {
@@ -139,6 +146,21 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		toolsMap["structured_output"] = outputTool
 	}
 
+	// An agent type may carry built-in reference tools of its own (the Eru Studio
+	// agent's component-library lookup, say). Configured tools win on a name
+	// clash, so an owner can always override one.
+	if provider, ok := ra.GetProvider().(agents.ExtraToolProvider); ok && provider != nil {
+		for name, tool := range provider.ExtraTools(ctx) {
+			if tool == nil {
+				continue
+			}
+			if _, configured := toolsMap[name]; configured {
+				continue
+			}
+			toolsMap[name] = tool
+		}
+	}
+
 	if ra.EnableClarification {
 		askTool := &utility.AskUserTool{}
 		askTool.SetAttribute(ctx, "parameters", utility.AskUserToolSchema())
@@ -161,6 +183,11 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 				return result, execErr
 			}
 		}
+		// Built-in tools contributed by the agent type are not in AgentTools.
+		if tool, ok := toolsMap[toolName]; ok && tool != nil {
+			result, _, execErr := tool.Execute(ctx, projectId, tenantId, toolName, input)
+			return result, execErr
+		}
 		return nil, fmt.Errorf("tool %s not found", toolName)
 	}
 
@@ -182,11 +209,25 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	// thinking is streamed for structured-output agents.
 	suppressTextStream := outputSchema.Type != ""
 	streamCb := agents.GetStreamCallback(ctx)
+	enricher, _ := ra.GetProvider().(agents.StreamEnricher)
 	runModel := func() (models.Message, []models.StepTrace, error) {
 		if streamCb != nil {
 			if streamingModel, ok := ra.Model.(models.StreamingModelI); ok {
 				modelCb := func(me models.ModelStreamEvent) {
+					// An agent type may derive something useful from the partial
+					// answer - a page component the client can render now.
+					if enricher != nil {
+						for _, derived := range enricher.EnrichStream(ctx, me) {
+							streamCb(derived)
+						}
+					}
 					if suppressTextStream && me.Type == models.StreamTextDelta {
+						return
+					}
+					// Raw argument deltas are the answer in fragments: megabytes of
+					// half-written JSON that no client can use. Whatever they are
+					// worth reaches the client through enrichment instead.
+					if me.Type == models.StreamToolInputDelta {
 						return
 					}
 					streamCb(agents.StreamEvent{
@@ -201,16 +242,25 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		return ra.Model.RunToolLoop(ctx, chatRequest, toolsMap, sp, ra.MaxIterations, ra.ThinkingBudget, toolExecutor)
 	}
 
+	agents.Emit(ctx, agents.StreamEvent{
+		Event: agents.StreamEventAgentStarted,
+		Data:  agents.StepPayload{Detail: ra.AgentName},
+	})
+
 	var response models.Message
 	var traces []models.StepTrace
 	var agentResponse map[string]interface{}
 	attempt := 0
 	for {
+		stepStarted := time.Now()
+		agents.EmitStepStarted(ctx, agents.StepGenerate, attempt+1)
 		response, traces, err = runModel()
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
+			agents.EmitStepFinished(ctx, agents.StepGenerate, attempt+1, agents.OutcomeError, stepStarted, err.Error(), agents.CodeModelError)
 			return agents.AgentMessage{}, err
 		}
+		agents.EmitStepFinished(ctx, agents.StepGenerate, attempt+1, agents.OutcomeSuccess, stepStarted, "", "")
 
 		agentResponse = parseAgentResponse(response.Content)
 		if normalized, ok := deepUnstringifyJSON(agentResponse, "").(map[string]interface{}); ok {
@@ -221,17 +271,27 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 			break
 		}
 
+		validationStarted := time.Now()
+		agents.EmitStepStarted(ctx, agents.StepValidate, attempt+1)
 		valErr := validateRootKeys(agentResponse, outputSchema)
 		if valErr == nil {
 			valErr = validateAgainstSchema(agentResponse, outputSchema, "")
 		}
 		if valErr == nil {
+			if validator, ok := ra.GetProvider().(agents.OutputValidator); ok && validator != nil {
+				valErr = validator.ValidateOutput(ctx, agentResponse)
+			}
+		}
+		if valErr == nil {
+			agents.EmitStepFinished(ctx, agents.StepValidate, attempt+1, agents.OutcomeSuccess, validationStarted, "", "")
 			break
 		}
 		logs.WithContext(ctx).Error(fmt.Sprintf("agent %s output validation failed (attempt %d of %d): %v", ra.AgentName, attempt+1, ra.RetryCount+1, valErr))
 		if attempt >= ra.RetryCount {
+			agents.EmitStepFinished(ctx, agents.StepValidate, attempt+1, agents.OutcomeError, validationStarted, valErr.Error(), agents.CodeOutputValidation)
 			return agents.AgentMessage{}, fmt.Errorf("agent output failed JSON validation after %d attempt(s): %w", attempt+1, valErr)
 		}
+		agents.EmitStepFinished(ctx, agents.StepValidate, attempt+1, agents.OutcomeRetry, validationStarted, valErr.Error(), agents.CodeOutputValidation)
 		chatRequest.Messages = append(chatRequest.Messages, models.Message{
 			Role:    "user",
 			Content: fmt.Sprintf(agentValidationRetryPrompt, valErr.Error()),
@@ -245,6 +305,7 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	actionType := agents.ActionTypeAnswer
 	if response.TerminalTool == models.TerminalToolAskUser {
 		actionType = agents.ActionTypeQuestion
+		agents.AttachResumeContext(agentResponse, agents.BuildResumeContext(traces))
 	}
 
 	agentOutput := agents.AgentMessage{
@@ -268,6 +329,20 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation: %v", err))
 		return agents.AgentMessage{}, err
 	}
+
+	outcome := agents.OutcomeSuccess
+	if actionType == agents.ActionTypeQuestion {
+		// The agent has not finished: it is waiting for the user to answer.
+		outcome = agents.OutcomePaused
+	}
+	agents.Emit(ctx, agents.StreamEvent{
+		Event: agents.StreamEventAgentFinished,
+		Data: agents.StepPayload{
+			Detail:     ra.AgentName,
+			Outcome:    outcome,
+			DurationMs: time.Since(startTime).Milliseconds(),
+		},
+	})
 
 	return agentOutput, nil
 }

@@ -688,6 +688,77 @@ func (ms *ModuleStore) populateAgentTools(ctx context.Context, projectId string,
 	return nil
 }
 
+// populateInternalTools gives an agent type the tools it needs for itself,
+// resolved from the tenant's configured tools rather than from the agent's own
+// tool list.
+//
+// Some lookups are part of what an agent IS, not something an owner chooses: the
+// Eru Studio agent cannot name a form field without the entity metadata, and
+// cannot answer "make it look like the invoice page" without reading that page.
+// Requiring someone to attach those by hand means the agent silently does the
+// job worse when they forget. A missing tool is logged and the agent degrades -
+// it is never fatal, because the tenant may genuinely not have that tool.
+func (ms *ModuleStore) populateInternalTools(ctx context.Context, projectId string, tenantId string, agent agents.AgentI, s ModuleStoreI) {
+	provider, ok := agent.(agents.InternalToolProvider)
+	if !ok {
+		return
+	}
+	requests := provider.InternalToolRequests()
+	if len(requests) == 0 {
+		return
+	}
+
+	toolNames, err := ms.GetToolNames(ctx, projectId, tenantId)
+	if err != nil {
+		logs.WithContext(ctx).Info(fmt.Sprint("populateInternalTools - no tools listed for the tenant: ", err.Error()))
+		return
+	}
+	sort.Strings(toolNames)
+
+	wanted := make(map[string]agents.InternalToolRequest, len(requests))
+	for _, request := range requests {
+		if request.Action != "" {
+			wanted[request.Action] = request
+		}
+	}
+
+	resolved := make(map[string]tools.Tooling, len(wanted))
+	for _, toolName := range toolNames {
+		if len(resolved) == len(wanted) {
+			break
+		}
+		toolObj, terr := ms.GetToolClone(ctx, projectId, tenantId, toolName, "", s)
+		if terr != nil {
+			continue
+		}
+		for _, action := range toolObj.GetActionsList() {
+			request, needed := wanted[action.Name]
+			if !needed {
+				continue
+			}
+			if _, already := resolved[action.Name]; already {
+				continue
+			}
+			// A fresh clone per action: the tool carries its action on itself.
+			actionTool, aerr := ms.GetToolClone(ctx, projectId, tenantId, toolName, action.Name, s)
+			if aerr != nil {
+				logs.WithContext(ctx).Info(fmt.Sprint("populateInternalTools - ", toolName, " offers ", action.Name, " but could not be cloned: ", aerr.Error()))
+				continue
+			}
+			resolved[action.Name] = actionTool
+			logs.WithContext(ctx).Info(fmt.Sprint("populateInternalTools - resolved ", action.Name, " from tool ", toolName, " (", request.Why, ")"))
+		}
+	}
+
+	for action, request := range wanted {
+		if _, found := resolved[action]; !found {
+			logs.WithContext(ctx).Info(fmt.Sprint("populateInternalTools - no tenant tool offers ", action,
+				" so the agent will work without it (", request.Why, ")"))
+		}
+	}
+	provider.SetInternalTools(resolved)
+}
+
 func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId string, conversationId string, agentName string, s ModuleStoreI) (agents.AgentI, error) {
 	logs.WithContext(ctx).Debug("GetAgent - Start")
 	agent, err := ms.GetAgentClone(ctx, projectId, tenantId, conversationId, agentName, s)
@@ -708,6 +779,8 @@ func (ms *ModuleStore) GetAgent(ctx context.Context, projectId string, tenantId 
 	if err != nil {
 		return nil, err
 	}
+
+	ms.populateInternalTools(ctx, projectId, tenantId, agent, s)
 
 	modelNameI, err := agent.GetAttribute(ctx, "model")
 	if err != nil {

@@ -125,9 +125,38 @@ func (da DiscoveredAgent) HasStructuredOutput() bool {
 	return da.OutputSchema.Type != ""
 }
 
+// ParamsSchema is the params object a caller may send this agent, including the
+// keys every clarification-capable agent reads without declaring them.
+//
+// An agent declares the params it reads in its own input schema, but
+// clarification_answers is read by the generic message plumbing rather than by
+// any one agent, so no agent declares it. Leaving it out of the contract made
+// the plan validator refuse the very key the clarification rule demands: the
+// planner added it, the closed-list check called it silently discarded, the
+// planner removed it, the clarification check demanded it back, and two repair
+// attempts burned before the planner smuggled the answer into content as
+// "Clarification answers: null".
+func (da DiscoveredAgent) ParamsSchema() eru_models.JSONSchema {
+	params := da.InputSchema.Properties[AgentInputParamsKey]
+	if !da.SupportsClarification {
+		return params
+	}
+	merged := make(map[string]eru_models.JSONSchema, len(params.Properties)+1)
+	for name, schema := range params.Properties {
+		merged[name] = schema
+	}
+	merged[ClarificationAnswersParamKey] = ClarificationAnswersParamSchema()
+	params.Type = "object"
+	params.Properties = merged
+	if params.Description == "" || len(merged) == 1 {
+		params.Description = "Side-channel inputs this agent reads. Only the keys listed here are read; any other key is silently discarded."
+	}
+	return params
+}
+
 func (da DiscoveredAgent) ParamKeys() []string {
-	params, ok := da.InputSchema.Properties[AgentInputParamsKey]
-	if !ok || len(params.Properties) == 0 {
+	params := da.ParamsSchema()
+	if len(params.Properties) == 0 {
 		return nil
 	}
 	keys := make([]string, 0, len(params.Properties))
@@ -232,6 +261,60 @@ type ToolDiscovery interface {
 type SystemPromptProvider interface {
 	GetSystemPrompt() string
 	GetOutputSchema(ctx context.Context) eru_models.JSONSchema
+}
+
+// ExtraToolProvider is implemented by agent types that carry built-in tools of
+// their own - reference lookups the agent cannot work without and that an owner
+// should not have to attach by hand. They are merged into the tool loop
+// alongside the configured tools; a configured tool of the same name wins.
+type ExtraToolProvider interface {
+	ExtraTools(ctx context.Context) map[string]tools.Tooling
+}
+
+// StreamEnricher is implemented by agent types that can turn the model's raw
+// stream into something a client can act on before the answer is complete. The
+// Eru Studio agent uses it to emit each page component as the model writes it.
+// Enrichment is per request, so any state it needs belongs in the context.
+type StreamEnricher interface {
+	EnrichStream(ctx context.Context, event models.ModelStreamEvent) []StreamEvent
+}
+
+// InternalToolRequest names a tool an agent type needs for itself, identified by
+// the action it must provide.
+type InternalToolRequest struct {
+	// Action is the tool action to look for, e.g. "execute_query". Actions are
+	// unique enough to identify the tool without naming it, which keeps this
+	// tenant-agnostic: whatever the tenant called its eru-ql tool, the action is
+	// the same.
+	Action string
+	// Why is logged when the action cannot be found, so a missing capability is
+	// diagnosable rather than mysterious.
+	Why string
+}
+
+// InternalToolProvider is implemented by agent types that need tools of their
+// own - reference lookups the agent cannot do its job without.
+//
+// These are resolved from the tenant's configured tools, not from the agent's
+// own tool list, because an owner should not have to know that the Eru Studio
+// agent reads entity metadata or fetches a sibling page to answer "make it look
+// like the invoice page". The agent knows which lookups it needs; the tenant
+// already has the tools configured; nobody should have to wire the two together.
+type InternalToolProvider interface {
+	InternalToolRequests() []InternalToolRequest
+	// SetInternalTools receives the tools that could be resolved, keyed by
+	// action. An action that is missing is simply absent - the agent must degrade
+	// rather than fail.
+	SetInternalTools(resolved map[string]tools.Tooling)
+}
+
+// OutputValidator is implemented by agent types whose output has constraints a
+// JSON schema cannot express - a property key that must exist on that component
+// type, an action that needs a companion field. It runs after schema validation
+// in the retry loop, and its error text goes back to the model as the reason to
+// try again, so it must read as instructions rather than as a stack trace.
+type OutputValidator interface {
+	ValidateOutput(ctx context.Context, output map[string]interface{}) error
 }
 
 // guardrailPromptTemplate frames the agent owner's configured guardrail text so the

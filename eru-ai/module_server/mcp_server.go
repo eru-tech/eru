@@ -13,6 +13,7 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-server/server"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 )
 
@@ -79,8 +80,9 @@ func (s *EruAIMCPServer) ListTools(ctx context.Context, projectId string, tenant
 		if err != nil {
 			continue
 		}
+		defaultTenantId := eru_utils.DefaultTenant(ctx)
 		for tenantKey := range project.Tenants {
-			if tenantId != "" && tenantKey != tenantId && tenantKey != projectId {
+			if tenantId != "" && tenantKey != tenantId && tenantKey != projectId && tenantKey != defaultTenantId {
 				continue
 			}
 			prefixed := projectId == tenantId && projectId != ""

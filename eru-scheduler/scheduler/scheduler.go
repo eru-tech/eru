@@ -16,7 +16,6 @@ type ScheduleConfig struct {
 	ExecutionTime  string   `json:"execution_time" eru:"required"`
 	SchedulerName  string   `json:"scheduler_name" eru:"required"`
 	SchedulerLabel string   `json:"scheduler_label" eru:"required"`
-	TenantId       string   `json:"tenant_id" eru:"required"`
 	StartDate      string   `json:"start_date" eru:"required"`
 	EndDate        string   `json:"end_date"`
 	RepeatEvery    int      `json:"repeat_every"`

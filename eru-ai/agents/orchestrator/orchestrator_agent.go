@@ -446,7 +446,16 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 	var allTraces []models.StepTrace
 
 	for _, branch := range pr.PausedBranches {
-		_, fvm, err := oa.executeFuncGroup(ctx, pr.Plan, agentMessage, projectId, tenantId, branch.StartStep, branch.EndStep, reqVars, merged)
+		// Each branch gets only its own answers, with the step prefix stripped, so
+		// the sub-agent recognises the question ids it asked with.
+		branchMessage := withBranchAnswers(agentMessage, branch)
+		if answers, ok := branchMessage.ClarificationAnswers(); ok {
+			logs.WithContext(ctx).Info(fmt.Sprint("resumeOrchestration - forwarding ", len(answers), " answer(s) to step ", branch.StartStep))
+		} else {
+			logs.WithContext(ctx).Info(fmt.Sprint("resumeOrchestration - step ", branch.StartStep,
+				" is resuming with no answers of its own; it will re-ask unless the plan forwards params.clarification_answers"))
+		}
+		_, fvm, err := oa.executeFuncGroup(ctx, pr.Plan, branchMessage, projectId, tenantId, branch.StartStep, branch.EndStep, reqVars, merged)
 		if err != nil {
 			return agents.AgentMessage{}, fmt.Errorf("branch resume %s failed: %w", branch.StartStep, err)
 		}
@@ -978,6 +987,23 @@ single content string, e.g.:
   "{{stringify (dict \"content\" (printf \"sql: %s\\nrows: %s\" (index .ResVars.generate_sql.Body.actions 0).action.sql (index .ResVars.execute_sql.Body.actions 0).action.result))}}"
 
 ============================================================
+RULE #2a — FORWARD THE USER'S ANSWER BACK TO THE AGENT THAT ASKED
+============================================================
+
+An agent may stop and ask the user a question. The answer comes back to you, and
+you hand it to that step when the plan resumes - but ONLY through the step's own
+request body. A step that does not forward it re-runs with its question still
+unanswered, and the agent asks again or guesses at what the user chose.
+
+So for EVERY agent step whose agent can ask a question, forward the answer:
+
+  "params": {"clarification_answers": {{stringify .Vars.Body.params.clarification_answers}}}
+
+Forward it on every call, not only after a question: the key renders as null when
+nothing was asked, and the agent ignores that. You cannot know in advance whether
+a question will be asked, so it goes on every step that could ask one.
+
+============================================================
 RULE #2b — PASS FETCHED DATA IN params.context, NOT PROSE
 ============================================================
 
@@ -1248,7 +1274,7 @@ func (oa *OrchestratorAgent) buildAgentDescriptions() string {
 		}
 		if keys := ad.ParamKeys(); len(keys) > 0 {
 			sb.WriteString(fmt.Sprintf("  Params keys this agent READS: %s - any other params key is silently discarded, so put that information in content instead\n", strings.Join(keys, ", ")))
-			sb.WriteString(fmt.Sprintf("  Params schema: %s\n", renderSchemaJSON(ad.InputSchema.Properties[agents.AgentInputParamsKey], agentSchemaRenderLimit)))
+			sb.WriteString(fmt.Sprintf("  Params schema: %s\n", renderSchemaJSON(ad.ParamsSchema(), agentSchemaRenderLimit)))
 		} else {
 			sb.WriteString("  Params keys this agent READS: none - everything it needs must be in content\n")
 		}
@@ -1358,11 +1384,17 @@ func (oa *OrchestratorAgent) collectClientOutputs(ctx context.Context, plan map[
 				logs.WithContext(ctx).Info(fmt.Sprint("collectClientOutputs - no output found for step ", name))
 				continue
 			}
-			out = append(out, agents.AgentOutputAction{
-				ActionType: agents.ActionTypeData,
-				ActionName: name,
-				Action:     extractStructuredOutput(body),
-			})
+			outputs := extractStructuredOutputs(body)
+			if len(outputs) > 1 {
+				logs.WithContext(ctx).Info(fmt.Sprint("collectClientOutputs - step ", name, " returned ", len(outputs), " outputs, forwarding all"))
+			}
+			for _, action := range outputs {
+				out = append(out, agents.AgentOutputAction{
+					ActionType: agents.ActionTypeData,
+					ActionName: name,
+					Action:     action,
+				})
+			}
 			seen[name] = true
 		}
 		return out
@@ -1372,11 +1404,17 @@ func (oa *OrchestratorAgent) collectClientOutputs(ctx context.Context, plan map[
 		if actionName == "" {
 			actionName = oa.AgentName
 		}
-		out = append(out, agents.AgentOutputAction{
-			ActionType: agents.ActionTypeData,
-			ActionName: actionName,
-			Action:     extractStructuredOutput(executionResult),
-		})
+		outputs := extractStructuredOutputs(executionResult)
+		if len(outputs) > 1 {
+			logs.WithContext(ctx).Info(fmt.Sprint("collectClientOutputs - terminal step ", actionName, " returned ", len(outputs), " outputs, forwarding all"))
+		}
+		for _, action := range outputs {
+			out = append(out, agents.AgentOutputAction{
+				ActionType: agents.ActionTypeData,
+				ActionName: actionName,
+				Action:     action,
+			})
+		}
 	}
 	return out
 }
@@ -1394,24 +1432,46 @@ func stepOutputBody(funcVarsMap map[string]functions.FuncTemplateVars, stepName 
 	return nil, false
 }
 
-// extractStructuredOutput unwraps an agent envelope ({"actions":[{"action":{...}}]})
-// to the inner action object; for tool results (no actions envelope) it returns the
-// body as-is.
-func extractStructuredOutput(body interface{}) map[string]interface{} {
+// extractStructuredOutputs unwraps an agent envelope
+// ({"actions":[{"action":{...}}, ...]}) to the inner action objects; for tool
+// results (no actions envelope) it returns the body as the only output.
+//
+// Every action is returned, not just the first. A step can legitimately answer
+// with several: the Eru Studio agent returns the page it was asked about plus one
+// action per nested page it had to create - a row template, a side panel, a board
+// card - and each of those is a separate unit the user saves. Keeping only
+// actions[0] built and validated those pages and then dropped them one hop
+// before the client.
+func extractStructuredOutputs(body interface{}) []map[string]interface{} {
 	m, ok := body.(map[string]interface{})
 	if !ok {
-		return map[string]interface{}{"output": body}
+		return []map[string]interface{}{{"output": body}}
 	}
-	if actionsI, ok := m["actions"]; ok {
-		if actions, ok := actionsI.([]interface{}); ok && len(actions) > 0 {
-			if a0, ok := actions[0].(map[string]interface{}); ok {
-				if act, ok := a0["action"].(map[string]interface{}); ok {
-					return act
-				}
-			}
+	actionsI, hasActions := m["actions"]
+	if !hasActions {
+		return []map[string]interface{}{m}
+	}
+	actions, ok := actionsI.([]interface{})
+	if !ok {
+		return []map[string]interface{}{m}
+	}
+
+	out := make([]map[string]interface{}, 0, len(actions))
+	for _, raw := range actions {
+		entry, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if action, ok := entry["action"].(map[string]interface{}); ok {
+			out = append(out, action)
 		}
 	}
-	return m
+	if len(out) == 0 {
+		// An envelope whose actions carry nothing usable: forward the body rather
+		// than forwarding nothing, so the failure is visible to the client.
+		return []map[string]interface{}{m}
+	}
+	return out
 }
 
 func (oa *OrchestratorAgent) buildToolDescriptions() string {

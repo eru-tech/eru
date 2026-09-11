@@ -23,8 +23,13 @@ type DB_Event struct {
 }
 
 const (
-	SELECT_EVENT_MSG   = "update erufunctions_async_loop x set async_status='PENDING' from (select a.async_loop_id, a.async_id, a.event_id from erufunctions_async_loop a inner join erufunctions_async b on a.event_id=b.event_id and b.async_event_name = ??? where a.async_status = 'TORUN' limit $LIMIT for update of a skip locked) y where x.async_loop_id=y.async_loop_id returning y.async_id, y.event_id"
-	INSERT_ASYNC_EVENT = "INSERT INTO erufunctions_async(event_id, func_group_name,func_step_name,event_msg,event_request,request_id,async_event_name) VALUES (event_id, function_name,'',event_msg::jsonb,'','',event_name);"
+	SELECT_EVENT_MSG = "update erufunctions_async_loop x set async_status='PENDING' from (select a.async_loop_id, a.async_id, a.event_id from erufunctions_async_loop a inner join erufunctions_async b on a.event_id=b.event_id and b.async_event_name = ??? where a.async_status = 'TORUN' limit $LIMIT for update of a skip locked) y where x.async_loop_id=y.async_loop_id returning y.async_id, y.event_id"
+	// INSERT_ASYNC_EVENT and INSERT_ASYNC_LOOP mirror the inserts the db side procedure does
+	// when it raises an async event - they are kept here so the go side and the procedure stay
+	// in step. project_id and tenant_id say who the function has to be resolved for when the
+	// row is picked up; tenant_id is the route form, so "<default tenant>___<tenant>" when a
+	// default tenant applies, and empty for a project level call.
+	INSERT_ASYNC_EVENT = "INSERT INTO erufunctions_async(event_id, func_group_name,func_step_name,event_msg,event_request,request_id,async_event_name,project_id,tenant_id) VALUES (event_id, function_name,'',event_msg::jsonb,'','',event_name,project_id,tenant_id);"
 	INSERT_ASYNC_LOOP  = "INSERT INTO erufunctions_async_loop(event_id,async_id, loop_var, async_status) VALUES (event_id, async_id,'{}'::jsonb,'TORUN');"
 )
 

@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	functions "github.com/eru-tech/eru/eru-functions/functions"
@@ -27,6 +28,66 @@ type PausedBranch struct {
 	StartStep   string   `json:"start_step"`
 	EndStep     string   `json:"end_step"`
 	QuestionIds []string `json:"question_ids,omitempty"`
+}
+
+// answersForBranch returns the clarification answers that belong to a paused
+// branch, with the step prefix stripped.
+//
+// The orchestrator prefixes every sub-agent question with the step that asked
+// it, so the client answers "eru_studio::q1". The sub-agent only knows "q1", and
+// it must not see another step's answers at all - so the routing happens here,
+// where the mapping is known, rather than being left to whatever the client sent.
+func answersForBranch(answers []agents.ClarificationAnswer, branch PausedBranch) []agents.ClarificationAnswer {
+	if len(answers) == 0 {
+		return nil
+	}
+	owned := make(map[string]bool, len(branch.QuestionIds))
+	for _, id := range branch.QuestionIds {
+		owned[id] = true
+	}
+
+	prefix := branch.StartStep + "::"
+	out := make([]agents.ClarificationAnswer, 0, len(answers))
+	for _, answer := range answers {
+		id := answer.QuestionId
+		switch {
+		case owned[id], strings.HasPrefix(id, prefix):
+			answer.QuestionId = strings.TrimPrefix(id, prefix)
+		case len(branch.QuestionIds) == 0 && !strings.Contains(id, "::"):
+			// A branch that recorded no question ids, answered without a prefix:
+			// there is nothing to route by, so take it as this branch's.
+		default:
+			continue
+		}
+		out = append(out, answer)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// withBranchAnswers returns a copy of the message carrying only the answers that
+// belong to this branch. The params map is copied because the same message is
+// reused for every branch of a resume.
+func withBranchAnswers(message agents.AgentMessage, branch PausedBranch) agents.AgentMessage {
+	answers, ok := message.ClarificationAnswers()
+	if !ok {
+		return message
+	}
+	routed := answersForBranch(answers, branch)
+
+	params := make(map[string]interface{}, len(message.Params)+1)
+	for key, value := range message.Params {
+		params[key] = value
+	}
+	if len(routed) == 0 {
+		delete(params, agents.ClarificationAnswersParamKey)
+	} else {
+		params[agents.ClarificationAnswersParamKey] = routed
+	}
+	message.Params = params
+	return message
 }
 
 // collectQuestions walks an executed FuncGroup result and returns every

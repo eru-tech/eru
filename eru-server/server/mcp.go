@@ -10,6 +10,7 @@ import (
 	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	eru_utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/uuid"
 )
 
@@ -17,6 +18,15 @@ const (
 	MCPProjectHeaderKey string = "x-project-id"
 	MCPTenantHeaderKey  string = "x-tenant-id"
 )
+
+// mcpTenant splits the MCP tenant header the same way tenantMiddleWare splits the
+// tenant_id header and the {tenant} route var. The header may carry the route form
+// "defaultTenant___tenant"; the default tenant is put on the context so tenant lookups
+// fall back to it, and the plain tenant is returned for tenant keyed reads.
+func mcpTenant(ctx context.Context, r *http.Request) (context.Context, string) {
+	tenantId, defaultTenantId := eru_utils.ParseTenantRoute(r.Header.Get(MCPTenantHeaderKey))
+	return eru_utils.WithDefaultTenant(ctx, defaultTenantId), tenantId
+}
 
 type MCPMessage struct {
 	JSONRPCVersion string          `json:"jsonrpc"`
@@ -349,7 +359,7 @@ func CreateMCPHttpHandler(server MCPServer) http.HandlerFunc {
 				return
 			}
 			projectId := r.Header.Get(MCPProjectHeaderKey)
-			tenantId := r.Header.Get(MCPTenantHeaderKey)
+			ctx, tenantId := mcpTenant(ctx, r)
 			handler := manager.GetOrCreate(sessionId)
 			response, err := handler.HandleMessage(ctx, body, projectId, tenantId)
 			if err != nil {
@@ -431,11 +441,12 @@ func CreateMCPWebSocketHandler(server MCPServer, config ...WebSocketConfig) http
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		projectId := r.Header.Get(MCPProjectHeaderKey)
-		tenantId := r.Header.Get(MCPTenantHeaderKey)
+		tenantCtx, tenantId := mcpTenant(r.Context(), r)
+		defaultTenantId := eru_utils.DefaultTenant(tenantCtx)
 		sessionId := uuid.New().String()
 		messageHandler := NewMCPMessageHandler(server, sessionId)
 		wsHandler := NewWebSocketHandler(func(ctx context.Context, data []byte) ([]byte, error) {
-			return messageHandler.HandleMessage(ctx, data, projectId, tenantId)
+			return messageHandler.HandleMessage(eru_utils.WithDefaultTenant(ctx, defaultTenantId), data, projectId, tenantId)
 		}, wsConfig)
 		wsHandler.ServeHTTP(w, r)
 	}

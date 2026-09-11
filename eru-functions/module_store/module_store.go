@@ -69,9 +69,10 @@ func getEruaibaseurl(ctx context.Context) string {
 
 const (
 	UPDATE_FUNC_ASYNC    = "update erufunctions_async_loop set async_status=???, processed_date=now(), event_response=??? where async_id = ???"
-	SELECT_FUNC_ASYNC    = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???) for update of a skip locked) y where x.async_id=y.async_id returning y.*"
+	SELECT_FUNC_ASYNC    = "update erufunctions_async_loop x set async_status='IN PROGRESS', processed_date=now() from (select a.async_id, b.event_id, b.func_group_name func_name, b.func_step_name,  jsonb_set(jsonb_set(b.event_msg , ARRAY['ReqVars', b.func_step_name, 'LoopVar'] , a.loop_var::jsonb),ARRAY['Vars','LoopVar'],a.loop_var::jsonb) event_msg, b.event_request, b.request_id, b.project_id, b.tenant_id from erufunctions_async_loop a left join erufunctions_async b on a.event_id = b.event_id where a.async_id=??? and (async_status=??? or 'ALL'=???) for update of a skip locked) y where x.async_id=y.async_id returning y.*"
 	INSERT_FUNC_SCHEDULE = "insert into erufunctions_schedules (schedule_id, project_id, tenant_id, func_group_name, func_step_name, event_msg, scheduler_name, scheduler_label,job_id, start_date, end_date) values (???, ???, ???, ???, ???, ???, ???, ???, ???, ???, ???)"
 	DELETE_FUNC_SCHEDULE = "delete from erufunctions_schedules where job_id=???"
+	SELECT_FUNC_SCHEDULE = "select project_id, tenant_id from erufunctions_schedules where job_id=???"
 )
 
 type StoreHolder struct {
@@ -87,6 +88,10 @@ type AsyncFuncData struct {
 	EventMsg     functions.FuncTemplateVars `json:"event_msg"`
 	EventRequest string                     `json:"event_request"`
 	RequestId    string                     `json:"request_id"`
+	ProjectId    string                     `json:"project_id"`
+	// RouteTenantId is the route form of the tenant the function was called for, so picking
+	// the row up later resolves the function through the same tenant fallback order.
+	RouteTenantId string `json:"tenant_id"`
 }
 type ModuleStoreI interface {
 	store.StoreI
@@ -106,8 +111,8 @@ type ModuleStoreI interface {
 	GetAndValidateRoute(ctx context.Context, routeName string, projectId string, host string, url string, method string, headers http.Header, s ModuleStoreI) (route functions.Route, err error)
 	GetAndValidateFunc(ctx context.Context, funcName string, projectId string, tenantId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
 	GetFunc(ctx context.Context, funcName string, projectId string, tenantId string, s ModuleStoreI) (funcGroup functions.FuncGroup, err error)
-	ScheduleFunc(ctx context.Context, funcSchedule scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) (jobId string, err error)
-	UnScheduleFunc(ctx context.Context, projectId string, jobId string, realStore ModuleStoreI) error
+	ScheduleFunc(ctx context.Context, funcSchedule scheduler.ScheduleConfig, projectId string, tenantId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) (jobId string, err error)
+	UnScheduleFunc(ctx context.Context, projectId string, tenantId string, jobId string, realStore ModuleStoreI) error
 	GetWf(ctx context.Context, wfName string, projectId string, s ModuleStoreI) (wfObj functions.Workflow, err error)
 	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, tenantId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
 	SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
@@ -487,6 +492,8 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 
 	funcStep.FsDb = db.GetDb(s.GetDbType())
 	funcStep.FsDb.SetConn(s.GetConn())
+	funcStep.ProjectId = projectId
+	funcStep.RouteTenantId = eru_utils.JoinTenantRoute(eru_utils.DefaultTenant(ctx), tenantId)
 	if funcStep.AsyncEventName != "" {
 		var eventI events.EventI
 		eventI, err = s.FetchEvent(ctx, projectId, funcStep.AsyncEventName, s)
@@ -539,7 +546,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			// is left in the URL so the runtime tenant substitution can resolve it.
 			qTenantId := funcStep.TenantId
 			if qTenantId == "" {
-				qTenantId = tenantId
+				qTenantId = funcStep.RouteTenantId
 			}
 			tenantSeg := ""
 			if qTenantId != "" {
@@ -578,7 +585,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			if funcStep.ToolAction != "" {
 				toolAction = fmt.Sprint("/", funcStep.ToolAction)
 			}
-			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/tool/", funcStep.ToolName, toolAction)
+			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.StepTenantRoute(), "/execute/tool/", funcStep.ToolName, toolAction)
 			r.OnError = "STOP"
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
@@ -602,7 +609,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			if funcStep.ConversationId != "" {
 				conversationId = fmt.Sprint("/", funcStep.ConversationId)
 			}
-			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.TenantId, "/execute/agent/", funcStep.AgentName, conversationId)
+			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.StepTenantRoute(), "/execute/agent/", funcStep.AgentName, conversationId)
 			r.OnError = "STOP"
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
@@ -870,6 +877,18 @@ func (ms *ModuleStore) GetWfCloneObject(ctx context.Context, projectId string, w
 	return iCloneI.Elem().Interface().(functions.Workflow), nil
 }
 
+// dbString reads a text column, tolerating drivers that hand one back as raw bytes, and
+// leaving a null column as the empty string.
+func dbString(value interface{}) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []byte:
+		return string(typed)
+	}
+	return ""
+}
+
 func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, s ModuleStoreI) (asyncFuncData AsyncFuncData, err error) {
 	logs.WithContext(ctx).Debug("FetchAsyncEvent - Start")
 	logs.WithContext(ctx).Info(fmt.Sprint("FetchAsyncEvent called for asyncId = ", asyncId, asyncStatus))
@@ -905,9 +924,25 @@ func (ms *ModuleStore) FetchAsyncEvent(ctx context.Context, asyncId string, asyn
 			asyncFuncData.EventMsg = fVars
 			asyncFuncData.EventRequest = selectOutput[0][0]["event_request"].(string)
 			asyncFuncData.RequestId = selectOutput[0][0]["request_id"].(string)
+			asyncFuncData.ProjectId = dbString(selectOutput[0][0]["project_id"])
+			asyncFuncData.RouteTenantId = dbString(selectOutput[0][0]["tenant_id"])
 		}
 	}
 	return
+}
+
+// AsyncTenantContext resolves who an async row has to be executed for. The row carries the
+// route form of the tenant, so it is split back into the tenant and the default tenant and
+// the default tenant is put on the context, restoring the same tenant -> default tenant ->
+// project fallback the original call ran with. fallbackProjectId covers rows written before
+// the project was recorded on the row.
+func AsyncTenantContext(ctx context.Context, asyncFuncData AsyncFuncData, fallbackProjectId string) (asyncCtx context.Context, projectId string, tenantId string) {
+	projectId = asyncFuncData.ProjectId
+	if projectId == "" {
+		projectId = fallbackProjectId
+	}
+	tenantId, defaultTenantId := eru_utils.ParseTenantRoute(asyncFuncData.RouteTenantId)
+	return eru_utils.WithDefaultTenant(ctx, defaultTenantId), projectId, tenantId
 }
 
 func (ms *ModuleStore) UpdateAsyncEvent(ctx context.Context, asyncId string, asyncStatus string, eventResponse string, s ModuleStoreI) (err error) {
@@ -1026,6 +1061,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 				failedCount = failedCount + 1
 				asyncStatus = "FAILED"
 			} else {
+				ctx, rowProjectId, rowTenantId := AsyncTenantContext(ctx, asyncFuncData, projectId)
 				bodyMap := make(map[string]interface{})
 				eventResponseBytes := []byte("{}")
 				bodyMapOk := false
@@ -1052,7 +1088,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 							logs.WithContext(ctx).Error(err.Error())
 						}
 					} else {
-						projectSettings, err := ms.GetProjectSettings(ctx, projectId)
+						projectSettings, err := ms.GetProjectSettings(ctx, rowProjectId)
 						if err != nil {
 							logs.WithContext(ctx).Error(err.Error())
 							err = nil //ignore error and continue
@@ -1099,7 +1135,7 @@ func (ms *ModuleStore) ProcessEvents(nctx context.Context, projectId string, eve
 					if asyncStatus != "FAILED" {
 						eventReq = eventReq.WithContext(logs.NewContext(ctx, zap.String(server_handlers.RequestIdKey, async_id)))
 
-						funcGroup, err := ms.GetAndValidateFunc(ctx, asyncFuncData.FuncName, projectId, "", strings.Split(eventReq.Host, ":")[0], eventReq.URL.Path, eventReq.Method, eventReq.Header, bodyMap, s, true, "")
+						funcGroup, err := ms.GetAndValidateFunc(ctx, asyncFuncData.FuncName, rowProjectId, rowTenantId, strings.Split(eventReq.Host, ":")[0], eventReq.URL.Path, eventReq.Method, eventReq.Header, bodyMap, s, true, "")
 						if err != nil {
 							failedCount = failedCount + 1
 							asyncStatus = "FAILED"
@@ -1277,9 +1313,12 @@ func LoadStore(ctx context.Context, StoreTableName string, StoreTenantTableName 
 	//s.Store = myStore
 	return myStore, err
 }
-func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig scheduler.ScheduleConfig, projectId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) (jobId string, err error) {
+func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig scheduler.ScheduleConfig, projectId string, tenantId string, funcName string, reqBody map[string]interface{}, tokenStr string, realStore ModuleStoreI) (jobId string, err error) {
 	logs.WithContext(ctx).Info("ScheduleFunc - Start")
 	scheduleId := uuid.New().String()
+	// the job has to resolve the function again when it fires, so it carries the route form
+	// of the tenant - the same tenant___default pair this request came in with.
+	routeTenantId := eru_utils.JoinTenantRoute(eru_utils.DefaultTenant(ctx), tenantId)
 	scheduler, err := realStore.FetchScheduler(ctx, projectId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
@@ -1290,9 +1329,9 @@ func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig schedule
 		logs.WithContext(ctx).Error(err.Error())
 		return "", err
 	}
-	jobName := fmt.Sprintf("%s_%s_%s_%s_%s", projectId, scheduleConfig.TenantId, funcName, scheduleConfig.SchedulerName, scheduleId)
+	jobName := fmt.Sprintf("%s_%s_%s_%s_%s", projectId, tenantId, funcName, scheduleConfig.SchedulerName, scheduleId)
 	cronStr := scheduleConfig.GetCronStr(ctx)
-	schedulerCommand := fmt.Sprint("CALL schedule_procedure('", funcName, "','", string(reqBodyBytes), "','", scheduleConfig.SchedulerName, "')")
+	schedulerCommand := scheduleProcedureCall(funcName, string(reqBodyBytes), scheduleConfig.SchedulerName, projectId, routeTenantId)
 	jobId, err = scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
 	if err != nil {
 		return "", err
@@ -1322,7 +1361,7 @@ func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig schedule
 		return "", err
 	}
 	//recalling schedule with same jobname to edit the body with job id
-	schedulerCommand = fmt.Sprint("CALL schedule_procedure('", funcName, "','", string(reqBodyBytes), "','", scheduleConfig.SchedulerName, "')")
+	schedulerCommand = scheduleProcedureCall(funcName, string(reqBodyBytes), scheduleConfig.SchedulerName, projectId, routeTenantId)
 	jobId, err = scheduler.Schedule(ctx, jobName, schedulerCommand, cronStr)
 	if err != nil {
 		return "", err
@@ -1334,7 +1373,7 @@ func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig schedule
 	var insertQueries []*models.Queries
 	insertScheduleLog := models.Queries{}
 	insertScheduleLog.Query = db.GetDb(realStore.GetDbType()).GetDbQuery(ctx, INSERT_FUNC_SCHEDULE)
-	insertScheduleLog.Vals = []interface{}{scheduleId, projectId, scheduleConfig.TenantId, funcName, "", string(reqBodyBytes), scheduleConfig.SchedulerName, scheduleConfig.SchedulerLabel, jobId, scheduleConfig.StartDate, ed}
+	insertScheduleLog.Vals = []interface{}{scheduleId, projectId, routeTenantId, funcName, "", string(reqBodyBytes), scheduleConfig.SchedulerName, scheduleConfig.SchedulerLabel, jobId, scheduleConfig.StartDate, ed}
 	insertScheduleLog.Rank = 2
 	insertQueries = append(insertQueries, &insertScheduleLog)
 
@@ -1346,8 +1385,64 @@ func (ms *ModuleStore) ScheduleFunc(ctx context.Context, scheduleConfig schedule
 
 	return jobId, nil
 }
-func (ms *ModuleStore) UnScheduleFunc(ctx context.Context, projectId string, jobId string, realStore ModuleStoreI) error {
+
+// scheduleProcedureCall builds the pg_cron command that fires the function. project and
+// tenant travel with it so the function is resolved for the same tenant when it fires - the
+// tenant is the route form, so the schedule_procedure caller keeps the tenant -> default
+// tenant -> project fallback.
+func scheduleProcedureCall(funcName string, reqBody string, schedulerName string, projectId string, routeTenantId string) string {
+	return fmt.Sprint("CALL schedule_procedure('", funcName, "','", reqBody, "','", schedulerName, "','", projectId, "','", routeTenantId, "')")
+}
+
+// scheduledJobTenant returns the tenant a job was scheduled under, and whether the job exists.
+func (ms *ModuleStore) scheduledJobTenant(ctx context.Context, jobId string, realStore ModuleStoreI) (projectId string, routeTenantId string, found bool, err error) {
+	selectSchedule := models.Queries{}
+	selectSchedule.Query = db.GetDb(realStore.GetDbType()).GetDbQuery(ctx, SELECT_FUNC_SCHEDULE)
+	selectSchedule.Vals = []interface{}{jobId}
+	output, err := eru_utils.ExecuteDbFetch(ctx, realStore.GetConn(), selectSchedule)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return "", "", false, err
+	}
+	if len(output) == 0 {
+		return "", "", false, nil
+	}
+	projectId = dbString(output[0]["project_id"])
+	routeTenantId = dbString(output[0]["tenant_id"])
+	return projectId, routeTenantId, true, nil
+}
+
+// canUnscheduleJob reports whether a caller on tenantId may remove a job that was scheduled
+// under jobRouteTenantId. A tenant reaches its own schedules and those of its default tenant,
+// the way a read falls back; a project level schedule is shared by every tenant of the
+// project, so only a project level caller may remove it.
+func canUnscheduleJob(ctx context.Context, tenantId string, jobRouteTenantId string) bool {
+	jobTenantId, _ := eru_utils.ParseTenantRoute(jobRouteTenantId)
+	if jobTenantId == "" {
+		return tenantId == ""
+	}
+	return slices.Contains(eru_utils.TenantLookupOrder(ctx, tenantId), jobTenantId)
+}
+
+func (ms *ModuleStore) UnScheduleFunc(ctx context.Context, projectId string, tenantId string, jobId string, realStore ModuleStoreI) error {
 	logs.WithContext(ctx).Info("UnScheduleFunc - Start")
+
+	// a job id says nothing about who owns it, so check the job was scheduled within the
+	// tenants this caller can reach before touching it.
+	jobProjectId, jobRouteTenantId, found, err := ms.scheduledJobTenant(ctx, jobId, realStore)
+	if err != nil {
+		return err
+	}
+	notFound := errors.New(fmt.Sprint("scheduled job ", jobId, " not found"))
+	if !found || jobProjectId != projectId {
+		logs.WithContext(ctx).Error(notFound.Error())
+		return notFound
+	}
+	if !canUnscheduleJob(ctx, tenantId, jobRouteTenantId) {
+		logs.WithContext(ctx).Error(fmt.Sprint(notFound.Error(), " for tenant ", tenantId))
+		return notFound
+	}
+
 	scheduler, err := realStore.FetchScheduler(ctx, projectId)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())

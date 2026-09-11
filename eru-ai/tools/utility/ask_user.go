@@ -48,8 +48,7 @@ func AskUserToolSchema() eru_models.JSONSchema {
 				Items:       &optionSchema,
 			},
 			"multi_select":    {Type: "boolean", Description: "true if more than one option may be selected"},
-			"allow_free_text": {Type: "boolean", Description: "true to let the user type their own answer when no option fits"},
-			"free_text_label": {Type: "string", Description: "Label for the free-text input (e.g. 'Something else')"},
+			"free_text_label": {Type: "string", Description: "Label for the free-text input (e.g. 'Something else'). The user can always type an answer; this only names the box."},
 			"required":        {Type: "boolean", Description: "true if the user must answer this question"},
 		},
 		Required: []string{"question"},
@@ -161,9 +160,12 @@ type askUserRequest struct {
 	Questions []askUserQuestion `json:"questions"`
 }
 
+// defaultFreeTextLabel names the free-text box when the asker did not, so the
+// client always has something to render it with.
+const defaultFreeTextLabel = "Something else - let me describe it"
+
 // normalizeClarificationRequest validates and fills in defaults: at least one
-// question, an id per question, and a free-text fallback whenever a question
-// has no options to choose from.
+// question, an id per question, and free text on every question.
 func normalizeClarificationRequest(params map[string]interface{}) (map[string]interface{}, error) {
 	b, err := json.Marshal(params)
 	if err != nil {
@@ -184,8 +186,14 @@ func normalizeClarificationRequest(params map[string]interface{}) (map[string]in
 		if q.Id == "" {
 			q.Id = fmt.Sprintf("q%d", i+1)
 		}
-		if len(q.Options) == 0 {
-			q.AllowFreeText = true
+		// The user can always type their own answer. Whether the offered options
+		// cover the situation is not something the asker can judge: options are
+		// written from what the agent believes is possible, so the case it has not
+		// thought of is exactly the one the user needs to be able to state - and
+		// that is the case where the option list is most likely to be wrong.
+		q.AllowFreeText = true
+		if q.FreeTextLabel == "" {
+			q.FreeTextLabel = defaultFreeTextLabel
 		}
 	}
 

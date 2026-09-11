@@ -34,6 +34,11 @@ const (
 	StreamTextDelta  StreamEventType = "text_delta"
 	StreamDone       StreamEventType = "done"
 	StreamQuestion   StreamEventType = "question"
+	// StreamToolInputDelta carries the tool arguments as the model writes them,
+	// before the tool call is complete. It is what makes progressive rendering
+	// possible for a structured-output agent: the answer IS the tool input, so
+	// without these deltas the whole answer arrives in one lump at the end.
+	StreamToolInputDelta StreamEventType = "tool_input_delta"
 )
 
 const TerminalToolAskUser = "ask_user"
@@ -45,6 +50,9 @@ type ModelStreamEvent struct {
 	ToolName  string                 `json:"tool_name,omitempty"`
 	ToolInput map[string]interface{} `json:"tool_input,omitempty"`
 	Iteration int                    `json:"iteration,omitempty"`
+	// BlockIndex identifies the content block a delta belongs to, so
+	// concurrent tool calls in one response can be told apart.
+	BlockIndex int `json:"block_index,omitempty"`
 }
 
 type StreamEventCallback func(event ModelStreamEvent)

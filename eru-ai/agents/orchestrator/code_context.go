@@ -30,6 +30,39 @@ type codeContext struct {
 	Preview   string
 	Truncated bool
 	code      string
+	// ForwardParams are the request-shaping params the caller sent alongside the
+	// artifact. They change the shape of the answer rather than its content, so a
+	// plan that drops one silently gives the caller a different protocol than it
+	// asked for.
+	ForwardParams []string
+}
+
+// forwardableParams are the params whose whole purpose is to change the response
+// contract. A caller that sets one has already written the code to read the
+// result it produces, so a plan that quietly omits it is wrong even though every
+// step succeeds - which is exactly how an "output_mode: auto" request came back
+// as a single full page.
+var forwardableParams = []string{"output_mode", "inline_nested_pages", "base_revision", "scope", "page_id"}
+
+func isForwardableParam(name string) bool {
+	for _, candidate := range forwardableParams {
+		if candidate == name {
+			return true
+		}
+	}
+	return false
+}
+
+// callerForwardParams lists the request-shaping params present on the incoming
+// request, in a stable order.
+func callerForwardParams(params map[string]interface{}) []string {
+	out := []string{}
+	for _, name := range forwardableParams {
+		if value, ok := params[name]; ok && value != nil && value != "" {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // describeCodeParam characterises params.code: what kind of artifact it is, how
@@ -39,25 +72,31 @@ func describeCodeParam(params map[string]interface{}) codeContext {
 	if params == nil {
 		return codeContext{}
 	}
+	forward := callerForwardParams(params)
 	raw, found := params[codeParamKey]
 	if !found {
+		if len(forward) > 0 {
+			// No artifact, but the caller still shaped the response it expects.
+			return codeContext{ForwardParams: forward}
+		}
 		return codeContext{}
 	}
 	code := strings.TrimSpace(stringifyCodeParam(raw))
 	switch code {
 	case "", "{}", "[]", "null", `""`:
-		return codeContext{}
+		return codeContext{ForwardParams: forward}
 	}
 	kind, topKeys := classifyCode(code)
 	preview, truncated := previewCode(code)
 	return codeContext{
-		Present:   true,
-		Kind:      kind,
-		Size:      len(code),
-		TopKeys:   topKeys,
-		Preview:   preview,
-		Truncated: truncated,
-		code:      code,
+		Present:       true,
+		Kind:          kind,
+		Size:          len(code),
+		TopKeys:       topKeys,
+		Preview:       preview,
+		Truncated:     truncated,
+		code:          code,
+		ForwardParams: forward,
 	}
 }
 
@@ -147,7 +186,7 @@ func hasAnyKey(m map[string]interface{}, keys ...string) bool {
 // than broadcast to every step.
 func (cc codeContext) promptSection(discovered []agents.DiscoveredAgent) string {
 	if !cc.Present {
-		return ""
+		return cc.forwardParamsSection(discovered)
 	}
 	var sb strings.Builder
 	sb.WriteString(`
@@ -217,6 +256,54 @@ WRONG:
 CHECKLIST ADDITION:
 [ ] params.code is passed - by .Vars.Body.params.code reference - only to the step(s) that revise the artifact described above, and to no other step`)
 	return sb.String()
+}
+
+// forwardParamsSection tells the planner which request-shaping params the caller
+// set, and that every step reaching an agent that declares one must pass it on.
+func (cc codeContext) forwardParamsSection(discovered []agents.DiscoveredAgent) string {
+	if len(cc.ForwardParams) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(`
+
+============================================================
+RULE #2d - THE CALLER SHAPED THE RESPONSE : FORWARD ITS PARAMS
+============================================================
+
+The caller set params that decide the SHAPE of the answer it gets back, not its
+content. It has already written the code that reads that shape, so a step that
+drops one of these silently answers in a protocol the caller did not ask for.
+
+`)
+	sb.WriteString(fmt.Sprint("Params the caller set: ", strings.Join(cc.ForwardParams, ", "), "\n\n"))
+	sb.WriteString("For EVERY agent step whose agent declares one of these params (check \"Params keys this agent READS\"),\n")
+	sb.WriteString("pass the caller's value straight through:\n")
+	for _, name := range cc.ForwardParams {
+		sb.WriteString(fmt.Sprint("  \"", name, "\": {{stringify .Vars.Body.params.", name, "}}\n"))
+	}
+	sb.WriteString("\nAn agent that does not declare the param simply does not get it - never invent a value,\n")
+	sb.WriteString("and never substitute your own: forward exactly what the caller sent.\n")
+	if capable := paramCapableAgents(discovered, cc.ForwardParams); len(capable) > 0 {
+		sb.WriteString(fmt.Sprint("Agents here that declare at least one of them: ", strings.Join(capable, ", "), "\n"))
+	}
+	return sb.String()
+}
+
+// paramCapableAgents lists the discovered agents that read at least one of the
+// named params.
+func paramCapableAgents(discovered []agents.DiscoveredAgent, names []string) []string {
+	out := []string{}
+	for _, agent := range discovered {
+		for _, key := range agent.ParamKeys() {
+			if containsString(names, key) {
+				out = append(out, agent.AgentName)
+				break
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func codeCapableAgents(discovered []agents.DiscoveredAgent) []string {

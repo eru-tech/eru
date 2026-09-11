@@ -28,7 +28,7 @@ import (
 
 const (
 	INSERT_FUNC_ASYNC_LOOP = "insert into erufunctions_async_loop (async_id,event_id,loop_var) values (??? , ???, ???)"
-	INSERT_FUNC_ASYNC      = "insert into erufunctions_async (event_id,func_group_name,func_step_name,event_msg,request_id, event_request,async_event_name) values (???,???,???,???,???,???,???)"
+	INSERT_FUNC_ASYNC      = "insert into erufunctions_async (event_id,func_group_name,func_step_name,event_msg,request_id, event_request,async_event_name,project_id,tenant_id) values (???,???,???,???,???,???,???,???,???)"
 )
 
 type AsyncFuncData struct {
@@ -87,6 +87,8 @@ type FuncStep struct {
 	Route                   Route         `json:"-"`
 	FuncKey                 string        `json:"-"`
 	ParentFuncGroupName     string        `json:"-"`
+	ProjectId               string        `json:"-"`
+	RouteTenantId           string        `json:"-"`
 	FuncGroup               FuncGroup     `json:"-"`
 	RequestHeaders          []Headers     `json:"request_headers"`
 	QueryParams             []Headers     `json:"query_params"`
@@ -636,7 +638,7 @@ func (funcStep *FuncStep) RunFuncStep(octx context.Context, req *http.Request, r
 						var insertQueries []*models.Queries
 						insertQueryFuncAsync := models.Queries{}
 						insertQueryFuncAsync.Query = funcStep.FsDb.GetDbQuery(ctx, INSERT_FUNC_ASYNC)
-						insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, msgId, funcStep.ParentFuncGroupName, funcStep.FuncKey, string(eventMsgBytes), string(eventMsgRequest), requestStr, funcStep.AsyncEventName)
+						insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, msgId, funcStep.ParentFuncGroupName, funcStep.FuncKey, string(eventMsgBytes), string(eventMsgRequest), requestStr, funcStep.AsyncEventName, funcStep.ProjectId, funcStep.RouteTenantId)
 						insertQueryFuncAsync.Rank = 1
 						insertQueries = append(insertQueries, &insertQueryFuncAsync)
 
@@ -1090,6 +1092,16 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 	//logs.FileLogger.Info(fmt.Sprint("RunFuncStepInner ended for ", funcStep.FuncKey))
 	return
 }
+
+// StepTenantRoute is the tenant a step addresses another eru service with - the tenant the
+// step configures itself, else the route form of the tenant the function was called for.
+func (funcStep *FuncStep) StepTenantRoute() string {
+	if funcStep.TenantId != "" {
+		return funcStep.TenantId
+	}
+	return funcStep.RouteTenantId
+}
+
 func (funcStep *FuncStep) insertAsyncBatch(ctx context.Context, asyncBatch []AsyncFuncData) (err error) {
 	logs.WithContext(ctx).Debug("insertAsyncBatch - Start")
 	var valueStrings []string
@@ -1145,7 +1157,7 @@ func (funcStep *FuncStep) insertAsyncBatch(ctx context.Context, asyncBatch []Asy
 			if eventName == "" {
 				eventName = funcStep.AsyncEventName
 			}
-			insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, batch_id, asyncFuncData.FuncName, asyncFuncData.FuncStepName, string(eventMsgBytes), asyncFuncData.RequestId, asyncFuncData.EventRequest, eventName)
+			insertQueryFuncAsync.Vals = append(insertQueryFuncAsync.Vals, batch_id, asyncFuncData.FuncName, asyncFuncData.FuncStepName, string(eventMsgBytes), asyncFuncData.RequestId, asyncFuncData.EventRequest, eventName, funcStep.ProjectId, funcStep.RouteTenantId)
 		}
 		insertQueryFuncAsyncLoop.Vals = append(insertQueryFuncAsyncLoop.Vals, asyncFuncData.AsyncId, batch_id, lvBuf.String())
 	}

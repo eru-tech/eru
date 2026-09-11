@@ -832,11 +832,26 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 				sink.drain(writeSSE)
 			}()
 
+			// One run identity for this execution, stamped on every event that
+			// leaves it - including the ones relayed up from sub-agents on other
+			// pods - so a client can tell two concurrent runs apart and pick a
+			// reconnected stream back up.
+			run := agents.RunIdentity{RunId: uuid.New().String(), ThreadId: conversationId}
+
 			var seq int64
 			ctx := agents.WithStreamCallback(r.Context(), func(event agents.StreamEvent) {
 				event = event.Attribute(agentName, chain)
+				event = event.Identify(run)
 				event.Seq = atomic.AddInt64(&seq, 1)
 				sink.send(event)
+			})
+			ctx = agents.WithRunIdentity(ctx, run)
+			writeSSE(agents.StreamEvent{
+				Event:    agents.StreamEventRunStarted,
+				Agent:    agentName,
+				RunId:    run.RunId,
+				ThreadId: run.ThreadId,
+				Seq:      atomic.AddInt64(&seq, 1),
 			})
 			if callbackUrl := streamCallbackUrl(); callbackUrl != "" {
 				ctx = agents.WithStreamTarget(ctx, agents.StreamTarget{StreamId: streamId, CallbackUrl: callbackUrl})
@@ -853,11 +868,11 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			<-writerDone
 
 			if execErr != nil {
-				writeSSE(agents.StreamEvent{Event: agents.StreamEventError, Data: execErr.Error(), Agent: agentName})
+				writeSSE(agents.StreamEvent{Event: agents.StreamEventError, Data: execErr.Error(), Agent: agentName, RunId: run.RunId, ThreadId: run.ThreadId})
 				return
 			}
 			agentResult.ConversationId = conversationId
-			writeSSE(agents.StreamEvent{Event: agents.StreamEventDone, Data: agentResult, Agent: agentName})
+			writeSSE(agents.StreamEvent{Event: agents.StreamEventDone, Data: agentResult, Agent: agentName, RunId: run.RunId, ThreadId: run.ThreadId})
 		} else {
 			agentResult, err := agent.Execute(r.Context(), agentMessage, conversationId, projectId, tenantId)
 			if err != nil {

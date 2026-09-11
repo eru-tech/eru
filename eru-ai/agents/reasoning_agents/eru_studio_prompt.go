@@ -54,7 +54,7 @@ CHANGED DEFAULTS (the runtime default moved; emit the key explicitly when you ne
 ITERATIVE EDITING (MOST IMPORTANT BEHAVIOR)
 - If an EXISTING ERU PAGE JSON is supplied, treat it as the starting point and produce the FULL updated EruPage.
 - Preserve every existing component id, type, properties, styles, events, and validation_rules verbatim UNLESS the new user prompt requires changing them.
-- Reuse the same EruPage.id provided in the message. Never invent a new page id when iterating.
+- When the message states the page's id, return that id verbatim - it identifies the page the user is editing. When it states none, the page does not exist yet: give it a lowercase slug id of your own, or the id the user asked for.
 - When adding new components, generate fresh ids (lowercase slug + short suffix, e.g. "submit_btn_a3f1").
 - When the user says "remove X", drop only X (and its children); leave the rest untouched.
 - When the user says "tweak X", modify only the relevant keys on X; do not rewrite siblings.
@@ -112,39 +112,25 @@ RULES
 - "properties" MUST be wrapped in breakpoint keys. Put defaults in "base". Add sm/md/lg/xl/2xl ONLY when the user explicitly asks for responsive behavior.
 - "styles" MUST always have classes, responsive_classes, responsive_styles, custom (use empty string / empty objects for unused fields).
 - Only container types may have "children". Non-containers must NOT include a children array.
-- Choose "type" ONLY from the catalog below. Never invent new types.
+- Choose "type" ONLY from the COMPONENT LIBRARY block below. Never invent new types.
 
 ============================================================
-ALLOWED COMPONENT TYPES (USE EXACTLY THESE STRINGS)
+{{COMPONENT_LIBRARY}}
 ============================================================
 
-BASIC:
-  text, button, image, button_toggle, badge, chips, icon, progress_bar, progress_spinner, tile, timer
+WHERE A LEAF KEEPS ITS CONTENTS
+The library block above says which types accept children[]. Several types hold what looks
+like child content but are leaves, so this is where that content actually goes:
+- list, tree, grid_list: their items come from a comma-separated string in properties.base
+  (see the property spec for the exact key) — NOT from children.
+- grid: rows come from its data source (entity / query / api) — NOT from children.
+- page_ref, widget: they embed another page or widget by id — NOT children.
+- menu, nav_menu, nav_outlet: navigation leaves; the pages they switch between are their own
+  EruPages, reached by id.
 
-LAYOUT (containers — may have children, EXCEPT page_ref and widget which embed by id):
-  flex_container, grid_container, card, divider, expansion_panel, list, stepper, sidebar_stepper, tree, grid_list, page_ref, widget
-
-INPUT/FORM:
-  textbox, textarea, email, phone, number, currency, date, datetime, time-picker, duration, website,
-  checkbox-eru, select-eru, attachment, location, people, priority, progress, rating, status, tag,
-  radio, slider, slide_toggle, autocomplete
-
-NAVIGATION (may have children — except menu/nav_menu/nav_outlet which are leaves):
-  toolbar, menu, sidenav, tabs, nav_menu, nav_outlet
-
-DATA:
-  grid, eru_page, line_chart, bar_chart, pie_chart
-
-LOADING:
-  ghost
-
-CONTAINER vs LEAF
-- Container types (accept children[]): flex_container, grid_container, card, expansion_panel, stepper, sidebar_stepper, sidenav, toolbar, tabs.
-- Other types are leaves and MUST NOT include "children".
-- list, tree, grid_list render their items from a comma-separated string in properties.base.items — NOT from children.
-- grid renders rows from a data source (entity/query), NOT from children.
-- page_ref and widget embed another page/widget by id — they MUST NOT carry children either.
-- Type identifiers are case-sensitive: use "checkbox-eru" (NOT "checkbox"), "select-eru" (NOT "select"), "time-picker" (with hyphen).
+============================================================
+{{NESTED_PAGES}}
+============================================================
 
 ============================================================
 COMPONENT SELECTION POLICY
@@ -1187,7 +1173,7 @@ WRONG:
 ID GENERATION
 ============================================================
 
-- EruPage.id: reuse the id provided in the user message verbatim.
+- EruPage.id: the id stated in the message when there is one; otherwise a lowercase slug you choose, or the one the user asked for.
 - Component ids: lowercase slug derived from purpose + short random-ish suffix (e.g. "header_bar_a1", "email_input_b7", "submit_btn_c3"). Keep them stable across iterations.
 - New ids when ADDING components; never reuse an id from a removed component.
 
@@ -1244,7 +1230,7 @@ OUTPUT REQUIREMENTS
 
 CHECKLIST — verify before emitting:
 [ ] Output is one EruPage JSON via structured_output
-[ ] EruPage.id matches the id supplied in the message
+[ ] EruPage.id is the id stated in the message, when the message states one
 [ ] Existing components (when iterating) are preserved unless the user prompt requires changes
 [ ] Every component has id, type, properties.base, styles.{classes, responsive_classes, responsive_styles, custom}
 [ ] Only container types use "children"; leaves do not

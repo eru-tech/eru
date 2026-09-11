@@ -51,3 +51,43 @@ func TestTenantLookupOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestJoinTenantRoute(t *testing.T) {
+	tests := []struct {
+		defaultTenantId string
+		tenantId        string
+		want            string
+	}{
+		{"", "", ""},
+		{"", "acme", "acme"},
+		{"global", "", "global"},
+		{"global", "acme", "global___acme"},
+		{"Global", "ACME", "global___acme"},
+		{"acme", "acme", "acme"},
+	}
+	for _, tt := range tests {
+		if got := JoinTenantRoute(tt.defaultTenantId, tt.tenantId); got != tt.want {
+			t.Errorf("JoinTenantRoute(%q, %q) = %q, want %q", tt.defaultTenantId, tt.tenantId, got, tt.want)
+		}
+	}
+}
+
+func TestJoinTenantRouteRoundTrip(t *testing.T) {
+	routeTenants := []string{"acme", "global___acme", ""}
+	for _, routeTenant := range routeTenants {
+		tenantId, defaultTenantId := ParseTenantRoute(routeTenant)
+		if got := JoinTenantRoute(defaultTenantId, tenantId); got != routeTenant {
+			t.Errorf("round trip of %q = %q", routeTenant, got)
+		}
+	}
+}
+
+func TestFetchTenantRoute(t *testing.T) {
+	ctx := WithDefaultTenant(context.Background(), "global")
+	if got := FetchTenantRoute(ctx, "acme"); got != "global___acme" {
+		t.Errorf("FetchTenantRoute() = %q, want %q", got, "global___acme")
+	}
+	if got := FetchTenantRoute(context.Background(), "acme"); got != "acme" {
+		t.Errorf("FetchTenantRoute() without default = %q, want %q", got, "acme")
+	}
+}
