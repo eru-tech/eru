@@ -45,7 +45,6 @@ func (eruFuncAgent *EruFuncAgent) GetOutputSchema(ctx context.Context) eru_model
 				ToolName:     "sample",
 				ToolAction:   "sample",
 				AgentName:    "sample",
-				TenantId:     "sample",
 				Api: functions.TargetHost{
 					Host:   "sample",
 					Port:   "443",
@@ -91,7 +90,6 @@ func (eruFuncAgent *EruFuncAgent) GetOutputSchema(ctx context.Context) eru_model
 		Properties: map[string]eru_models.JSONSchema{
 			"scheduler_name":  {Type: "string", Description: "Name of the scheduler to use. ALWAYS user provided - never assume or default it; ask the user when it is missing."},
 			"scheduler_label": {Type: "string", Description: "Human readable label for this schedule."},
-			"tenant_id":       {Type: "string", Description: "Tenant id the schedule belongs to - take it from the EXECUTION CONTEXT in the system prompt; never ask the user for it."},
 			"execution_time":  {Type: "string", Description: "Execution time in UTC as HH:MM (seconds optional, e.g. \"07:30\")."},
 			"start_date":      {Type: "string", Format: "date", Description: "Date the schedule starts, YYYY-MM-DD."},
 			"end_date":        {Type: "string", Format: "date", Description: "Date the schedule ends, YYYY-MM-DD."},
@@ -100,7 +98,7 @@ func (eruFuncAgent *EruFuncAgent) GetOutputSchema(ctx context.Context) eru_model
 			"frequency_date":  {Type: "integer", Description: "Day of the month (1-31) - ONLY for frequency \"monthly\" and \"yearly\", and ALWAYS user provided: never assume it; ask the user when it is missing. null for daily and weekly."},
 			"frequency_month": {Type: "integer", Description: "Month number (1-12, financial year) - ONLY for frequency \"yearly\", and ALWAYS user provided: never assume it; ask the user when the frequency is yearly and the month is missing. Omit otherwise."},
 		},
-		Required: []string{"scheduler_name", "scheduler_label", "tenant_id", "execution_time", "start_date", "frequency"},
+		Required: []string{"scheduler_name", "scheduler_label", "execution_time", "start_date", "frequency"},
 	}
 
 	activityFilterSchema := eru_models.JSONSchema{
@@ -216,8 +214,8 @@ The map key for every func_step MUST exactly equal the step's type identifier:
 
 CORRECT:
   {"fetch_user": {"query_name": "fetch_user"}}
-  {"send_sms":   {"tool_name": "send_sms", "tool_action": "send", "tenant_id": "t1"}}
-  {"classifier": {"agent_name": "classifier", "tenant_id": "t1"}}
+  {"send_sms":   {"tool_name": "send_sms", "tool_action": "send"}}
+  {"classifier": {"agent_name": "classifier"}}
   {"apistripecom": {"api": {"host": "api.stripe.com", ...}, "api_path": "/v1/charges"}}
 
 WRONG:
@@ -225,6 +223,12 @@ WRONG:
   {"validate_user": {"query_name": "check_user_status"}} ← key doesn't match query_name
 
 Duplicates at the same level: append numeric suffix — "fetch_user", "fetch_user2", "fetch_user3".
+
+EXCEPTION — templated identifier: when the identifier is a Go template (see TEMPLATE VALUED
+STEP FIELDS) there is no literal name to match, so the key is a descriptive snake_case name
+of what the step does. This key is what later steps reference as .ResVars.<key>:
+  {"run_workflow": {"function_name": "{{.Vars.Body.workflow}}"}}
+  {"run_report":   {"query_name": "{{.Vars.Body.report_query}}"}}
 
 ============================================================
 FUNCGROUP STRUCTURE (this is the value of the "function" key)
@@ -245,14 +249,39 @@ STEP TYPES (exactly ONE per step)
 
 1. QUERY:    "query_name": "<name>"
 2. FUNCTION: "function_name": "<name>"
-3. TOOL:     "tool_name": "<name>", "tool_action": "<action>", "tenant_id": "<tid>"
-4. AGENT:    "agent_name": "<name>", "tenant_id": "<tid>"
-
-tenant_id and project_id always come from the EXECUTION CONTEXT block in this system
-prompt. Never ask the user for them and never leave them blank.
+3. TOOL:     "tool_name": "<name>", "tool_action": "<action>"
+4. AGENT:    "agent_name": "<name>"
 5. API:      "api": {"host","port","method","scheme"}, "api_path": "<path>"
 
+project_id always comes from the EXECUTION CONTEXT block in this system prompt. Never
+ask the user for it and never leave it blank.
+
+A STEP NEVER CARRIES A TENANT. There is no "tenant_id" field on a func step - emitting one
+is wrong and it is ignored. Every query, tool, agent and nested function resolves for the
+tenant the function is executed for, falling back to that tenant's default tenant and then
+to the project. A function executed with no tenant resolves all of them on the project.
+
 Never use "route_name" — it is deprecated.
+
+============================================================
+TEMPLATE VALUED STEP FIELDS
+============================================================
+
+These step fields accept a Go template instead of a literal, so a step can choose its
+target from the payload or from an earlier step's output:
+
+  query_name, function_name, tool_name, tool_action, agent_name, api_path
+
+  {"run_it": {"function_name": "{{.Vars.Body.workflow}}"}}
+
+Every OTHER step field is a literal - never template a field outside this list.
+
+  - Use a literal whenever the target is known; template only when the target genuinely
+    depends on the payload or on an earlier step.
+  - A template here resolves ONCE per step invocation, before loop_variable iterates, so a
+    loop cannot select a different query, function, tool or agent per iteration.
+  - A templated identifier takes a descriptive step key - see the Rule #1 exception.
+  - A function_name template that resolves to a name no function has fails the step.
 
 if func step is of type API, then do not add attributes related to query, function, agent, tool and same for other steps too.
 api.port is a string
@@ -407,7 +436,6 @@ Add one schedule object per time based trigger the user asked for:
 {
   "scheduler_name":  "<scheduler name — USER PROVIDED, never defaulted>",
   "scheduler_label": "<human readable label>",
-  "tenant_id":       "<tenant id from the EXECUTION CONTEXT — never ask the user>",
   "execution_time":  "07:30",                   // ALWAYS UTC, HH:MM (seconds optional)
   "start_date":      "2026-07-30",              // YYYY-MM-DD
   "end_date":        "2027-04-30",              // YYYY-MM-DD
@@ -417,7 +445,8 @@ Add one schedule object per time based trigger the user asked for:
   "frequency_month": 4                          // yearly ONLY — USER PROVIDED
 }
 
-tenant_id comes from the EXECUTION CONTEXT — do NOT ask for it.
+A schedule carries no tenant - the tenant it runs for comes from the action it is saved
+with, so never emit "tenant_id" here.
 
 MANDATORY USER INPUT — never assume, never default, never infer:
   - scheduler_name
@@ -486,8 +515,9 @@ CHECKLIST (verify before outputting)
 [ ] Every func_step map key exactly matches the step's type identifier (Rule #1)
 [ ] func_category_name and func_group_name are set (snake_case, no spaces)
 [ ] Each step has exactly ONE type (query_name OR function_name OR tool_name OR agent_name OR api)
-[ ] tool steps have tool_action + tenant_id
-[ ] agent steps have tenant_id
+[ ] tool steps have tool_action
+[ ] No step carries tenant_id, and no schedule carries tenant_id
+[ ] Only query_name, function_name, tool_name, tool_action, agent_name and api_path hold templates
 [ ] api steps have all 5 fields: host, port, method, scheme, api_path
 [ ] api.scheme is "$VAR_http_scheme" unless user explicitly specified a scheme
 [ ] File upload/download requests use the Eru Files service (host="$VAR_erufiles_url", api_path /files/{project}/{storagename}/uploadb64 or /downloadb64)

@@ -14,6 +14,7 @@ import (
 	"github.com/eru-tech/eru/eru-ai/agents/a2a"
 	"github.com/eru-tech/eru/eru-ai/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
+	"github.com/eru-tech/eru/eru-server/server"
 	"github.com/google/uuid"
 )
 
@@ -501,9 +502,9 @@ func (s *EruAIA2AServer) CreateAgentCardHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logs.WithContext(r.Context()).Debug("A2AAgentCardHandler - Start")
 		baseURL := getA2ABaseURL(r)
-		projectId := r.Header.Get("project_id")
-		tenantId := r.Header.Get("tenant_id")
-		card := s.GetAgentCard(r.Context(), baseURL, projectId, tenantId)
+		projectId := server.RequestProject(r)
+		ctx, tenantId := server.RequestTenantContext(r)
+		card := s.GetAgentCard(ctx, baseURL, projectId, tenantId)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(card)

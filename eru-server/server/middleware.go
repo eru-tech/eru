@@ -26,7 +26,6 @@ import (
 const (
 	claimsKey       string = "claims"
 	eruqlbaseurlKey string = "eruqlbaseurl"
-	tenantHeaderKey string = "tenant_id"
 )
 
 var tenantRouteVars = []string{"tenant", "tenantId"}
@@ -55,14 +54,11 @@ func tenantMiddleWare(next http.Handler) http.Handler {
 				defaultTenantId = routeDefaultTenantId
 			}
 		}
-		if headerTenant := r.Header.Get(tenantHeaderKey); headerTenant != "" {
-			tenantId, headerDefaultTenantId := eru_utils.ParseTenantRoute(headerTenant)
-			if tenantId != headerTenant {
-				r.Header.Set(tenantHeaderKey, tenantId)
-			}
-			if headerDefaultTenantId != "" {
-				defaultTenantId = headerDefaultTenantId
-			}
+		// the tenant header is read but never rewritten: the gateway forwards this same
+		// request on, so changing the header here would strip the default tenant before the
+		// callee ever sees it. Handlers that need the split call RequestTenant.
+		if _, headerDefaultTenantId := RequestTenant(r); headerDefaultTenantId != "" {
+			defaultTenantId = headerDefaultTenantId
 		}
 		if newVars != nil {
 			r = mux.SetURLVars(r, newVars)

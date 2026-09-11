@@ -38,9 +38,8 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	// MCP stats endpoint
 	serverRouter.Methods(http.MethodGet).Path("/mcp/stats").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		projectId := r.Header.Get(server.MCPProjectHeaderKey)
-		tenantId := r.Header.Get(server.MCPTenantHeaderKey)
+		projectId := server.RequestProject(r)
+		ctx, tenantId := server.RequestTenantContext(r)
 		tools, err := mcpServer.ListTools(ctx, projectId, tenantId)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)

@@ -15,18 +15,9 @@ import (
 )
 
 const (
-	MCPProjectHeaderKey string = "x-project-id"
-	MCPTenantHeaderKey  string = "x-tenant-id"
+	MCPProjectHeaderKey string = ProjectHeaderKey
+	MCPTenantHeaderKey  string = TenantHeaderKey
 )
-
-// mcpTenant splits the MCP tenant header the same way tenantMiddleWare splits the
-// tenant_id header and the {tenant} route var. The header may carry the route form
-// "defaultTenant___tenant"; the default tenant is put on the context so tenant lookups
-// fall back to it, and the plain tenant is returned for tenant keyed reads.
-func mcpTenant(ctx context.Context, r *http.Request) (context.Context, string) {
-	tenantId, defaultTenantId := eru_utils.ParseTenantRoute(r.Header.Get(MCPTenantHeaderKey))
-	return eru_utils.WithDefaultTenant(ctx, defaultTenantId), tenantId
-}
 
 type MCPMessage struct {
 	JSONRPCVersion string          `json:"jsonrpc"`
@@ -358,8 +349,9 @@ func CreateMCPHttpHandler(server MCPServer) http.HandlerFunc {
 				http.Error(w, "Bad request", http.StatusBadRequest)
 				return
 			}
-			projectId := r.Header.Get(MCPProjectHeaderKey)
-			ctx, tenantId := mcpTenant(ctx, r)
+			projectId := RequestProject(r)
+			tenantId, defaultTenantId := RequestTenant(r)
+			ctx = eru_utils.WithDefaultTenant(ctx, defaultTenantId)
 			handler := manager.GetOrCreate(sessionId)
 			response, err := handler.HandleMessage(ctx, body, projectId, tenantId)
 			if err != nil {
@@ -440,9 +432,8 @@ func CreateMCPWebSocketHandler(server MCPServer, config ...WebSocketConfig) http
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		projectId := r.Header.Get(MCPProjectHeaderKey)
-		tenantCtx, tenantId := mcpTenant(r.Context(), r)
-		defaultTenantId := eru_utils.DefaultTenant(tenantCtx)
+		projectId := RequestProject(r)
+		tenantId, defaultTenantId := RequestTenant(r)
 		sessionId := uuid.New().String()
 		messageHandler := NewMCPMessageHandler(server, sessionId)
 		wsHandler := NewWebSocketHandler(func(ctx context.Context, data []byte) ([]byte, error) {

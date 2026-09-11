@@ -485,6 +485,25 @@ func (ms *ModuleStore) ValidateFunc(ctx context.Context, funcGroup functions.Fun
 	return
 }
 
+// tenantSegment is the tenant part of a url path below a project. A call that carries no
+// tenant gets no segment at all, addressing the project level route of the callee.
+func tenantSegment(routeTenantId string) string {
+	if routeTenantId == "" {
+		return ""
+	}
+	return fmt.Sprint("/", routeTenantId)
+}
+
+// eruaiTenantId is the tenant eru-ai is addressed with. eru-ai keys a project's own tools and
+// agents under the project id itself, so a call that carries no tenant passes the project id
+// and resolves there.
+func eruaiTenantId(projectId string, routeTenantId string) string {
+	if routeTenantId == "" {
+		return projectId
+	}
+	return routeTenantId
+}
+
 func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *functions.FuncStep, routeName string, projectId string, tenantId string, host string, url string, method string, headers http.Header, s ModuleStoreI, tokenHeaderKey string, reqBody map[string]interface{}, fromAsync bool) (err error) {
 	logs.WithContext(ctx).Debug(fmt.Sprint("loadRoutesForFunction - Start : ", funcStep.GetRouteName()))
 	var errArray []string
@@ -504,24 +523,36 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 	}
 
 	if funcStep.FunctionName != "" {
-		funcGroup, fgErr := ms.GetAndValidateFunc(ctx, funcStep.FunctionName, projectId, tenantId, host, url, method, headers, reqBody, s, fromAsync, "")
-		if fgErr != nil {
-			err = fgErr
-			return
-		}
-
-		tsk := ms.Projects[projectId].ProjectSettings.ClaimsKey
-		if funcStep.Async && !fromAsync {
-			for k, _ := range funcGroup.FuncSteps {
-				funcGroup.FuncSteps[k].Async = true
-				funcGroup.FuncSteps[k].AsyncEvent = funcStep.AsyncEvent
-				funcGroup.FuncSteps[k].AsyncMessage = funcStep.AsyncMessage
-				funcGroup.FuncSteps[k].AsyncEventName = funcStep.AsyncEventName
-				funcGroup.FuncSteps[k].Route.TokenSecretKey = tsk
+		loadNested := func(nctx context.Context, funcName string) (functions.FuncGroup, error) {
+			funcGroup, fgErr := ms.GetAndValidateFunc(nctx, funcName, projectId, tenantId, host, url, method, headers, reqBody, s, fromAsync, "")
+			if fgErr != nil {
+				return functions.FuncGroup{}, fgErr
 			}
+			tsk := ms.Projects[projectId].ProjectSettings.ClaimsKey
+			if funcStep.Async && !fromAsync {
+				for k := range funcGroup.FuncSteps {
+					funcGroup.FuncSteps[k].Async = true
+					funcGroup.FuncSteps[k].AsyncEvent = funcStep.AsyncEvent
+					funcGroup.FuncSteps[k].AsyncMessage = funcStep.AsyncMessage
+					funcGroup.FuncSteps[k].AsyncEventName = funcStep.AsyncEventName
+					funcGroup.FuncSteps[k].Route.TokenSecretKey = tsk
+				}
+			}
+			return funcGroup, nil
 		}
 
-		funcStep.FuncGroup = funcGroup
+		// a templated function_name is only known once the request is being processed, so the
+		// function it names is loaded then, through this resolver, instead of now.
+		if strings.HasPrefix(funcStep.FunctionName, "{{") {
+			funcStep.ResolveFunc = loadNested
+		} else {
+			funcGroup, fgErr := loadNested(ctx, funcStep.FunctionName)
+			if fgErr != nil {
+				err = fgErr
+				return
+			}
+			funcStep.FuncGroup = funcGroup
+		}
 
 	} else {
 		if funcStep.QueryName != "" {
@@ -540,19 +571,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 				encode = "/encode"
 			}
 
-			// scope the query to a tenant when the step explicitly configures a
-			// tenant_id, or when the function itself was invoked for a tenant.
-			// funcStep.TenantId (which may be a {{template}}) takes precedence and
-			// is left in the URL so the runtime tenant substitution can resolve it.
-			qTenantId := funcStep.TenantId
-			if qTenantId == "" {
-				qTenantId = funcStep.RouteTenantId
-			}
-			tenantSeg := ""
-			if qTenantId != "" {
-				tenantSeg = fmt.Sprint("/", qTenantId)
-			}
-			r.RewriteUrl = fmt.Sprint("/store/", projectId, tenantSeg, "/myquery/execute/", funcStep.QueryName, output, encode)
+			r.RewriteUrl = fmt.Sprint("/store/", projectId, tenantSegment(funcStep.RouteTenantId), "/myquery/execute/", funcStep.QueryName, output, encode)
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
 			eruqlbaseurl := getEruqlbaseurl(ctx)
@@ -585,7 +604,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			if funcStep.ToolAction != "" {
 				toolAction = fmt.Sprint("/", funcStep.ToolAction)
 			}
-			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.StepTenantRoute(), "/execute/tool/", funcStep.ToolName, toolAction)
+			r.RewriteUrl = fmt.Sprint("/", projectId, "/", eruaiTenantId(projectId, funcStep.RouteTenantId), "/execute/tool/", funcStep.ToolName, toolAction)
 			r.OnError = "STOP"
 			tg := functions.TargetHost{}
 			tg.Method = "POST"
@@ -609,7 +628,7 @@ func (ms *ModuleStore) LoadRoutesForFunction(ctx context.Context, funcStep *func
 			if funcStep.ConversationId != "" {
 				conversationId = fmt.Sprint("/", funcStep.ConversationId)
 			}
-			r.RewriteUrl = fmt.Sprint("/", projectId, "/", funcStep.StepTenantRoute(), "/execute/agent/", funcStep.AgentName, conversationId)
+			r.RewriteUrl = fmt.Sprint("/", projectId, "/", eruaiTenantId(projectId, funcStep.RouteTenantId), "/execute/agent/", funcStep.AgentName, conversationId)
 			r.OnError = "STOP"
 			tg := functions.TargetHost{}
 			tg.Method = "POST"

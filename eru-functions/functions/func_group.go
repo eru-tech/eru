@@ -59,6 +59,11 @@ type FuncTemplateVars struct {
 	ResVars map[string]*TemplateVars
 }
 
+// FuncResolver loads and validates a function group by name. The store injects one on every
+// step whose function_name is a template, because the name it resolves to is only known once
+// the request is being processed.
+type FuncResolver func(ctx context.Context, funcName string) (FuncGroup, error)
+
 type FuncStep struct {
 	Condition               string        `json:"condition"`
 	ConditionFailMessage    string        `json:"condition_fail_message"`
@@ -82,9 +87,9 @@ type FuncStep struct {
 	ToolAction              string        `json:"tool_action"`
 	OnError                 string        `json:"on_error"`
 	AgentName               string        `json:"agent_name"`
-	TenantId                string        `json:"tenant_id"`
 	ConversationId          string        `json:"conversation_id"`
 	Route                   Route         `json:"-"`
+	ResolveFunc             FuncResolver  `json:"-"`
 	FuncKey                 string        `json:"-"`
 	ParentFuncGroupName     string        `json:"-"`
 	ProjectId               string        `json:"-"`
@@ -1093,15 +1098,6 @@ func (funcStep *FuncStep) RunFuncStepInner(ctx context.Context, req *http.Reques
 	return
 }
 
-// StepTenantRoute is the tenant a step addresses another eru service with - the tenant the
-// step configures itself, else the route form of the tenant the function was called for.
-func (funcStep *FuncStep) StepTenantRoute() string {
-	if funcStep.TenantId != "" {
-		return funcStep.TenantId
-	}
-	return funcStep.RouteTenantId
-}
-
 func (funcStep *FuncStep) insertAsyncBatch(ctx context.Context, asyncBatch []AsyncFuncData) (err error) {
 	logs.WithContext(ctx).Debug("insertAsyncBatch - Start")
 	var valueStrings []string
@@ -1417,12 +1413,12 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 		}
 	}
 
-	if strings.HasPrefix(funcStep.TenantId, "{{") {
+	if strings.HasPrefix(funcStep.QueryName, "{{") {
 		avars := &FuncTemplateVars{}
 		avars.Vars = vars
 		avars.ResVars = resVars
 		avars.ReqVars = reqVars
-		output, apErr := processTemplate(ctx, "tenant_id", funcStep.TenantId, avars, "string", funcStep.Route.TokenSecretKey)
+		output, apErr := processTemplate(ctx, "query_name", funcStep.QueryName, avars, "string", funcStep.Route.TokenSecretKey)
 		if apErr != nil {
 			// ignore error if it is no value
 			if apErr.Error() != "Template returned <no value>" {
@@ -1435,8 +1431,44 @@ func (funcStep *FuncStep) transformRequest(ctx context.Context, request *http.Re
 				err = logs.Err(ctx, fmt.Errorf("strconv.Unquote error : %w", pErr), "")
 				path = string(output)
 			}
-			funcStep.Route.RewriteUrl = strings.Replace(funcStep.Route.RewriteUrl, funcStep.TenantId, path, 1)
+			funcStep.Route.RewriteUrl = strings.Replace(funcStep.Route.RewriteUrl, funcStep.QueryName, path, 1)
 		}
+	}
+
+	// function_name is not part of a url - the resolved name has to load the function group
+	// the step will run, so it goes through the resolver the store injected.
+	if strings.HasPrefix(funcStep.FunctionName, "{{") {
+		avars := &FuncTemplateVars{}
+		avars.Vars = vars
+		avars.ResVars = resVars
+		avars.ReqVars = reqVars
+		output, apErr := processTemplate(ctx, "function_name", funcStep.FunctionName, avars, "string", funcStep.Route.TokenSecretKey)
+		if apErr != nil {
+			// ignore error if it is no value
+			if apErr.Error() != "Template returned <no value>" {
+				tErrs = append(tErrs, apErr.Error())
+			}
+		}
+		funcName, pErr := strconv.Unquote(string(output))
+		if pErr != nil {
+			funcName = string(output)
+		}
+		// these are not recoverable the way a missing header template is - the step has no
+		// function to run - so they are raised even where template errors are suppressed.
+		if funcName == "" {
+			err = logs.Err(ctx, fmt.Errorf("function_name template of step %s resolved to an empty name", funcStep.FuncKey), "")
+			return req, vars, err
+		}
+		if funcStep.ResolveFunc == nil {
+			err = logs.Err(ctx, fmt.Errorf("step %s cannot resolve function_name %s - no resolver was loaded", funcStep.FuncKey, funcName), "")
+			return req, vars, err
+		}
+		funcGroup, fErr := funcStep.ResolveFunc(ctx, funcName)
+		if fErr != nil {
+			err = logs.Err(ctx, fmt.Errorf("step %s could not load function %s : %w", funcStep.FuncKey, funcName, fErr), "")
+			return req, vars, err
+		}
+		funcStep.FuncGroup = funcGroup
 	}
 
 	if strings.HasPrefix(funcStep.ToolName, "{{") {

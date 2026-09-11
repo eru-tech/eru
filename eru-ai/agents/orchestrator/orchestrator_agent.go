@@ -838,7 +838,6 @@ func (oa *OrchestratorAgent) GetOutputSchema(ctx context.Context) eru_models.JSO
 		FuncSteps: map[string]*functions.FuncStep{
 			"sample_agent": {
 				AgentName: "sample",
-				TenantId:  "sample",
 				FuncSteps: map[string]*functions.FuncStep{},
 			},
 		},
@@ -882,12 +881,12 @@ RULE #1 — STEP KEY = AGENT NAME / TOOL+ACTION NAME (most common mistake)
 Every func_step key MUST exactly equal the agent_name value of that step.
 
 CORRECT:
-  {"classifier": {"agent_name": "classifier", "tenant_id": "t1"}}
-  {"summarizer": {"agent_name": "summarizer", "tenant_id": "t1"}}
+  {"classifier": {"agent_name": "classifier"}}
+  {"summarizer": {"agent_name": "summarizer"}}
 
 WRONG:
-  {"step1": {"agent_name": "classifier", "tenant_id": "t1"}}
-  {"classify_data": {"agent_name": "classifier", "tenant_id": "t1"}}
+  {"step1": {"agent_name": "classifier"}}
+  {"classify_data": {"agent_name": "classifier"}}
 
 STEP KEYS MUST BE UNIQUE ACROSS THE WHOLE PLAN — not just within one func_steps
 map. Step results are stored in ONE FLAT namespace keyed by the step key, so two
@@ -921,12 +920,14 @@ AVAILABLE AGENTS and tools listed in AVAILABLE TOOLS.
 
 Agent step:
   "agent_name": "<name from available agents>"
-  "tenant_id":  "<tenant_id from available agents>"
 
 Tool step:
   "tool_name":   "<tool from available tools>"
   "tool_action": "<one of that tool's allowed actions>"
-  "tenant_id":   "<tenant_id from available tools>"
+
+Steps carry no tenant. Every agent and tool runs for the tenant this plan is
+executed for, falling back to that tenant's default tenant and then to the
+project. Never emit a "tenant_id" field on a step.
 
 Do NOT use query_name, function_name, or api steps.
 
@@ -1097,12 +1098,10 @@ Example — WRONG (independent steps needlessly serialised):
 {
   "sentiment_analyzer": {
     "agent_name": "sentiment_analyzer",
-    "tenant_id": "t1",
     "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}",
     "func_steps": {
       "topic_classifier": {
         "agent_name": "topic_classifier",
-        "tenant_id": "t1",
         "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
       }
     }
@@ -1115,12 +1114,10 @@ Example — sequential: extract data, then summarize it:
 {
   "extractor": {
     "agent_name": "extractor",
-    "tenant_id": "t1",
     "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}",
     "func_steps": {
       "summarizer": {
         "agent_name": "summarizer",
-        "tenant_id": "t1",
         "transform_request": "{{stringify (dict \"content\" (index .ResVars.extractor.Body.actions 0).action.<extractor_output_field>)}}"
       }
     }
@@ -1131,12 +1128,10 @@ Example — parallel: two independent agents, then merge:
 {
   "sentiment_analyzer": {
     "agent_name": "sentiment_analyzer",
-    "tenant_id": "t1",
     "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
   },
   "topic_classifier": {
     "agent_name": "topic_classifier",
-    "tenant_id": "t1",
     "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
   }
 }
@@ -1145,17 +1140,14 @@ Example — parallel then sequential merge:
 {
   "sentiment_analyzer": {
     "agent_name": "sentiment_analyzer",
-    "tenant_id": "t1",
     "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
   },
   "topic_classifier": {
     "agent_name": "topic_classifier",
-    "tenant_id": "t1",
     "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}",
     "func_steps": {
       "report_generator": {
         "agent_name": "report_generator",
-        "tenant_id": "t1",
         "wait_for": "sentiment_analyzer",
         "transform_request": "{{stringify (dict \"content\" (printf \"sentiment: %s\\ntopics: %s\" (index .ResVars.sentiment_analyzer.Body.actions 0).action.<field> (index .ResVars.topic_classifier.Body.actions 0).action.<field>))}}"
       }
@@ -1221,7 +1213,7 @@ CHECKLIST (verify before outputting)
 [ ] EVERY template parses: each "{{" has a matching "}}", every "(" a matching ")", and no stray brace or parenthesis is left at the end of an action
 [ ] No step passes a bare string or the raw .Vars.Body / whole AgentMessage
 [ ] func_category_name and func_group_name are set (snake_case)
-[ ] Each step uses ONLY (agent_name) OR (tool_name+tool_action) + tenant_id (no query/function/api)
+[ ] Each step uses ONLY (agent_name) OR (tool_name+tool_action), with no tenant_id (no query/function/api)
 [ ] Sequential steps are NESTED, parallel steps are SIBLINGS
 [ ] EVERY nested step is justified by a real dependency on its parent (reads its
     .ResVars, needs its success, or loops over its output) — otherwise it is moved
