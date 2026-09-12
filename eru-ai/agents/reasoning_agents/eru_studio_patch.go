@@ -462,6 +462,51 @@ func encodeEnvelope(envelope studio.Envelope, output map[string]interface{}) (ma
 // are legal, and the resolved page is checked as a whole once the patch has been
 // applied - which is what catches a patch that is individually valid but leaves
 // the page in a state the renderer cannot draw.
+// introducedPageIssues holds a patch to what it changed rather than to what it
+// inherited.
+//
+// Checking the whole resolved page is what catches a patch that is individually
+// fine but leaves the page broken, and that is worth keeping. What it also did
+// was re-report every violation the saved page already carried - a property
+// renamed years ago, a misspelled page key - none of which the patch authored or
+// was asked to touch. The model cannot tell the difference, so it spent a whole
+// extra generate-and-validate cycle rewriting components the user never
+// mentioned, on a request that only added a few controls.
+//
+// An issue present in the base page and still present after the patch is the
+// page's own, not this edit's. Subtracting those leaves exactly the issues the
+// patch introduced - which is the thing the check was for.
+func introducedPageIssues(c *catalog.Catalog, basePage, resolved map[string]interface{}) []catalog.Issue {
+	resolvedIssues := c.ValidatePage(resolved)
+	if len(basePage) == 0 || len(resolvedIssues) == 0 {
+		return resolvedIssues
+	}
+	preExisting := make(map[string]bool)
+	for _, issue := range c.ValidatePage(basePage) {
+		preExisting[issueFingerprint(issue)] = true
+	}
+	out := make([]catalog.Issue, 0, len(resolvedIssues))
+	for _, issue := range resolvedIssues {
+		if preExisting[issueFingerprint(issue)] {
+			continue
+		}
+		out = append(out, issue)
+	}
+	return out
+}
+
+// issueFingerprint identifies an issue by what it says about which component,
+// not by where that component currently sits. A patch that inserts a sibling
+// shifts the index of everything after it, so a positional path would make the
+// page's own long-standing issues look newly introduced.
+func issueFingerprint(issue catalog.Issue) string {
+	path := issue.Path
+	if at := strings.LastIndex(path, "(id \""); at >= 0 {
+		path = path[at:]
+	}
+	return path + "|" + issue.Message
+}
+
 func validateStudioUpdate(output map[string]interface{}, basePage map[string]interface{}, scope *studio.ResolvedScope) []catalog.Issue {
 	c := catalog.Get()
 	issues := validateNestedPages(output, basePage)
@@ -498,7 +543,7 @@ func validateStudioUpdate(output map[string]interface{}, basePage map[string]int
 		if err != nil {
 			return append(issues, catalog.Issue{Path: "patch", Message: err.Error()})
 		}
-		return append(issues, c.ValidatePage(resolved)...)
+		return append(issues, introducedPageIssues(c, basePage, resolved)...)
 	default:
 		return append(issues, catalog.Issue{Path: "mode", Message: fmt.Sprintf("must be %q or %q, got %q", studio.ModePatch, studio.ModeFull, mode)})
 	}

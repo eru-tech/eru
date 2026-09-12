@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -38,6 +39,8 @@ type GeminiContent struct {
 
 type GeminiPart struct {
 	Text             string                  `json:"text,omitempty"`
+	Thought          bool                    `json:"thought,omitempty"`
+	ThoughtSignature string                  `json:"thoughtSignature,omitempty"`
 	InlineData       *GeminiInlineData       `json:"inlineData,omitempty"`
 	FileData         *GeminiFileData         `json:"fileData,omitempty"`
 	FunctionCall     *GeminiFunctionCall     `json:"functionCall,omitempty"`
@@ -55,11 +58,13 @@ type GeminiFileData struct {
 }
 
 type GeminiFunctionCall struct {
+	Id   string                 `json:"id,omitempty"`
 	Name string                 `json:"name" eru:"required"`
 	Args map[string]interface{} `json:"args,omitempty"`
 }
 
 type GeminiFunctionResponse struct {
+	Id       string                 `json:"id,omitempty"`
 	Name     string                 `json:"name" eru:"required"`
 	Response map[string]interface{} `json:"response" eru:"required"`
 }
@@ -94,6 +99,13 @@ type GeminiGenerationConfig struct {
 	MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
 	TopP            *float64 `json:"topP,omitempty"`
 	TopK            *int     `json:"topK,omitempty"`
+
+	ThinkingConfig *GeminiThinkingConfig `json:"thinkingConfig,omitempty"`
+}
+
+type GeminiThinkingConfig struct {
+	ThinkingBudget  *int `json:"thinkingBudget,omitempty"`
+	IncludeThoughts bool `json:"includeThoughts,omitempty"`
 }
 
 // Response Types
@@ -121,9 +133,11 @@ type GeminiPromptFeedback struct {
 }
 
 type GeminiUsageMetadata struct {
-	PromptTokenCount     int `json:"promptTokenCount,omitempty"`
-	CandidatesTokenCount int `json:"candidatesTokenCount,omitempty"`
-	TotalTokenCount      int `json:"totalTokenCount,omitempty"`
+	PromptTokenCount        int `json:"promptTokenCount,omitempty"`
+	CandidatesTokenCount    int `json:"candidatesTokenCount,omitempty"`
+	TotalTokenCount         int `json:"totalTokenCount,omitempty"`
+	ThoughtsTokenCount      int `json:"thoughtsTokenCount,omitempty"`
+	CachedContentTokenCount int `json:"cachedContentTokenCount,omitempty"`
 }
 
 // Implementation of ModelI interface
@@ -170,19 +184,28 @@ func (geminiModel *GeminiModel) QueryModel(ctx context.Context, chatRequest Chat
 func (geminiModel *GeminiModel) makeGeminiChatRequest(ctx context.Context, chatRequest ChatRequest) (geminiRequest GeminiChatRequest, err error) {
 	logs.WithContext(ctx).Debug("makeGeminiChatRequest - Start")
 
+	maxOutputTokens := geminiModel.resolveMaxOutputTokens()
 	geminiRequest = GeminiChatRequest{
 		GenerationConfig: &GeminiGenerationConfig{
 			Temperature:     &geminiModel.Temprature,
-			MaxOutputTokens: func() *int { i := 1024; return &i }(),
+			MaxOutputTokens: &maxOutputTokens,
 		},
 	}
 
+	var systemParts []GeminiPart
 	for _, message := range chatRequest.Messages {
+		if message.Role == "system" {
+			systemParts = append(systemParts, geminiModel.makeGeminiParts(ctx, message)...)
+			continue
+		}
 		content := GeminiContent{
 			Role:  geminiModel.mapRoleToGemini(message.Role),
 			Parts: geminiModel.makeGeminiParts(ctx, message),
 		}
 		geminiRequest.Contents = append(geminiRequest.Contents, content)
+	}
+	if len(systemParts) > 0 {
+		geminiRequest.SystemInstruction = &GeminiContent{Parts: systemParts}
 	}
 
 	return
@@ -314,34 +337,9 @@ func (geminiModel *GeminiModel) QueryModelWithTool(ctx context.Context, chatRequ
 func (geminiModel *GeminiModel) makeGeminiChatToolRequest(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (geminiRequest GeminiChatRequest, err error) {
 	logs.WithContext(ctx).Debug("makeGeminiChatToolRequest - Start")
 
-	var geminiTools []GeminiTool
-	var functionDeclarations []GeminiFunctionDeclaration
-	toolPrompt := ""
+	geminiTools, toolPrompt := convertGeminiTools(ctx, tools)
 
-	for _, tool := range tools {
-		toolNameI, _ := tool.GetAttribute(ctx, "tool_name")
-		toolDescriptionI, _ := tool.GetAttribute(ctx, "description")
-		toolSystemPromptI, _ := tool.GetAttribute(ctx, "system_prompt")
-		toolName := toolNameI.(string)
-		toolDescription := toolDescriptionI.(string)
-		toolParameters := tool.GetParameters()
-
-		toolPrompt += fmt.Sprint("Tool prompt for Tool ", toolName, " is as follows :\n", toolSystemPromptI.(string))
-
-		functionDeclaration := GeminiFunctionDeclaration{
-			Name:        toolName,
-			Description: toolDescription,
-			Parameters:  toolParameters,
-		}
-		functionDeclarations = append(functionDeclarations, functionDeclaration)
-	}
-
-	if len(functionDeclarations) > 0 {
-		geminiTools = append(geminiTools, GeminiTool{
-			FunctionDeclarations: functionDeclarations,
-		})
-	}
-
+	maxOutputTokens := geminiModel.resolveMaxOutputTokens()
 	geminiRequest = GeminiChatRequest{
 		Tools: geminiTools,
 		ToolConfig: &GeminiToolConfig{
@@ -351,12 +349,11 @@ func (geminiModel *GeminiModel) makeGeminiChatToolRequest(ctx context.Context, c
 		},
 		GenerationConfig: &GeminiGenerationConfig{
 			Temperature:     &geminiModel.Temprature,
-			MaxOutputTokens: func() *int { i := 1024; return &i }(),
+			MaxOutputTokens: &maxOutputTokens,
 		},
 	}
 
-	// Add system instruction with agent prompt and tool prompts
-	systemContent := fmt.Sprint(agentPrompt, "\n", toolPrompt)
+	systemContent := strings.TrimSpace(fmt.Sprint(agentPrompt, "\n", toolPrompt))
 	geminiRequest.SystemInstruction = &GeminiContent{
 		Parts: []GeminiPart{{Text: systemContent}},
 	}

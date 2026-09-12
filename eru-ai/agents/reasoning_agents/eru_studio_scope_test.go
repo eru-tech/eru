@@ -133,14 +133,21 @@ func TestScopeIsIgnoredWhenTheModelMustEmitAFullPage(t *testing.T) {
 	}
 }
 
-func TestScopeWithoutAPageIsAnError(t *testing.T) {
+// Behaviour changed deliberately: a scope with no page to scope used to fail the
+// request. It is meaningless, not fatal - there is nothing to prune and nothing
+// to hold the answer to, so the request is exactly the unscoped one. Failing
+// killed whole runs where a planner passed a scope along to a page being
+// authored from scratch, which is the one case where there is certainly no
+// existing page, and the user saw only "something went wrong". Ignored and
+// logged now, matching what an inapplicable scope already did in full mode.
+func TestScopeWithoutAPageIsIgnored(t *testing.T) {
 	params := map[string]interface{}{studio.ScopeParam: "tab_one"}
-	_, _, err := applyEruStudioScope(context.Background(), params, nil, studio.ModePatch)
-	if err == nil {
-		t.Fatal("scoping with no page was accepted")
+	note, resolved, err := applyEruStudioScope(context.Background(), params, nil, studio.ModePatch)
+	if err != nil {
+		t.Fatalf("scoping with no page should be ignored, not fail: %v", err)
 	}
-	if !strings.Contains(err.Error(), "nothing to scope") {
-		t.Errorf("error = %v", err)
+	if note != "" || resolved != nil {
+		t.Error("a scope with no page to scope was applied")
 	}
 }
 

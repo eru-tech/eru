@@ -98,6 +98,35 @@ type TokenUsage struct {
 	TotalTokens     int64 `json:"total_tokens,omitempty"`
 }
 
+type UsageAccumulator struct {
+	InputTokens     int64
+	OutputTokens    int64
+	ReasoningTokens int64
+	CachedTokens    int64
+}
+
+func (u *UsageAccumulator) Add(inputTokens int64, outputTokens int64, cachedTokens int64, reasoningTokens int64) {
+	u.InputTokens += inputTokens
+	u.OutputTokens += outputTokens
+	u.CachedTokens += cachedTokens
+	u.ReasoningTokens += reasoningTokens
+}
+
+func (u *UsageAccumulator) Attach(message Message) Message {
+	message.Usage = u.TokenUsage()
+	return message
+}
+
+func (u *UsageAccumulator) TokenUsage() *TokenUsage {
+	return &TokenUsage{
+		InputTokens:     u.InputTokens,
+		OutputTokens:    u.OutputTokens,
+		ReasoningTokens: u.ReasoningTokens,
+		CachedTokens:    u.CachedTokens,
+		TotalTokens:     u.InputTokens + u.OutputTokens,
+	}
+}
+
 type Message struct {
 	Role         string        `json:"role"`
 	Content      string        `json:"content,omitempty"`

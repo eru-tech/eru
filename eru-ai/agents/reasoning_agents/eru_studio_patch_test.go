@@ -454,3 +454,76 @@ func TestEveryParamTheAgentReadsIsDeclared(t *testing.T) {
 		}
 	}
 }
+
+// A saved page can carry violations from long before this edit: a property that
+// was renamed, a misspelled page key. Re-reporting them makes the model rewrite
+// components the user never mentioned, which is a whole extra generate cycle on
+// a request that only added a control.
+func TestValidateStudioUpdateIgnoresIssuesThePatchInherited(t *testing.T) {
+	base := existingPage(t)
+	// The page already has a legacy property the catalog no longer knows.
+	root := base["components"].([]interface{})[0].(map[string]interface{})
+	saveBtn := root["children"].([]interface{})[0].(map[string]interface{})
+	saveBtn["properties"].(map[string]interface{})["base"].(map[string]interface{})["pieData"] = "[]"
+
+	if issues := studioCatalog.ValidatePage(base); len(issues) == 0 {
+		t.Fatal("fixture is meant to start with a pre-existing violation")
+	}
+
+	output := map[string]interface{}{
+		"mode": studio.ModePatch,
+		"patch": map[string]interface{}{
+			"page_id": "page_1",
+			"upsert": []interface{}{
+				map[string]interface{}{
+					"id":         "cancel_btn",
+					"type":       "button",
+					"parent_id":  "root",
+					"properties": map[string]interface{}{"base": map[string]interface{}{"label": "Cancel"}},
+					"styles":     map[string]interface{}{"classes": ""},
+				},
+			},
+		},
+	}
+
+	for _, issue := range validateStudioUpdate(output, base, nil) {
+		if strings.Contains(issue.Message, "pieData") {
+			t.Errorf("the patch was failed for a violation it inherited: %s", issue)
+		}
+	}
+}
+
+// The subtraction must not become a way to smuggle a bad component in: an issue
+// the patch actually introduces still fails it.
+func TestValidateStudioUpdateStillCatchesWhatThePatchIntroduces(t *testing.T) {
+	base := existingPage(t)
+	root := base["components"].([]interface{})[0].(map[string]interface{})
+	saveBtn := root["children"].([]interface{})[0].(map[string]interface{})
+	saveBtn["properties"].(map[string]interface{})["base"].(map[string]interface{})["pieData"] = "[]"
+
+	output := map[string]interface{}{
+		"mode": studio.ModePatch,
+		"patch": map[string]interface{}{
+			"page_id": "page_1",
+			"upsert": []interface{}{
+				map[string]interface{}{
+					"id":         "cancel_btn",
+					"type":       "button",
+					"parent_id":  "root",
+					"properties": map[string]interface{}{"base": map[string]interface{}{"not_a_real_button_property": true}},
+					"styles":     map[string]interface{}{"classes": ""},
+				},
+			},
+		},
+	}
+
+	found := false
+	for _, issue := range validateStudioUpdate(output, base, nil) {
+		if strings.Contains(issue.Message, "not_a_real_button_property") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a property the patch introduced was not reported")
+	}
+}

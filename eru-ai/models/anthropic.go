@@ -204,6 +204,7 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 	messages := convertMessages(ctx, chatRequest.Messages)
 
 	var traces []StepTrace
+	var usageAcc UsageAccumulator
 
 	maxTokens := resolveMaxTokens(m.MaxTokens, thinkingBudget)
 
@@ -213,9 +214,7 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 			MaxTokens: maxTokens,
 			Messages:  messages,
 			Tools:     sdkTools,
-			System: []anthropic.TextBlockParam{
-				{Text: systemContent},
-			},
+			System:    cachedSystemBlocks(systemContent),
 		}
 		if thinkingBudget > 0 {
 			params.Thinking = anthropic.ThinkingConfigParamUnion{
@@ -233,6 +232,9 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 			logs.WithContext(ctx).Error(err.Error())
 			return Message{}, traces, err
 		}
+
+		logCacheUsage(ctx, iteration, msg.Usage)
+		accumulateUsage(&usageAcc, msg.Usage)
 
 		trace := StepTrace{
 			Iteration: iteration,
@@ -283,7 +285,7 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 		if len(toolUseBlocks) == 0 {
 			trace.Content = finalContent
 			traces = append(traces, trace)
-			return Message{Content: finalContent, Role: "assistant"}, traces, nil
+			return usageAcc.Attach(Message{Content: finalContent, Role: "assistant"}), traces, nil
 		}
 
 		for _, tu := range toolUseBlocks {
@@ -300,7 +302,7 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 					return Message{}, traces, fmt.Errorf("structured_output tool input was empty or truncated; raise model.max_tokens (current=%d) or lower thinking_budget", maxTokens)
 				}
 				resultBytes, _ := json.Marshal(inputMap)
-				return Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolStructuredOutput}, traces, nil
+				return usageAcc.Attach(Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolStructuredOutput}), traces, nil
 			}
 
 			if tu.Name == TerminalToolAskUser {
@@ -311,7 +313,7 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 					return Message{}, traces, fmt.Errorf("ask_user tool input was empty or truncated; raise model.max_tokens (current=%d) or lower thinking_budget", maxTokens)
 				}
 				resultBytes, _ := json.Marshal(inputMap)
-				return Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolAskUser}, traces, nil
+				return usageAcc.Attach(Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolAskUser}), traces, nil
 			}
 
 			trace.ToolName = tu.Name
@@ -338,7 +340,7 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
 	}
 
-	return Message{Content: "max iterations reached", Role: "assistant"}, traces, nil
+	return usageAcc.Attach(Message{Content: "max iterations reached", Role: "assistant"}), traces, nil
 }
 
 func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor, streamCb StreamEventCallback) (Message, []StepTrace, error) {
@@ -357,6 +359,7 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 
 	messages := convertMessages(ctx, chatRequest.Messages)
 	var traces []StepTrace
+	var usageAcc UsageAccumulator
 
 	maxTokens := resolveMaxTokens(m.MaxTokens, thinkingBudget)
 
@@ -366,9 +369,7 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 			MaxTokens: maxTokens,
 			Messages:  messages,
 			Tools:     sdkTools,
-			System: []anthropic.TextBlockParam{
-				{Text: systemContent},
-			},
+			System:    cachedSystemBlocks(systemContent),
 		}
 		if thinkingBudget > 0 {
 			params.Thinking = anthropic.ThinkingConfigParamUnion{
@@ -449,6 +450,9 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 			return Message{}, traces, err
 		}
 
+		logCacheUsage(ctx, iteration, msg.Usage)
+		accumulateUsage(&usageAcc, msg.Usage)
+
 		trace.Thinking = currentThinking
 
 		var assistantBlocks []anthropic.ContentBlockParamUnion
@@ -494,7 +498,7 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 		if len(toolUseBlocks) == 0 {
 			trace.Content = finalContent
 			traces = append(traces, trace)
-			return Message{Content: finalContent, Role: "assistant"}, traces, nil
+			return usageAcc.Attach(Message{Content: finalContent, Role: "assistant"}), traces, nil
 		}
 
 		for _, tu := range toolUseBlocks {
@@ -511,7 +515,7 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 					return Message{}, traces, fmt.Errorf("structured_output tool input was empty or truncated; raise model.max_tokens (current=%d) or lower thinking_budget", maxTokens)
 				}
 				resultBytes, _ := json.Marshal(inputMap)
-				return Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolStructuredOutput}, traces, nil
+				return usageAcc.Attach(Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolStructuredOutput}), traces, nil
 			}
 
 			if tu.Name == TerminalToolAskUser {
@@ -530,7 +534,7 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 					})
 				}
 				resultBytes, _ := json.Marshal(inputMap)
-				return Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolAskUser}, traces, nil
+				return usageAcc.Attach(Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolAskUser}), traces, nil
 			}
 
 			if streamCb != nil {
@@ -570,7 +574,7 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
 	}
 
-	return Message{Content: "max iterations reached", Role: "assistant"}, traces, nil
+	return usageAcc.Attach(Message{Content: "max iterations reached", Role: "assistant"}), traces, nil
 }
 
 func convertMessages(ctx context.Context, messages []Message) []anthropic.MessageParam {
@@ -704,6 +708,34 @@ func jsonSchemaPropertyToMap(schema eru_models.JSONSchema) map[string]any {
 		m["additionalProperties"] = schema.AdditionalProperties
 	}
 	return m
+}
+
+func accumulateUsage(acc *UsageAccumulator, usage anthropic.Usage) {
+	acc.Add(
+		usage.InputTokens+usage.CacheReadInputTokens+usage.CacheCreationInputTokens,
+		usage.OutputTokens,
+		usage.CacheReadInputTokens,
+		0,
+	)
+}
+
+func logCacheUsage(ctx context.Context, iteration int, usage anthropic.Usage) {
+	logs.WithContext(ctx).Info(fmt.Sprint(
+		"anthropic cache usage iteration=", iteration,
+		" input=", usage.InputTokens,
+		" cache_write=", usage.CacheCreationInputTokens,
+		" cache_read=", usage.CacheReadInputTokens,
+		" output=", usage.OutputTokens,
+	))
+}
+
+func cachedSystemBlocks(systemContent string) []anthropic.TextBlockParam {
+	return []anthropic.TextBlockParam{
+		{
+			Text:         systemContent,
+			CacheControl: anthropic.CacheControlEphemeralParam{TTL: anthropic.CacheControlEphemeralTTLTTL5m},
+		},
+	}
 }
 
 // resolveMaxTokens picks a sensible MaxTokens for a Messages request.

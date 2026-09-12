@@ -161,6 +161,38 @@ func PendingQuestion(conversation *Conversation) (AgentMessage, AgentOutputActio
 	return AgentMessage{}, AgentOutputAction{}, false
 }
 
+// DefaultFreeTextLabel names the free-text box when the asker did not, so a
+// client always has something to render it with.
+const DefaultFreeTextLabel = "Something else - let me describe it"
+
+// Normalize makes a request answerable.
+//
+// A question with no options and no free text is a dead end: the client renders
+// no choices and no box, so there is nothing for the user to click or type and
+// the wizard can never be submitted. The asker cannot judge whether its options
+// cover the situation - the case it did not think of is exactly the one the user
+// needs to state - so free text is always on, and a question that offered no
+// options at all becomes a plain text prompt.
+//
+// The ask_user tool applies the same rule to the questions an agent asks through
+// it. This is the other door: a clarification the orchestrator raises itself
+// comes back through ParseClarificationRequest without ever passing that tool.
+func (req *ClarificationRequest) Normalize() {
+	if req == nil {
+		return
+	}
+	for i := range req.Questions {
+		q := &req.Questions[i]
+		if q.Id == "" {
+			q.Id = fmt.Sprintf("q%d", i+1)
+		}
+		q.AllowFreeText = true
+		if q.FreeTextLabel == "" {
+			q.FreeTextLabel = DefaultFreeTextLabel
+		}
+	}
+}
+
 // ParseClarificationRequest converts the action payload of a question action
 // back into a typed ClarificationRequest.
 func ParseClarificationRequest(action map[string]interface{}) (ClarificationRequest, error) {
@@ -172,6 +204,7 @@ func ParseClarificationRequest(action map[string]interface{}) (ClarificationRequ
 	if err := json.Unmarshal(b, &req); err != nil {
 		return req, err
 	}
+	req.Normalize()
 	return req, nil
 }
 

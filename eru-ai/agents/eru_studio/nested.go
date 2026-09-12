@@ -41,7 +41,9 @@ var pageMounts = map[string][]PageMount{
 	"grid": {{
 		Property: "card_page_id",
 		Purpose:  PurposeBoardCard,
-		Note:     "the page used as the layout of one card in board view; blank falls back to the built-in card",
+		Note: "the page whose layout draws ONE card in board view. A request for a board, a kanban or a card view is " +
+			"a grid with view_mode \"board\", and a board worth looking at needs a card page: author one and mount it " +
+			"here. Blank falls back to the plain built-in card",
 	}},
 	"tile": {{
 		Property: "card_page_id",

@@ -1255,6 +1255,10 @@ func (oa *OrchestratorAgent) buildAgentDescriptions() string {
 		if len(ad.Tools) > 0 {
 			sb.WriteString(fmt.Sprintf("  Can call these tools itself: %s (do NOT duplicate them as separate steps)\n", strings.Join(ad.Tools, ", ")))
 		}
+		if len(ad.InternalCapabilities) > 0 {
+			sb.WriteString(fmt.Sprintf("  Looks these up ITSELF - do not add a step to fetch them, and never hand-write SQL for them: %s\n",
+				strings.Join(ad.InternalCapabilities, "; ")))
+		}
 		if guardrail := summariseGuardrail(ad.Guardrail); guardrail != "" {
 			sb.WriteString(fmt.Sprintf("  Scope limits: %s\n", guardrail))
 		}

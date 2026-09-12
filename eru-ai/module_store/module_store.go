@@ -876,6 +876,16 @@ func (ms *ModuleStore) DiscoverAgents(ctx context.Context, projectId string, ten
 		if capable, ok := agentObj.(agents.ClarificationCapable); ok {
 			supportsClarification = capable.ClarificationEnabled()
 		}
+		// What the agent looks up for itself, so the planner does not plan a step
+		// to fetch the same thing by other means.
+		var internalCapabilities []string
+		if provider, ok := agentObj.(agents.InternalToolProvider); ok {
+			for _, request := range provider.InternalToolRequests() {
+				if strings.TrimSpace(request.Why) != "" {
+					internalCapabilities = append(internalCapabilities, request.Why)
+				}
+			}
+		}
 		discovered = append(discovered, agents.DiscoveredAgent{
 			AgentName:             agentName,
 			AgentType:             agentType,
@@ -887,6 +897,7 @@ func (ms *ModuleStore) DiscoverAgents(ctx context.Context, projectId string, ten
 			Guardrail:             guardrail,
 			SupportsClarification: supportsClarification,
 			IsOrchestrator:        agentType == "ORCHESTRATOR",
+			InternalCapabilities:  internalCapabilities,
 		})
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("DiscoverAgents - resolved ", len(discovered), " agent(s) for orchestrator ", selfName))

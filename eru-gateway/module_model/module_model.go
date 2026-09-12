@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/eru-tech/eru/eru-crypto/jwt"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -123,24 +125,58 @@ func (authorizer Authorizer) VerifyToken(ctx context.Context, token string, kid 
 		headers.Set("Content-Type", "application/json")
 		postBody := make(map[string]string)
 		postBody[authorizer.TokenUrlKey] = token
-		hookRes, _, _, _, hookErr := utils.CallHttp(ctx, http.MethodPost, authorizer.TokenUrl, headers, nil, nil, nil, postBody)
+		hookRes, hookResHeaders, _, _, hookErr := utils.CallHttp(ctx, http.MethodPost, authorizer.TokenUrl, headers, nil, nil, nil, postBody)
 		if hookErr != nil {
 			err = logs.Err(ctx, hookErr, "")
 			return
 		}
-		if hookResMap, hookResMapOk := hookRes.(map[string]interface{}); hookResMapOk {
-			tokenJwkUrl := authorizer.TokenJwkUrl
-			if claimsToken, claimsTokenOk := hookResMap[authorizer.TokenKey].(string); claimsTokenOk {
-				claims, err = jwt.DecryptTokenJWK(ctx, claimsToken, tokenJwkUrl)
-				if err != nil {
-					return
-				}
-			} else {
-				logs.WithContext(ctx).Warn("claimsToken is not a string")
-			}
-		} else {
-			logs.WithContext(ctx).Warn("hookRes is not a map")
+		// token_url is configured, so the caller's real identity is the exchanged token, not
+		// the access token that was presented. Failing to read it back must not silently fall
+		// through to the access token's claims - downstream would then authorise a different,
+		// thinner identity than the operator configured.
+		claimsToken, claimsTokenErr := authorizer.readExchangedToken(ctx, hookRes, hookResHeaders)
+		if claimsTokenErr != nil {
+			err = claimsTokenErr
+			return
+		}
+		claims, err = jwt.DecryptTokenJWK(ctx, claimsToken, authorizer.TokenJwkUrl)
+		if err != nil {
+			return
 		}
 	}
 	return
+}
+
+// readExchangedToken pulls the user token out of the token_url response, looking in the body
+// and then in the response headers, since token_key names either. The error says what came
+// back - key names only, never values, because they are credentials.
+func (authorizer Authorizer) readExchangedToken(ctx context.Context, hookRes interface{}, hookResHeaders http.Header) (claimsToken string, err error) {
+	if hookResMap, hookResMapOk := hookRes.(map[string]interface{}); hookResMapOk {
+		if claimsToken, claimsTokenOk := hookResMap[authorizer.TokenKey].(string); claimsTokenOk && claimsToken != "" {
+			return claimsToken, nil
+		}
+		if headerToken := hookResHeaders.Get(authorizer.TokenKey); headerToken != "" {
+			return headerToken, nil
+		}
+		return "", logs.Err(ctx, missingExchangedTokenErr(authorizer.TokenKey, hookRes), "")
+	}
+	if headerToken := hookResHeaders.Get(authorizer.TokenKey); headerToken != "" {
+		return headerToken, nil
+	}
+	return "", logs.Err(ctx, missingExchangedTokenErr(authorizer.TokenKey, hookRes), "")
+}
+
+// missingExchangedTokenErr describes what the token_url actually returned, so the mismatch is
+// visible in the logs. It names keys only - the values are tokens and must never be logged.
+func missingExchangedTokenErr(tokenKey string, hookRes interface{}) error {
+	hookResMap, hookResMapOk := hookRes.(map[string]interface{})
+	if !hookResMapOk {
+		return fmt.Errorf("token_url response is a %T, expected an object carrying %q", hookRes, tokenKey)
+	}
+	bodyKeys := make([]string, 0, len(hookResMap))
+	for key := range hookResMap {
+		bodyKeys = append(bodyKeys, key)
+	}
+	sort.Strings(bodyKeys)
+	return fmt.Errorf("token_url response carries no non empty string %q - body keys were [%s]", tokenKey, strings.Join(bodyKeys, ", "))
 }

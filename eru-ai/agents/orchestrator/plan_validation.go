@@ -72,7 +72,83 @@ func validatePlan(ctx context.Context, plan map[string]interface{}, allowedAgent
 	issues = append(issues, validateCodeRouting(ctx, funcGroup.FuncSteps, cc)...)
 	issues = append(issues, validateParamForwarding(funcGroup.FuncSteps, allowedAgents, cc)...)
 	issues = append(issues, validateClarificationForwarding(funcGroup.FuncSteps, allowedAgents)...)
+	issues = append(issues, validateSqlAuthoring(funcGroup.FuncSteps, allowedAgents)...)
 	return issues
+}
+
+// validateSqlAuthoring keeps invented SQL out of a plan.
+//
+// The planner is never shown a database schema, so SQL it writes itself is a
+// guess at table and column names. The failure this was written for asked a
+// non-existent "eru.entity_fields" for an entity's fields, retried the identical
+// statement until the run gave up, and told the user only that something went
+// wrong - while the agent it was fetching for had a purpose-built metadata
+// lookup it never got the chance to use.
+//
+// SQL belongs to whoever knows the schema. A step may carry SQL that an earlier
+// step produced (a .ResVars reference); it may not carry SQL the planner typed.
+func validateSqlAuthoring(steps map[string]*functions.FuncStep, allowedAgents []agents.DiscoveredAgent) []planIssue {
+	author := sqlAuthoringAgent(allowedAgents)
+	if author == "" {
+		// Nothing in this workspace can write SQL from the schema, so a literal
+		// is the only option there is. Reporting it would be noise.
+		return nil
+	}
+
+	var issues []planIssue
+	walkSteps(steps, "", func(stepPath string, stepKey string, step *functions.FuncStep) {
+		if !containsLiteralSQL(step.TransformRequest) {
+			return
+		}
+		if strings.Contains(step.TransformRequest, ".ResVars.") {
+			// The SQL came from a previous step; that is the supported shape.
+			return
+		}
+		issues = append(issues, planIssue{
+			StepPath: stepPath,
+			Field:    "transform_request",
+			Template: step.TransformRequest,
+			Err: fmt.Sprint("this step carries SQL written into the plan, but nothing here has seen the database schema, ",
+				"so the table and column names are guesses - the step fails on a relation that does not exist. ",
+				"Ask the agent ", author, " for the SQL and pass its output on by reference, e.g. ",
+				"(index .ResVars.", author, ".Body.actions 0).action.sql - or, when an agent in this plan already ",
+				"looks the information up itself, drop the step entirely and let it."),
+		})
+	})
+	return issues
+}
+
+// sqlAuthoringAgent names an agent that turns a request into SQL, identified by
+// an "sql" field in its declared output.
+func sqlAuthoringAgent(allowedAgents []agents.DiscoveredAgent) string {
+	for _, agent := range allowedAgents {
+		for _, field := range outputFieldNames(agent.OutputSchema) {
+			if strings.EqualFold(field, "sql") {
+				return agent.AgentName
+			}
+		}
+	}
+	return ""
+}
+
+// containsLiteralSQL reports a statement typed into the template rather than
+// referenced from somewhere. It looks for the verb and its companion keyword so
+// that prose mentioning "select" in a content string does not trip it.
+func containsLiteralSQL(template string) bool {
+	upper := strings.ToUpper(template)
+	pairs := [][2]string{
+		{"SELECT ", " FROM "},
+		{"INSERT ", " INTO "},
+		{"UPDATE ", " SET "},
+		{"DELETE ", " FROM "},
+	}
+	for _, pair := range pairs {
+		at := strings.Index(upper, pair[0])
+		if at >= 0 && strings.Contains(upper[at:], pair[1]) {
+			return true
+		}
+	}
+	return false
 }
 
 // validateClarificationForwarding keeps a sub-agent's questions answerable.

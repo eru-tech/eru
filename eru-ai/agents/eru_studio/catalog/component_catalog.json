@@ -3,7 +3,7 @@
   "source": {
     "repo": "eru-studio",
     "lib_path": "projects/eru-studio/src/lib",
-    "fingerprint": "a4263b78399c59cd6216ff515c27ed78"
+    "fingerprint": "a2258b11cec49f054cc129ad83f84386"
   },
   "common_properties": [
     {
@@ -436,6 +436,31 @@
       "default_value": "#000000"
     },
     {
+      "key": "text_decoration",
+      "label": "Decoration",
+      "type": "select",
+      "category": "typography",
+      "default_value": "none",
+      "options": [
+        {
+          "label": "None",
+          "value": "none"
+        },
+        {
+          "label": "Underline",
+          "value": "underline"
+        },
+        {
+          "label": "Line Through",
+          "value": "line-through"
+        },
+        {
+          "label": "Overline",
+          "value": "overline"
+        }
+      ]
+    },
+    {
       "key": "background_color",
       "label": "Background Color",
       "type": "color",
@@ -633,7 +658,7 @@
         "name": "source",
         "optional": true,
         "type": "'pageDataArray' | string",
-        "description": "Rows the aggregate runs over. 'pageDataArray' (the default) is the page's own record array. `'state:<key>'` aggregates over an array held in page state instead — which is how a grid's selected rows get counted or summed: the grid's On Selection Change writes `selection.selected_rows` into state, and a formula reads it back from there."
+        "description": "Rows the aggregate runs over. 'pageDataArray' (the default) is the page's own record array. `'state:<key>'` aggregates over an array held in page state instead — which is how a grid's selected rows get counted or summed: the grid's On Selection Change writes `selection.selected_rows` into state, and a formula reads it back from there — which needs the grid's Send Selected Rows in Event turned on, since that array is empty by default."
       },
       {
         "name": "field",
@@ -858,7 +883,7 @@
       {
         "name": "action",
         "optional": false,
-        "type": "'no-action' | 'call-function' | 'call-query' | 'fetch-page-data' | 'hide-fields' | 'unhide-fields' | 'save-page-data' | 'start-loading' | 'stop-loading' | 'hide-component' | 'show-component' | 'disable-field' | 'enable-field' | 'update-state' | 'start-timer' | 'stop-timer' | 'set-field' | 'update-property' | 'enable-component' | 'disable-component' | 'refresh-grid' | 'download-grid' | 'refresh-page-ref' | 'step-forward' | 'step-back' | 'emit-to-parent' | 'toggle-side-panel' | 'open-side-panel' | 'close-side-panel' | 'navigate-to-page' | 'set-page-data' | 'clear-page-data' | 'clear-all-page-data'",
+        "type": "'no-action' | 'call-function' | 'call-query' | 'fetch-page-data' | 'hide-fields' | 'unhide-fields' | 'save-page-data' | 'start-loading' | 'stop-loading' | 'hide-component' | 'show-component' | 'disable-field' | 'enable-field' | 'update-state' | 'start-timer' | 'stop-timer' | 'set-field' | 'update-property' | 'enable-component' | 'disable-component' | 'refresh-grid' | 'download-grid' | 'refresh-page-ref' | 'step-forward' | 'step-back' | 'emit-to-parent' | 'toggle-side-panel' | 'open-side-panel' | 'close-side-panel' | 'navigate-to-page' | 'set-page-data' | 'clear-page-data' | 'clear-all-page-data' | 'download-file'",
         "values": [
           "no-action",
           "call-function",
@@ -892,7 +917,8 @@
           "navigate-to-page",
           "set-page-data",
           "clear-page-data",
-          "clear-all-page-data"
+          "clear-all-page-data",
+          "download-file"
         ]
       },
       {
@@ -956,6 +982,46 @@
         "optional": true,
         "type": "string",
         "description": "// Optional dot path into that source, for when the id or record sits inside // it rather than at the top (e.g. 'extras.program_id', 'entity_data.id')."
+      },
+      {
+        "name": "file_source",
+        "optional": true,
+        "type": "'response' | 'state' | 'app_state' | 'page_data'",
+        "values": [
+          "response",
+          "state",
+          "app_state",
+          "page_data"
+        ],
+        "description": "// `download-file`: where the base64 file content comes from. 'response' // (default) is the API/query result the action fired off — the usual case, // an endpoint that returns the file as a JSON attribute rather than a // stream. On a component or page event with no response behind it, // 'response' falls back to the event payload. 'state'/'app_state'/'page_data' // read the value out of page state, app state or page data instead."
+      },
+      {
+        "name": "file_path",
+        "optional": true,
+        "type": "string",
+        "description": "// Dot path to the base64 string within that source (e.g. 'data.file_content', // or just the variable name for a state source). A `data:<mime>;base64,` // prefix on the value is accepted and stripped."
+      },
+      {
+        "name": "file_type",
+        "optional": true,
+        "type": "string",
+        "description": "// The file's MIME type ('application/pdf') or a bare extension ('pdf', 'xlsx'), // which is mapped to a MIME type. `file_type_path` reads it from the source // instead, for a response that says what it sent; it wins over `file_type`."
+      },
+      {
+        "name": "file_type_path",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "file_name",
+        "optional": true,
+        "type": "string",
+        "description": "// Download file name. Without one the name is 'download' plus the extension // implied by the file type. `file_name_path` reads it from the source and // wins over `file_name`."
+      },
+      {
+        "name": "file_name_path",
+        "optional": true,
+        "type": "string"
       },
       {
         "name": "state_scope",
@@ -4130,7 +4196,7 @@
           "type": "number",
           "category": "behavior",
           "default_value": 0,
-          "description": "How much the flex item should grow relative to the rest of the flex items",
+          "description": "Applied to EVERY direct child of this container, not to this container itself. Share of the leftover space each child takes. To make THIS container take the leftover space inside its own parent, set Flex Grow on that parent instead.",
           "responsive": true,
           "min": 0,
           "max": 10,
@@ -4142,7 +4208,7 @@
           "type": "number",
           "category": "behavior",
           "default_value": 1,
-          "description": "How much the flex item should shrink relative to the rest of the flex items",
+          "description": "Applied to EVERY direct child of this container, not to this container itself. How far each child may shrink below its content size; 0 forbids shrinking, which is what makes a wide child push a sibling off the row.",
           "responsive": true,
           "min": 0,
           "max": 10,
@@ -4154,7 +4220,7 @@
           "type": "text",
           "category": "behavior",
           "default_value": "auto",
-          "description": "Initial main size of the flex item (e.g., auto, 100px, 50%)",
+          "description": "Applied to EVERY direct child of this container, not to this container itself (e.g. auto, 100px, 50%). A two-pane split is built on the PARENT of the two panes - give the parent the basis and the panes divide it - not by setting a basis on each pane.",
           "responsive": true
         },
         {
@@ -4163,7 +4229,7 @@
           "type": "select",
           "category": "behavior",
           "default_value": "auto",
-          "description": "Override align-items for individual flex items",
+          "description": "Applied to EVERY direct child of this container, not to this container itself: overrides the container Align Items for its children.",
           "responsive": true,
           "options": [
             {
@@ -4619,7 +4685,7 @@
           "category": "layout",
           "section": "Grid",
           "default_value": "table",
-          "description": "How rows are rendered: standard table, kanban-style board with cards, or pivot table",
+          "description": "How rows are rendered: standard table, kanban-style board with cards, or pivot table. Asked for a board, a kanban, a card view, or \"show them as cards\"? That is this property set to board - a table is not a board. A board reads far narrower than a table, so it is also what fits beside a detail pane.",
           "options": [
             {
               "label": "Table",
@@ -4822,7 +4888,7 @@
           "category": "layout",
           "section": "Board View",
           "default_value": "",
-          "description": "Page to use as the per-card layout. Leave blank to use the built-in default card.",
+          "description": "Page whose layout draws ONE card in board view. This is how a board gets a designed card rather than the plain built-in one, so author a small page for it and point this at that page whenever the card should look like anything in particular. Blank falls back to the built-in default card.",
           "visible_if": {
             "key": "view_mode",
             "equals": "board"
@@ -5181,6 +5247,19 @@
           "section": "Interaction",
           "default_value": false,
           "description": "Allow selection of grid elements"
+        },
+        {
+          "key": "emit_selected_rows",
+          "label": "Send Selected Rows in Event",
+          "type": "boolean",
+          "category": "behavior",
+          "section": "Interaction",
+          "default_value": false,
+          "description": "Include every selected record in On Selection Change as selection.selected_rows. Leave off when selection.selected_ids is enough — a wide entity copies every field of every selected row into the payload and into page state.",
+          "visible_if": {
+            "key": "allowSelection",
+            "equals": true
+          }
         },
         {
           "key": "columnResizable",
@@ -9778,11 +9857,11 @@
         },
         {
           "key": "api_name",
-          "label": "API Name",
-          "type": "select",
+          "label": "Function Name",
+          "type": "autocomplete",
           "category": "content",
           "default_value": "",
-          "description": "Enter API name",
+          "description": "Function that returns the option list. Pick one, or type a name that does not exist yet.",
           "visible_if": {
             "key": "option_type",
             "equals": "API"
@@ -10116,11 +10195,11 @@
         },
         {
           "key": "api_name",
-          "label": "API Name",
-          "type": "select",
+          "label": "Function Name",
+          "type": "autocomplete",
           "category": "content",
           "default_value": "",
-          "description": "Enter API name",
+          "description": "Function that returns the option list. Pick one, or type a name that does not exist yet.",
           "visible_if": {
             "key": "option_type",
             "equals": "API"

@@ -165,7 +165,14 @@ func applyEruStudioScope(ctx context.Context, params map[string]interface{}, bas
 		return "", nil, nil
 	}
 	if len(basePage) == 0 {
-		return "", nil, fmt.Errorf("%s names components to edit but no page was sent in `code` - there is nothing to scope", studio.ScopeParam)
+		// A scope with no page to scope is meaningless, not fatal: there is
+		// nothing to prune and nothing to hold the answer to, so the request is
+		// exactly the unscoped one. Failing here killed whole runs where a
+		// planner passed a scope along to a page being authored from scratch -
+		// the one case where there is certainly no existing page. Ignored and
+		// logged, like the mode check below.
+		logs.WithContext(ctx).Info(fmt.Sprintf("eru studio %s ignored: no page was sent in `code`, so there is nothing to scope", studio.ScopeParam))
+		return "", nil, nil
 	}
 	if mode != studio.ModePatch && mode != studio.ModeAuto {
 		// Pruning a page the model is about to re-emit in full would lose every

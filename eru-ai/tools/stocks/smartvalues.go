@@ -75,26 +75,25 @@ type SmartvaluesLoginParams struct {
 type SmartvaluesGetPouchStocksReturnsParams struct {
 	PouchId        int    `json:"pouch_id" eru:"required" desc:"id of the pouch whose stock level returns are to be fetched"`
 	StockPriceDate string `json:"stock_price_date" eru:"required" desc:"date in YYYY-MM-DD format as of which stock prices are considered"`
-	Exchange       string `json:"exchange" eru:"required" desc:"exchange code e.g. XNAS for nasdaq, XNSE for nse"`
+	Exchange       string `json:"exchange" eru:"required" desc:"exchange code e.g. XNAS for nasdaq, NSE for nse"`
 }
 
 type SmartvaluesGeneratePouchParams struct {
-	Exchange        string `json:"exchange" eru:"required" desc:"exchange code e.g. XNAS for nasdaq, XNSE for nse"`
+	Exchange        string `json:"exchange" eru:"required" desc:"exchange code e.g. XNAS for nasdaq, NSE for nse"`
 	UniverseName    string `json:"universe_name" eru:"required" desc:"name of the stock universe the pouch is generated from e.g. Global 500"`
 	StartDate       string `json:"start_date" eru:"required" desc:"pouch start date in RFC3339 format e.g. 2021-08-01T18:30:00.000Z"`
 	ReviewDate      string `json:"review_date" eru:"required" desc:"pouch review date in RFC3339 format"`
 	TimeframeSize   int    `json:"timeframe_size" eru:"required" desc:"number of stocks selected in each timeframe"`
 	LookbackPeriods string `json:"lookback_periods" eru:"required" desc:"number of lookback months as a string e.g. 9"`
-	LookbackType    string `json:"lookback_type" eru:"required" desc:"lookback type e.g. FIXED_START_DATE"`
 	RankTolerance   int    `json:"rank_tolerance" eru:"required" desc:"rank tolerance within which an existing stock is retained"`
-	PouchType       string `json:"pouch_type" eru:"required" desc:"algo variant used to rank stocks e.g. PRICE"`
-	StockPriceDate  string `json:"stock_price_date" eru:"required" desc:"date in RFC3339 format as of which stock prices are considered"`
 	ReviewFreq      string `json:"review_freq" eru:"required" desc:"review frequency e.g. MONTHLY, QUARTERLY, ANNUALLY"`
-	ReviewFreqDay   int    `json:"review_freq_day" eru:"required" desc:"day of the period on which the pouch is reviewed"`
-	ResetYears      int    `json:"reset_years" desc:"number of years after which the pouch is reset"`
-	RetainStocks    string `json:"retain_stocks" desc:"Y to retain existing stocks within rank tolerance, else N"`
-	TfWt            string `json:"tf_wt" desc:"timeframe weight allocation e.g. DISTINCT"`
-	ExcludeNonFno   string `json:"exclude_non_fno" desc:"Y to exclude stocks not in the fno segment, else N"`
+	LookbackType    string `json:"lookback_type" desc:"lookback type e.g. FIXED_START_DATE - do not ask the user, defaults to FIXED_START_DATE"`
+	PouchType       string `json:"pouch_type" desc:"algo variant used to rank stocks e.g. PRICE - do not ask the user, defaults to PRICE"`
+	ReviewFreqDay   int    `json:"review_freq_day" desc:"day of the period on which the pouch is reviewed - do not ask the user, defaults to the day of month of start_date"`
+	ResetYears      int    `json:"reset_years" desc:"number of years after which the pouch is reset - do not ask the user, defaults to 0"`
+	RetainStocks    string `json:"retain_stocks" desc:"Y to retain existing stocks within rank tolerance, else N - do not ask the user, defaults to N"`
+	TfWt            string `json:"tf_wt" desc:"timeframe weight allocation e.g. DISTINCT - do not ask the user, defaults to DISTINCT"`
+	ExcludeNonFno   string `json:"exclude_non_fno" desc:"Y to exclude stocks not in the fno segment, else N - do not ask the user, defaults to N"`
 }
 
 type SmartvaluesPouchDocs struct {
@@ -123,12 +122,12 @@ type SmartvaluesSavePouchParams struct {
 	PouchId       int                            `json:"pouch_id" eru:"required" desc:"id of the pouch returned by generate_pouch"`
 	Docs          SmartvaluesPouchDocs           `json:"docs" eru:"required" desc:"descriptive attributes of the pouch"`
 	Subscriptions []SmartvaluesPouchSubscription `json:"subscriptions" desc:"subscription plans of the pouch"`
-	Exchange      string                         `json:"exchange" eru:"required" desc:"exchange code e.g. XNAS for nasdaq, XNSE for nse"`
+	Exchange      string                         `json:"exchange" eru:"required" desc:"exchange code e.g. XNAS for nasdaq, NSE for nse"`
 }
 
 type SmartvaluesGetUniverseListParams struct {
 	UniverseType string `json:"universe_type" eru:"required" desc:"type of universe e.g. SYSTEM, CUSTOM"`
-	Exchange     string `json:"exchange" eru:"required" desc:"exchange or segment code e.g. USEQ"`
+	Exchange     string `json:"exchange" eru:"required" desc:"exchange or segment code e.g. NSE or XNAS"`
 }
 
 type SmartvaluesGetPouchTimeframesParams struct {
@@ -136,9 +135,9 @@ type SmartvaluesGetPouchTimeframesParams struct {
 }
 
 type SmartvaluesGetPouchlistParams struct {
-	Sort        int    `json:"sort" eru:"required" desc:"sort order code of the pouch list e.g. -13"`
+	Sort        int    `json:"sort" desc:"sort order code of the pouch list e.g. -13"`
 	CurrentDate string `json:"current_date" eru:"required" desc:"date in YYYY-MM-DD format as of which the list is fetched"`
-	Exchange    string `json:"exchange" eru:"required" desc:"exchange code e.g. XNAS for nasdaq, XNSE for nse"`
+	Exchange    string `json:"exchange" eru:"required" desc:"exchange code e.g. XNAS for nasdaq, NSE for nse"`
 }
 
 var smartvaluesToolActions = []tools.ToolAction{
@@ -542,10 +541,48 @@ func (svTool *SmartvaluesTool) ExecuteGetPouchStocksReturns(ctx context.Context,
 	return toolResult, body, false, nil
 }
 
+func (actionParams *SmartvaluesGeneratePouchParams) setDefaults(ctx context.Context) (err error) {
+	if actionParams.LookbackType == "" {
+		actionParams.LookbackType = "FIXED_START_DATE"
+	}
+	if actionParams.PouchType == "" {
+		actionParams.PouchType = "PRICE"
+	}
+	if actionParams.RetainStocks == "" {
+		actionParams.RetainStocks = "N"
+	}
+	if actionParams.TfWt == "" {
+		actionParams.TfWt = "DISTINCT"
+	}
+	if actionParams.ExcludeNonFno == "" {
+		actionParams.ExcludeNonFno = "N"
+	}
+	if actionParams.ReviewFreqDay == 0 {
+		startDate, parseErr := smartvaluesParseDate(actionParams.StartDate)
+		if parseErr != nil {
+			return logs.Err(ctx, parseErr, fmt.Sprint("unable to derive review_freq_day from start_date ", actionParams.StartDate))
+		}
+		actionParams.ReviewFreqDay = startDate.Day()
+	}
+	return nil
+}
+
+func smartvaluesParseDate(dateStr string) (time.Time, error) {
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if parsedDate, parseErr := time.Parse(layout, dateStr); parseErr == nil {
+			return parsedDate, nil
+		}
+	}
+	return time.Time{}, errors.New(fmt.Sprint("invalid date : ", dateStr))
+}
+
 func (svTool *SmartvaluesTool) ExecuteGeneratePouch(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("SmartvaluesTool ExecuteGeneratePouch - Start")
 	actionParams := SmartvaluesGeneratePouchParams{}
 	if err = smartvaluesParams(ctx, params, &actionParams); err != nil {
+		return nil, nil, false, err
+	}
+	if err = actionParams.setDefaults(ctx); err != nil {
 		return nil, nil, false, err
 	}
 	modelBaseUrl, err := svTool.serviceBaseUrl(ctx, SvModelSubdomain)
@@ -562,6 +599,7 @@ func (svTool *SmartvaluesTool) ExecuteGeneratePouch(ctx context.Context, project
 		err = logs.Err(ctx, err, "")
 		return nil, nil, false, err
 	}
+	body["stock_price_date"] = actionParams.ReviewDate
 	url := fmt.Sprint(modelBaseUrl, "/get_timeframes")
 	res, err := svTool.callSmartvalues(ctx, projectId, tenantId, url, body)
 	if err != nil {

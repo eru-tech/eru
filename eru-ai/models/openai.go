@@ -130,8 +130,8 @@ type OpenAIChatRequest struct {
 
 	PresencePenalty float64 `json:"presence_penalty"`
 
-	Seed        int    `json:"seed"`
-	ServiceTier string `json:"service_tier"`
+	Seed        int     `json:"seed"`
+	ServiceTier string  `json:"service_tier"`
 	Temperature float64 `json:"temperature"`
 	TopP        float64 `json:"top_p"`
 	User        string  `json:"user"`
@@ -1040,36 +1040,11 @@ func (openaiModel *OpenAIModel) RunToolLoop(ctx context.Context, chatRequest Cha
 		})
 	}
 
-	serviceTier := openaiModel.ServiceTier
-	if serviceTier == "" {
-		serviceTier = "auto"
-	}
-
 	var traces []StepTrace
+	var usageAcc UsageAccumulator
 
 	for iteration := 1; iteration <= maxIterations; iteration++ {
-		request := OpenAIToolLoopRequest{
-			Model:       openaiModel.LLMName,
-			Messages:    messages,
-			ServiceTier: serviceTier,
-		}
-		if len(openAIRequestTools) > 0 {
-			request.Tools = openAIRequestTools
-			request.ToolChoice = "auto"
-		}
-		if openaiModel.MaxTokens > 0 {
-			request.MaxCompletionTokens = openaiModel.MaxTokens
-		}
-		if openaiModel.isReasoningModel() {
-			effort := openaiModel.ReasoningEffort
-			if effort == "" {
-				effort = "medium"
-			}
-			request.ReasoningEffort = effort
-		} else {
-			temperature := openaiModel.Temprature
-			request.Temperature = &temperature
-		}
+		request := openaiModel.buildToolLoopRequest(messages, openAIRequestTools, thinkingBudget)
 
 		openAIChatResponse, err := openaiModel.queryToolLoop(ctx, request)
 		if err != nil {
@@ -1081,6 +1056,8 @@ func (openaiModel *OpenAIModel) RunToolLoop(ctx context.Context, chatRequest Cha
 			logs.WithContext(ctx).Error(err.Error())
 			return Message{}, traces, err
 		}
+		accumulateOpenAIUsage(&usageAcc, openAIChatResponse.Usage)
+
 		choice := openAIChatResponse.Choices[0]
 
 		trace := StepTrace{
@@ -1101,7 +1078,7 @@ func (openaiModel *OpenAIModel) RunToolLoop(ctx context.Context, chatRequest Cha
 		if len(choice.Message.ToolCalls) == 0 {
 			trace.Content = choice.Message.Content
 			traces = append(traces, trace)
-			return Message{Content: choice.Message.Content, Role: "assistant"}, traces, nil
+			return usageAcc.Attach(Message{Content: choice.Message.Content, Role: "assistant"}), traces, nil
 		}
 
 		for _, toolCall := range choice.Message.ToolCalls {
@@ -1118,7 +1095,7 @@ func (openaiModel *OpenAIModel) RunToolLoop(ctx context.Context, chatRequest Cha
 					return Message{}, traces, fmt.Errorf("structured_output tool input was empty or truncated; raise model.max_tokens (current=%d)", request.MaxCompletionTokens)
 				}
 				resultBytes, _ := json.Marshal(inputMap)
-				return Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolStructuredOutput}, traces, nil
+				return usageAcc.Attach(Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolStructuredOutput}), traces, nil
 			}
 
 			if toolCall.Function.Name == TerminalToolAskUser {
@@ -1129,7 +1106,7 @@ func (openaiModel *OpenAIModel) RunToolLoop(ctx context.Context, chatRequest Cha
 					return Message{}, traces, fmt.Errorf("ask_user tool input was empty or truncated; raise model.max_tokens (current=%d)", request.MaxCompletionTokens)
 				}
 				resultBytes, _ := json.Marshal(inputMap)
-				return Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolAskUser}, traces, nil
+				return usageAcc.Attach(Message{Content: string(resultBytes), Role: "assistant", TerminalTool: TerminalToolAskUser}), traces, nil
 			}
 
 			trace.ToolName = toolCall.Function.Name
@@ -1155,7 +1132,7 @@ func (openaiModel *OpenAIModel) RunToolLoop(ctx context.Context, chatRequest Cha
 		traces = append(traces, trace)
 	}
 
-	return Message{Content: "max iterations reached", Role: "assistant"}, traces, nil
+	return usageAcc.Attach(Message{Content: "max iterations reached", Role: "assistant"}), traces, nil
 }
 
 func (openaiModel *OpenAIModel) queryModelResponsesWithTool(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (queryResponse JsonMessage, err error) {

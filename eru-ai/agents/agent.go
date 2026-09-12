@@ -120,6 +120,12 @@ type DiscoveredAgent struct {
 	Guardrail             string                `json:"guardrail,omitempty"`
 	SupportsClarification bool                  `json:"supports_clarification"`
 	IsOrchestrator        bool                  `json:"is_orchestrator"`
+	// InternalCapabilities are the lookups this agent performs for itself, in the
+	// words of its own InternalToolRequests. A planner that cannot see them plans
+	// a step to fetch what the agent was about to fetch anyway - and does it with
+	// whatever blunt tool it has, which is how an invented SQL statement ended up
+	// standing in for a purpose-built metadata lookup.
+	InternalCapabilities []string `json:"internal_capabilities,omitempty"`
 }
 
 func (da DiscoveredAgent) HasStructuredOutput() bool {
