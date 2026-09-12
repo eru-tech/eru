@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	claimsKey       string = "claims"
+	claimsKey       string = eru_utils.ClaimsHeaderKey
 	eruqlbaseurlKey string = "eruqlbaseurl"
 )
 
@@ -112,7 +112,7 @@ func otelMiddleWare(next http.Handler) http.Handler {
 		newCtx, span := otel.Tracer(server_handlers.ServerName).Start(r.Context(), "Initial", oteltrace.WithAttributes(attribute.String("requestID", requestID), attribute.String("traceID", pspan.SpanContext().TraceID().String()), attribute.String("spanID", pspan.SpanContext().SpanID().String())))
 		defer span.End()
 
-		newCtx = context.WithValue(newCtx, claimsKey, fmt.Sprint(r.Header.Get("claims")))
+		newCtx = context.WithValue(newCtx, claimsKey, fmt.Sprint(r.Header.Get(eru_utils.ClaimsHeaderKey)))
 		newCtx = context.WithValue(newCtx, eruqlbaseurlKey, fmt.Sprint(server_handlers.EruqlBaseUrl))
 		r = r.WithContext(newCtx)
 		//} else {

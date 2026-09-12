@@ -9,7 +9,6 @@ import (
 	"github.com/eru-tech/eru/eru-ai/agents"
 	"github.com/eru-tech/eru/eru-ai/models"
 	"github.com/eru-tech/eru/eru-ai/module_store"
-	"github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
 	"github.com/eru-tech/eru/eru-server/server"
@@ -233,6 +232,8 @@ func (s *EruAIMCPServer) executeAgent(ctx context.Context, conversationId, proje
 		return server.MCPCallToolResult{}, err
 	}
 
+	ctx = module_store.WithProjectContext(ctx, project, s.store.Store)
+
 	content, ok := arguments["content"].(string)
 	if !ok {
 		return server.MCPCallToolResult{}, fmt.Errorf("content parameter required")
@@ -323,11 +324,7 @@ func (s *EruAIMCPServer) executeToolAction(ctx context.Context, conversationId, 
 		return server.MCPCallToolResult{}, err
 	}
 
-	ctx = context.WithValue(ctx, "eruauthbaseurl", module_store.Eruauthbaseurl)
-	ctx = context.WithValue(ctx, "eruaiport", module_store.Eruaiport)
-	ctx = context.WithValue(ctx, "eruqlbaseurl", module_store.Eruqlbaseurl)
-	ctx = context.WithValue(ctx, "erufilesbaseurl", module_store.Erufilesbaseurl)
-	ctx = context.WithValue(ctx, tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
+	ctx = module_store.WithProjectContext(ctx, project, s.store.Store)
 
 	toolParams := map[string]interface{}{}
 	if wrapped, ok := arguments["params"].(map[string]interface{}); ok {

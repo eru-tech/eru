@@ -328,9 +328,8 @@ func (erufuncTool *ErufunctionsTool) getEruFuncBaseUrl(ctx context.Context) (str
 
 func (erufuncTool *ErufunctionsTool) buildHeaders(ctx context.Context) http.Header {
 	headers := http.Header{}
-	claims := ctx.Value("claims")
-	if claims != nil {
-		headers.Add("claims", fmt.Sprint(claims))
+	if claimsKey, claims, hasClaims := tools.ClaimsHeader(ctx); hasClaims {
+		headers.Add(claimsKey, claims)
 	}
 	headers.Add("Content-Type", "application/json")
 	headers.Add("Accept", "application/json")
@@ -377,10 +376,7 @@ func (erufuncTool *ErufunctionsTool) Execute(ctx context.Context, projectId stri
 
 	gm := server.GetGlobalGoroutineManager(ctx)
 	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
-		claims := ctx.Value("claims")
-		if claims != nil {
-			bgCtx = context.WithValue(bgCtx, "claims", claims)
-		}
+		bgCtx = tools.CopyClaims(ctx, bgCtx)
 		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
 		if efurl == nil {
 			logs.WithContext(ctx).Error("erufuncbaseurl not found in context")

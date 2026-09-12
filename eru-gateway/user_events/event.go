@@ -7,6 +7,7 @@ import (
 	"time"
 
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
+	utils "github.com/eru-tech/eru/eru-utils"
 )
 
 const maxHeaderValueLen = 512
@@ -32,7 +33,7 @@ var deniedHeaders = map[string]bool{
 	"proxy-authorization":  true,
 	"cookie":               true,
 	"set-cookie":           true,
-	"claims":               true,
+	utils.ClaimsHeaderKey:  true,
 	"x-api-key":            true,
 	"x-amz-security-token": true,
 }

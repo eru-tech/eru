@@ -8,6 +8,12 @@ import (
 
 const TenantSeparator = "___"
 
+// ClaimsHeaderKey is the header the gateway writes verified claims to once it has
+// authenticated a request, and the name every eru service reads them back from. It is a wire
+// contract between services, so it is defined once here rather than repeated as a literal.
+// It is also the key the claims are carried on inside a request context.
+const ClaimsHeaderKey = "claims"
+
 type defaultTenantKeyType struct{}
 
 var defaultTenantKey = defaultTenantKeyType{}

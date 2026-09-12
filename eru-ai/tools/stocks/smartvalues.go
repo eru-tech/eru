@@ -293,10 +293,7 @@ func (svTool *SmartvaluesTool) Execute(ctx context.Context, projectId string, te
 
 	gm := server.GetGlobalGoroutineManager(ctx)
 	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
-		claims := ctx.Value("claims")
-		if claims != nil {
-			bgCtx = context.WithValue(bgCtx, "claims", claims)
-		}
+		bgCtx = tools.CopyClaims(ctx, bgCtx)
 		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
 		if efurl == nil {
 			logs.WithContext(ctx).Error("erufuncbaseurl not found in context")

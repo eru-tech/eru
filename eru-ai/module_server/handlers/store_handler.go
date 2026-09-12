@@ -15,7 +15,6 @@ import (
 	"github.com/eru-tech/eru/eru-ai/module_store"
 	"github.com/eru-tech/eru/eru-ai/tools"
 	tools_factory "github.com/eru-tech/eru/eru-ai/tools/tools_factory"
-	function_module_store "github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
 	utils "github.com/eru-tech/eru/eru-utils"
@@ -682,13 +681,7 @@ func FetchConversationHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		}
 
-		claims := r.Header.Get("claims")
-		if claims != "" {
-			r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
-		}
-
-		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
-		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+		r = r.WithContext(module_store.WithProjectContext(r.Context(), projectId, sh.Store))
 
 		conversation, err := agent.LoadConversationHistory(r.Context(), conversationId, projectId, tenantId)
 		if err != nil {
@@ -714,13 +707,7 @@ func ListConversationsHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		}
 
-		claims := r.Header.Get("claims")
-		if claims != "" {
-			r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
-		}
-
-		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
-		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+		r = r.WithContext(module_store.WithProjectContext(r.Context(), projectId, sh.Store))
 
 		conversations, err := agent.LoadConversationList(r.Context(), projectId, tenantId)
 		if err != nil {
@@ -779,13 +766,7 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 		if agentMessage.MessageId == "" {
 			agentMessage.MessageId = uuid.New().String()
 		}
-		claims := r.Header.Get("claims")
-		if claims != "" {
-			r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
-		}
-
-		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruaibaseurl, module_store.Eruaibaseurl))
-		r = r.WithContext(context.WithValue(r.Context(), function_module_store.ContextKeyEruqlbaseurl, module_store.Eruqlbaseurl))
+		r = r.WithContext(module_store.WithProjectContext(r.Context(), projectId, sh.Store))
 		r = r.WithContext(agents.WithAgentChain(r.Context(), chain))
 		if isRaw {
 			logs.WithContext(r.Context()).Info(fmt.Sprint("AgentExecuteHandler - raw output requested for agent ", agentName))
@@ -980,10 +961,7 @@ func ToolExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		logs.WithContext(r.Context()).Debug("ToolExecuteHandler - Start")
-		ctx := context.WithValue(r.Context(), "eruauthbaseurl", module_store.Eruauthbaseurl)
-		ctx = context.WithValue(ctx, "eruaiport", module_store.Eruaiport)
-		ctx = context.WithValue(ctx, "erufilesbaseurl", module_store.Erufilesbaseurl)
-		ctx = context.WithValue(ctx, tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
+		ctx := module_store.WithProjectContext(r.Context(), mux.Vars(r)["project"], sh.Store)
 
 		vars := mux.Vars(r)
 		projectId := vars["project"]
@@ -1049,10 +1027,7 @@ func ToolWhatsAppEndpointExecuteHandler(sh *module_store.StoreHolder) http.Handl
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		logs.WithContext(r.Context()).Debug("ToolExecuteHandler - Start")
-		ctx := context.WithValue(r.Context(), "eruauthbaseurl", module_store.Eruauthbaseurl)
-		ctx = context.WithValue(ctx, "eruaiport", module_store.Eruaiport)
-		ctx = context.WithValue(ctx, "erufilesbaseurl", module_store.Erufilesbaseurl)
-		ctx = context.WithValue(ctx, tools.EruFuncBaseUrlKey, module_store.Erufuncbaseurl)
+		ctx := module_store.WithProjectContext(r.Context(), mux.Vars(r)["project"], sh.Store)
 		vars := mux.Vars(r)
 		projectId := vars["project"]
 		tenantId := vars["tenant"]

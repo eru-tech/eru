@@ -18,6 +18,7 @@ import (
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	"github.com/eru-tech/eru/eru-cache/cache"
 	functions "github.com/eru-tech/eru/eru-functions/functions"
+	function_module_model "github.com/eru-tech/eru/eru-functions/module_model"
 	function_module_store "github.com/eru-tech/eru/eru-functions/module_store"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
@@ -529,9 +530,9 @@ func (agent *Agent) ExecuteAgentFunctionResumable(ctx context.Context, agentMess
 	}
 	headers := http.Header{}
 	headers.Add("Content-Type", "application/json")
-	claims := ctx.Value("claims")
-	if claims != "" {
-		headers.Add("claims", claims.(string))
+	claimsKey, claims, hasClaims := tools.ClaimsHeader(ctx)
+	if hasClaims {
+		headers.Add(claimsKey, claims)
 	}
 	// The sub-agent runs in its own request on any pod, so everything it needs to
 	// report back travels as headers. eru-functions passes unknown headers through
@@ -559,12 +560,23 @@ func (agent *Agent) ExecuteAgentFunctionResumable(ctx context.Context, agentMess
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, err
 	}
+	// this throwaway project carries no settings, and a func step reads the caller's token
+	// from the header named by the claims key - leaving it empty means every step runs with
+	// an empty .Vars.Token even though the request carries the claims. It gets the same key
+	// the request above was built with, which is the project's configured claims key.
+	err = fms.SetProjectSettings(ctx, projectId, function_module_model.ProjectSettings{ClaimsKey: claimsKey})
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, err
+	}
 	err = fms.SaveFunc(ctx, agent.Function, projectId, "", fms, false)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, err
 	}
-	cloneFuncGroup, err := fms.ValidateFunc(ctx, agent.Function, projectId, "", "host", "url", "method", headers, reqBody, fms, true, "")
+	// the agent's function has to run for the tenant the agent was called for, so its query,
+	// tool and agent steps resolve through that tenant's fallback and $VAR_tenant_id is filled in
+	cloneFuncGroup, err := fms.ValidateFunc(ctx, agent.Function, projectId, tenantId, "host", "url", "method", headers, reqBody, fms, true, "")
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, err
@@ -847,7 +859,7 @@ func (agent *Agent) LoadConversationList(ctx context.Context, projectId, tenantI
 		return
 	}
 
-	claims := ctx.Value("claims").(string)
+	claims := tools.ClaimsFromContext(ctx)
 	userId := ""
 	if claims != "" {
 		claimsMap := map[string]interface{}{}
@@ -897,7 +909,7 @@ func (agent *Agent) loadMessages(ctx context.Context, conversationId string, pro
 		persistEnabled, _ := agent.ChatMemory.GetAttribute(ctx, "persist_enabled")
 		if persistEnabled != nil && persistEnabled.(bool) {
 			logs.WithContext(ctx).Info("Loading messages from database")
-			claims := ctx.Value("claims").(string)
+			claims := tools.ClaimsFromContext(ctx)
 			userId := ""
 			if claims != "" {
 				claimsMap := map[string]interface{}{}
@@ -949,7 +961,7 @@ func (agent *Agent) SaveConversation(ctx context.Context, conversation *Conversa
 		return nil
 	}
 	cacheDataArray := []cache.CacheData{}
-	claims := ctx.Value("claims").(string)
+	claims := tools.ClaimsFromContext(ctx)
 	userId := ""
 	if claims != "" {
 		claimsMap := map[string]interface{}{}

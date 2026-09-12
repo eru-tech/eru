@@ -438,9 +438,8 @@ func (processoTool *ProcessoTool) getEruqlBaseUrl(ctx context.Context) (string, 
 
 func (processoTool *ProcessoTool) buildHeaders(ctx context.Context) http.Header {
 	headers := http.Header{}
-	claims := ctx.Value("claims")
-	if claims != nil {
-		headers.Add("claims", fmt.Sprint(claims))
+	if claimsKey, claims, hasClaims := tools.ClaimsHeader(ctx); hasClaims {
+		headers.Add(claimsKey, claims)
 	}
 	headers.Add("Content-Type", "application/json")
 	headers.Add("Accept", "application/json")
@@ -495,10 +494,7 @@ func (processoTool *ProcessoTool) Execute(ctx context.Context, projectId string,
 
 	gm := server.GetGlobalGoroutineManager(ctx)
 	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
-		claims := ctx.Value("claims")
-		if claims != nil {
-			bgCtx = context.WithValue(bgCtx, "claims", claims)
-		}
+		bgCtx = tools.CopyClaims(ctx, bgCtx)
 		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
 		if efurl == nil {
 			logs.WithContext(ctx).Error("erufuncbaseurl not found in context")

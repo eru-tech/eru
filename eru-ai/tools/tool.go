@@ -337,9 +337,8 @@ func (tool *Tool) ExecuteHook(ctx context.Context, hookType string, actionName s
 		logs.WithContext(ctx).Info(fmt.Sprintf("url: %v", url))
 		headers := http.Header{}
 		headers.Add("Content-Type", "application/json")
-		claims := ctx.Value("claims")
-		if claims != nil {
-			headers.Add("claims", claims.(string))
+		if claimsKey, claims, hasClaims := ClaimsHeader(ctx); hasClaims {
+			headers.Add(claimsKey, claims)
 		}
 		res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, headers, nil, nil, paramMap, body)
 		if err != nil {

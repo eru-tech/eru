@@ -156,7 +156,7 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
 			}
-			r.Header.Set("claims", string(claimsBytes))
+			r.Header.Set(utils.ClaimsHeaderKey, string(claimsBytes))
 
 			if authorizer.KidHeaderKey == "" {
 				valid := authorizer.VerifyAccessToken(r.Context(), accessToken)

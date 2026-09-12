@@ -227,10 +227,7 @@ func (eruqlTool *EruqlTool) Execute(ctx context.Context, projectId string, tenan
 
 	gm := server.GetGlobalGoroutineManager(ctx)
 	gm.SafeGoWithRestartBehavior("tool-post-execute-hook", func(bgCtx context.Context) {
-		claims := ctx.Value("claims")
-		if claims != nil {
-			bgCtx = context.WithValue(bgCtx, "claims", claims)
-		}
+		bgCtx = tools.CopyClaims(ctx, bgCtx)
 		efurl := ctx.Value(tools.EruFuncBaseUrlKey)
 		if efurl == nil {
 			err = errors.New("erufuncbaseurl not found in context")
@@ -356,9 +353,8 @@ func (eruqlTool *EruqlTool) ExecuteQuery(ctx context.Context, projectId string, 
 	}
 
 	headers := http.Header{}
-	claims := ctx.Value("claims")
-	if claims != nil {
-		headers.Add("claims", fmt.Sprint(claims))
+	if claimsKey, claims, hasClaims := tools.ClaimsHeader(ctx); hasClaims {
+		headers.Add(claimsKey, claims)
 	}
 	headers.Add("Content-Type", "application/json")
 	headers.Add("Accept", "application/json")
@@ -410,9 +406,8 @@ func (eruqlTool *EruqlTool) ExecuteSQL(ctx context.Context, projectId string, te
 		eruqlSQLParams.Vars[k] = v
 	}
 	headers := http.Header{}
-	claims := ctx.Value("claims")
-	if claims != nil {
-		headers.Add("claims", fmt.Sprint(claims))
+	if claimsKey, claims, hasClaims := tools.ClaimsHeader(ctx); hasClaims {
+		headers.Add(claimsKey, claims)
 	}
 	headers.Add("Content-Type", "application/json")
 	headers.Add("Accept", "application/json")
@@ -468,9 +463,8 @@ func (eruqlTool *EruqlTool) ExecuteGraphQL(ctx context.Context, projectId string
 		eruqlGraphQLParams.Vars[k] = v
 	}
 	headers := http.Header{}
-	claims := ctx.Value("claims")
-	if claims != nil {
-		headers.Add("claims", fmt.Sprint(claims))
+	if claimsKey, claims, hasClaims := tools.ClaimsHeader(ctx); hasClaims {
+		headers.Add(claimsKey, claims)
 	}
 	headers.Add("Content-Type", "application/json")
 	headers.Add("Accept", "application/json")
@@ -518,9 +512,8 @@ func (eruqlTool *EruqlTool) getEruqlBaseUrl(ctx context.Context) (string, error)
 
 func (eruqlTool *EruqlTool) buildHeaders(ctx context.Context) http.Header {
 	headers := http.Header{}
-	claims := ctx.Value("claims")
-	if claims != nil {
-		headers.Add("claims", fmt.Sprint(claims))
+	if claimsKey, claims, hasClaims := tools.ClaimsHeader(ctx); hasClaims {
+		headers.Add(claimsKey, claims)
 	}
 	headers.Add("Content-Type", "application/json")
 	headers.Add("Accept", "application/json")

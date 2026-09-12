@@ -378,8 +378,8 @@ func erufilesBaseUrl(ctx context.Context) (string, error) {
 
 func (t *ErufilesTool) buildHeaders(ctx context.Context) http.Header {
 	h := http.Header{}
-	if claims := ctx.Value("claims"); claims != nil {
-		h.Set("claims", fmt.Sprint(claims))
+	if claimsKey, claims, hasClaims := tools.ClaimsHeader(ctx); hasClaims {
+		h.Set(claimsKey, claims)
 	}
 	if t.ToolName != "" {
 		h.Set("X-Token-Key-Prefix", t.ToolName)
@@ -457,9 +457,7 @@ func (t *ErufilesTool) Execute(ctx context.Context, projectId string, tenantId s
 
 	gm := server.GetGlobalGoroutineManager(ctx)
 	gm.SafeGoWithRestartBehavior("erufilestool-post-execute-hook", func(bgCtx context.Context) {
-		if claims := ctx.Value("claims"); claims != nil {
-			bgCtx = context.WithValue(bgCtx, "claims", claims)
-		}
+		bgCtx = tools.CopyClaims(ctx, bgCtx)
 		if efurl := ctx.Value(tools.EruFuncBaseUrlKey); efurl != nil {
 			if s, ok := efurl.(string); ok {
 				bgCtx = context.WithValue(bgCtx, tools.EruFuncBaseUrlKey, s)

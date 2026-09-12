@@ -98,6 +98,7 @@ type ModuleStoreI interface {
 	SaveProject(ctx context.Context, projectId string, realStore ModuleStoreI, persist bool) error
 	//SaveProjectConfig(ctx context.Context, projectId string, projectConfig module_model.ProjectConfig, realStore ModuleStoreI) error
 	SaveProjectSettings(ctx context.Context, projectId string, projectConfig module_model.ProjectSettings, realStore ModuleStoreI) error
+	SetProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings) error
 	GetProjectSettings(ctx context.Context, projectId string) (module_model.ProjectSettings, error)
 	RemoveProject(ctx context.Context, projectId string, realStore ModuleStoreI) error
 	//SaveProjectAuthorizer(ctx context.Context, projectId string, authorizer functions.Authorizer, realStore ModuleStoreI) error
@@ -731,6 +732,20 @@ func (ms *ModuleStore) RemoveFunc(ctx context.Context, funcName string, projectI
 		logs.WithContext(ctx).Error(err.Error())
 		return err
 	}
+}
+
+// SetProjectSettings applies settings to an in memory project without persisting the store.
+// It is for callers that build a throwaway store to run a function group in process - they
+// still need the project's claims key, because that is the header a func step reads the
+// caller's token from, and a project created on the fly carries none.
+func (ms *ModuleStore) SetProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings) error {
+	logs.WithContext(ctx).Debug("SetProjectSettings - Start")
+	if err := ms.checkProjectExists(ctx, projectId); err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return err
+	}
+	ms.Projects[projectId].ProjectSettings = projectSettings
+	return nil
 }
 
 func (ms *ModuleStore) SaveProjectSettings(ctx context.Context, projectId string, projectSettings module_model.ProjectSettings, realStore ModuleStoreI) error {
