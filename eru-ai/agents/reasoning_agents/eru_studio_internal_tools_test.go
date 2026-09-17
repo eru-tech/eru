@@ -66,7 +66,7 @@ func TestNothingHasToBeAttachedForTheLookupsToAppear(t *testing.T) {
 		"fetch_page":    &stubTool{action: "fetch_page"},
 	})
 
-	ctx := studio.WithPageScope(context.Background(), studio.PageScope{OrgId: "org_1", ProcessId: "proc_1"})
+	ctx := studio.WithPageScope(context.Background(), studio.PageScope{OrgProcessId: "org_process_1"})
 	offered := agent.ExtraTools(ctx)
 
 	want := []string{utility.ComponentSpecToolName, utility.EntityMetadataToolName, utility.GetPageToolName, utility.ListPagesToolName}
@@ -74,13 +74,13 @@ func TestNothingHasToBeAttachedForTheLookupsToAppear(t *testing.T) {
 		t.Fatalf("offered %v, want %v", got, want)
 	}
 
-	// The page tools carry the scope, so the model is never asked for org/process.
+	// The page tools carry the scope, so the model is never asked for the org process.
 	list, ok := offered[utility.ListPagesToolName].(*utility.PageLibraryTool)
 	if !ok {
 		t.Fatal("list_pages is not a page library tool")
 	}
-	if list.OrgId != "org_1" || list.ProcessId != "proc_1" {
-		t.Errorf("scope = %s/%s", list.OrgId, list.ProcessId)
+	if list.OrgProcessId != "org_process_1" {
+		t.Errorf("scope = %s", list.OrgProcessId)
 	}
 	if list.ListDelegate == nil {
 		t.Error("list_pages has no delegate")
@@ -153,20 +153,13 @@ func TestAnAttachedQueryToolStillWins(t *testing.T) {
 
 func TestPageScopeDefaultsToTheTenantAndCanBeOverridden(t *testing.T) {
 	agent := &EruStudioAgent{}
-	if scope := agent.pageScopeFor("tenant_1"); scope.OrgId != "tenant_1" || scope.ProcessId != "tenant_1" {
-		t.Errorf("default scope = %+v, want the tenant for both", scope)
+	if scope := agent.pageScopeFor("tenant_1"); scope.OrgProcessId != "tenant_1" {
+		t.Errorf("default scope = %+v, want the tenant", scope)
 	}
 
-	agent.PageOrgId = "org_9"
-	agent.PageProcessId = "proc_9"
-	if scope := agent.pageScopeFor("tenant_1"); scope.OrgId != "org_9" || scope.ProcessId != "proc_9" {
+	agent.PageOrgProcessId = "org_process_9"
+	if scope := agent.pageScopeFor("tenant_1"); scope.OrgProcessId != "org_process_9" {
 		t.Errorf("configured scope = %+v", scope)
-	}
-
-	// A half-configured agent still falls back for the missing half.
-	half := &EruStudioAgent{PageOrgId: "org_9"}
-	if scope := half.pageScopeFor("tenant_1"); scope.OrgId != "org_9" || scope.ProcessId != "tenant_1" {
-		t.Errorf("half-configured scope = %+v", scope)
 	}
 }
 

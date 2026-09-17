@@ -20,11 +20,10 @@ import (
 
 type EruStudioAgent struct {
 	ReasoningAgent
-	// PageOrgId and PageProcessId scope the existing-page lookups. Both default
-	// to the tenant id, which is how this deployment keys them; set them only
-	// when a deployment separates the two.
-	PageOrgId     string `json:"page_org_id,omitempty"`
-	PageProcessId string `json:"page_process_id,omitempty"`
+	// PageOrgProcessId scopes the existing-page lookups. It defaults to the
+	// tenant id, which is how this deployment keys them; set it only when a
+	// deployment keys pages by something other than the tenant.
+	PageOrgProcessId string `json:"page_org_process_id,omitempty"`
 	// internalTools are the tenant tools resolved for this agent's own lookups.
 	internalTools map[string]tools.Tooling
 }
@@ -44,12 +43,10 @@ func (eruStudioAgent *EruStudioAgent) MakeFromJson(ctx context.Context, rj *json
 	// The embedded ReasoningAgent unmarshals its own fields, so this agent's own
 	// config has to be read here or the overrides silently do nothing.
 	var own struct {
-		PageOrgId     string `json:"page_org_id"`
-		PageProcessId string `json:"page_process_id"`
+		PageOrgProcessId string `json:"page_org_process_id"`
 	}
 	if uerr := json.Unmarshal(*rj, &own); uerr == nil {
-		eruStudioAgent.PageOrgId = own.PageOrgId
-		eruStudioAgent.PageProcessId = own.PageProcessId
+		eruStudioAgent.PageOrgProcessId = own.PageOrgProcessId
 	}
 	return nil
 }
@@ -578,8 +575,7 @@ func (eruStudioAgent *EruStudioAgent) ExtraTools(ctx context.Context) map[string
 		library := &utility.PageLibraryTool{
 			ListDelegate: listDelegate,
 			GetDelegate:  getDelegate,
-			OrgId:        scope.OrgId,
-			ProcessId:    scope.ProcessId,
+			OrgProcessId: scope.OrgProcessId,
 		}
 		if listDelegate != nil {
 			listTool := *library
@@ -620,21 +616,18 @@ func (eruStudioAgent *EruStudioAgent) entityMetadataDelegate(ctx context.Context
 	return eruStudioAgent.internalTool("execute_query")
 }
 
-// pageScopeFor resolves the org and process the existing pages belong to.
+// pageScopeFor resolves the org process the existing pages belong to.
 //
-// The processo page actions take org_id and process_id explicitly, and neither
-// is on the agent's execution context - only the project and the tenant are.
-// Both default to the tenant id, because that is how the entity metadata query
-// is keyed (org_process_id = the tenant id) and it is the only mapping this code
-// can see. A deployment that separates them sets page_org_id / page_process_id
-// on the agent; this is the one place it is decided.
+// The processo page actions take org_process_id explicitly, and it is not on the
+// agent's execution context - only the project and the tenant are. It defaults to
+// the tenant id, because that is how the entity metadata query is keyed
+// (org_process_id = the tenant id) and it is the only mapping this code can see.
+// A deployment that keys pages differently sets page_org_process_id on the agent;
+// this is the one place it is decided.
 func (eruStudioAgent *EruStudioAgent) pageScopeFor(tenantId string) studio.PageScope {
-	scope := studio.PageScope{OrgId: eruStudioAgent.PageOrgId, ProcessId: eruStudioAgent.PageProcessId}
-	if scope.OrgId == "" {
-		scope.OrgId = tenantId
-	}
-	if scope.ProcessId == "" {
-		scope.ProcessId = tenantId
+	scope := studio.PageScope{OrgProcessId: eruStudioAgent.PageOrgProcessId}
+	if scope.OrgProcessId == "" {
+		scope.OrgProcessId = tenantId
 	}
 	return scope
 }

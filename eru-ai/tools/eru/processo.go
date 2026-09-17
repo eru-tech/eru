@@ -169,14 +169,12 @@ type ProcessoSaveEntityDownloadVisibilityParams struct {
 }
 
 type ProcessoFetchPagesParams struct {
-	OrgId     string `json:"org_id" eru:"required" desc:"organization id"`
-	ProcessId string `json:"process_id" eru:"required" desc:"process id"`
+	OrgProcessId string `json:"org_process_id" eru:"required" desc:"org process id the pages belong to"`
 }
 
 type ProcessoFetchPageParams struct {
-	OrgId     string `json:"org_id" eru:"required" desc:"organization id"`
-	ProcessId string `json:"process_id" eru:"required" desc:"process id"`
-	PageId    string `json:"page_id" eru:"required" desc:"page id to fetch"`
+	OrgProcessId string `json:"org_process_id" eru:"required" desc:"org process id the page belongs to"`
+	PageId       string `json:"page_id" eru:"required" desc:"page id to fetch"`
 }
 
 type ProcessoSavePageParams struct {
@@ -190,6 +188,10 @@ type ProcessoSavePageParams struct {
 type ProcessoTool struct {
 	tools.Tool
 	ProjectId string `json:"project_id" desc:"processo project id used in the url path" default:"processo"`
+	// MandatoryVarsQuery and MandatoryVarsTransform configure execute_query exactly as they do
+	// on the eru-ql tool. Left empty - the default - execute_query runs the query as given.
+	MandatoryVarsQuery     string `json:"mandatory_vars_query" desc:"query to fetch mandatory variables before running a stored query"`
+	MandatoryVarsTransform string `json:"mandatory_vars_transform" desc:"gotemplate to transform the mandatory variables query output"`
 }
 
 const (
@@ -205,7 +207,47 @@ const (
 	ProcessoSavePage                     = "save_page"
 )
 
-var processoToolActions = []tools.ToolAction{
+// The query and function actions are the eru-ql and eru-functions ones, re-exposed here so an
+// agent holding only the processo tool can read and write the stored queries and functions of
+// the processo project without a second tool attached. They are borrowed rather than restated
+// so the parameter schemas and descriptions cannot drift from the tools that own them.
+var processoQueryActionNames = []string{ExecuteQuery, SaveQuery, RemoveQuery, ListQueries, GetQuery}
+
+var processoFuncActionNames = []string{SaveFunc, ListFuncs, FetchFunc, ExecuteFunc, RunFunc, RemoveFunc}
+
+var processoWriteActions = map[string]bool{
+	SaveQuery:   true,
+	RemoveQuery: true,
+	SaveFunc:    true,
+	RemoveFunc:  true,
+}
+
+var processoToolActions, processoActionScopes = tools.ExpandScopedActions(processoBaseActions, processoWriteActions)
+
+var processoBaseActions = processoActions()
+
+func processoActions() []tools.ToolAction {
+	actions := make([]tools.ToolAction, 0, len(processoOwnActions)+len(processoQueryActionNames)+len(processoFuncActionNames))
+	actions = append(actions, processoOwnActions...)
+	actions = append(actions, processoBorrowedActions(eruqlBaseActions, processoQueryActionNames)...)
+	actions = append(actions, processoBorrowedActions(erufunctionsBaseActions, processoFuncActionNames)...)
+	return actions
+}
+
+func processoBorrowedActions(from []tools.ToolAction, names []string) []tools.ToolAction {
+	borrowed := make([]tools.ToolAction, 0, len(names))
+	for _, name := range names {
+		for _, action := range from {
+			if action.ActionName == name {
+				borrowed = append(borrowed, action)
+				break
+			}
+		}
+	}
+	return borrowed
+}
+
+var processoOwnActions = []tools.ToolAction{
 	{
 		ActionName:   ProcessoSaveEntity,
 		Description:  "allows user to add/edit entities metadata",
@@ -278,8 +320,8 @@ var processoToolActions = []tools.ToolAction{
 	},
 	{
 		ActionName:   ProcessoFetchPages,
-		Description:  "Fetch all pages for an org and process",
-		SystemPrompt: "This tool fetches all the pages of an org and process. Pass org_id and process_id.",
+		Description:  "Fetch all pages of an org process",
+		SystemPrompt: "This tool fetches all the pages of an org process. Pass org_process_id.",
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
@@ -289,7 +331,7 @@ var processoToolActions = []tools.ToolAction{
 	{
 		ActionName:   ProcessoFetchPage,
 		Description:  "Fetch a single page by id",
-		SystemPrompt: "This tool fetches a single page of an org and process by its id. Pass org_id, process_id and page_id.",
+		SystemPrompt: "This tool fetches a single page of an org process by its id. Pass org_process_id and page_id.",
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
@@ -453,6 +495,20 @@ func (processoTool *ProcessoTool) projectIdSegment() string {
 	return processoTool.ProjectId
 }
 
+// eruqlDelegate and erufuncDelegate run the borrowed actions through the tools that own them,
+// against the processo project rather than the caller's own project. Both read their base url
+// and claims from the context, so a bare delegate carries everything the call needs.
+func (processoTool *ProcessoTool) eruqlDelegate() *EruqlTool {
+	return &EruqlTool{
+		MandatoryVarsQuery:     processoTool.MandatoryVarsQuery,
+		MandatoryVarsTransform: processoTool.MandatoryVarsTransform,
+	}
+}
+
+func (processoTool *ProcessoTool) erufuncDelegate() *ErufunctionsTool {
+	return &ErufunctionsTool{}
+}
+
 func (processoTool *ProcessoTool) unmarshalParams(ctx context.Context, params map[string]interface{}, target interface{}) error {
 	b, err := json.Marshal(params)
 	if err != nil {
@@ -467,7 +523,11 @@ func (processoTool *ProcessoTool) unmarshalParams(ctx context.Context, params ma
 func (processoTool *ProcessoTool) Execute(ctx context.Context, projectId string, tenantId string, actionName string, params map[string]interface{}) (toolResult map[string]interface{}, persistStore bool, err error) {
 	logs.WithContext(ctx).Debug("processoTool Execute - Start")
 	var toolRequest interface{}
-	switch actionName {
+	scopedAction, scopedActionOk := processoActionScopes[actionName]
+	if !scopedActionOk {
+		return nil, false, fmt.Errorf("action %s not found", actionName)
+	}
+	switch scopedAction.BaseName {
 	case ProcessoSaveEntity:
 		toolResult, toolRequest, persistStore, err = processoTool.SaveEntity(ctx, projectId, tenantId, params)
 	case ProcessoSaveField:
@@ -488,6 +548,28 @@ func (processoTool *ProcessoTool) Execute(ctx context.Context, projectId string,
 		toolResult, toolRequest, persistStore, err = processoTool.FetchPage(ctx, projectId, tenantId, params)
 	case ProcessoSavePage:
 		toolResult, toolRequest, persistStore, err = processoTool.SavePage(ctx, projectId, tenantId, params)
+	case ExecuteQuery:
+		toolResult, toolRequest, persistStore, err = processoTool.eruqlDelegate().ExecuteQuery(ctx, processoTool.projectIdSegment(), tenantId, params, processoTool.MandatoryVarsQuery != "")
+	case SaveQuery:
+		toolResult, toolRequest, persistStore, err = processoTool.eruqlDelegate().SaveQuery(ctx, processoTool.projectIdSegment(), tenantId, params, scopedAction.Scope)
+	case RemoveQuery:
+		toolResult, toolRequest, persistStore, err = processoTool.eruqlDelegate().RemoveQuery(ctx, processoTool.projectIdSegment(), tenantId, params, scopedAction.Scope)
+	case ListQueries:
+		toolResult, toolRequest, persistStore, err = processoTool.eruqlDelegate().ListQueries(ctx, processoTool.projectIdSegment(), tenantId, params)
+	case GetQuery:
+		toolResult, toolRequest, persistStore, err = processoTool.eruqlDelegate().GetQuery(ctx, processoTool.projectIdSegment(), tenantId, params)
+	case SaveFunc:
+		toolResult, toolRequest, persistStore, err = processoTool.erufuncDelegate().SaveFunc(ctx, processoTool.projectIdSegment(), tenantId, params, scopedAction.Scope)
+	case RemoveFunc:
+		toolResult, toolRequest, persistStore, err = processoTool.erufuncDelegate().RemoveFunc(ctx, processoTool.projectIdSegment(), tenantId, params, scopedAction.Scope)
+	case ListFuncs:
+		toolResult, toolRequest, persistStore, err = processoTool.erufuncDelegate().ListFuncs(ctx, processoTool.projectIdSegment(), tenantId, params)
+	case FetchFunc:
+		toolResult, toolRequest, persistStore, err = processoTool.erufuncDelegate().FetchFunc(ctx, processoTool.projectIdSegment(), tenantId, params)
+	case ExecuteFunc:
+		toolResult, toolRequest, persistStore, err = processoTool.erufuncDelegate().ExecuteFunc(ctx, processoTool.projectIdSegment(), tenantId, params)
+	case RunFunc:
+		toolResult, toolRequest, persistStore, err = processoTool.erufuncDelegate().RunFunc(ctx, processoTool.projectIdSegment(), tenantId, params)
 	default:
 		return nil, false, fmt.Errorf("action %s not found", actionName)
 	}
@@ -1158,8 +1240,7 @@ func (processoTool *ProcessoTool) FetchPages(ctx context.Context, projectId stri
 	}
 	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/", ProcessoFetchPages)
 	body := map[string]interface{}{
-		"org_id":     p.OrgId,
-		"process_id": p.ProcessId,
+		"org_process_id": p.OrgProcessId,
 	}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
 	if err != nil {
@@ -1182,9 +1263,8 @@ func (processoTool *ProcessoTool) FetchPage(ctx context.Context, projectId strin
 	}
 	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/", ProcessoFetchPage)
 	body := map[string]interface{}{
-		"org_id":     p.OrgId,
-		"process_id": p.ProcessId,
-		"page_id":    p.PageId,
+		"org_process_id": p.OrgProcessId,
+		"page_id":        p.PageId,
 	}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
 	if err != nil {

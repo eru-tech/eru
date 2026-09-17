@@ -40,8 +40,7 @@ func library(delegate tools.Tooling) *PageLibraryTool {
 	return &PageLibraryTool{
 		ListDelegate: delegate,
 		GetDelegate:  delegate,
-		OrgId:        "org_1",
-		ProcessId:    "proc_1",
+		OrgProcessId: "org_process_1",
 	}
 }
 
@@ -59,8 +58,8 @@ func TestListPagesReturnsWhatIsNeededToPickOne(t *testing.T) {
 	if delegate.gotAction != "fetch_pages" {
 		t.Errorf("action = %q", delegate.gotAction)
 	}
-	// The org and process come from the agent, never from the model.
-	if delegate.gotParams["org_id"] != "org_1" || delegate.gotParams["process_id"] != "proc_1" {
+	// The org process comes from the agent, never from the model.
+	if delegate.gotParams["org_process_id"] != "org_process_1" {
 		t.Errorf("scope = %v", delegate.gotParams)
 	}
 

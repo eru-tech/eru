@@ -13,13 +13,12 @@ const (
 	pageScopeKey  contextKey = "eru_studio_page_scope"
 )
 
-// PageScope is the org and process whose existing pages the agent may read.
+// PageScope is the org process whose existing pages the agent may read.
 type PageScope struct {
-	OrgId     string
-	ProcessId string
+	OrgProcessId string
 }
 
-// WithPageScope records which org and process the page lookups run against.
+// WithPageScope records which org process the page lookups run against.
 func WithPageScope(ctx context.Context, scope PageScope) context.Context {
 	return context.WithValue(ctx, pageScopeKey, scope)
 }

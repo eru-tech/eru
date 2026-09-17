@@ -20,7 +20,7 @@ import (
 // request: the list of pages that exist, and the JSON of one of them.
 //
 // These wrap the processo page actions so the model asks for a page by name
-// instead of by an id nobody told it, and so the org/process ids stay out of the
+// instead of by an id nobody told it, and so the org process id stays out of the
 // model's hands.
 
 const (
@@ -83,11 +83,10 @@ type PageLibraryTool struct {
 	// work. They are wired per request by the agent that offers this tool.
 	ListDelegate tools.Tooling `json:"-"`
 	GetDelegate  tools.Tooling `json:"-"`
-	// OrgId and ProcessId scope the lookup. The processo page actions take them
-	// explicitly, so they are filled from the agent's execution context rather
+	// OrgProcessId scopes the lookup. The processo page actions take it
+	// explicitly, so it is filled from the agent's execution context rather
 	// than asked of the model.
-	OrgId     string `json:"org_id,omitempty"`
-	ProcessId string `json:"process_id,omitempty"`
+	OrgProcessId string `json:"org_process_id,omitempty"`
 }
 
 func (plTool *PageLibraryTool) GetActionsList() []tools.ActionInfo {
@@ -123,8 +122,7 @@ func (plTool *PageLibraryTool) Execute(ctx context.Context, projectId string, te
 
 func (plTool *PageLibraryTool) scope() map[string]interface{} {
 	return map[string]interface{}{
-		"org_id":     plTool.OrgId,
-		"process_id": plTool.ProcessId,
+		"org_process_id": plTool.OrgProcessId,
 	}
 }
 
