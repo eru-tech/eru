@@ -187,7 +187,7 @@ func (m *AnthropicModel) QueryModelWithReasoning(ctx context.Context, chatReques
 	return Message{Content: content, Role: "assistant"}, thinking, nil
 }
 
-func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (Message, []StepTrace, error) {
+func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt AgentPrompt, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (Message, []StepTrace, error) {
 	logs.WithContext(ctx).Debug("RunToolLoop - Start")
 	ctx, span := otel.Tracer("eru-ai").Start(ctx, "Anthropic.RunToolLoop",
 		oteltrace.WithAttributes(attribute.String("model", m.LLMName), attribute.Int("max_iterations", maxIterations)),
@@ -196,10 +196,7 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 	client := m.getClient()
 
 	sdkTools, toolPrompt := convertTools(ctx, toolsMap)
-	systemContent := agentPrompt
-	if toolPrompt != "" {
-		systemContent = strings.TrimSpace(fmt.Sprint(agentPrompt, "\n", toolPrompt))
-	}
+	systemBlocks := cachedSystemBlocks(agentPrompt, toolPrompt)
 
 	messages := convertMessages(ctx, chatRequest.Messages)
 
@@ -210,11 +207,12 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 
 	for iteration := 1; iteration <= maxIterations; iteration++ {
 		params := anthropic.MessageNewParams{
-			Model:     m.LLMName,
-			MaxTokens: maxTokens,
-			Messages:  messages,
-			Tools:     sdkTools,
-			System:    cachedSystemBlocks(systemContent),
+			Model:        m.LLMName,
+			MaxTokens:    maxTokens,
+			Messages:     messages,
+			Tools:        sdkTools,
+			System:       systemBlocks,
+			CacheControl: anthropic.CacheControlEphemeralParam{TTL: anthropic.CacheControlEphemeralTTLTTL5m},
 		}
 		if thinkingBudget > 0 {
 			params.Thinking = anthropic.ThinkingConfigParamUnion{
@@ -343,7 +341,7 @@ func (m *AnthropicModel) RunToolLoop(ctx context.Context, chatRequest ChatReques
 	return usageAcc.Attach(Message{Content: "max iterations reached", Role: "assistant"}), traces, nil
 }
 
-func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor, streamCb StreamEventCallback) (Message, []StepTrace, error) {
+func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt AgentPrompt, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor, streamCb StreamEventCallback) (Message, []StepTrace, error) {
 	logs.WithContext(ctx).Debug("RunToolLoopStreaming - Start")
 	ctx, span := otel.Tracer("eru-ai").Start(ctx, "Anthropic.RunToolLoopStreaming",
 		oteltrace.WithAttributes(attribute.String("model", m.LLMName), attribute.Int("max_iterations", maxIterations)),
@@ -352,10 +350,7 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 	client := m.getClient()
 
 	sdkTools, toolPrompt := convertTools(ctx, toolsMap)
-	systemContent := agentPrompt
-	if toolPrompt != "" {
-		systemContent = strings.TrimSpace(fmt.Sprint(agentPrompt, "\n", toolPrompt))
-	}
+	systemBlocks := cachedSystemBlocks(agentPrompt, toolPrompt)
 
 	messages := convertMessages(ctx, chatRequest.Messages)
 	var traces []StepTrace
@@ -365,11 +360,12 @@ func (m *AnthropicModel) RunToolLoopStreaming(ctx context.Context, chatRequest C
 
 	for iteration := 1; iteration <= maxIterations; iteration++ {
 		params := anthropic.MessageNewParams{
-			Model:     m.LLMName,
-			MaxTokens: maxTokens,
-			Messages:  messages,
-			Tools:     sdkTools,
-			System:    cachedSystemBlocks(systemContent),
+			Model:        m.LLMName,
+			MaxTokens:    maxTokens,
+			Messages:     messages,
+			Tools:        sdkTools,
+			System:       systemBlocks,
+			CacheControl: anthropic.CacheControlEphemeralParam{TTL: anthropic.CacheControlEphemeralTTLTTL5m},
 		}
 		if thinkingBudget > 0 {
 			params.Thinking = anthropic.ThinkingConfigParamUnion{
@@ -729,13 +725,22 @@ func logCacheUsage(ctx context.Context, iteration int, usage anthropic.Usage) {
 	))
 }
 
-func cachedSystemBlocks(systemContent string) []anthropic.TextBlockParam {
-	return []anthropic.TextBlockParam{
+func cachedSystemBlocks(agentPrompt AgentPrompt, toolPrompt string) []anthropic.TextBlockParam {
+	staticContent := agentPrompt.Static
+	if toolPrompt != "" {
+		staticContent = strings.TrimSpace(fmt.Sprint(staticContent, "\n", toolPrompt))
+	}
+
+	blocks := []anthropic.TextBlockParam{
 		{
-			Text:         systemContent,
+			Text:         staticContent,
 			CacheControl: anthropic.CacheControlEphemeralParam{TTL: anthropic.CacheControlEphemeralTTLTTL5m},
 		},
 	}
+	if agentPrompt.Dynamic != "" {
+		blocks = append(blocks, anthropic.TextBlockParam{Text: agentPrompt.Dynamic})
+	}
+	return blocks
 }
 
 // resolveMaxTokens picks a sensible MaxTokens for a Messages request.

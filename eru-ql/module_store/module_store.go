@@ -36,6 +36,7 @@ const (
 type MyQueryListItem struct {
 	QueryName string `json:"query_name"`
 	QueryType string `json:"query_type"`
+	Source    string `json:"source"`
 }
 
 // resolveDataSource returns the datasource for (projectId, tenantId, dbAlias), resolving
@@ -938,17 +939,21 @@ func (ms *ModuleStore) RemoveMyQuery(ctx context.Context, projectId string, tena
 	}
 }
 
-func (ms *ModuleStore) tenantMyQueries(ctx context.Context, projectId string, tenantId string) map[string]*module_model.MyQuery {
-	queries := make(map[string]*module_model.MyQuery)
+// tenantMyQueries merges the queries visible to a route tenant, default tenant first so the
+// route tenant overrides it. sources carries the tenant each returned query was resolved from.
+func (ms *ModuleStore) tenantMyQueries(ctx context.Context, projectId string, tenantId string) (queries map[string]*module_model.MyQuery, sources map[string]string) {
+	queries = make(map[string]*module_model.MyQuery)
+	sources = make(map[string]string)
 	lookupOrder := eru_utils.TenantLookupOrder(ctx, tenantId)
 	for i := len(lookupOrder) - 1; i >= 0; i-- {
 		if tc, tcOk := ms.Projects[projectId].Tenants[lookupOrder[i]]; tcOk {
 			for k, v := range tc.MyQueries {
 				queries[k] = v
+				sources[k] = lookupOrder[i]
 			}
 		}
 	}
-	return queries
+	return queries, sources
 }
 
 func (ms *ModuleStore) GetMyQuery(ctx context.Context, projectId string, tenantId string, queryName string) (myquery module_model.MyQuery, err error) {
@@ -979,7 +984,7 @@ func (ms *ModuleStore) GetMyQueries(ctx context.Context, projectId string, tenan
 		queriesToReturn := make(map[string]module_model.MyQuery)
 		queries := ms.Projects[projectId].MyQueries
 		if tenantId != "" {
-			queries = ms.tenantMyQueries(ctx, projectId, tenantId)
+			queries, _ = ms.tenantMyQueries(ctx, projectId, tenantId)
 		}
 		for k, mq := range queries {
 			if strings.EqualFold(mq.QueryType, queryType) {
@@ -1000,11 +1005,12 @@ func (ms *ModuleStore) GetMyQueriesNames(ctx context.Context, projectId string, 
 	logs.WithContext(ctx).Debug("GetMyQueriesNames - Start")
 	if _, ok := ms.Projects[projectId]; ok {
 		queries := ms.Projects[projectId].MyQueries
+		sources := make(map[string]string)
 		if tenantId != "" {
-			queries = ms.tenantMyQueries(ctx, projectId, tenantId)
+			queries, sources = ms.tenantMyQueries(ctx, projectId, tenantId)
 		}
 		for k, mq := range queries {
-			myqueries = append(myqueries, MyQueryListItem{QueryName: k, QueryType: mq.QueryType})
+			myqueries = append(myqueries, MyQueryListItem{QueryName: k, QueryType: mq.QueryType, Source: sources[k]})
 		}
 		return
 	} else {

@@ -92,8 +92,46 @@ type ClarificationAnswer struct {
 	FreeText   string   `json:"free_text,omitempty"`
 }
 
+// ConversationListItem is one row of the conversation list: enough to show it
+// and to pick it, in the order the user thinks about their conversations.
+//
+// The list used to be a map of id to title. A Go map has no order, so whatever
+// the database sorted was thrown away before it reached the client, and there
+// was nowhere to carry a timestamp - so the UI stamped every conversation with
+// the moment it happened to load and they all read as the same minute.
+type ConversationListItem struct {
+	Id        string    `json:"id"`
+	Title     string    `json:"title"`
+	UpdatedAt time.Time `json:"updatedAt,omitempty"`
+}
+
+// memoryKey scopes a conversation to its tenant inside the cache store.
+//
+// The store is shared by everyone configured the same way - which, for a Redis
+// that several tenants point at, has always been the whole point. A bare
+// conversation id as the key means any tenant on that store can read another
+// tenant's conversation by knowing its id. The database side was never exposed
+// this way because its query filters on project and tenant; the cache had no
+// such filter, only a key, so the scope has to be in the key.
+//
+// Database rows keep the conversation id as their cache_key: the columns beside
+// it already carry the scope, and rewriting it would orphan every row written so
+// far.
+func memoryKey(projectId, tenantId, conversationId string) string {
+	if conversationId == "" {
+		return ""
+	}
+	return projectId + ":" + tenantId + ":" + conversationId
+}
+
 type Conversation struct {
-	ConversationId       string               `json:"conversation_id"`
+	ConversationId string `json:"conversation_id"`
+
+	// MemoryKey is the tenant-scoped key this conversation occupies in the cache
+	// store. It is carried on the conversation because the conversation manager
+	// builds requests without being told which tenant it is serving.
+	MemoryKey string `json:"-"`
+
 	ParentConversationId string               `json:"parent_conversation_id,omitempty"`
 	Messages             []AgentMessage       `json:"messages"`
 	NewMessages          []AgentMessage       `json:"-"`
@@ -126,6 +164,19 @@ type DiscoveredAgent struct {
 	// whatever blunt tool it has, which is how an invented SQL statement ended up
 	// standing in for a purpose-built metadata lookup.
 	InternalCapabilities []string `json:"internal_capabilities,omitempty"`
+	// PlanningNote is what this agent needs a planner to know about how to use
+	// it, in its own words. Some agents do more in one call than their
+	// description implies - the page agent produces a whole design, root page
+	// and every page it mounts, in a single response - and a planner that does
+	// not know that plans one step per artifact, chains them together, and fails
+	// building the template that would have joined them.
+	PlanningNote string `json:"planning_note,omitempty"`
+}
+
+// PlanningAdvisor is implemented by agent types that need a planner to know
+// something about how they are used which their description does not convey.
+type PlanningAdvisor interface {
+	PlanningNote() string
 }
 
 func (da DiscoveredAgent) HasStructuredOutput() bool {
@@ -324,6 +375,44 @@ type OutputValidator interface {
 	ValidateOutput(ctx context.Context, output map[string]interface{}) error
 }
 
+// OutputNormalizer is implemented by agent types that can settle their own
+// output deterministically, before anything judges it.
+//
+// It exists to keep repair out of validation. A validator that quietly rewrites
+// what it is inspecting is a trap for the next reader, and a repair expressed as
+// a validation failure is worse than that: a failure that survives the retries
+// aborts the run, so a fault the agent type could simply have corrected costs
+// the user the whole answer instead.
+type OutputNormalizer interface {
+	NormalizeOutput(ctx context.Context, output map[string]interface{})
+}
+
+// OutputRepairer is implemented by agent types that can fix a rejected output
+// more cheaply than by producing it again.
+//
+// The default retry is a full regeneration: the model is told what was wrong and
+// writes the whole answer a second time. For a small answer that is fine. For a
+// page of seventy components rejected over one missing property it is most of a
+// minute spent rewriting sixty-nine components that were already correct, and
+// each rewrite is a fresh chance to get something else wrong.
+//
+// An agent that implements this gets to answer the retry with a diff instead.
+// It decides whether a repair is possible at all - some failures are about the
+// shape of the answer itself, where there is nothing coherent to diff against -
+// and returns ok=false to take the ordinary retry.
+type OutputRepairer interface {
+	RepairTurn(ctx context.Context, failed map[string]interface{}, valErr error) (RepairTurn, bool)
+}
+
+// RepairTurn is how the next attempt should be asked for.
+type RepairTurn struct {
+	// Schema replaces the structured_output schema for this attempt. Zero value
+	// leaves it alone.
+	Schema eru_models.JSONSchema
+	// Prompt is the message the model sees instead of the generic retry text.
+	Prompt string
+}
+
 // guardrailPromptTemplate frames the agent owner's configured guardrail text so the
 // model treats it as a hard scope boundary rather than as more task instructions.
 const guardrailPromptTemplate = `
@@ -430,7 +519,7 @@ type AgentI interface {
 	GetChatMemory() cache.CacheStoreI
 	ValidateChatMemory(ctx context.Context, projectId string) error
 	LoadConversationHistory(ctx context.Context, conversationId, projectId, tenantId string) (*Conversation, error)
-	LoadConversationList(ctx context.Context, projectId, tenantId string) (map[string]string, error)
+	LoadConversationList(ctx context.Context, projectId, tenantId string, limit int, skip int) ([]ConversationListItem, error)
 	SaveConversation(ctx context.Context, conversation *Conversation, projectId string, tenantId string) error
 	GetConversationConfig() *ConversationConfig
 	InitializeConversationManager(ctx context.Context)
@@ -627,6 +716,17 @@ func (agent *Agent) LoadConversations(ctx context.Context, conversationId string
 	//	conversation.Messages = append(conversation.Messages, agentMessage)
 	conversation.NewMessages = append(conversation.NewMessages, agentMessage)
 
+	// The artifact and params this turn carried join the conversation's working
+	// set before the request is built, so the journal below can compare what the
+	// client is sending now against what it sent last time. This is the only
+	// record of the artifact as it stood: the transcript keeps the prose.
+	recordSessionTurn(ctx, agent.ChatMemory, conversation.MemoryKey, SessionTurn{
+		MessageId: agentMessage.MessageId,
+		Role:      agentMessage.Role,
+		Params:    agentMessage.Params,
+		Code:      artifactOf(agentMessage),
+	})
+
 	msg := models.Message{
 		Role:    agentMessage.Role,
 		Content: agentMessage.Content,
@@ -732,7 +832,11 @@ func (agent *Agent) SetChatMemory(ctx context.Context, cacheStoreI cache.CacheSt
 func (agent *Agent) ValidateChatMemory(ctx context.Context, projectId string) error {
 	logs.WithContext(ctx).Debug("ValidateChatMemory - Start")
 	if agent.ChatMemory == nil {
-		_ = logs.Err(ctx, fmt.Errorf("chat memory is not set"), "chat memory is not set")
+		// Not every agent remembers anything, and most have no reason to. This
+		// was logged as an error on every resolution of every such agent, which
+		// made a normal configuration look broken and buried the times chat
+		// memory really did fail.
+		logs.WithContext(ctx).Info(fmt.Sprint("agent ", agent.AgentName, " has no chat memory configured, so it keeps no conversation"))
 		return nil
 	}
 	return agent.ChatMemory.ValidatePersistence(ctx, projectId)
@@ -798,13 +902,17 @@ func (agent *Agent) UnmarshalJSON(b []byte) error {
 					logs.WithContext(ctx).Error(err.Error())
 					return err
 				}
-				cacheStoreI := cache.GetCacheStore(cacheStoreType, "")
-				err = cacheStoreI.MakeFromJson(ctx, cacheStoreJson)
-				if err == nil {
-					agent.ChatMemory = cacheStoreI
-				} else {
-					return err
+				// Shared, not built fresh. This runs on every clone of the
+				// agent - which is to say on every request - and a store built
+				// here would be a private, empty one that is discarded when the
+				// request ends. Chat memory was therefore never able to return a
+				// hit in its life, and every turn of every conversation went to
+				// the database instead.
+				cacheStoreI, csErr := cache.GetSharedCacheStore(ctx, cacheStoreType, cacheStoreJson)
+				if csErr != nil {
+					return csErr
 				}
+				agent.ChatMemory = cacheStoreI
 			} else {
 				logs.WithContext(ctx).Info("ignoring secret manager as sm_store_type attribute not found")
 			}
@@ -812,6 +920,137 @@ func (agent *Agent) UnmarshalJSON(b []byte) error {
 	}
 	return nil
 }
+
+// forStorage is the message as it is remembered.
+//
+// Traces are the live commentary on how an answer was produced - the thinking,
+// every tool call and every tool result. For a page agent one trace can hold an
+// entire page of JSON, so keeping them made each remembered turn enormous, and
+// nothing reads them back: the model request is built from Content and Actions,
+// and the UI renders the answer, not the reasoning that led to it. They stay in
+// the live response, where they drive the activity log; they are simply not
+// worth carrying forever.
+func (message AgentMessage) forStorage() AgentMessage {
+	message.Traces = nil
+
+	// An attachment is remembered by name, never by value.
+	//
+	// The bytes arrive inline - a screenshot is base64 in image_data - and this
+	// message is about to be written to the database and replayed into the
+	// model request of every later turn in the conversation. Keeping them means
+	// an image the user attached once is stored again on each turn and
+	// re-uploaded to the model on turn two, three, four, for as long as the
+	// conversation lives. The descriptor is what later turns actually need: that
+	// something was attached, what it was called, and what type it was.
+	message.Files = fileDescriptors(message.Files)
+
+	// An assistant turn keeps its prose inside the answer action and leaves
+	// Content empty. Everything that reads a remembered message back reads
+	// Content first - the model request built by convertAgentMessagesToMessages,
+	// the transcript rendered in the browser - so a stored turn with no Content
+	// comes back as a blank bubble and, worse, as a blank assistant line in the
+	// history sent to the model. Lift the answer into Content once, here, rather
+	// than making every reader know where else to look.
+	if message.Content == "" {
+		message.Content = answerText(message)
+	}
+	return message
+}
+
+// fileDescriptors strips the payload from a list of attachments, keeping what
+// identifies them.
+func fileDescriptors(files []models.FileMessage) []models.FileMessage {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]models.FileMessage, 0, len(files))
+	for _, file := range files {
+		file.FileData = ""
+		file.ImageData = ""
+		out = append(out, file)
+	}
+	return out
+}
+
+// answerText is the prose an assistant turn actually said.
+func answerText(message AgentMessage) string {
+	for _, action := range message.Actions {
+		if action.Action == nil {
+			continue
+		}
+		if response, ok := action.Action["response"].(string); ok && strings.TrimSpace(response) != "" {
+			return response
+		}
+	}
+	return ""
+}
+
+// artifactOf is the structured output a turn carried, whether it arrived as the
+// client's baseline or left as the agent's answer.
+//
+// Where it arrives depends on who is being called. A reasoning agent is handed
+// the baseline in Code; the orchestrator is handed the same thing one level out,
+// as params.code, and its own Code is empty. Reading only Code meant the
+// orchestrator - the one that decides whether a follow-up can be answered at all
+// - remembered nothing of the artifact, and asked the user for a value it had
+// been sent twice.
+func artifactOf(message AgentMessage) string {
+	if message.Code != "" {
+		return message.Code
+	}
+	if code, ok := message.Params["code"]; ok {
+		if s, isString := code.(string); isString {
+			if strings.TrimSpace(s) != "" {
+				return s
+			}
+		} else if code != nil {
+			if body, err := json.Marshal(code); err == nil && string(body) != "null" {
+				return string(body)
+			}
+		}
+	}
+	for _, action := range message.Actions {
+		if action.ActionType != ActionTypeAnswer || action.Action == nil {
+			continue
+		}
+		body, err := json.Marshal(action.Action)
+		if err != nil {
+			continue
+		}
+		return string(body)
+	}
+	return ""
+}
+
+// storageMessageId keeps every remembered message distinct.
+//
+// An assistant turn is stamped with the message id of the user turn it answers,
+// which is right for correlating a reply with its request and wrong for
+// identifying a row. Both halves of an exchange then arrive from the database
+// under one id, and any reader that treats the id as a key - the browser
+// de-duplicates on it - keeps the first and silently discards the second. Since
+// the user message is stored first, what gets discarded is every reply: a
+// reopened conversation showed the questions and none of the answers.
+func storageMessageId(message AgentMessage, seen map[string]int) string {
+	id := message.MessageId
+	if id == "" {
+		return id
+	}
+	n, clash := seen[id]
+	seen[id] = n + 1
+	if !clash {
+		return id
+	}
+	role := message.Role
+	if role == "" {
+		role = "message"
+	}
+	if n == 1 {
+		return fmt.Sprintf("%s#%s", id, role)
+	}
+	return fmt.Sprintf("%s#%s-%d", id, role, n)
+}
+
 func (agent *Agent) GetChatMemory() cache.CacheStoreI {
 	return agent.ChatMemory
 }
@@ -821,6 +1060,7 @@ func (agent *Agent) LoadConversationHistory(ctx context.Context, conversationId,
 
 	conversation := &Conversation{
 		ConversationId: conversationId,
+		MemoryKey:      memoryKey(projectId, tenantId, conversationId),
 		Messages:       []AgentMessage{},
 		NewMessages:    []AgentMessage{},
 	}
@@ -842,9 +1082,9 @@ func (agent *Agent) LoadConversationHistory(ctx context.Context, conversationId,
 	return conversation, nil
 }
 
-func (agent *Agent) LoadConversationList(ctx context.Context, projectId, tenantId string) (conversations map[string]string, err error) {
-	logs.WithContext(ctx).Debug("LoadConversationHistory - Start")
-	conversations = make(map[string]string)
+func (agent *Agent) LoadConversationList(ctx context.Context, projectId, tenantId string, limit int, skip int) (conversations []ConversationListItem, err error) {
+	logs.WithContext(ctx).Debug("LoadConversationList - Start")
+	conversations = []ConversationListItem{}
 	if agent.ChatMemory == nil {
 		logs.WithContext(ctx).Info("Chat memory not configured, returning empty conversation")
 		return
@@ -876,7 +1116,7 @@ func (agent *Agent) LoadConversationList(ctx context.Context, projectId, tenantI
 		}
 		userId = claimsMap["sub"].(string)
 	}
-	dbMessages, err := agent.ChatMemory.LoadListFromDatabase(ctx, projectId, tenantId, "", agent.AgentName, userId)
+	dbMessages, err := agent.ChatMemory.LoadListFromDatabase(ctx, projectId, tenantId, "", agent.AgentName, userId, limit, skip)
 	if err != nil {
 		logs.WithContext(ctx).Info(fmt.Sprintf("Failed to load messages from database: %v", err))
 		return nil, nil
@@ -890,16 +1130,24 @@ func (agent *Agent) LoadConversationList(ctx context.Context, projectId, tenantI
 			continue
 		}
 
-		str := dbMsg.CacheKey
+		title := dbMsg.CacheKey
 		if msg.Content != "" {
-			str = msg.Content
+			title = msg.Content
 		} else if len(msg.Actions) > 0 {
-			str = msg.Actions[0].ActionName
+			title = msg.Actions[0].ActionName
 		}
-		conversations[dbMsg.CacheKey] = str
+		updatedAt := dbMsg.UpdatedAt
+		if dbMsg.LastUpdated != nil && !dbMsg.LastUpdated.IsZero() {
+			updatedAt = *dbMsg.LastUpdated
+		}
+		conversations = append(conversations, ConversationListItem{
+			Id:        dbMsg.CacheKey,
+			Title:     title,
+			UpdatedAt: updatedAt,
+		})
 	}
 
-	logs.WithContext(ctx).Info(fmt.Sprintf("Loaded conversation with %d messages", len(conversations)))
+	logs.WithContext(ctx).Info(fmt.Sprintf("Loaded %d conversation(s) (limit %d, skip %d)", len(conversations), limit, skip))
 	return conversations, nil
 }
 
@@ -908,7 +1156,7 @@ func (agent *Agent) loadMessages(ctx context.Context, conversationId string, pro
 
 	var messages []AgentMessage
 
-	conversationJSON, err := agent.ChatMemory.Get(ctx, conversationId)
+	conversationJSON, err := agent.ChatMemory.Get(ctx, memoryKey(projectId, tenantId, conversationId))
 	if err != nil {
 		logs.WithContext(ctx).Info(fmt.Sprintf("Failed to get conversation from cache: %v", err))
 
@@ -942,9 +1190,19 @@ func (agent *Agent) loadMessages(ctx context.Context, conversationId string, pro
 				messages = append(messages, msg)
 			}
 
+			// The database returns rows in whatever order it likes - the
+			// transcript query has no ordering of its own - so a conversation
+			// could come back with the answer before the question. The browser
+			// re-sorts what it renders and hid this, but the model request is
+			// built straight from this slice, and a shuffled history is a
+			// conversation the agent cannot follow.
+			sort.SliceStable(messages, func(i, j int) bool {
+				return messages[i].MessageTimestamp.Before(messages[j].MessageTimestamp)
+			})
+
 			if len(messages) > 0 {
 				messagesJSON, _ := json.Marshal(messages)
-				agent.ChatMemory.Set(ctx, conversationId, string(messagesJSON))
+				agent.ChatMemory.Set(ctx, memoryKey(projectId, tenantId, conversationId), string(messagesJSON))
 			}
 		}
 	} else {
@@ -966,6 +1224,11 @@ func (agent *Agent) SaveConversation(ctx context.Context, conversation *Conversa
 		logs.WithContext(ctx).Info("Chat memory not configured or no new messages to save")
 		return nil
 	}
+	// A conversation built by hand rather than loaded has no scope yet, and an
+	// unscoped working set is one that is silently never written.
+	if conversation.MemoryKey == "" {
+		conversation.MemoryKey = memoryKey(projectId, tenantId, conversation.ConversationId)
+	}
 	cacheDataArray := []cache.CacheData{}
 	claims := tools.ClaimsFromContext(ctx)
 	userId := ""
@@ -978,7 +1241,30 @@ func (agent *Agent) SaveConversation(ctx context.Context, conversation *Conversa
 		}
 		userId = claimsMap["sub"].(string)
 	}
+	seenMessageIds := make(map[string]int, len(conversation.Messages)+len(conversation.NewMessages))
+	for _, msg := range conversation.Messages {
+		if msg.MessageId != "" {
+			seenMessageIds[msg.MessageId] = seenMessageIds[msg.MessageId] + 1
+		}
+	}
+
+	stored := make([]AgentMessage, 0, len(conversation.NewMessages))
 	for _, msg := range conversation.NewMessages {
+		msg = msg.forStorage()
+		msg.MessageId = storageMessageId(msg, seenMessageIds)
+		stored = append(stored, msg)
+
+		// Everything the turn produced joins the working set as well, so a warm
+		// conversation can be asked about its own output and not only about what
+		// the client last sent it. Only the transcript below goes to the
+		// database; this stays in memory and expires with the conversation.
+		recordSessionTurn(ctx, agent.ChatMemory, conversation.MemoryKey, SessionTurn{
+			MessageId: msg.MessageId,
+			Role:      msg.Role,
+			Params:    msg.Params,
+			Code:      artifactOf(msg),
+		})
+
 		messageJSON, err := json.Marshal(msg)
 		if err != nil {
 			logs.WithContext(ctx).Error(fmt.Sprintf("Failed to marshal message: %v", err))
@@ -1000,17 +1286,33 @@ func (agent *Agent) SaveConversation(ctx context.Context, conversation *Conversa
 		cacheDataArray = append(cacheDataArray, cacheData)
 	}
 
-	conversationJSON, err := json.Marshal(cacheDataArray)
+	// The cache holds the conversation in the shape loadMessages reads back: the
+	// messages themselves, all of them.
+	//
+	// It used to hold the []CacheData rows built for the database instead, whose
+	// JSON shares not one field name with AgentMessage - so every cache hit
+	// unmarshalled into a list of completely blank messages, and the agent
+	// carried on as though the conversation had never happened. And only the
+	// turn just taken was written, so even in the right shape the history was
+	// replaced rather than extended.
+	allMessages := make([]AgentMessage, 0, len(conversation.Messages)+len(stored))
+	allMessages = append(allMessages, conversation.Messages...)
+	allMessages = append(allMessages, stored...)
+
+	conversationJSON, err := json.Marshal(allMessages)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to marshal conversation: %v", err))
 		return err
 	}
 
-	err = agent.ChatMemory.Set(ctx, conversation.ConversationId, string(conversationJSON))
+	err = agent.ChatMemory.Set(ctx, memoryKey(projectId, tenantId, conversation.ConversationId), string(conversationJSON))
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("Failed to save conversation to cache: %v", err))
 		return err
 	}
+	// Keep the in-process conversation in step with what was just cached, so a
+	// second save in the same request extends the history rather than losing it.
+	conversation.Messages = allMessages
 
 	persistEnabled, _ := agent.ChatMemory.GetAttribute(ctx, "persist_enabled")
 	if persistEnabled != nil && persistEnabled.(bool) {
@@ -1072,6 +1374,7 @@ func (agent *Agent) InitializeConversationManager(ctx context.Context) {
 	cm := ConversationManager{
 		Config:       config,
 		SummaryModel: model,
+		ChatMemory:   agent.ChatMemory,
 	}
 	agent.ConversationManager = &cm
 }

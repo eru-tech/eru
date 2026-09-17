@@ -73,6 +73,8 @@ func validatePlan(ctx context.Context, plan map[string]interface{}, allowedAgent
 	issues = append(issues, validateParamForwarding(funcGroup.FuncSteps, allowedAgents, cc)...)
 	issues = append(issues, validateClarificationForwarding(funcGroup.FuncSteps, allowedAgents)...)
 	issues = append(issues, validateSqlAuthoring(funcGroup.FuncSteps, allowedAgents)...)
+	issues = append(issues, validateUserMessagePassthrough(funcGroup, cc)...)
+	issues = append(issues, validateAttachmentRouting(funcGroup, cc)...)
 	return issues
 }
 

@@ -135,8 +135,12 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	}
 
 	outputSchema := ra.getOutputSchema(ctx)
+	// Held onto so a repair turn can narrow the schema mid-loop: an agent that
+	// answers a rejection with a diff needs the diff's schema, not the one that
+	// described the whole answer.
+	var outputTool *utility.StructuredOutputTool
 	if outputSchema.Type != "" {
-		outputTool := &utility.StructuredOutputTool{}
+		outputTool = &utility.StructuredOutputTool{}
 		outputTool.SetAttribute(ctx, "output_schema", outputSchema)
 		outputTool.SetAttribute(ctx, "parameters", outputSchema)
 		outputTool.SetAttribute(ctx, "description", "Output the final result as structured JSON. Call this tool when you have your final answer ready.")
@@ -195,11 +199,14 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	if ra.GetProvider() != nil {
 		sp = ra.GetProvider().GetSystemPrompt() + "\n" + sp
 	}
-	sp = sp + ra.ExecutionContextSection(projectId, tenantId)
 	if ra.EnableClarification {
 		sp = sp + clarificationGuidance
 	}
 	sp = sp + ra.GuardrailSection()
+	agentPrompt := models.AgentPrompt{
+		Static:  sp,
+		Dynamic: ra.ExecutionContextSection(projectId, tenantId),
+	}
 
 	// When the agent produces structured output, the final answer is the
 	// structured_output tool payload, delivered to the client in the terminal
@@ -236,10 +243,10 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 						Iteration: me.Iteration,
 					})
 				}
-				return streamingModel.RunToolLoopStreaming(ctx, chatRequest, toolsMap, sp, ra.MaxIterations, ra.ThinkingBudget, toolExecutor, modelCb)
+				return streamingModel.RunToolLoopStreaming(ctx, chatRequest, toolsMap, agentPrompt, ra.MaxIterations, ra.ThinkingBudget, toolExecutor, modelCb)
 			}
 		}
-		return ra.Model.RunToolLoop(ctx, chatRequest, toolsMap, sp, ra.MaxIterations, ra.ThinkingBudget, toolExecutor)
+		return ra.Model.RunToolLoop(ctx, chatRequest, toolsMap, agentPrompt, ra.MaxIterations, ra.ThinkingBudget, toolExecutor)
 	}
 
 	agents.Emit(ctx, agents.StreamEvent{
@@ -271,6 +278,13 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 			break
 		}
 
+		// Whatever the agent type can put right by itself, it puts right here -
+		// before the output is judged, so a deterministic fix never costs a
+		// retry and never fails a run.
+		if normalizer, ok := ra.GetProvider().(agents.OutputNormalizer); ok && normalizer != nil {
+			normalizer.NormalizeOutput(ctx, agentResponse)
+		}
+
 		validationStarted := time.Now()
 		agents.EmitStepStarted(ctx, agents.StepValidate, attempt+1)
 		valErr := validateRootKeys(agentResponse, outputSchema)
@@ -292,9 +306,27 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 			return agents.AgentMessage{}, fmt.Errorf("agent output failed JSON validation after %d attempt(s): %w", attempt+1, valErr)
 		}
 		agents.EmitStepFinished(ctx, agents.StepValidate, attempt+1, agents.OutcomeRetry, validationStarted, valErr.Error(), agents.CodeOutputValidation)
+
+		// Ask the agent type whether it can answer this rejection with a diff.
+		// Nothing here knows what a diff means - that is entirely the agent's
+		// business; this only carries the schema and the wording it asks for.
+		retryPrompt := fmt.Sprintf(agentValidationRetryPrompt, valErr.Error())
+		if repairer, ok := ra.GetProvider().(agents.OutputRepairer); ok && repairer != nil {
+			if turn, repairable := repairer.RepairTurn(ctx, agentResponse, valErr); repairable {
+				if turn.Schema.Type != "" && outputTool != nil {
+					outputSchema = turn.Schema
+					outputTool.SetAttribute(ctx, "output_schema", outputSchema)
+					outputTool.SetAttribute(ctx, "parameters", outputSchema)
+				}
+				if strings.TrimSpace(turn.Prompt) != "" {
+					retryPrompt = turn.Prompt
+				}
+				logs.WithContext(ctx).Info(fmt.Sprintf("agent %s is repairing attempt %d rather than regenerating it", ra.AgentName, attempt+1))
+			}
+		}
 		chatRequest.Messages = append(chatRequest.Messages, models.Message{
 			Role:    "user",
-			Content: fmt.Sprintf(agentValidationRetryPrompt, valErr.Error()),
+			Content: retryPrompt,
 			Name:    ra.AgentName,
 		})
 		attempt++

@@ -8,9 +8,29 @@ import (
 
 // Issue is one thing wrong with a page the agent produced, addressed by a JSON
 // path so the retry prompt can point the model at the exact node.
+//
+// Path and Message are for the model. Code and ComponentId are for us: they
+// identify the same complaint about the same component across two renderings of
+// a page, which is what lets the retry path tell an issue it introduced from one
+// the page already had.
 type Issue struct {
-	Path    string `json:"path"`
-	Message string `json:"message"`
+	Path        string `json:"path"`
+	Code        Code   `json:"code,omitempty"`
+	ComponentId string `json:"component_id,omitempty"`
+	Message     string `json:"message"`
+}
+
+// Fingerprint identifies an issue by what it says about which component, not by
+// where that component currently sits or how the complaint is worded. A patch
+// that inserts a sibling shifts the index of everything after it, and a reworded
+// message is still the same mistake.
+func (i Issue) Fingerprint() string {
+	if i.Code == "" {
+		// Issues built by hand outside the validator carry no code yet; fall
+		// back to the path and wording so they still compare as themselves.
+		return i.Path + "|" + i.Message
+	}
+	return string(i.Code) + "|" + i.ComponentId
 }
 
 func (i Issue) String() string {
@@ -82,6 +102,9 @@ type validator struct {
 	// partial marks a component list that patches an existing page, where a
 	// component legitimately carries only the keys that changed.
 	partial bool
+	// currentId is the id of the component being checked, so every issue raised
+	// underneath it - a property, a style, an event - is attributable to it.
+	currentId string
 }
 
 func (c *Catalog) newValidator(allowChildIds bool) *validator {
@@ -111,8 +134,13 @@ func (c *Catalog) newValidator(allowChildIds bool) *validator {
 	return v
 }
 
-func (v *validator) add(path, format string, args ...interface{}) {
-	v.issues = append(v.issues, Issue{Path: path, Message: fmt.Sprintf(format, args...)})
+func (v *validator) add(path string, code Code, format string, args ...interface{}) {
+	v.issues = append(v.issues, Issue{
+		Path:        path,
+		Code:        code,
+		ComponentId: v.currentId,
+		Message:     fmt.Sprintf(format, args...),
+	})
 }
 
 // ValidatePage checks a full EruPage against the component library.
@@ -131,7 +159,7 @@ func (c *Catalog) ValidateComponents(components []interface{}, path string) []Is
 	for i, raw := range components {
 		component, ok := raw.(map[string]interface{})
 		if !ok {
-			v.add(fmt.Sprintf("%s[%d]", path, i), "must be an object")
+			v.add(fmt.Sprintf("%s[%d]", path, i), CodeComponentNotObject, "must be an object")
 			continue
 		}
 		v.component(fmt.Sprintf("%s[%d]", path, i), component)
@@ -142,12 +170,12 @@ func (c *Catalog) ValidateComponents(components []interface{}, path string) []Is
 func (v *validator) page(page map[string]interface{}) {
 	for key := range page {
 		if !v.pageKeys[key] {
-			v.add("", "unknown EruPage key %q - allowed keys are %s", key, strings.Join(sortedKeys(v.pageKeys), ", "))
+			v.add("", CodePageUnknownKey, "unknown EruPage key %q - allowed keys are %s", key, strings.Join(sortedKeys(v.pageKeys), ", "))
 		}
 	}
 	for _, required := range []string{"id", "name", "components", "styles"} {
 		if _, ok := page[required]; !ok {
-			v.add("", "EruPage is missing the required key %q", required)
+			v.add("", CodePageMissingKey, "EruPage is missing the required key %q", required)
 		}
 	}
 	if styles, ok := page["styles"]; ok {
@@ -162,14 +190,14 @@ func (v *validator) page(page map[string]interface{}) {
 	components, ok := page["components"].([]interface{})
 	if !ok {
 		if page["components"] != nil {
-			v.add("components", "must be a JSON array of components, not %T", page["components"])
+			v.add("components", CodePageComponentsNotList, "must be a JSON array of components, not %T", page["components"])
 		}
 		return
 	}
 	for i, raw := range components {
 		component, ok := raw.(map[string]interface{})
 		if !ok {
-			v.add(fmt.Sprintf("components[%d]", i), "must be an object")
+			v.add(fmt.Sprintf("components[%d]", i), CodeComponentNotObject, "must be an object")
 			continue
 		}
 		v.component(fmt.Sprintf("components[%d]", i), component)
@@ -184,47 +212,56 @@ func (v *validator) component(path string, component map[string]interface{}) {
 		label = fmt.Sprintf("%s (id %q)", path, id)
 	}
 
+	parentId := v.currentId
+	v.currentId = id
+	defer func() { v.currentId = parentId }()
+
 	if id == "" {
-		v.add(path, "component is missing a string \"id\"")
+		v.add(path, CodeComponentMissingId, "component is missing a string \"id\"")
 	} else if previous, clash := v.seenIds[id]; clash {
-		v.add(label, "duplicate component id - already used at %s", previous)
+		v.add(label, CodeComponentDuplicateId, "duplicate component id - already used at %s", previous)
 	} else {
 		v.seenIds[id] = path
 	}
 
 	if componentType == "" {
-		v.add(label, "component is missing a string \"type\"")
+		v.add(label, CodeComponentMissingType, "component is missing a string \"type\"")
 		return
 	}
 	definition, known := v.c.Components[componentType]
 	if !known {
 		if suggestion := v.c.SuggestType(componentType); suggestion != "" {
-			v.add(label, "unknown component type %q - did you mean %q?", componentType, suggestion)
+			v.add(label, CodeComponentUnknownType, "unknown component type %q - did you mean %q?", componentType, suggestion)
 		} else {
-			v.add(label, "unknown component type %q - it is not in the eru-studio component library", componentType)
+			v.add(label, CodeComponentUnknownType, "unknown component type %q - it is not in the eru-studio component library", componentType)
 		}
 		return
 	}
 	if definition.Deprecated {
-		v.add(label, "component type %q is a legacy alias - use %q instead", componentType, definition.AliasOf)
+		v.add(label, CodeComponentDeprecatedType, "component type %q is a legacy alias - use %q instead", componentType, definition.AliasOf)
 	}
 
 	for key := range component {
 		if !v.compKeys[key] {
-			v.add(label, "unknown component key %q - allowed keys are %s", key, strings.Join(sortedKeys(v.compKeys), ", "))
+			v.add(label, CodeComponentUnknownKey, "unknown component key %q - allowed keys are %s", key, strings.Join(sortedKeys(v.compKeys), ", "))
 		}
+	}
+
+	v.checkRules(label, componentType, basePropertyBag(component))
+	if componentType == "tabs" {
+		v.checkTabs(label, component, basePropertyBag(component))
 	}
 
 	if _, ok := component["properties"]; !ok {
 		if !v.partial {
-			v.add(label, "component is missing \"properties\" (use {\"base\": {...}})")
+			v.add(label, CodeComponentMissingProperties, "component is missing \"properties\" (use {\"base\": {...}})")
 		}
 	} else {
 		v.properties(label, componentType, component["properties"])
 	}
 	if _, ok := component["styles"]; !ok {
 		if !v.partial {
-			v.add(label, "component is missing \"styles\" (%s)", styleKeysHint)
+			v.add(label, CodeComponentMissingStyles, "component is missing \"styles\" (%s)", styleKeysHint)
 		}
 	} else {
 		v.styles(label+".styles", component["styles"], componentType)
@@ -245,30 +282,30 @@ func (v *validator) component(path string, component map[string]interface{}) {
 	hostsNestedPage := v.c.MayHoldNestedPage(componentType)
 	if (hasChildren || hasChildIds) && !definition.AllowChildren && !hostsNestedPage {
 		if list, ok := children.([]interface{}); !ok || len(list) > 0 || hasChildIds {
-			v.add(label, "component type %q cannot have children - only %s can", componentType, strings.Join(v.c.Containers(), ", "))
+			v.add(label, CodeComponentChildrenNotAllowed, "component type %q cannot have children - only %s can", componentType, strings.Join(v.c.Containers(), ", "))
 		}
 	}
 	if hostsNestedPage && hasChildIds {
-		v.add(label, "%q mounts another page by id (%s); it has no children of its own, so children_ids does not apply",
+		v.add(label, CodePageHostChildrenIds, "%q mounts another page by id (%s); it has no children of its own, so children_ids does not apply",
 			componentType, strings.Join(v.c.PageHostProperties(componentType), " / "))
 	}
 	if hasChildIds {
 		if _, ok := childIds.([]interface{}); !ok && childIds != nil {
-			v.add(label, "\"children_ids\" must be an array of component ids")
+			v.add(label, CodeChildrenIdsNotList, "\"children_ids\" must be an array of component ids")
 		}
 	}
 	if hasChildren {
 		list, ok := children.([]interface{})
 		if !ok {
 			if children != nil {
-				v.add(label, "\"children\" must be a JSON array of components, not %T", children)
+				v.add(label, CodeChildrenNotList, "\"children\" must be a JSON array of components, not %T", children)
 			}
 			return
 		}
 		for i, raw := range list {
 			child, ok := raw.(map[string]interface{})
 			if !ok {
-				v.add(fmt.Sprintf("%s.children[%d]", label, i), "must be an object")
+				v.add(fmt.Sprintf("%s.children[%d]", label, i), CodeComponentNotObject, "must be an object")
 				continue
 			}
 			v.component(fmt.Sprintf("%s.children[%d]", label, i), child)
@@ -279,7 +316,7 @@ func (v *validator) component(path string, component map[string]interface{}) {
 func (v *validator) properties(label, componentType string, raw interface{}) {
 	properties, ok := raw.(map[string]interface{})
 	if !ok {
-		v.add(label, "\"properties\" must be an object keyed by breakpoint (%s)", strings.Join(v.c.Breakpoints(), ", "))
+		v.add(label, CodePropertiesNotObject, "\"properties\" must be an object keyed by breakpoint (%s)", strings.Join(v.c.Breakpoints(), ", "))
 		return
 	}
 	responsive := false
@@ -290,19 +327,19 @@ func (v *validator) properties(label, componentType string, raw interface{}) {
 		}
 	}
 	if !responsive {
-		v.add(label, "\"properties\" must nest values under a breakpoint - put defaults in properties.base")
+		v.add(label, CodePropertiesNotResponsive, "\"properties\" must nest values under a breakpoint - put defaults in properties.base")
 		v.propertyBag(label+".properties", componentType, properties)
 		return
 	}
 	for breakpoint, value := range properties {
 		if !v.breakpoints[breakpoint] {
-			v.add(label, "unknown breakpoint %q in \"properties\" - use %s", breakpoint, strings.Join(v.c.Breakpoints(), ", "))
+			v.add(label, CodePropertiesUnknownBreakpoint, "unknown breakpoint %q in \"properties\" - use %s", breakpoint, strings.Join(v.c.Breakpoints(), ", "))
 			continue
 		}
 		bag, ok := value.(map[string]interface{})
 		if !ok {
 			if value != nil {
-				v.add(fmt.Sprintf("%s.properties.%s", label, breakpoint), "must be an object of property values")
+				v.add(fmt.Sprintf("%s.properties.%s", label, breakpoint), CodePropertiesBreakpointNotObject, "must be an object of property values")
 			}
 			continue
 		}
@@ -314,7 +351,7 @@ func (v *validator) propertyBag(path, componentType string, bag map[string]inter
 	for key, value := range bag {
 		property, known := v.c.Property(componentType, key)
 		if !known {
-			v.add(path, "%q has no property %q%s", componentType, key, v.nearestProperty(componentType, key))
+			v.add(path, CodePropertyUnknown, "%q has no property %q%s", componentType, key, v.nearestProperty(componentType, key))
 			continue
 		}
 		v.propertyValue(path, componentType, property, value)
@@ -335,7 +372,7 @@ func (v *validator) propertyValue(path, componentType string, property Property,
 			return
 		}
 	}
-	v.add(path, "%s.%s = %q is not allowed - use one of %s", componentType, property.Key, text, strings.Join(allowed, " | "))
+	v.add(path, CodePropertyValueNotAllowed, "%s.%s = %q is not allowed - use one of %s", componentType, property.Key, text, strings.Join(allowed, " | "))
 }
 
 // isExpression spots a value the logic evaluator resolves at runtime, which no
@@ -365,12 +402,12 @@ func (v *validator) nearestProperty(componentType, key string) string {
 func (v *validator) styles(path string, raw interface{}, componentType string) {
 	styles, ok := raw.(map[string]interface{})
 	if !ok {
-		v.add(path, "\"styles\" must be an object with %s", styleKeysHint)
+		v.add(path, CodeStylesNotObject, "\"styles\" must be an object with %s", styleKeysHint)
 		return
 	}
 	for key, value := range styles {
 		if !pageStyleKeys[key] {
-			v.add(path, "unknown styles key %q - allowed keys are %s", key, styleKeysHint)
+			v.add(path, CodeStylesUnknownKey, "unknown styles key %q - allowed keys are %s", key, styleKeysHint)
 			continue
 		}
 		if key != "responsive_styles" && key != "responsive_classes" {
@@ -382,7 +419,7 @@ func (v *validator) styles(path string, raw interface{}, componentType string) {
 		}
 		for breakpoint := range perBreakpoint {
 			if !v.breakpoints[breakpoint] {
-				v.add(fmt.Sprintf("%s.%s", path, key), "unknown breakpoint %q - use %s", breakpoint, strings.Join(v.c.Breakpoints(), ", "))
+				v.add(fmt.Sprintf("%s.%s", path, key), CodeStylesUnknownBreakpoint, "unknown breakpoint %q - use %s", breakpoint, strings.Join(v.c.Breakpoints(), ", "))
 			}
 		}
 	}
@@ -396,14 +433,14 @@ func (v *validator) eventList(path string, raw interface{}, componentType string
 	list, ok := raw.([]interface{})
 	if !ok {
 		if raw != nil {
-			v.add(path, "\"events\" must be a JSON array of event subscriptions")
+			v.add(path, CodeEventsNotList, "\"events\" must be a JSON array of event subscriptions")
 		}
 		return
 	}
 	for i, item := range list {
 		event, ok := item.(map[string]interface{})
 		if !ok {
-			v.add(fmt.Sprintf("%s[%d]", path, i), "must be an object")
+			v.add(fmt.Sprintf("%s[%d]", path, i), CodeEventNotObject, "must be an object")
 			continue
 		}
 		v.event(fmt.Sprintf("%s[%d]", path, i), event, componentType, nested)
@@ -413,37 +450,37 @@ func (v *validator) eventList(path string, raw interface{}, componentType string
 func (v *validator) event(path string, event map[string]interface{}, componentType string, nested bool) {
 	for key := range event {
 		if !v.eventKeys[key] {
-			v.add(path, "unknown event key %q - allowed keys are %s", key, strings.Join(sortedKeys(v.eventKeys), ", "))
+			v.add(path, CodeEventUnknownKey, "unknown event key %q - allowed keys are %s", key, strings.Join(sortedKeys(v.eventKeys), ", "))
 		}
 	}
 	action, _ := event["action"].(string)
 	if action == "" {
-		v.add(path, "event subscription is missing a string \"action\"")
+		v.add(path, CodeEventMissingAction, "event subscription is missing a string \"action\"")
 	} else if !v.actions[action] {
-		v.add(path, "unknown action %q - allowed actions are %s", action, strings.Join(v.c.EventActions(), " | "))
+		v.add(path, CodeEventUnknownAction, "unknown action %q - allowed actions are %s", action, strings.Join(v.c.EventActions(), " | "))
 	} else {
 		if required, ok := componentEventRequirements[action]; ok {
 			if text, _ := event[required].(string); strings.TrimSpace(text) == "" {
-				v.add(path, "action %q requires %q", action, required)
+				v.add(path, CodeEventActionMissingField, "action %q requires %q", action, required)
 			}
 		}
 		if componentEventTargets[action] {
 			if names, ok := event["fieldNames"].([]interface{}); !ok || len(names) == 0 {
-				v.add(path, "action %q needs \"fieldNames\" naming the components it acts on", action)
+				v.add(path, CodeEventActionMissingFieldNames, "action %q needs \"fieldNames\" naming the components it acts on", action)
 			}
 		}
 	}
 	if name, _ := event["event"].(string); name == "" {
 		if !nested {
-			v.add(path, "event subscription is missing a string \"event\"")
+			v.add(path, CodeEventMissingEvent, "event subscription is missing a string \"event\"")
 		}
 	} else if componentType != "" {
 		if known := v.c.Events(componentType); len(known) > 0 && !contains(known, name) && !isPageEvent(name) {
-			v.add(path, "%q does not emit %q - it emits %s", componentType, name, strings.Join(known, " | "))
+			v.add(path, CodeEventNotEmitted, "%q does not emit %q - it emits %s", componentType, name, strings.Join(known, " | "))
 		}
 	}
 	if id, _ := event["id"].(string); id == "" && !nested {
-		v.add(path, "event subscription is missing a string \"id\"")
+		v.add(path, CodeEventMissingId, "event subscription is missing a string \"id\"")
 	}
 	for _, branch := range []string{"on_success", "on_error"} {
 		if followUp, ok := event[branch]; ok {
@@ -466,29 +503,29 @@ func (v *validator) validationRules(path string, raw interface{}) {
 	list, ok := raw.([]interface{})
 	if !ok {
 		if raw != nil {
-			v.add(path, "\"validation_rules\" must be a JSON array")
+			v.add(path, CodeValidationRulesNotList, "\"validation_rules\" must be a JSON array")
 		}
 		return
 	}
 	for i, item := range list {
 		rule, ok := item.(map[string]interface{})
 		if !ok {
-			v.add(fmt.Sprintf("%s[%d]", path, i), "must be an object")
+			v.add(fmt.Sprintf("%s[%d]", path, i), CodeValidationRuleNotObject, "must be an object")
 			continue
 		}
 		for key := range rule {
 			if !v.ruleKeys[key] {
-				v.add(fmt.Sprintf("%s[%d]", path, i), "unknown validation rule key %q - allowed keys are %s", key, strings.Join(sortedKeys(v.ruleKeys), ", "))
+				v.add(fmt.Sprintf("%s[%d]", path, i), CodeValidationRuleUnknownKey, "unknown validation rule key %q - allowed keys are %s", key, strings.Join(sortedKeys(v.ruleKeys), ", "))
 			}
 		}
 		ruleType, _ := rule["type"].(string)
 		if ruleType == "" {
-			v.add(fmt.Sprintf("%s[%d]", path, i), "validation rule is missing a string \"type\"")
+			v.add(fmt.Sprintf("%s[%d]", path, i), CodeValidationRuleMissingType, "validation rule is missing a string \"type\"")
 		} else if !v.ruleTypes[ruleType] {
-			v.add(fmt.Sprintf("%s[%d]", path, i), "unknown validation type %q - allowed types are %s", ruleType, strings.Join(v.c.InterfaceEnumStrings("ValidationRule", "type"), " | "))
+			v.add(fmt.Sprintf("%s[%d]", path, i), CodeValidationRuleUnknownType, "unknown validation type %q - allowed types are %s", ruleType, strings.Join(v.c.InterfaceEnumStrings("ValidationRule", "type"), " | "))
 		}
 		if message, _ := rule["message"].(string); strings.TrimSpace(message) == "" {
-			v.add(fmt.Sprintf("%s[%d]", path, i), "validation rule needs a \"message\"")
+			v.add(fmt.Sprintf("%s[%d]", path, i), CodeValidationRuleMissingMessage, "validation rule needs a \"message\"")
 		}
 	}
 }
@@ -497,23 +534,23 @@ func (v *validator) state(path string, raw interface{}) {
 	list, ok := raw.([]interface{})
 	if !ok {
 		if raw != nil {
-			v.add(path, "\"state\" must be a JSON array of state variables")
+			v.add(path, CodeStateNotList, "\"state\" must be a JSON array of state variables")
 		}
 		return
 	}
 	for i, item := range list {
 		variable, ok := item.(map[string]interface{})
 		if !ok {
-			v.add(fmt.Sprintf("%s[%d]", path, i), "must be an object")
+			v.add(fmt.Sprintf("%s[%d]", path, i), CodeStateVariableNotObject, "must be an object")
 			continue
 		}
 		for key := range variable {
 			if !v.stateKeys[key] {
-				v.add(fmt.Sprintf("%s[%d]", path, i), "unknown state key %q - allowed keys are %s", key, strings.Join(sortedKeys(v.stateKeys), ", "))
+				v.add(fmt.Sprintf("%s[%d]", path, i), CodeStateUnknownKey, "unknown state key %q - allowed keys are %s", key, strings.Join(sortedKeys(v.stateKeys), ", "))
 			}
 		}
 		if key, _ := variable["key"].(string); strings.TrimSpace(key) == "" {
-			v.add(fmt.Sprintf("%s[%d]", path, i), "state variable needs a \"key\"")
+			v.add(fmt.Sprintf("%s[%d]", path, i), CodeStateMissingKey, "state variable needs a \"key\"")
 		}
 	}
 }
@@ -534,4 +571,19 @@ func contains(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// basePropertyBag is properties.base, which is where a rule's properties live.
+// A value set only at a wider breakpoint is a responsive override of a default
+// that should have been there anyway.
+func basePropertyBag(component map[string]interface{}) map[string]interface{} {
+	properties, ok := component["properties"].(map[string]interface{})
+	if !ok {
+		return map[string]interface{}{}
+	}
+	base, ok := properties["base"].(map[string]interface{})
+	if !ok {
+		return map[string]interface{}{}
+	}
+	return base
 }

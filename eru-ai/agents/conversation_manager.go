@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	models "github.com/eru-tech/eru/eru-ai/models"
+	"github.com/eru-tech/eru/eru-cache/cache"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
@@ -14,6 +15,12 @@ import (
 type ConversationManager struct {
 	Config       *ConversationConfig // Configuration for conversation management
 	SummaryModel models.ModelI       // Model for summarization
+
+	// ChatMemory is the agent's own store, not a second one. The manager needs
+	// it because the planner builds its request here rather than through the
+	// conversation loader, and a journal attached anywhere else never reaches
+	// the half of the system that decides whether a follow-up is answerable.
+	ChatMemory cache.CacheStoreI
 }
 
 // ConversationSummary represents a summarized portion of conversation
@@ -30,7 +37,28 @@ func (cm *ConversationManager) BuildChatRequest(ctx context.Context, conversatio
 
 	historyMessages := cm.convertAgentMessagesToMessages(conversation.Messages, agentName)
 
-	allMessages := append(historyMessages, currentMessage)
+	// What earlier turns actually changed, placed immediately ahead of the
+	// instruction so a follow-up that refers back to one of them - "revert it",
+	// "the old colour", "what it was before" - has its antecedent in hand.
+	//
+	// It belongs here rather than at the call site because this is the one
+	// funnel every caller goes through. Attaching it where the conversation is
+	// loaded reached the agent but not the planner, which builds its own request
+	// from the history and discards what the loader assembled - so the half of
+	// the system that decides whether a follow-up can be answered at all was the
+	// half still asking the user to repeat themselves.
+	var lead []models.Message
+	if note := JournalNote(sessionStateOf(ctx, cm.ChatMemory, conversation.MemoryKey)); note != "" {
+		lead = append(lead, models.Message{
+			Role:    "user",
+			Content: note,
+			Name:    "conversation_journal",
+		})
+		logs.WithContext(ctx).Info(fmt.Sprintf("conversation journal attached for %s: %s", conversation.ConversationId, summariseJournal(note)))
+	}
+
+	allMessages := append(historyMessages, lead...)
+	allMessages = append(allMessages, currentMessage)
 
 	tokenCount := cm.estimateTokenCount(allMessages)
 	logs.WithContext(ctx).Info(fmt.Sprintf("Total estimated tokens: %d", tokenCount))
@@ -70,6 +98,7 @@ func (cm *ConversationManager) BuildChatRequest(ctx context.Context, conversatio
 	}
 
 	managedMessages = append(managedMessages, protectedMessages...)
+	managedMessages = append(managedMessages, lead...)
 	managedMessages = append(managedMessages, currentMessage)
 	return &models.ChatRequest{Messages: managedMessages}, nil
 }
@@ -86,6 +115,18 @@ func (cm *ConversationManager) convertAgentMessagesToMessages(agentMessages []Ag
 				content = string(actionBytes)
 			}
 		}
+		// A remembered attachment carries no bytes, so the model would see
+		// nothing at all where a file once was - and a later turn that says
+		// "like the screenshot I sent" would be talking about something that,
+		// as far as the request is concerned, never happened. Name it instead.
+		if note := attachmentNote(agentMsg.Files); note != "" {
+			if content == "" {
+				content = note
+			} else {
+				content = content + "\n" + note
+			}
+		}
+
 		msg := models.Message{
 			Role:    agentMsg.Role,
 			Content: content,
@@ -174,4 +215,35 @@ func (cm *ConversationManager) estimateTokenCount(messages []models.Message) int
 	}
 
 	return totalTokens
+}
+
+// attachmentNote names the files a remembered turn carried, for the turns that
+// no longer hold their contents.
+//
+// A file still holding its payload needs no note: it is rendered as itself.
+func attachmentNote(files []models.FileMessage) string {
+	var named []string
+	for _, file := range files {
+		if file.FileData != "" || file.ImageData != "" {
+			continue
+		}
+		name := file.FileName
+		if name == "" {
+			name = file.FileId
+		}
+		if name == "" {
+			continue
+		}
+		if file.FileType != "" {
+			name = fmt.Sprintf("%s (%s)", name, file.FileType)
+		}
+		named = append(named, name)
+	}
+	if len(named) == 0 {
+		return ""
+	}
+	if len(named) == 1 {
+		return "[attached earlier in this conversation: " + named[0] + "]"
+	}
+	return "[attached earlier in this conversation: " + strings.Join(named, ", ") + "]"
 }

@@ -49,8 +49,12 @@ const (
 
 // Named steps an agent reports. Keep these stable: clients label them.
 const (
-	StepGenerate    = "generate"
-	StepValidate    = "validate"
+	StepGenerate = "generate"
+	StepValidate = "validate"
+	// StepPlanPages and StepBuildPage are the steps of a design that takes more
+	// than one page: deciding what the pages are, then building each of them.
+	StepPlanPages   = "plan_pages"
+	StepBuildPage   = "build_page"
 	StepApplyPatch  = "apply_patch"
 	StepClarify     = "clarify"
 	StepOrchestrate = "orchestrate"

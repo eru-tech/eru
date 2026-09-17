@@ -83,6 +83,15 @@ func (eruStudioAgent *EruStudioAgent) Execute(ctx context.Context, agentMessage 
 	}
 	ctx = studio.WithInlineNested(ctx, studio.ParseInlineNested(agentMessage.Params[studio.InlineNestedParam]))
 	ctx = studio.WithPageScope(ctx, eruStudioAgent.pageScopeFor(tenantId))
+	// The lookups the model makes are recorded, so a page that claims to bind to
+	// real fields can be held to having actually read them.
+	ctx = studio.WithLedger(ctx, studio.NewLedger())
+	// A rejected page becomes the base for its own repair; this is where that is
+	// recorded when it happens.
+	ctx = studio.WithRepairState(ctx, studio.NewRepairState())
+	// Read before the request is rewritten with augmentation, so the style rules
+	// see what the USER asked for and not the instructions we added.
+	ctx = studio.WithStyleIntent(ctx, studio.DetectStyleIntent(agentMessage.Content))
 
 	// Who names the page is decided here rather than by the model, so a prompt
 	// that asks for a particular id cannot end up in a standoff with the request.
@@ -98,9 +107,22 @@ func (eruStudioAgent *EruStudioAgent) Execute(ctx context.Context, agentMessage 
 		ctx = studio.WithScope(ctx, resolvedScope)
 	}
 
+	// A design is decided before it is drawn: how many pages it takes, what each
+	// is for, and where each is mounted. Only when authoring from nothing - an
+	// edit already has its pages, and asking again would be a model call spent
+	// restating the request.
+	userPrompt := agentMessage.Content
+	var plan *studio.PagePlan
+	if planningApplies(ctx, basePage, resolvedScope) {
+		plan = eruStudioAgent.planPages(ctx, agentMessage, projectId, tenantId)
+	}
+
 	augment := buildEruStudioContextAugmentation(ctx, agentMessage.Params, identity)
 	if scopeNote != "" {
 		augment = scopeNote + "\n" + augment
+	}
+	if plan != nil {
+		augment = studio.PlanCommitment(*plan) + "\n" + augment
 	}
 	if instructions := eruStudioModeInstructions(mode); instructions != "" {
 		augment = instructions + "\n" + augment
@@ -126,7 +148,10 @@ func (eruStudioAgent *EruStudioAgent) Execute(ctx context.Context, agentMessage 
 	if !studio.EnvelopeEnabled(ctx) {
 		return eruStudioStampBarePage(ctx, agentOutput), nil
 	}
-	return eruStudioResolveEnvelope(ctx, agentOutput, basePage)
+	if plan != nil && plan.IsMultiPage() {
+		agentOutput = eruStudioAgent.attachPlannedPages(ctx, agentOutput, *plan, userPrompt, projectId, tenantId)
+	}
+	return eruStudioResolveEnvelope(ctx, agentOutput, effectiveBasePage(ctx))
 }
 
 // verifyBaseRevision holds the client to the page it says it is holding.
@@ -393,6 +418,11 @@ const componentLibraryPlaceholder = "{{COMPONENT_LIBRARY}}"
 // mount another page (generated from the library) and when a design needs one.
 const nestedPagesPlaceholder = "{{NESTED_PAGES}}"
 
+// componentRulesPlaceholder is where the rule table is rendered. The prompt and
+// the validator read the same table, so what the model is told and what it is
+// judged on cannot drift apart.
+const componentRulesPlaceholder = "{{COMPONENT_RULES}}"
+
 func (eruStudioAgent *EruStudioAgent) GetSystemPrompt() string {
 	prompt := studioSystemPrompt()
 	if eruStudioAgent.entityMetadataDelegate(context.Background()) != nil {
@@ -447,7 +477,15 @@ real entity - not a plausible-looking guess. Its label should be that field's di
 the wording the user already reads elsewhere in the product.
 
 Call get_entity_metadata before you name form fields or write their labels. It returns each entity
-with its fields: the real field name, its display name and its data type. Then:
+with its fields: the real field name, its display name and its data type.
+
+Each entity comes back with a "name" and, separately, a "table". BIND TO "name". The table is the
+physical table behind the entity - the process name joined to the entity name, e.g. name "fn" lives
+in table "scf_fn" - and it exists in the answer only for steps that write SQL. A page that sets
+entity_name to the table binds to nothing.
+
+Field names are often short codes ("fn", "sn", "fl") that carry no hint of their meaning: take them
+from the metadata exactly as given, and use the display name for the label. Then:
 - component properties.base.name  = the field name from the metadata
 - component properties.base.label = that field's display name
 - pick the component type to match the data type (a date field gets "date", a money field gets
@@ -464,12 +502,13 @@ to bind, and say in your summary which fields have no entity behind them.
 // no component library would leave the model to invent component types - a test
 // covers it, so this can only fire on an edit that removed the marker.
 func studioSystemPrompt() string {
-	for _, placeholder := range []string{componentLibraryPlaceholder, nestedPagesPlaceholder} {
+	for _, placeholder := range []string{componentLibraryPlaceholder, nestedPagesPlaceholder, componentRulesPlaceholder} {
 		if !strings.Contains(eruStudioSystemPrompt, placeholder) {
 			panic("eru studio prompt is missing " + placeholder + " - the generated block has nowhere to go")
 		}
 	}
 	prompt := strings.Replace(eruStudioSystemPrompt, componentLibraryPlaceholder, studioCatalog.Contract(), 1)
+	prompt = strings.Replace(prompt, componentRulesPlaceholder, catalog.RulesPrompt(), 1)
 	return strings.Replace(prompt, nestedPagesPlaceholder, studio.NestingGuidance(), 1)
 }
 
@@ -525,6 +564,7 @@ func (eruStudioAgent *EruStudioAgent) ExtraTools(ctx context.Context) map[string
 		_ = metadataTool.SetAttribute(ctx, "tool_type", "ENTITY_METADATA")
 		metadataTool.SetToolAction(utility.EntityMetadataToolName)
 		extra[utility.EntityMetadataToolName] = metadataTool
+		studio.LedgerFrom(ctx).Offer(utility.EntityMetadataToolName)
 	} else {
 		logs.WithContext(ctx).Info("eru studio: no tool offers execute_query, so " + utility.EntityMetadataToolName + " is not offered")
 	}
@@ -654,19 +694,26 @@ func eruStudioPageIssues(ctx context.Context, output map[string]interface{}) (ma
 		return nil, nil
 	}
 	if studio.EnvelopeEnabled(ctx) {
-		return output, validateStudioUpdate(output, studio.BasePageFrom(ctx), studio.ScopeFrom(ctx))
+		basePage := effectiveBasePage(ctx)
+		issues := validateStudioUpdate(ctx, output, basePage, studio.ScopeFrom(ctx))
+		resolved := resolvedRootPage(output, basePage)
+		nested := nestedPagesForPreflight(output, basePage)
+		issues = append(issues, preflightIssues(ctx, resolved, basePage, nested)...)
+		return output, append(issues, entityBindingIssues(ctx, resolved, basePage, nested)...)
 	}
 	// A bare page can carry no nested page, so every mount on it must point at a
 	// page that already exists. One that does not renders an empty panel.
-	issues := studioCatalog.ValidatePage(output)
-	basePage := studio.BasePageFrom(ctx)
+	issues := pageIssuesIn(ctx, studioCatalog, output)
+	basePage := effectiveBasePage(ctx)
 	known := map[string]bool{}
 	for _, mount := range studio.FindMounts(basePage) {
 		if mount.PageId != "" {
 			known[mount.PageId] = true
 		}
 	}
-	return output, append(issues, studio.ValidateMounts(output, nil, known)...)
+	issues = append(issues, studio.ValidateMounts(output, nil, known)...)
+	issues = append(issues, preflightIssues(ctx, output, basePage, nil)...)
+	return output, append(issues, entityBindingIssues(ctx, output, basePage, nil)...)
 }
 
 func buildEruStudioContextAugmentation(_ context.Context, params map[string]any, identity studio.PageIdentity) string {
@@ -1037,4 +1084,48 @@ func buildEruPageOutputSchema() eru_models.JSONSchema {
 	}
 
 	return pageSchema
+}
+
+// NormalizeOutput holds a full-page answer to what it said it was doing.
+//
+// A full-page edit re-emits every component, and re-emitting loses things: an
+// icon on an option, an empty events list, a blank name - on components the
+// model itself said it had left alone. Nothing downstream notices, because an
+// absent optional property is not an error and a vanished leaf produces no issue
+// to compare against. Put back whatever disappeared from a component this edit
+// did not otherwise touch.
+//
+// Only full mode needs it. A patch names what it is changing and inherits the
+// rest by construction, so there is nothing to lose.
+func (eruStudioAgent *EruStudioAgent) NormalizeOutput(ctx context.Context, output map[string]interface{}) {
+	if output == nil || !studio.EnvelopeEnabled(ctx) {
+		return
+	}
+	if mode, _ := output["mode"].(string); mode != studio.ModeFull {
+		return
+	}
+	page, ok := output["page"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	basePage := effectiveBasePage(ctx)
+	if len(basePage) == 0 {
+		return
+	}
+
+	restored := studio.RestoreInheritedLeaves(basePage, page, writableIds(studio.ScopeFrom(ctx)))
+	if len(restored) == 0 {
+		return
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("eru studio restored %d leaf/leaves dropped from untouched components: %s",
+		len(restored), strings.Join(restored, ", ")))
+}
+
+// writableIds is the set of components the edit was licensed to change. A scoped
+// edit that removes something removed it deliberately, so those are left alone.
+func writableIds(scope *studio.ResolvedScope) map[string]bool {
+	if scope == nil {
+		return nil
+	}
+	return scope.Writable
 }

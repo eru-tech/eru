@@ -260,7 +260,7 @@ func TestValidateNestedPagesRejectsAMountThatPointsNowhere(t *testing.T) {
 	component, _ := upsert[0].(map[string]interface{})
 	component["properties"] = map[string]interface{}{"base": map[string]interface{}{"loop_source": "field", "loop_field": "items"}}
 
-	issues := validateStudioUpdate(output, base, nil)
+	issues := validateStudioUpdate(context.Background(), output, base, nil)
 	if len(issues) == 0 {
 		t.Fatal("a page_ref with no page was accepted")
 	}
@@ -285,7 +285,7 @@ func TestValidateNestedPagesRejectsAPageNothingMounts(t *testing.T) {
 		},
 	}
 
-	issues := validateStudioUpdate(output, base, nil)
+	issues := validateStudioUpdate(context.Background(), output, base, nil)
 	joined := ""
 	for _, issue := range issues {
 		joined += issue.Message + " "
@@ -305,7 +305,7 @@ func TestValidateNestedPagesChecksTheNestedPageItself(t *testing.T) {
 		map[string]interface{}{"id": "bad", "type": "KPICard", "properties": map[string]interface{}{"base": map[string]interface{}{}}, "styles": styleBlock()},
 	}
 
-	issues := validateStudioUpdate(output, base, nil)
+	issues := validateStudioUpdate(context.Background(), output, base, nil)
 	joined := ""
 	for _, issue := range issues {
 		joined += issue.Path + " " + issue.Message + " "
@@ -325,7 +325,7 @@ func TestValidateNestedPageRequiresAMountPoint(t *testing.T) {
 	entry, _ := pages[0].(map[string]interface{})
 	delete(entry, "mounted_at")
 
-	issues := validateStudioUpdate(output, base, nil)
+	issues := validateStudioUpdate(context.Background(), output, base, nil)
 	joined := ""
 	for _, issue := range issues {
 		joined += issue.Message + " "

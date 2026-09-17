@@ -224,6 +224,34 @@ func (imc *InMemoryCache) GetKeys(ctx context.Context, pattern string) ([]string
 	return keys, nil
 }
 
+// PurgeExpired drops every entry whose ttl has passed and reports how many went.
+//
+// Expiry elsewhere in this store is lazy: a read of a stale key deletes it. That
+// is enough for a key someone comes back to and does nothing at all for one they
+// abandon - and an abandoned entry is precisely the one still holding memory.
+// GetKeys hides expired entries rather than removing them, so a caller cannot
+// reclaim them by walking the keys either.
+func (imc *InMemoryCache) PurgeExpired(ctx context.Context) int {
+	imc.mu.Lock()
+	defer imc.mu.Unlock()
+	imc.ensureInit()
+
+	now := time.Now()
+	expired := make([]string, 0)
+	for k, cv := range imc.CacheValues {
+		if !cv.ExpireAt.IsZero() && now.After(cv.ExpireAt) {
+			expired = append(expired, k)
+		}
+	}
+	for _, k := range expired {
+		imc.deleteLocked(k)
+	}
+	if len(expired) > 0 {
+		logs.WithContext(ctx).Info(fmt.Sprintf("purged %d expired cache entr(ies)", len(expired)))
+	}
+	return len(expired)
+}
+
 func (imc *InMemoryCache) Delete(ctx context.Context, key string) error {
 	imc.mu.Lock()
 	defer imc.mu.Unlock()

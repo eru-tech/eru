@@ -296,7 +296,10 @@ func TestValidatePageAllowsAnInlinedNestedPageUnderItsHost(t *testing.T) {
 
 	// An empty children array is what the client actually sends on a page_ref it
 	// has not expanded. Reporting it would cost a retry for nothing.
-	empty := page(component("panel_ref", "page_ref", map[string]interface{}{"children": []interface{}{}}))
+	empty := page(component("panel_ref", "page_ref", map[string]interface{}{
+		"properties": map[string]interface{}{"base": map[string]interface{}{"page": "detail_page"}},
+		"children":   []interface{}{},
+	}))
 	if issues := c.ValidatePage(empty); len(issues) > 0 {
 		t.Errorf("an empty children array was reported:\n%s", issueText(issues))
 	}
@@ -304,6 +307,7 @@ func TestValidatePageAllowsAnInlinedNestedPageUnderItsHost(t *testing.T) {
 	// But the components it mounts are still that page's, addressed by id - a
 	// page host has no child list of its own to reorder.
 	withIds := page(component("panel_ref", "page_ref", map[string]interface{}{
+		"properties":   map[string]interface{}{"base": map[string]interface{}{"page": "detail_page"}},
 		"children_ids": []interface{}{"detail_txt"},
 	}))
 	issues := c.ValidatePage(withIds)

@@ -368,17 +368,17 @@ func geminiSystemContent(chatRequest ChatRequest) string {
 	return builder.String()
 }
 
-func (geminiModel *GeminiModel) RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (Message, []StepTrace, error) {
+func (geminiModel *GeminiModel) RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt AgentPrompt, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (Message, []StepTrace, error) {
 	logs.WithContext(ctx).Debug("RunToolLoop - Start")
 	return geminiModel.runToolLoop(ctx, chatRequest, toolsMap, agentPrompt, maxIterations, thinkingBudget, toolExecutor, nil, false)
 }
 
-func (geminiModel *GeminiModel) RunToolLoopStreaming(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor, streamCb StreamEventCallback) (Message, []StepTrace, error) {
+func (geminiModel *GeminiModel) RunToolLoopStreaming(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt AgentPrompt, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor, streamCb StreamEventCallback) (Message, []StepTrace, error) {
 	logs.WithContext(ctx).Debug("RunToolLoopStreaming - Start")
 	return geminiModel.runToolLoop(ctx, chatRequest, toolsMap, agentPrompt, maxIterations, thinkingBudget, toolExecutor, streamCb, true)
 }
 
-func (geminiModel *GeminiModel) runToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor, streamCb StreamEventCallback, streaming bool) (Message, []StepTrace, error) {
+func (geminiModel *GeminiModel) runToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt AgentPrompt, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor, streamCb StreamEventCallback, streaming bool) (Message, []StepTrace, error) {
 	spanName := "Gemini.RunToolLoop"
 	if streaming {
 		spanName = "Gemini.RunToolLoopStreaming"
@@ -389,9 +389,9 @@ func (geminiModel *GeminiModel) runToolLoop(ctx context.Context, chatRequest Cha
 	defer span.End()
 
 	geminiTools, toolPrompt := convertGeminiTools(ctx, toolsMap)
-	systemContent := agentPrompt
+	systemContent := agentPrompt.String()
 	if toolPrompt != "" {
-		systemContent = strings.TrimSpace(fmt.Sprint(agentPrompt, "\n", toolPrompt))
+		systemContent = strings.TrimSpace(fmt.Sprint(systemContent, "\n", toolPrompt))
 	}
 	if existing := geminiSystemContent(chatRequest); existing != "" {
 		systemContent = strings.TrimSpace(fmt.Sprint(systemContent, "\n", existing))

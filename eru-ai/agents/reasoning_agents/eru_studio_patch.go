@@ -334,11 +334,19 @@ func parseNestedPages(output map[string]interface{}, rootPageId string) ([]*stud
 // the page the client sent, so the root envelope carries both the patch and the
 // page it produces.
 func resolveStudioOutput(ctx context.Context, output map[string]interface{}, basePage map[string]interface{}) (map[string]interface{}, []map[string]interface{}, error) {
+	// base_revision names the page the CLIENT holds. Normally that is the page
+	// the answer is a diff against; during a repair the answer is a diff against
+	// an attempt the client never saw, so the client's own page is what it has to
+	// identify.
+	baseRevision := studio.Revision(basePage)
+	if state := studio.RepairStateFrom(ctx); state.Active() {
+		baseRevision = studio.Revision(studio.BasePageFrom(ctx))
+	}
 	envelope := studio.Envelope{
 		ProtocolVersion: studio.ProtocolVersion,
 		Role:            studio.RoleRoot,
 		Persist:         studio.PersistUserAction,
-		BaseRevision:    studio.Revision(basePage),
+		BaseRevision:    baseRevision,
 		Scope:           studio.ReportScope(studio.ScopeFrom(ctx)),
 	}
 
@@ -393,10 +401,24 @@ func resolveStudioOutput(ctx context.Context, output map[string]interface{}, bas
 	if err != nil {
 		return nil, nil, err
 	}
+	// A repair answers only what was wrong, so the pages the rejected attempt got
+	// right are not re-sent. They are still part of the answer. Anything the
+	// repair did re-send wins, because MergeNestedPages keeps the first of an id.
+	if state := studio.RepairStateFrom(ctx); state.Active() {
+		declared = append(declared, state.CarriedPages()...)
+	}
 	nested := studio.MergeNestedPages(declared, inlined, envelope.PageId)
 	if len(nested) > 0 {
 		// The root page keeps the mount, not the mounted components.
 		envelope.Page = rootOnly
+	}
+
+	if state := studio.RepairStateFrom(ctx); state.Active() && envelope.Mode == studio.ModePatch {
+		// The patch was computed against the attempt the client never saw, so
+		// sending it would have the client apply a diff to the wrong page.
+		logs.WithContext(ctx).Info("eru studio: a repair patch is returned as a full page, since the client never held the page it patched")
+		envelope.Mode = studio.ModeFull
+		envelope.Patch = nil
 	}
 
 	envelope.Revision = studio.Revision(envelope.Page)
@@ -476,18 +498,31 @@ func encodeEnvelope(envelope studio.Envelope, output map[string]interface{}) (ma
 // An issue present in the base page and still present after the patch is the
 // page's own, not this edit's. Subtracting those leaves exactly the issues the
 // patch introduced - which is the thing the check was for.
-func introducedPageIssues(c *catalog.Catalog, basePage, resolved map[string]interface{}) []catalog.Issue {
-	resolvedIssues := c.ValidatePage(resolved)
+// pageIssues is everything wrong with a finished page: the component library
+// checks, and the layout checks that ask whether it will render as anything
+// anyone would have drawn on purpose.
+func pageIssues(c *catalog.Catalog, page map[string]interface{}) []catalog.Issue {
+	return append(c.ValidatePage(page), studio.LayoutIssues(page)...)
+}
+
+// pageIssuesIn is pageIssues plus the checks that need to know what the user
+// asked for, which only the request context carries.
+func pageIssuesIn(ctx context.Context, c *catalog.Catalog, page map[string]interface{}) []catalog.Issue {
+	return append(pageIssues(c, page), studio.ChromeStyleIssues(page, studio.StyleIntentFrom(ctx))...)
+}
+
+func introducedPageIssues(ctx context.Context, c *catalog.Catalog, basePage, resolved map[string]interface{}) []catalog.Issue {
+	resolvedIssues := pageIssuesIn(ctx, c, resolved)
 	if len(basePage) == 0 || len(resolvedIssues) == 0 {
 		return resolvedIssues
 	}
 	preExisting := make(map[string]bool)
-	for _, issue := range c.ValidatePage(basePage) {
-		preExisting[issueFingerprint(issue)] = true
+	for _, issue := range pageIssuesIn(ctx, c, basePage) {
+		preExisting[issue.Fingerprint()] = true
 	}
 	out := make([]catalog.Issue, 0, len(resolvedIssues))
 	for _, issue := range resolvedIssues {
-		if preExisting[issueFingerprint(issue)] {
+		if preExisting[issue.Fingerprint()] {
 			continue
 		}
 		out = append(out, issue)
@@ -495,37 +530,40 @@ func introducedPageIssues(c *catalog.Catalog, basePage, resolved map[string]inte
 	return out
 }
 
-// issueFingerprint identifies an issue by what it says about which component,
-// not by where that component currently sits. A patch that inserts a sibling
-// shifts the index of everything after it, so a positional path would make the
-// page's own long-standing issues look newly introduced.
-func issueFingerprint(issue catalog.Issue) string {
-	path := issue.Path
-	if at := strings.LastIndex(path, "(id \""); at >= 0 {
-		path = path[at:]
-	}
-	return path + "|" + issue.Message
-}
-
-func validateStudioUpdate(output map[string]interface{}, basePage map[string]interface{}, scope *studio.ResolvedScope) []catalog.Issue {
+func validateStudioUpdate(ctx context.Context, output map[string]interface{}, basePage map[string]interface{}, scope *studio.ResolvedScope) []catalog.Issue {
 	c := catalog.Get()
-	issues := validateNestedPages(output, basePage)
+	issues := validateNestedPages(ctx, output, basePage)
 
 	mode, _ := output["mode"].(string)
 	switch mode {
 	case studio.ModeFull:
 		page, ok := output["page"].(map[string]interface{})
 		if !ok {
-			return append(issues, catalog.Issue{Message: "mode is \"full\" but \"page\" is missing or is not an object"})
+			return append(issues, catalog.Issue{Code: catalog.CodeEnvelopeFullMissingPage, Message: "mode is \"full\" but \"page\" is missing or is not an object"})
 		}
-		return append(issues, c.ValidatePage(page)...)
+		// An edit that answers with the WHOLE page is still an edit, so it is
+		// judged the same way a patch is: on what it changed.
+		//
+		// Without this, asking for the full page back turns every pre-existing
+		// wart in the user's own page into a blocking error the moment the agent
+		// faithfully echoes it. A real page carries things the catalog does not
+		// know - "tab_label", which the tabs component writes onto its own
+		// panels; "_originPageId" on an event; a grid's events under
+		// properties.base - and the agent is then told to fix eighteen problems
+		// in a region the user expressly told it not to touch. It obliges, the
+		// tabs lose the property that maps them to their panels, and the page
+		// the user gets back is worse than the one they had.
+		if len(basePage) > 0 {
+			return append(issues, introducedPageIssues(ctx, c, basePage, page)...)
+		}
+		return append(issues, pageIssuesIn(ctx, c, page)...)
 	case studio.ModePatch:
 		patch, err := studio.ParsePatch(output)
 		if err != nil {
-			return append(issues, catalog.Issue{Path: "patch", Message: err.Error()})
+			return append(issues, catalog.Issue{Path: "patch", Code: catalog.CodePatchUnreadable, Message: err.Error()})
 		}
 		if patch.IsEmpty() && output["pages"] == nil {
-			return append(issues, catalog.Issue{Path: "patch", Message: "the patch changes nothing - either patch something or answer with mode \"full\""})
+			return append(issues, catalog.Issue{Path: "patch", Code: catalog.CodePatchEmpty, Message: "the patch changes nothing - either patch something or answer with mode \"full\""})
 		}
 		upsert := make([]interface{}, 0, len(patch.Upsert))
 		for _, component := range patch.Upsert {
@@ -536,16 +574,16 @@ func validateStudioUpdate(output map[string]interface{}, basePage map[string]int
 		// not in play. Enforcing it here is what makes it a promise rather than
 		// a hope.
 		for _, violation := range studio.ScopeViolations(patch, scope) {
-			issues = append(issues, catalog.Issue{Path: "patch", Message: violation})
+			issues = append(issues, catalog.Issue{Path: "patch", Code: catalog.CodePatchScopeViolation, Message: violation})
 		}
 
 		resolved, _, err := studio.ApplyPatch(basePage, patch)
 		if err != nil {
-			return append(issues, catalog.Issue{Path: "patch", Message: err.Error()})
+			return append(issues, catalog.Issue{Path: "patch", Code: catalog.CodePatchNotApplicable, Message: err.Error()})
 		}
-		return append(issues, introducedPageIssues(c, basePage, resolved)...)
+		return append(issues, introducedPageIssues(ctx, c, basePage, resolved)...)
 	default:
-		return append(issues, catalog.Issue{Path: "mode", Message: fmt.Sprintf("must be %q or %q, got %q", studio.ModePatch, studio.ModeFull, mode)})
+		return append(issues, catalog.Issue{Path: "mode", Code: catalog.CodeEnvelopeUnknownMode, Message: fmt.Sprintf("must be %q or %q, got %q", studio.ModePatch, studio.ModeFull, mode)})
 	}
 }
 
@@ -553,7 +591,7 @@ func validateStudioUpdate(output map[string]interface{}, basePage map[string]int
 // legal page, that something mounts it, and that the mount actually points at
 // it. A page_ref whose page property was never set renders an empty panel, which
 // looks to the user like the agent did nothing.
-func validateNestedPages(output map[string]interface{}, basePage map[string]interface{}) []catalog.Issue {
+func validateNestedPages(ctx context.Context, output map[string]interface{}, basePage map[string]interface{}) []catalog.Issue {
 	c := catalog.Get()
 
 	rootPageId := ""
@@ -565,7 +603,7 @@ func validateNestedPages(output map[string]interface{}, basePage map[string]inte
 
 	nested, err := parseNestedPages(output, rootPageId)
 	if err != nil {
-		return []catalog.Issue{{Path: "pages", Message: err.Error()}}
+		return []catalog.Issue{{Path: "pages", Code: catalog.CodeNestedPagesUnreadable, Message: err.Error()}}
 	}
 	if len(nested) == 0 {
 		return nil
@@ -573,14 +611,17 @@ func validateNestedPages(output map[string]interface{}, basePage map[string]inte
 
 	issues := []catalog.Issue{}
 	for _, page := range nested {
-		for _, issue := range c.ValidatePage(page.Page) {
+		for _, issue := range pageIssuesIn(ctx, c, page.Page) {
 			issue.Path = fmt.Sprintf("pages (id %q).%s", page.PageId, issue.Path)
+			issue.ComponentId = page.PageId + "/" + issue.ComponentId
 			issues = append(issues, issue)
 		}
 		if page.MountedAt == "" {
 			issues = append(issues, catalog.Issue{
-				Path:    fmt.Sprintf("pages (id %q)", page.PageId),
-				Message: "a nested page must say which component mounts it - set \"mounted_at\" to that component's id",
+				Path:        fmt.Sprintf("pages (id %q)", page.PageId),
+				Code:        catalog.CodeNestedPageNoMountedAt,
+				ComponentId: page.PageId,
+				Message:     "a nested page must say which component mounts it - set \"mounted_at\" to that component's id",
 			})
 		}
 	}

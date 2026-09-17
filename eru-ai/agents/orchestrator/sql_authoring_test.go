@@ -25,7 +25,7 @@ func sqlCapableAgents() []agents.DiscoveredAgent {
 func TestValidateSqlAuthoringRejectsSqlTypedIntoThePlan(t *testing.T) {
 	steps := map[string]*functions.FuncStep{
 		"fetch_fields": {
-			ToolName: "eruql_processo",
+			ToolName:         "eruql_processo",
 			TransformRequest: `{{stringify (dict "params" (dict "query" "SELECT ef.field_name FROM eru.entity_fields ef WHERE ef.entity_name ilike 'financier'"))}}`,
 		},
 	}

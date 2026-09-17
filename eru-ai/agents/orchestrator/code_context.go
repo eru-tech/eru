@@ -35,6 +35,16 @@ type codeContext struct {
 	// plan that drops one silently gives the caller a different protocol than it
 	// asked for.
 	ForwardParams []string
+	// UserMessage is what the user actually typed. A plan that rewrites it into
+	// its own words for a single agent step throws away everything the message
+	// was leaning on - "it", "that one", "blue" meaning the thing named a moment
+	// ago - and the agent, which does have the conversation, is handed a
+	// self-contained instruction instead and follows it literally.
+	UserMessage string
+	// Attachments are the files the user sent with this message, by name. A
+	// plan that forwards none of them to any step has quietly decided the user
+	// attached something for no reason.
+	Attachments []string
 }
 
 // forwardableParams are the params whose whole purpose is to change the response

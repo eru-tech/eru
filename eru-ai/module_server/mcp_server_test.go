@@ -238,7 +238,6 @@ func TestEruAIMCPServerCallAgentMissingContent(t *testing.T) {
 	}
 }
 
-
 func TestParseToolName(t *testing.T) {
 	sh := newTestStoreHolder()
 	s := NewEruAIMCPServer(sh)

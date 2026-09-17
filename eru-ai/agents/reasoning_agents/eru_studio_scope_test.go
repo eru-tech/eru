@@ -210,7 +210,7 @@ func TestValidateStudioUpdateEnforcesTheScope(t *testing.T) {
 			},
 		},
 	}
-	issues := validateStudioUpdate(outOfScope, base, resolved)
+	issues := validateStudioUpdate(context.Background(), outOfScope, base, resolved)
 	if len(issues) == 0 {
 		t.Fatal("a patch outside the scope was accepted")
 	}
@@ -230,7 +230,7 @@ func TestValidateStudioUpdateEnforcesTheScope(t *testing.T) {
 			},
 		},
 	}
-	if issues := validateStudioUpdate(inScope, base, resolved); len(issues) > 0 {
+	if issues := validateStudioUpdate(context.Background(), inScope, base, resolved); len(issues) > 0 {
 		t.Errorf("an in-scope patch was rejected: %v", issues)
 	}
 }

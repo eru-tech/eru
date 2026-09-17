@@ -1018,7 +1018,7 @@ func (openaiModel *OpenAIModel) queryToolLoop(ctx context.Context, request OpenA
 	return
 }
 
-func (openaiModel *OpenAIModel) RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (Message, []StepTrace, error) {
+func (openaiModel *OpenAIModel) RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt AgentPrompt, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (Message, []StepTrace, error) {
 	logs.WithContext(ctx).Debug("RunToolLoop - Start")
 	ctx, span := otel.Tracer("eru-ai").Start(ctx, "OpenAI.RunToolLoop",
 		oteltrace.WithAttributes(attribute.String("model", openaiModel.LLMName), attribute.Int("max_iterations", maxIterations)),
@@ -1026,9 +1026,9 @@ func (openaiModel *OpenAIModel) RunToolLoop(ctx context.Context, chatRequest Cha
 	defer span.End()
 
 	openAIRequestTools, toolPrompt := convertOpenAITools(ctx, toolsMap)
-	systemContent := agentPrompt
+	systemContent := agentPrompt.String()
 	if toolPrompt != "" {
-		systemContent = strings.TrimSpace(fmt.Sprint(agentPrompt, "\n", toolPrompt))
+		systemContent = strings.TrimSpace(fmt.Sprint(systemContent, "\n", toolPrompt))
 	}
 
 	var messages []OpenAIToolLoopMessage

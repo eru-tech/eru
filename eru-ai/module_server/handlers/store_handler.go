@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -709,13 +710,28 @@ func ListConversationsHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 
 		r = r.WithContext(module_store.WithProjectContext(r.Context(), projectId, sh.Store))
 
-		conversations, err := agent.LoadConversationList(r.Context(), projectId, tenantId)
+		// The client asks for a window: how many, and how many to skip.
+		limit, skip := conversationWindow(r)
+
+		// One more than asked for, so "is there another page" is answered by the
+		// query rather than guessed from a full page.
+		conversations, err := agent.LoadConversationList(r.Context(), projectId, tenantId, limit+1, skip)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		} else {
+			hasMore := false
+			if limit > 0 && len(conversations) > limit {
+				hasMore = true
+				conversations = conversations[:limit]
+			}
 			server_handlers.FormatResponse(w, 200)
-			_ = json.NewEncoder(w).Encode(conversations)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"conversations": conversations,
+				"limit":         limit,
+				"skip":          skip,
+				"has_more":      hasMore,
+			})
 		}
 
 	}
@@ -1141,4 +1157,28 @@ func ProjectSettingsSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("project settings for ", projectId, " saved successfully")})
 		}
 	}
+}
+
+// defaultConversationPageSize is how many conversations a page holds when the
+// client does not say. Small enough that the first screen arrives quickly, big
+// enough to fill it.
+const defaultConversationPageSize = 25
+
+// conversationWindow reads the window the client asked for: how many rows, and
+// how many to skip past. Nothing else - a page number would only be these two
+// values with arithmetic in between, and the client already knows how many rows
+// it is holding.
+func conversationWindow(r *http.Request) (limit int, skip int) {
+	limit = defaultConversationPageSize
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	if raw := r.URL.Query().Get("skip"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			skip = parsed
+		}
+	}
+	return
 }

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"strings"
+
 	models "github.com/eru-tech/eru/eru-ai/models"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	vectorstore "github.com/eru-tech/eru/eru-vectorstore/vectorstore"
@@ -470,5 +472,68 @@ func TestExecutionMetricsJSON(t *testing.T) {
 	usage := parsed["usage"].(map[string]interface{})
 	if usage["reasoning_tokens"].(float64) != 500 {
 		t.Errorf("unexpected reasoning_tokens: %v", usage["reasoning_tokens"])
+	}
+}
+
+func TestAnAttachmentIsRememberedByNameNotByValue(t *testing.T) {
+	// The bytes are written to the database and replayed into every later model
+	// request. One screenshot attached once would otherwise be stored again on
+	// every turn and re-uploaded to the model for the life of the conversation.
+	msg := AgentMessage{
+		Role:    "user",
+		Content: "what is wrong with this?",
+		Files: []models.FileMessage{{
+			FileName:  "screenshot.png",
+			FileType:  "image/png",
+			FileId:    "f-1",
+			ImageData: "AAAABBBBCCCC",
+		}},
+	}
+
+	stored := msg.forStorage()
+	if len(stored.Files) != 1 {
+		t.Fatalf("the attachment was dropped entirely: %+v", stored.Files)
+	}
+	if stored.Files[0].ImageData != "" || stored.Files[0].FileData != "" {
+		t.Fatal("the payload was written to storage")
+	}
+	for _, want := range []string{stored.Files[0].FileName, stored.Files[0].FileType, stored.Files[0].FileId} {
+		if want == "" {
+			t.Fatalf("the descriptor lost something that identifies the file: %+v", stored.Files[0])
+		}
+	}
+}
+
+func TestARememberedAttachmentIsStillNamedToTheModel(t *testing.T) {
+	// With the bytes gone, a later "like the screenshot I sent" would otherwise
+	// refer to something the request has no trace of.
+	cm := ConversationManager{Config: DefaultConversationConfig("")}
+	out := cm.convertAgentMessagesToMessages([]AgentMessage{{
+		Role:    "user",
+		Content: "what is wrong with this?",
+		Files:   []models.FileMessage{{FileName: "screenshot.png", FileType: "image/png"}},
+	}}, "processo_scf")
+
+	if len(out) != 1 {
+		t.Fatalf("expected one message, got %d", len(out))
+	}
+	if !strings.Contains(out[0].Content, "screenshot.png") {
+		t.Fatalf("the model is not told what was attached:\n%s", out[0].Content)
+	}
+	if !strings.Contains(out[0].Content, "what is wrong with this?") {
+		t.Fatal("the message itself was lost")
+	}
+}
+
+func TestAnAttachmentStillHoldingItsBytesNeedsNoNote(t *testing.T) {
+	cm := ConversationManager{Config: DefaultConversationConfig("")}
+	out := cm.convertAgentMessagesToMessages([]AgentMessage{{
+		Role:    "user",
+		Content: "look",
+		Files:   []models.FileMessage{{FileName: "live.png", ImageData: "AAAA"}},
+	}}, "a")
+
+	if strings.Contains(out[0].Content, "attached earlier") {
+		t.Fatalf("named a file that is rendered as itself:\n%s", out[0].Content)
 	}
 }

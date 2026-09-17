@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	studio "github.com/eru-tech/eru/eru-ai/agents/eru_studio"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
@@ -67,7 +68,9 @@ func EntityMetadataToolDescription() string {
 	return "List the entities of this tenant with their fields: the real field name, its display name and its " +
 		"data type. Use it before you name a form field or write a label - the field name goes in a component's " +
 		"`name`/`identifier`, and the display name is the label a user expects to read. Guessing either produces a " +
-		"page that looks right and binds to nothing."
+		"page that looks right and binds to nothing. Each entity has a `name` (bind to this) and a `table` (the " +
+		"physical table behind it, for generating SQL); they are different values and neither can be derived from " +
+		"the other. `entity_names` accepts the entity name, the table name, or the words a user would use."
 }
 
 // EntityMetadataTool answers "what are this tenant's entities and fields" by
@@ -127,7 +130,37 @@ func (emTool *EntityMetadataTool) Execute(ctx context.Context, projectId string,
 	})
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("%s failed: %v", EntityMetadataToolName, err))
+		// A lookup that cannot run must not become a requirement the model is
+		// then failed for not meeting.
+		studio.LedgerFrom(ctx).RecordFailure(EntityMetadataToolName, err.Error())
 		return nil, false, fmt.Errorf("the entity metadata query failed: %w", err)
+	}
+	studio.LedgerFrom(ctx).Record(EntityMetadataToolName)
+
+	// The stored query returns a single "tables" row describing the whole
+	// tenant. Older / differently-shaped results still fall through to the flat
+	// row grouping below.
+	wanted := requestedEntities(params)
+	if entities, total, truncated, ok := groupTables(result, wanted); ok {
+		out := map[string]interface{}{"entities": entities, "field_count": total}
+		if truncated {
+			out["note"] = fmt.Sprintf("every entity is listed, but only the first %d fields fit. An entity showing \"fields_omitted\" has fields that were left out - call again with entity_names for the ones this page needs.", MaxEntityMetadataFields)
+		}
+		if len(entities) == 0 && len(wanted) > 0 {
+			out["note"] = fmt.Sprintf("no entity matched %s - call again without entity_names to see what exists", strings.Join(wanted, ", "))
+		}
+		logs.WithContext(ctx).Info(fmt.Sprintf("%s returned %d entit(ies) with %d field(s)", EntityMetadataToolName, len(entities), total))
+		names := make([]string, 0, len(entities))
+		tables := make(map[string]string, len(entities))
+		for _, entity := range entities {
+			names = append(names, entity.Name)
+			if entity.Table != "" {
+				tables[entity.Table] = entity.Name
+			}
+		}
+		studio.LedgerFrom(ctx).RecordEntities(names, tables)
+		studio.LedgerFrom(ctx).Record(EntityMetadataToolName)
+		return out, false, nil
 	}
 
 	rows := extractRows(result)
@@ -141,7 +174,6 @@ func (emTool *EntityMetadataTool) Execute(ctx context.Context, projectId string,
 	// what makes a shape change diagnosable instead of mysterious.
 	logs.WithContext(ctx).Info(fmt.Sprintf("%s returned %d row(s) with keys %v", EntityMetadataToolName, len(rows), rowKeys(rows[0])))
 
-	wanted := requestedEntities(params)
 	entities, total, truncated := groupEntities(rows, wanted)
 
 	out := map[string]interface{}{"entities": entities, "field_count": total}
@@ -248,9 +280,16 @@ type metadataField struct {
 }
 
 type metadataEntity struct {
-	Name   string          `json:"name"`
-	Label  string          `json:"label,omitempty"`
+	Name  string `json:"name"`
+	Label string `json:"label,omitempty"`
+	// Table is the physical table behind the entity: the process name and the
+	// entity name joined. A page binds to Name; only something writing SQL
+	// needs Table, so both travel and neither is derived from the other.
+	Table  string          `json:"table,omitempty"`
 	Fields []metadataField `json:"fields"`
+	// FieldsOmitted is set when the entity is named but its fields did not fit
+	// in the answer, so a caller can see that it exists and ask for it by name.
+	FieldsOmitted int `json:"fields_omitted,omitempty"`
 }
 
 // groupEntities turns metadata rows into entities with their fields. Rows whose

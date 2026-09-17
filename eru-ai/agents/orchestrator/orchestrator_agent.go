@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -132,6 +133,11 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	)
 	defer span.End()
 
+	// Attachments go to the file store before anything else sees them, so what
+	// is remembered, planned with, and forwarded to a step is an id rather than
+	// a payload. Nothing downstream should ever carry the bytes.
+	agentMessage.Files = oa.offloadAttachments(ctx, agentMessage.Files, projectId, tenantId)
+
 	_, conversation, err := oa.LoadConversations(ctx, conversationId, agentMessage, projectId, tenantId)
 	if err != nil {
 		return agents.AgentMessage{}, err
@@ -159,6 +165,11 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	bb := NewBlackboard()
 	ctx = WithBlackboard(ctx, bb)
 
+	metrics := newRunMetrics()
+	ctx = withRunMetrics(ctx, metrics)
+	runOutcome := "error"
+	defer func() { metrics.report(ctx, oa.AgentName, runOutcome) }()
+
 	streamCb := agents.GetStreamCallback(ctx)
 	emitStatus := func(stage string) {
 		if streamCb != nil {
@@ -167,13 +178,15 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	}
 
 	codeCtx := describeCodeParam(agentMessage.Params)
+	codeCtx.UserMessage = agentMessage.Content
+	codeCtx.Attachments = attachmentNames(agentMessage.Files)
 	if codeCtx.Present {
 		logs.WithContext(ctx).Info(fmt.Sprint("orchestrator params.code received - agent=", oa.AgentName, " conversation_id=", conversationId,
 			" kind=", codeCtx.Kind, " size=", codeCtx.Size, " top_keys=", strings.Join(codeCtx.TopKeys, ",")))
 	}
 
 	emitStatus("planning")
-	decompositionResult, decompositionQuestion, directAnswer, traces, err := oa.decompose(ctx, agentMessage, codeCtx, projectId, tenantId)
+	decompositionResult, decompositionQuestion, directAnswer, traces, err := oa.decompose(ctx, agentMessage, conversation, codeCtx, projectId, tenantId)
 	if err != nil {
 		return agents.AgentMessage{}, err
 	}
@@ -206,10 +219,15 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	var executionResult map[string]interface{}
 	var funcVarsMap map[string]functions.FuncTemplateVars
 	var execErr error
+	// Results of steps that already succeeded on an earlier attempt.
+	var carriedResVars map[string]*functions.TemplateVars
 
 	for attempt := 0; attempt <= oa.MaxReplans; attempt++ {
 		emitStatus("executing")
-		executionResult, funcVarsMap, execErr = oa.executeFuncGroup(ctx, decompositionResult, agentMessage, projectId, tenantId, "", "", nil, nil)
+		metrics.countExecAttempt(countPlanSteps(decompositionResult))
+		endExecuting := metrics.stage("executing")
+		executionResult, funcVarsMap, execErr = oa.executeFuncGroup(ctx, decompositionResult, agentMessage, projectId, tenantId, "", "", nil, carriedResVars)
+		endExecuting()
 		if execErr == nil {
 			break
 		}
@@ -217,7 +235,20 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		logs.WithContext(ctx).Info(fmt.Sprintf("Execution failed (attempt %d/%d): %v", attempt+1, oa.MaxReplans+1, execErr))
 
 		if attempt < oa.MaxReplans {
-			replanResult, replanQuestion, replanTraces, replanErr := oa.replan(ctx, agentMessage, decompositionResult, execErr, codeCtx, projectId, tenantId)
+			metrics.countReplan()
+			// Whatever finished is kept: the replan is told not to redo it, and
+			// its results travel into the next execution so references resolve.
+			done := collectCompletedWork(decompositionResult, funcVarsMap)
+			if done.any() {
+				logs.WithContext(ctx).Info(fmt.Sprint("replanning around ", len(done.Steps), " completed step(s): ", strings.Join(done.Steps, ", ")))
+				if carriedResVars == nil {
+					carriedResVars = map[string]*functions.TemplateVars{}
+				}
+				for step, vars := range done.ResVars {
+					carriedResVars[step] = vars
+				}
+			}
+			replanResult, replanQuestion, replanTraces, replanErr := oa.replan(ctx, agentMessage, decompositionResult, execErr, done, codeCtx, projectId, tenantId)
 			allTraces = append(allTraces, replanTraces...)
 			if replanErr != nil {
 				logs.WithContext(ctx).Error(fmt.Sprintf("Re-planning failed: %v", replanErr))
@@ -242,11 +273,25 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 		return agents.AgentMessage{}, fmt.Errorf("orchestration failed after %d attempts: %w", oa.MaxReplans+1, execErr)
 	}
 
+	runOutcome = "success"
 	allTraces = append(allTraces, collectSubAgentTraces(funcVarsMap)...)
 
 	if oa.EnableClarification {
 		if pr, merged, paused := buildPendingResume(decompositionResult, funcVarsMap, agentMessage.MessageId); paused {
-			return oa.emitClarification(ctx, merged, &pr, allTraces, agentMessage, conversation, projectId, tenantId)
+			// A sub-agent's question is not automatically a question for the
+			// user: the answer is often in this run's own results, in the
+			// conversation, or one read-only lookup away.
+			resolution := oa.resolveClarifications(ctx, merged, extractResVars(funcVarsMap), conversation, projectId, tenantId)
+			allTraces = append(allTraces, resolution.Traces...)
+			pr.ResolvedAnswers = resolution.Answers
+			pr.Assumptions = resolution.Assumptions
+
+			if len(resolution.Remaining.Questions) == 0 && len(resolution.Answers) > 0 {
+				logs.WithContext(ctx).Info("every question was answerable without the user - resuming")
+				return oa.resumeOrchestration(ctx, &pr, withResolvedAnswers(agentMessage, resolution.Answers),
+					conversation, conversationId, projectId, tenantId)
+			}
+			return oa.emitClarification(ctx, resolution.Remaining, &pr, allTraces, agentMessage, conversation, projectId, tenantId)
 		}
 	}
 
@@ -314,7 +359,7 @@ func (oa *OrchestratorAgent) logCodeRouting(ctx context.Context, plan map[string
 // When the caller sent an existing structured output in params.code, a
 // description of that artifact - never the artifact itself - is appended so the
 // planner can route it to the sub-agents it is actually relevant to.
-func (oa *OrchestratorAgent) planningSystemPrompt(cc codeContext, includeClarification bool, projectId string, tenantId string) string {
+func (oa *OrchestratorAgent) planningSystemPrompt(cc codeContext, includeClarification bool, projectId string, tenantId string) models.AgentPrompt {
 	sp := oa.GetSystemPrompt()
 	if oa.GetProvider() != nil {
 		providerPrompt := oa.GetProvider().GetSystemPrompt()
@@ -325,12 +370,33 @@ func (oa *OrchestratorAgent) planningSystemPrompt(cc codeContext, includeClarifi
 	if includeClarification && oa.EnableClarification {
 		sp = sp + orchestratorClarificationGuidance
 	}
-	sp = sp + oa.ExecutionContextSection(projectId, tenantId)
-	sp = sp + cc.promptSection(oa.discoveredAgents)
+	// Only mentioned when a lookup is actually wired up - a model told about a
+	// tool it does not have will try it and spend an iteration finding out.
+	sp = sp + researchGuidance(oa.researchTools(context.Background()))
+
+	dynamic := oa.ExecutionContextSection(projectId, tenantId)
+	dynamic = dynamic + cc.promptSection(oa.discoveredAgents)
 	if guardrail := oa.GuardrailSection(); guardrail != "" {
-		sp = sp + guardrail + orchestratorGuardrailNote
+		dynamic = dynamic + guardrail + orchestratorGuardrailNote
 	}
-	return sp
+	reportUnsubstitutedPlaceholders(context.Background(), "orchestrator planning prompt", sp)
+	return models.AgentPrompt{Static: sp, Dynamic: dynamic}
+}
+
+// placeholderPattern matches a template marker that should have been replaced
+// before the prompt reached a model.
+var placeholderPattern = regexp.MustCompile(`\{\{[A-Z0-9_]+\}\}`)
+
+// reportUnsubstitutedPlaceholders says so when a prompt still carries one.
+//
+// The orchestrator prompt ended with "{{GUIDELINES_PLACEHOLDER}}" and
+// "{{EXAMPLES_PLACEHOLDER}}", neither of which anything ever filled in. Usually
+// the model ignores such a marker; asked a short enough question it answered
+// with one, verbatim. A prompt is not finished while it still names a hole.
+func reportUnsubstitutedPlaceholders(ctx context.Context, what string, prompt string) {
+	if found := placeholderPattern.FindAllString(prompt, 3); len(found) > 0 {
+		logs.WithContext(ctx).Error(fmt.Sprint("the ", what, " still contains unsubstituted placeholder(s): ", strings.Join(found, ", ")))
+	}
 }
 
 // planEventData returns what the client receives on the plan event: the step
@@ -445,6 +511,10 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 	merged := unmarshalVars(pr.ResVarsJSON)
 	var allTraces []models.StepTrace
 
+	// Questions the orchestrator answered for itself are not re-asked, so they
+	// only reach the sub-agent if they are put back here alongside the user's.
+	agentMessage = withResolvedAnswers(agentMessage, pr.ResolvedAnswers)
+
 	for _, branch := range pr.PausedBranches {
 		// Each branch gets only its own answers, with the step prefix stripped, so
 		// the sub-agent recognises the question ids it asked with.
@@ -489,6 +559,9 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 	if err != nil {
 		return agents.AgentMessage{}, err
 	}
+	// Anything answered on the user's behalf is said out loud. An assumption
+	// nobody sees is how an assistant stops being worth trusting.
+	noteAssumptions(synthesisResult, pr.Assumptions)
 
 	resumeActions := []agents.AgentOutputAction{{
 		ActionType: agents.ActionTypeAnswer,
@@ -514,24 +587,62 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 	return agentOutput, nil
 }
 
-func (oa *OrchestratorAgent) decompose(ctx context.Context, agentMessage agents.AgentMessage, cc codeContext, projectId string, tenantId string) (map[string]interface{}, *agents.ClarificationRequest, string, []models.StepTrace, error) {
+func (oa *OrchestratorAgent) decompose(ctx context.Context, agentMessage agents.AgentMessage, conversation *agents.Conversation, cc codeContext, projectId string, tenantId string) (map[string]interface{}, *agents.ClarificationRequest, string, []models.StepTrace, error) {
+	defer runMetricsFrom(ctx).stage("planning")()
+	runMetricsFrom(ctx).countPlanAttempt()
 	logs.WithContext(ctx).Debug("OrchestratorAgent decompose - Start")
 	ctx, span := otel.Tracer("eru-ai").Start(ctx, "OrchestratorAgent.Decompose")
 	defer span.End()
 
-	chatRequest := models.ChatRequest{
-		Messages: []models.Message{{
-			Role:    "user",
-			Content: agentMessage.Content,
-			Files:   agentMessage.Files,
-		}},
+	// The planner is shown a small copy of an image and the name of everything
+	// else. It is deciding who should look at a file, not reading it, and the
+	// original can be megabytes.
+	planningFiles := planningAttachments(ctx, agentMessage.Files)
+	content := agentMessage.Content
+	if summary := attachmentSummary(agentMessage.Files); summary != "" {
+		content = content + "\n\n" + summary
 	}
+	current := models.Message{
+		Role:    "user",
+		Content: content,
+		Files:   planningFiles,
+	}
+	chatRequest := models.ChatRequest{Messages: []models.Message{current}}
+	// Plan with what has already been said. The conversation was loaded and then
+	// discarded here, so every turn was planned as though it were the first: the
+	// user could tell the assistant something and it had no idea a moment later.
+	// The conversation manager owns how much of the history fits.
+	if oa.ConversationManager != nil && conversation != nil && len(conversation.Messages) > 0 {
+		if built, buildErr := oa.ConversationManager.BuildChatRequest(ctx, conversation, current, oa.AgentName); buildErr == nil && built != nil {
+			chatRequest = *built
+		} else if buildErr != nil {
+			logs.WithContext(ctx).Error(fmt.Sprint("could not build the planning request from history, planning from this message alone: ", buildErr.Error()))
+		}
+	}
+	logs.WithContext(ctx).Info(fmt.Sprint("planning with ", len(chatRequest.Messages), " message(s) of context"))
 
 	toolsMap := oa.buildDecompositionTools(ctx)
 
 	sp := oa.planningSystemPrompt(cc, true, projectId, tenantId)
 
+	research := oa.researchTools(ctx)
+	// Whether the planner COULD look anything up is otherwise invisible: a run
+	// with no lookups looks the same whether it declined to research or was
+	// never offered the chance.
+	if len(research) == 0 {
+		logs.WithContext(ctx).Info("planner research: none available (no eru-ql tool is attached to this orchestrator)")
+	} else {
+		names := make([]string, 0, len(research))
+		for name := range research {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		logs.WithContext(ctx).Info(fmt.Sprint("planner research: offered ", strings.Join(names, ", ")))
+	}
 	toolExecutor := func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error) {
+		if result, err, handled := executeResearchTool(ctx, research, toolName, projectId, tenantId, input); handled {
+			return result, err
+		}
 		return nil, fmt.Errorf("tool %s not expected during decomposition", toolName)
 	}
 
@@ -612,10 +723,15 @@ func (oa *OrchestratorAgent) repairPlan(ctx context.Context, agentMessage agents
 	}
 	var traces []models.StepTrace
 	for attempt := 0; ; attempt++ {
-		issues := validatePlan(ctx, plan, oa.discoveredAgents, oa.discoveredTools, cc)
+		// A step that described its request rather than writing the template is
+		// compiled here, before anything is validated, so the rest of the
+		// pipeline only ever sees a plan with real templates in it.
+		issues := compileStepRequests(plan)
+		issues = append(issues, validatePlan(ctx, plan, oa.discoveredAgents, oa.discoveredTools, cc)...)
 		if len(issues) == 0 {
 			return plan, traces, nil
 		}
+		runMetricsFrom(ctx).recordPlanInvalid(issues)
 		issueText := formatPlanIssues(issues)
 		logs.WithContext(ctx).Error(fmt.Sprint("invalid plan (attempt ", attempt+1, "/", maxAttempts+1, "):\n", issueText))
 		if attempt >= maxAttempts {
@@ -634,6 +750,8 @@ func (oa *OrchestratorAgent) repairPlan(ctx context.Context, agentMessage agents
 }
 
 func (oa *OrchestratorAgent) repairPlanOnce(ctx context.Context, agentMessage agents.AgentMessage, plan map[string]interface{}, issueText string, cc codeContext, projectId string, tenantId string) (map[string]interface{}, []models.StepTrace, error) {
+	defer runMetricsFrom(ctx).stage("plan_repair")()
+	runMetricsFrom(ctx).countPlanAttempt()
 	planJSON, err := json.Marshal(plan)
 	if err != nil {
 		return nil, nil, err
@@ -677,16 +795,19 @@ func (oa *OrchestratorAgent) repairPlanOnce(ctx context.Context, agentMessage ag
 	return repairedPlan, traces, nil
 }
 
-func (oa *OrchestratorAgent) replan(ctx context.Context, agentMessage agents.AgentMessage, previousPlan map[string]interface{}, previousErr error, cc codeContext, projectId string, tenantId string) (map[string]interface{}, *agents.ClarificationRequest, []models.StepTrace, error) {
+func (oa *OrchestratorAgent) replan(ctx context.Context, agentMessage agents.AgentMessage, previousPlan map[string]interface{}, previousErr error, done completedWork, cc codeContext, projectId string, tenantId string) (map[string]interface{}, *agents.ClarificationRequest, []models.StepTrace, error) {
+	defer runMetricsFrom(ctx).stage("replanning")()
+	runMetricsFrom(ctx).countPlanAttempt()
 	logs.WithContext(ctx).Debug("OrchestratorAgent replan - Start")
 
 	previousPlanJSON, _ := json.Marshal(previousPlan)
 
 	replanContent := fmt.Sprintf(
-		"The previous plan failed with error: %s\n\nPrevious plan:\n%s\n\nOriginal request: %s\n\nPlease generate a corrected FuncGroup that avoids this error.",
+		"The previous plan failed with error: %s\n\nPrevious plan:\n%s\n\nOriginal request: %s\n\nPlease generate a corrected FuncGroup that avoids this error.%s",
 		previousErr.Error(),
 		string(previousPlanJSON),
 		agentMessage.Content,
+		done.briefing(),
 	)
 
 	chatRequest := models.ChatRequest{
@@ -730,6 +851,7 @@ func (oa *OrchestratorAgent) replan(ctx context.Context, agentMessage agents.Age
 }
 
 func (oa *OrchestratorAgent) synthesize(ctx context.Context, agentMessage agents.AgentMessage, executionResult map[string]interface{}, projectId string, tenantId string) (map[string]interface{}, []models.StepTrace, error) {
+	defer runMetricsFrom(ctx).stage("synthesizing")()
 	logs.WithContext(ctx).Debug("OrchestratorAgent synthesize - Start")
 	ctx, span := otel.Tracer("eru-ai").Start(ctx, "OrchestratorAgent.Synthesize")
 	defer span.End()
@@ -820,6 +942,12 @@ func (oa *OrchestratorAgent) buildDecompositionTools(ctx context.Context) map[st
 		askTool.SetAttribute(ctx, "tool_type", "ASK_USER")
 		askTool.SetToolAction(utility.AskUserToolName)
 		toolsMap[utility.AskUserToolName] = askTool
+	}
+	// Read-only lookups the planner may make before committing to a plan.
+	for name, tool := range oa.researchTools(ctx) {
+		if _, taken := toolsMap[name]; !taken {
+			toolsMap[name] = tool
+		}
 	}
 	return toolsMap
 }
@@ -932,7 +1060,7 @@ project. Never emit a "tenant_id" field on a step.
 Do NOT use query_name, function_name, or api steps.
 
 ============================================================
-RULE #2 — AGENT INPUT FORMAT (transform_request is MANDATORY)
+RULE #2 — EVERY STEP MUST DESCRIBE ITS REQUEST (use "request")
 ============================================================
 
 Every agent receives its request body decoded into this exact JSON shape:
@@ -952,10 +1080,85 @@ The exact contract for EACH agent is printed in the AVAILABLE AGENTS section abo
     "Output schema" gives the exact fields. Read the response only by those paths -
     do not guess a field name that is not in that agent's schema.
 
-Therefore EVERY step MUST set "transform_request" to a Go template that renders
-a JSON object of the form {"content":"..."}. Build it with the dict function and
-ALWAYS pipe the result through stringify so it renders as a JSON string (a bare
-dict renders as Go's map[...] and is NOT valid JSON):
+ATTACHMENTS
+"files" is a top-level key of the request, beside "content" - NOT a params key.
+Every agent takes it, whatever its type; it is the same field this orchestrator
+was itself given the user's attachments in. To pass them on:
+  "request": {"content": "...", "files": {"from": "user.files"}}
+Pass them to the step that needs to look at the file, and only that step - an
+agent that has no use for it should not be carrying it. Never write the file's
+contents into the plan: pass the reference, never the data.
+
+Decide from what the file IS and what each step DOES. A screenshot of a broken
+page goes to the agent that edits pages; a photographed invoice goes to the step
+that extracts its figures; a logo goes to the step that will place it. You are
+shown a small copy of each image for exactly this decision - look at it.
+
+  User: "make the dashboard look like this" + mockup.png
+    "build_page": {
+      "agent_name": "eru_studio",
+      "request": {
+        "content": {"from": "user.content"},
+        "params":  {"code": {"from": "user.params.code"}},
+        "files":   {"from": "user.files"}
+      }
+    }
+
+If the user attached something, some step must receive it. A plan that forwards
+it nowhere has decided the attachment was pointless, which is not your decision
+to make silently - if you truly believe no step needs to see it, say what was
+attached in that step's "content" instead.
+
+THE USER'S MESSAGE IS NOT YOURS TO REWRITE
+When the whole plan is ONE agent step that reads nothing from another step, forward the
+user's message exactly as they wrote it:
+
+  "request": {"content": {"from": "user.content"}}
+
+Do NOT restate it in your own words. You see one message; the agent sees the whole
+conversation and the artifact it is working on. A message leans on what came before -
+"it", "that one", "blue" meaning the thing named a moment ago - and a rewritten,
+self-contained instruction throws that away. The agent then follows your paraphrase
+instead of the user, and does far more (or far less) than was asked. This is checked.
+
+You may still add "params" - those carry context, not intent.
+
+PREFERRED — DESCRIBE THE REQUEST, DO NOT WRITE THE TEMPLATE
+Set "request" on the step and the template is generated for you, correctly quoted
+and balanced. Use this for every step unless you genuinely cannot express it:
+
+  "request": {
+    "content": "Build a page that lists financiers ...",        <- literal text
+    "params":  {"code": {"from": "user.params.code"}}           <- optional
+  }
+
+A value is a literal (any JSON value) or one of:
+  {"from": "user.content"}          the user's message
+  {"from": "user.params.<key>"}     a param the caller sent
+  {"from": "user.files"}            every file the user attached to this message
+  {"from": "user.files.<n>"}        one of them, counting from 0
+  {"from": "<step>.<field>"}        an earlier step's output field, by the
+                                    "Output fields" name for that agent
+  {"join": ["text ", {"from": "gen_sql.sql"}]}   several of those, concatenated
+
+Examples:
+  First step, passing the user's message straight through:
+    "request": {"content": {"from": "user.content"}}
+  A long instruction you are writing yourself - quotes and newlines are fine,
+  nothing needs escaping:
+    "request": {"content": "Build a dashboard.\n\nLAYOUT:\n- a chart on top ..."}
+  Feeding a previous agent's output field in:
+    "request": {"content": {"from": "generate_sql.sql"}}
+
+Use "request" OR "transform_request", never both - a step that sets both keeps
+the hand-written template.
+
+FALLBACK — "transform_request" (only when "request" cannot express it)
+It is a Go template that renders a JSON object of the form {"content":"..."}.
+Build it with the dict function and ALWAYS pipe the result through stringify so
+it renders as a JSON string (a bare dict renders as Go's map[...] and is NOT
+valid JSON). Long content is exactly where this goes wrong - the parentheses stop
+balancing - so prefer "request" whenever the body is more than a short phrase:
 
 AGENT OUTPUT SHAPE — how to read a previous step's result:
 Every agent RESPONDS with this envelope:
@@ -967,11 +1170,11 @@ read a prior step's output, use:
 NEVER use .ResVars.<prev_step>.Body.content for an agent step — the text is NOT there.
 
   First step (from the user's message — .Vars.Body IS already {"content":...}):
-    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
+    "request": {"content": {"from": "user.content"}}
 
   Chained step (feed prior agent's output field as the next input). Example: a
   generate_sql agent whose Output fields are "sql":
-    "transform_request": "{{stringify (dict \"content\" (index .ResVars.generate_sql.Body.actions 0).action.sql)}}"
+    "request": {"content": {"from": "generate_sql.sql"}}
 
 RULE: any template that builds an object/dict (in transform_request OR
 transform_response) MUST end with " | stringify" (or wrap in stringify) so the
@@ -985,7 +1188,7 @@ WRONG (these all break the agent):
 
 To combine multiple agents' outputs into one input, concatenate the fields into a
 single content string, e.g.:
-  "{{stringify (dict \"content\" (printf \"sql: %s\\nrows: %s\" (index .ResVars.generate_sql.Body.actions 0).action.sql (index .ResVars.execute_sql.Body.actions 0).action.result))}}"
+  "request": {"content": {"join": ["sql: ", {"from": "generate_sql.sql"}, "\\nrows: ", {"from": "execute_sql.result"}]}}
 
 ============================================================
 RULE #2a — FORWARD THE USER'S ANSWER BACK TO THE AGENT THAT ASKED
@@ -1013,7 +1216,7 @@ that agent's "Params keys this agent READS" line in AVAILABLE AGENTS. If it list
 a "context" key, the rows MUST be passed as "params" -> "context", with "content"
 carrying only the instruction - that key IS the agent's data channel:
 
-  "transform_request": "{{stringify (dict \"content\" .Vars.Body.content \"params\" (dict \"context\" (stringify .ResVars.<data_step>.Body)))}}"
+  "request": {"content": {"from": "user.content"}, "params": {"context": {"from": "<data_step>.<output field>"}}}
 
 Do NOT bury the rows inside the content string for these agents, and NEVER
 paraphrase, sample, round or retype the data into the template — always pass the
@@ -1039,13 +1242,13 @@ the action's "Input schema" fields go INSIDE a root "params" object (NOT the
 rejected. Build params with dict, wrap in another dict under "params", stringify.
 Example — an execute_sql action whose Input schema needs {"query","project_id",
 "vars"}, fed from a prior agent's sql output:
-  "transform_request": "{{stringify (dict \"params\" (dict \"query\" (index .ResVars.generate_sql.Body.actions 0).action.sql \"project_id\" \"processo\" \"vars\" (dict)))}}"
+  "request": {"params": {"query": {"from": "generate_sql.sql"}, "project_id": "processo", "vars": {}}}
 
 Reading a tool's OUTPUT to chain forward:
   - If the tool shows an "Output schema": read .ResVars.<tool_step>.Body.<field> per that schema.
   - If the tool's Output is "dynamic": do NOT try to pick fields — pass the whole
     result as content to a downstream AGENT or to synthesis:
-      "transform_request": "{{stringify (dict \"content\" (stringify .ResVars.<tool_step>.Body))}}"
+      "request": {"content": {"from_body": "<tool_step>"}}
 
 NOTE: agent output lives in actions[0].action.<field>; tool output lives directly
 in .ResVars.<tool_step>.Body (no actions envelope). Don't mix them up.
@@ -1098,11 +1301,11 @@ Example — WRONG (independent steps needlessly serialised):
 {
   "sentiment_analyzer": {
     "agent_name": "sentiment_analyzer",
-    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}",
+    "request": {"content": {"from": "user.content"}},
     "func_steps": {
       "topic_classifier": {
         "agent_name": "topic_classifier",
-        "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
+        "request": {"content": {"from": "user.content"}}
       }
     }
   }
@@ -1114,11 +1317,11 @@ Example — sequential: extract data, then summarize it:
 {
   "extractor": {
     "agent_name": "extractor",
-    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}",
+    "request": {"content": {"from": "user.content"}},
     "func_steps": {
       "summarizer": {
         "agent_name": "summarizer",
-        "transform_request": "{{stringify (dict \"content\" (index .ResVars.extractor.Body.actions 0).action.<extractor_output_field>)}}"
+        "request": {"content": {"from": "extractor.<extractor_output_field>"}}
       }
     }
   }
@@ -1128,11 +1331,11 @@ Example — parallel: two independent agents, then merge:
 {
   "sentiment_analyzer": {
     "agent_name": "sentiment_analyzer",
-    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
+    "request": {"content": {"from": "user.content"}}
   },
   "topic_classifier": {
     "agent_name": "topic_classifier",
-    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
+    "request": {"content": {"from": "user.content"}}
   }
 }
 
@@ -1140,16 +1343,16 @@ Example — parallel then sequential merge:
 {
   "sentiment_analyzer": {
     "agent_name": "sentiment_analyzer",
-    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}"
+    "request": {"content": {"from": "user.content"}}
   },
   "topic_classifier": {
     "agent_name": "topic_classifier",
-    "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}",
+    "request": {"content": {"from": "user.content"}},
     "func_steps": {
       "report_generator": {
         "agent_name": "report_generator",
         "wait_for": "sentiment_analyzer",
-        "transform_request": "{{stringify (dict \"content\" (printf \"sentiment: %s\\ntopics: %s\" (index .ResVars.sentiment_analyzer.Body.actions 0).action.<field> (index .ResVars.topic_classifier.Body.actions 0).action.<field>))}}"
+        "request": {"content": {"join": ["sentiment: ", {"from": "sentiment_analyzer.<field>"}, "\\ntopics: ", {"from": "topic_classifier.<field>"}]}}
       }
     }
   }
@@ -1233,11 +1436,6 @@ CHECKLIST (verify before outputting)
 [ ] EVERY tool step's transform_request renders a root "params" object containing all of that action's Required params
 [ ] EVERY field read off an agent response exists in that agent's Output schema
 
---- GUIDELINES ---
-{{GUIDELINES_PLACEHOLDER}}
-
---- EXAMPLES ---
-{{EXAMPLES_PLACEHOLDER}}
 `
 	return systemPrompt
 }
@@ -1258,6 +1456,9 @@ func (oa *OrchestratorAgent) buildAgentDescriptions() string {
 		if len(ad.InternalCapabilities) > 0 {
 			sb.WriteString(fmt.Sprintf("  Looks these up ITSELF - do not add a step to fetch them, and never hand-write SQL for them: %s\n",
 				strings.Join(ad.InternalCapabilities, "; ")))
+		}
+		if strings.TrimSpace(ad.PlanningNote) != "" {
+			sb.WriteString(fmt.Sprintf("  HOW TO PLAN WITH IT: %s\n", ad.PlanningNote))
 		}
 		if guardrail := summariseGuardrail(ad.Guardrail); guardrail != "" {
 			sb.WriteString(fmt.Sprintf("  Scope limits: %s\n", guardrail))

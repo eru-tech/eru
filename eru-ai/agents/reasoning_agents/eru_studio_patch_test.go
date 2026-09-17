@@ -8,6 +8,7 @@ import (
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
 	studio "github.com/eru-tech/eru/eru-ai/agents/eru_studio"
+	catalog "github.com/eru-tech/eru/eru-ai/agents/eru_studio/catalog"
 )
 
 const existingPageJSON = `{
@@ -143,7 +144,7 @@ func TestAuthoringWithATemplatePageResolves(t *testing.T) {
 		},
 	}
 
-	if issues := validateStudioUpdate(output, nil, nil); len(issues) > 0 {
+	if issues := validateStudioUpdate(context.Background(), output, nil, nil); len(issues) > 0 {
 		t.Fatalf("a page authored with its row template was rejected: %v", issues)
 	}
 
@@ -318,7 +319,7 @@ func TestValidateStudioUpdateChecksTheResolvedPageNotJustThePatch(t *testing.T) 
 			},
 		},
 	}
-	issues := validateStudioUpdate(output, base, nil)
+	issues := validateStudioUpdate(context.Background(), output, base, nil)
 	found := false
 	for _, issue := range issues {
 		if strings.Contains(issue.Message, "cannot have children") {
@@ -344,7 +345,7 @@ func TestValidateStudioUpdateAcceptsAGoodPatch(t *testing.T) {
 			},
 		},
 	}
-	if issues := validateStudioUpdate(output, base, nil); len(issues) > 0 {
+	if issues := validateStudioUpdate(context.Background(), output, base, nil); len(issues) > 0 {
 		t.Errorf("a valid patch was rejected: %v", issues)
 	}
 }
@@ -363,7 +364,7 @@ func TestValidateStudioUpdateCatchesAnInventedPropertyInAPatch(t *testing.T) {
 			},
 		},
 	}
-	issues := validateStudioUpdate(output, base, nil)
+	issues := validateStudioUpdate(context.Background(), output, base, nil)
 	if len(issues) == 0 {
 		t.Fatal("an invented property in a patch was accepted")
 	}
@@ -486,7 +487,7 @@ func TestValidateStudioUpdateIgnoresIssuesThePatchInherited(t *testing.T) {
 		},
 	}
 
-	for _, issue := range validateStudioUpdate(output, base, nil) {
+	for _, issue := range validateStudioUpdate(context.Background(), output, base, nil) {
 		if strings.Contains(issue.Message, "pieData") {
 			t.Errorf("the patch was failed for a violation it inherited: %s", issue)
 		}
@@ -518,12 +519,90 @@ func TestValidateStudioUpdateStillCatchesWhatThePatchIntroduces(t *testing.T) {
 	}
 
 	found := false
-	for _, issue := range validateStudioUpdate(output, base, nil) {
+	for _, issue := range validateStudioUpdate(context.Background(), output, base, nil) {
 		if strings.Contains(issue.Message, "not_a_real_button_property") {
 			found = true
 		}
 	}
 	if !found {
 		t.Error("a property the patch introduced was not reported")
+	}
+}
+
+// A real page carries things the catalog does not know about - "tab_label",
+// which the tabs component writes onto its own panels, or "_originPageId" on an
+// event. Asking for the whole page back used to turn every one of them into a
+// blocking error, and the agent then "fixed" a region the user had told it not
+// to touch. A full answer is judged on what it CHANGED, exactly like a patch.
+func TestAFullAnswerIsNotFailedForFaultsItInherited(t *testing.T) {
+	base := map[string]interface{}{
+		"id": "p1", "name": "p1", "styles": map[string]interface{}{},
+		"components": []interface{}{
+			map[string]interface{}{
+				"id": "panel", "type": "flex_container",
+				"properties": map[string]interface{}{"base": map[string]interface{}{"tab_label": "Invoices"}},
+				"styles":     map[string]interface{}{},
+				"children":   []interface{}{},
+			},
+		},
+	}
+	// The agent echoes it back untouched alongside its real edit.
+	echoed := map[string]interface{}{
+		"id": "p1", "name": "p1", "styles": map[string]interface{}{},
+		"components": []interface{}{
+			map[string]interface{}{
+				"id": "panel", "type": "flex_container",
+				"properties": map[string]interface{}{"base": map[string]interface{}{"tab_label": "Invoices"}},
+				"styles":     map[string]interface{}{},
+				"children":   []interface{}{},
+			},
+		},
+	}
+
+	// On its own the inherited property is a catalog error.
+	if len(catalog.Get().ValidatePage(echoed)) == 0 {
+		t.Fatal("this fixture is meant to carry a property the catalog rejects")
+	}
+
+	output := map[string]interface{}{"mode": studio.ModeFull, "page": echoed}
+	if issues := validateStudioUpdate(context.Background(), output, base, nil); len(issues) != 0 {
+		t.Fatalf("a faithfully echoed page should not be rejected for what it inherited: %v", issues)
+	}
+}
+
+// What the answer actually introduces is still caught.
+func TestAFullAnswerIsStillFailedForWhatItIntroduces(t *testing.T) {
+	base := map[string]interface{}{
+		"id": "p1", "name": "p1", "styles": map[string]interface{}{},
+		"components": []interface{}{},
+	}
+	broken := map[string]interface{}{
+		"id": "p1", "name": "p1", "styles": map[string]interface{}{},
+		"components": []interface{}{
+			map[string]interface{}{"id": "x", "type": "NotAComponent",
+				"properties": map[string]interface{}{"base": map[string]interface{}{}},
+				"styles":     map[string]interface{}{}},
+		},
+	}
+	output := map[string]interface{}{"mode": studio.ModeFull, "page": broken}
+	if issues := validateStudioUpdate(context.Background(), output, base, nil); len(issues) == 0 {
+		t.Fatal("a newly invented component type must still be reported")
+	}
+}
+
+// Authoring from nothing has no base to compare against, so the whole page is
+// judged - which is what makes a brand new page hold to the library.
+func TestANewPageIsStillJudgedWhole(t *testing.T) {
+	broken := map[string]interface{}{
+		"id": "p1", "name": "p1", "styles": map[string]interface{}{},
+		"components": []interface{}{
+			map[string]interface{}{"id": "x", "type": "NotAComponent",
+				"properties": map[string]interface{}{"base": map[string]interface{}{}},
+				"styles":     map[string]interface{}{}},
+		},
+	}
+	output := map[string]interface{}{"mode": studio.ModeFull, "page": broken}
+	if issues := validateStudioUpdate(context.Background(), output, nil, nil); len(issues) == 0 {
+		t.Fatal("with no base page the whole answer is the agent's own work")
 	}
 }

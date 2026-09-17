@@ -47,3 +47,10 @@ tasks.json
 eru-ai/localhost-key.pem
 eru-ai/localhost.pem
 /home/alty/linuxcode/goworkspace/eru/eru-ai/tools/ckyc/input
+# Fixtures captured from a live tenant - real entity schemas, real pages, real
+# business descriptions. They are worth keeping for regression comparison and
+# are not ours to publish, so they live in one place per module and never leave
+# the machine that recorded them. Committed fixtures are synthetic and sit in
+# the ordinary per-package testdata/ directories.
+local-testdata/
+eru-ai/tools/utility/testdata

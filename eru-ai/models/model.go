@@ -64,14 +64,14 @@ type ModelI interface {
 	PerformPreDeleteTask(ctx context.Context) (err error)
 	QueryModel(ctx context.Context, chatRequest ChatRequest) (response Message, err error)
 	QueryModelWithTool(ctx context.Context, chatRequest ChatRequest, tools map[string]tools.Tooling, agentName string, agentPrompt string) (response JsonMessage, err error)
-	RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (response Message, traces []StepTrace, err error)
+	RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt AgentPrompt, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (response Message, traces []StepTrace, err error)
 	GenerateEmbeddings(ctx context.Context, inputs []EmbeddingInput, config chunking.ChunkingConfig, dimension int) (outputs []EmbeddingOutput, err error)
 }
 
 type StreamingModelI interface {
 	ModelI
 	QueryModelStreaming(ctx context.Context, chatRequest ChatRequest, callback func(chunk string)) (Message, error)
-	RunToolLoopStreaming(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor, streamCb StreamEventCallback) (response Message, traces []StepTrace, err error)
+	RunToolLoopStreaming(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt AgentPrompt, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor, streamCb StreamEventCallback) (response Message, traces []StepTrace, err error)
 }
 
 type ReasoningModelI interface {
@@ -96,6 +96,23 @@ type TokenUsage struct {
 	ReasoningTokens int64 `json:"reasoning_tokens,omitempty"`
 	CachedTokens    int64 `json:"cached_tokens,omitempty"`
 	TotalTokens     int64 `json:"total_tokens,omitempty"`
+}
+
+type AgentPrompt struct {
+	Static  string
+	Dynamic string
+}
+
+func StaticAgentPrompt(prompt string) AgentPrompt {
+	return AgentPrompt{Static: prompt}
+}
+
+func (p AgentPrompt) String() string {
+	return p.Static + p.Dynamic
+}
+
+func (p AgentPrompt) IsEmpty() bool {
+	return p.Static == "" && p.Dynamic == ""
 }
 
 type UsageAccumulator struct {
@@ -230,7 +247,7 @@ func (model *Model) QueryModelWithTool(ctx context.Context, chatRequest ChatRequ
 	return
 }
 
-func (model *Model) RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt string, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (response Message, traces []StepTrace, err error) {
+func (model *Model) RunToolLoop(ctx context.Context, chatRequest ChatRequest, toolsMap map[string]tools.Tooling, agentPrompt AgentPrompt, maxIterations int, thinkingBudget int, toolExecutor ToolExecutor) (response Message, traces []StepTrace, err error) {
 	err = errors.New("RunToolLoop Method not implemented for provider " + model.Provider)
 	logs.WithContext(ctx).Error(err.Error())
 	return

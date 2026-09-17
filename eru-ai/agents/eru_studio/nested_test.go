@@ -236,9 +236,21 @@ func TestValidateMountsCatchesTheEmptyPanel(t *testing.T) {
 	  "id": "p", "name": "p", "styles": {},
 	  "components": [{"id": "panel_ref", "type": "page_ref", "properties": {"base": {"display_type": "side_panel"}}, "styles": {}}]
 	}`)
-	issues := ValidateMounts(blank, nil, nil)
-	if len(issues) != 1 || !strings.Contains(issues[0].Message, "empty panel") {
+	// The rule itself now lives in the catalog rule table, so the component
+	// validator is what raises it; ValidateMounts keeps only the relational
+	// checks. The page is still rejected, which is what this test is about.
+	issues := catalog.Get().ValidatePage(blank)
+	found := false
+	for _, issue := range issues {
+		if strings.Contains(issue.Message, "empty panel") {
+			found = true
+		}
+	}
+	if !found {
 		t.Errorf("a page_ref with no page was not reported: %v", issues)
+	}
+	if mountIssues := ValidateMounts(blank, nil, nil); len(mountIssues) != 0 {
+		t.Errorf("the mount validator should no longer report it a second time: %v", mountIssues)
 	}
 }
 

@@ -22,6 +22,44 @@ type PendingResume struct {
 	ReqVarsJSON    string         `json:"req_vars_json,omitempty"`
 	PausedBranches []PausedBranch `json:"paused_branches"`
 	JoinStep       string         `json:"join_step,omitempty"`
+
+	// ResolvedAnswers are the questions the orchestrator answered for itself.
+	// They travel with the checkpoint because a run can be partly self-resolved:
+	// the user is asked only what was left over, and on resume the sub-agent
+	// still needs the answers it is not going to be given twice.
+	ResolvedAnswers []agents.ClarificationAnswer `json:"resolved_answers,omitempty"`
+
+	// Assumptions are those same answers in words, to be shown with the result.
+	Assumptions []string `json:"assumptions,omitempty"`
+}
+
+// withResolvedAnswers merges the orchestrator's own answers into a message,
+// letting the user's answers win where both speak to the same question.
+func withResolvedAnswers(message agents.AgentMessage, resolved []agents.ClarificationAnswer) agents.AgentMessage {
+	if len(resolved) == 0 {
+		return message
+	}
+	existing, _ := message.ClarificationAnswers()
+	answered := make(map[string]bool, len(existing))
+	for _, a := range existing {
+		answered[a.QuestionId] = true
+	}
+
+	merged := make([]agents.ClarificationAnswer, 0, len(existing)+len(resolved))
+	merged = append(merged, existing...)
+	for _, a := range resolved {
+		if !answered[a.QuestionId] {
+			merged = append(merged, a)
+		}
+	}
+
+	params := make(map[string]interface{}, len(message.Params)+1)
+	for key, value := range message.Params {
+		params[key] = value
+	}
+	params[agents.ClarificationAnswersParamKey] = merged
+	message.Params = params
+	return message
 }
 
 type PausedBranch struct {

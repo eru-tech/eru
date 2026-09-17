@@ -129,6 +129,10 @@ like child content but are leaves, so this is where that content actually goes:
   EruPages, reached by id.
 
 ============================================================
+{{COMPONENT_RULES}}
+============================================================
+
+============================================================
 {{NESTED_PAGES}}
 ============================================================
 
@@ -569,6 +573,19 @@ sidenav:
 
 tabs:
   tabs (comma-separated tab titles). Place tab contents in children[].
+  EACH TAB NEEDS EXACTLY ONE CHILD, AND ITS ID DECIDES WHICH TAB IT IS.
+  A child counts as a tab panel only when its id is "<this component's id>-tab-<n>", numbered
+  from 0 in tab order. A child named anything else is NOT rendered - the runtime treats it as
+  stray content and adds an empty panel in its place, so the tab shows up blank and the content
+  you wrote is orphaned inside the component.
+    "id": "detail_tabs", "type": "tabs",
+    "properties": {"base": {"tabs": "Invoices,Financed Invoices"}},
+    "children": [
+      { "id": "detail_tabs-tab-0", "type": "flex_container", ... },   <- the Invoices tab
+      { "id": "detail_tabs-tab-1", "type": "flex_container", ... }    <- the Financed Invoices tab
+    ]
+  Do NOT name them after their contents ("tab_invoices", "tab_finv_content") and do NOT add any
+  other child. Two tabs means exactly two children. This is checked.
 
 nav_menu (URL-driven app navigation; pair with nav_outlet):
   menu_id (a menu already defined for this process; its items come from there, already filtered to the pages this
@@ -1101,7 +1118,21 @@ for that colour, for example:
     amber = pending, red = overdue/breach) — e.g. status options, color_rules,
     color_ranges, badge colours, gauge/progress thresholds
   - chart/series palettes needing several distinguishable colours
-  - a deliberate accent or hero/gradient treatment the theme cannot express
+  - an accent the theme genuinely cannot express, where the user asked for that look
+
+PAGE CHROME IS SOLID AND TOKENED — a header bar, a hero strip, a toolbar, the bar across
+the top of a panel or a form:
+  - Give it a SOLID background from a token: var(--studio-primary),
+    var(--studio-surface-container) or var(--studio-surface-variant).
+  - Do NOT put a gradient on it. "linear-gradient(135deg, ...)" across two shades is a house
+    style nobody asked for, and it freezes two colours against a theme that moves.
+  - Do NOT pin it to a hex. A header hard-coded to #1e293b ignores the host app's theme and
+    its dark mode, and looks wrong the moment either changes.
+  - Both of these are checked, and an answer that breaks them is sent back to you.
+  - The one exception is the user asking: if they said "gradient header" or named a colour or
+    a brand shade, build what they asked for.
+Depth comes from elevation, spacing and a considered token pairing - a surface-container header
+against a surface page, a primary accent bar, a real shadow - not from a colour ramp.
 In those cases use the exact hex the design needs — do NOT bend it to the nearest
 token. Keep everything AROUND it on tokens, and do not mix a token background with
 a hex text colour on the same element.
@@ -1131,7 +1162,9 @@ must use ONE of these three shapes inside styles.responsive_styles.<breakpoint>:
     "background_color": "<colour value>"
     and NO "background", NO "background_image".
 
-  GRADIENT (two colours):
+  GRADIENT (two colours) — NOT for page chrome. A header, hero, toolbar or panel bar takes a
+  solid token background; see the styling rules above. Reach for a gradient only where the user
+  asked for one, or for a genuine decorative surface that is not framing the page:
     "background": "linear-gradient(<angle>deg, <colour1> 0%, <colour2> 100%)"
     - exactly two stops, at 0% and 100%, in that order
     - <angle> is a number 0–360 followed by "deg" (135 is a good default)

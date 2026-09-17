@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -61,6 +62,18 @@ type CacheData struct {
 	LastAccessed time.Time `json:"last_accessed"`
 	CreatedBy    string    `json:"created_by"`
 	AgentName    string    `json:"agent_name"`
+	// LastUpdated is when the conversation this row belongs to was last
+	// touched. The list query has always computed it and the struct had nowhere
+	// to put it, so it was dropped on unmarshal and every conversation reached
+	// the UI with no time at all.
+	//
+	// It is read-only: eru_cache has no such column, the list query derives it
+	// as max(updated_at). It has to be a pointer so a zero value is genuinely
+	// omitted from the insert - omitempty does not omit a zero time.Time, and a
+	// struct value here put last_updated in the column list of every write,
+	// which postgres rejected and the sync goroutine only logged. No
+	// conversation was persisted at all while that stood.
+	LastUpdated *time.Time `json:"last_updated,omitempty"`
 }
 
 // CacheStoreI defines the interface for a generic cache.
@@ -81,15 +94,43 @@ type CacheStoreI interface {
 	SyncPersistence(ctx context.Context, cacheStoreI CacheStoreI) error
 	SyncToDatabase(ctx context.Context, projectId string, cacheData []CacheData) error
 	LoadFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string, agentName string, createdBy string) ([]CacheData, error)
-	LoadListFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string, agentName string, createdBy string) (cacheData []CacheData, err error)
+	LoadListFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string, agentName string, createdBy string, limit int, skip int) (cacheData []CacheData, err error)
 }
 
 // CacheStore is a base struct to be embedded by specific implementations.
+//
+// A configured store is two tiers, not one. What is held in the store itself -
+// process memory, or Redis - is the short-term tier: fast, shared with whoever
+// else is on that store, and allowed to expire. What PersistEnabled and
+// CacheDbAlias send on to the database is the long-term tier: slower, smaller,
+// and kept. A caller chooses a tier by choosing whether to hand a row to
+// SyncToDatabase, not by reaching for a second store.
 type CacheStore struct {
 	CacheStoreType string `json:"cache_store_type"`
 	CacheDbAlias   string `json:"cache_db_alias"`
 	PersistEnabled bool   `json:"persist_enabled"`
 	PersistError   bool   `json:"persist_error"`
+
+	// SessionTtl is how long an entry that is never persisted may live in the
+	// short-term tier - a Go duration such as "2h". Entries written without a
+	// ttl are unaffected. Empty means DefaultSessionTtl.
+	SessionTtl string `json:"session_ttl,omitempty"`
+}
+
+// DefaultSessionTtl is how long short-term entries live when the store's
+// configuration does not say.
+const DefaultSessionTtl = 2 * time.Hour
+
+// SessionTtlOrDefault is the configured short-term lifetime.
+func (cs *CacheStore) SessionTtlOrDefault() time.Duration {
+	if cs.SessionTtl == "" {
+		return DefaultSessionTtl
+	}
+	d, err := time.ParseDuration(cs.SessionTtl)
+	if err != nil || d <= 0 {
+		return DefaultSessionTtl
+	}
+	return d
 }
 
 func (cs *CacheStore) Init(ctx context.Context) error {
@@ -134,6 +175,8 @@ func (cs *CacheStore) GetAttribute(ctx context.Context, attributeName string) (a
 		return cs.PersistEnabled, nil
 	case "persist_error":
 		return cs.PersistError, nil
+	case "session_ttl":
+		return cs.SessionTtlOrDefault(), nil
 	default:
 		return nil, errors.New("attribute not found")
 	}
@@ -349,6 +392,69 @@ func GetCacheStore(cacheStoreType string, projectId string) (cs CacheStoreI) {
 	cs.ValidatePersistence(ctx, projectId)
 	return cs
 }
+// A configured cache store is shared by everyone configured the same way.
+//
+// Without this an in-memory store is a cache in name only. Its owner - an agent,
+// say - is rebuilt from its JSON on every request, and a store built during that
+// rebuild starts empty and is thrown away when the request ends, so it can never
+// return a hit to anything. Every read falls through to the database and every
+// value written between requests is lost. Two callers configured identically
+// want the same cache; two configured differently must not share one, which is
+// what the configuration itself is keyed on.
+var (
+	sharedStores   = map[string]CacheStoreI{}
+	sharedStoresMu sync.Mutex
+)
+
+// GetSharedCacheStore returns the store configured by rj, building it the first
+// time and returning that same instance to every later caller with the same
+// configuration.
+func GetSharedCacheStore(ctx context.Context, cacheStoreType string, rj *json.RawMessage) (CacheStoreI, error) {
+	key, err := storeConfigKey(cacheStoreType, rj)
+	if err != nil {
+		return nil, err
+	}
+
+	sharedStoresMu.Lock()
+	defer sharedStoresMu.Unlock()
+
+	if cs, ok := sharedStores[key]; ok {
+		return cs, nil
+	}
+
+	cs := GetCacheStore(cacheStoreType, "")
+	if cs == nil {
+		return nil, fmt.Errorf("unsupported cache type: %s", cacheStoreType)
+	}
+	if err := cs.MakeFromJson(ctx, rj); err != nil {
+		return nil, err
+	}
+	sharedStores[key] = cs
+	logs.WithContext(ctx).Info(fmt.Sprintf("cache store %s created and shared for configuration %s", cacheStoreType, key))
+	return cs, nil
+}
+
+// storeConfigKey identifies a configuration rather than the bytes that happened
+// to express it, so the same settings serialised twice do not produce two stores.
+func storeConfigKey(cacheStoreType string, rj *json.RawMessage) (string, error) {
+	if rj == nil {
+		return strings.ToUpper(cacheStoreType), nil
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(*rj, &cfg); err != nil {
+		return "", err
+	}
+	// Values the store fills in for itself say nothing about which store was
+	// asked for, and would otherwise split one configuration into two.
+	delete(cfg, "cache_values")
+	delete(cfg, "persist_error")
+	canonical, err := json.Marshal(cfg)
+	if err != nil {
+		return "", err
+	}
+	return strings.ToUpper(cacheStoreType) + "|" + string(canonical), nil
+}
+
 func (cs *CacheStore) MakeFromJson(ctx context.Context, rj *json.RawMessage) error {
 	err := logs.Err(ctx, errors.New("not implemented"), "not implemented")
 	return err
@@ -410,13 +516,19 @@ func (cs *CacheStore) SyncToDatabase(ctx context.Context, projectId string, cach
 	}
 
 	if cs.CacheDbAlias == "" {
+		// This ran in a background goroutine whose error nobody reads, so a
+		// missing alias meant conversations silently stopped being persisted
+		// with not one line to say so.
+		logs.WithContext(ctx).Error("cache database alias not configured, so nothing was persisted")
 		return fmt.Errorf("cache database alias not configured")
 	}
 
 	eruqlURL := os.Getenv("ERUQL_BASEURL")
 	if eruqlURL == "" {
+		logs.WithContext(ctx).Error("ERUQL_BASEURL is not set, so nothing was persisted")
 		return fmt.Errorf("ERUQL_BASEURL environment variable not set")
 	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("persisting %d cache row(s) to %s", len(cacheData), cs.CacheDbAlias))
 
 	mutation := `
 	mutation {
@@ -562,7 +674,7 @@ func (cs *CacheStore) LoadFromDatabase(ctx context.Context, projectId, tenantId,
 	}
 }
 
-func (cs *CacheStore) LoadListFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string, agentName string, createdBy string) (cacheData []CacheData, err error) {
+func (cs *CacheStore) LoadListFromDatabase(ctx context.Context, projectId, tenantId, cacheKey string, agentName string, createdBy string, limit int, skip int) (cacheData []CacheData, err error) {
 	logs.WithContext(ctx).Debug("LoadFromDatabase - Start")
 
 	if !cs.PersistEnabled {
@@ -586,6 +698,17 @@ func (cs *CacheStore) LoadListFromDatabase(ctx context.Context, projectId, tenan
 	query = strings.Replace(query, "$$tenant_id$$", tenantId, -1)
 	query = strings.Replace(query, "$$agent_name$$", agentName, -1)
 	query = strings.Replace(query, "$$userid$$", createdBy, -1)
+
+	// Newest first. Without an order the rows arrive in whatever order the
+	// database happens to return them, and a caller that then puts them in a map
+	// loses even that - which is why the conversation list read as shuffled.
+	query = query + " order by b.last_updated desc"
+	if limit > 0 {
+		query = fmt.Sprintf("%s limit %d", query, limit)
+	}
+	if skip > 0 {
+		query = fmt.Sprintf("%s offset %d", query, skip)
+	}
 
 	requestBody := map[string]interface{}{
 		"query":    query,
@@ -643,5 +766,56 @@ func (cs *CacheStore) LoadListFromDatabase(ctx context.Context, projectId, tenan
 
 	} else {
 		return []CacheData{}, nil
+	}
+}
+
+// expiringStore is a store that can reclaim its own expired entries. Redis does
+// this for itself and does not implement it.
+type expiringStore interface {
+	PurgeExpired(ctx context.Context) int
+}
+
+// PurgeExpiredSharedStores reclaims expired entries across every shared store.
+//
+// Expiry in the in-memory store is lazy - a read of a stale key deletes it, and
+// GetKeys hides stale keys rather than removing them. That reclaims nothing from
+// an entry nobody comes back to, which is the only kind worth reclaiming: left
+// alone, the working set of every conversation ever started stays resident for
+// the life of the process.
+func PurgeExpiredSharedStores(ctx context.Context) int {
+	sharedStoresMu.Lock()
+	stores := make([]CacheStoreI, 0, len(sharedStores))
+	for _, cs := range sharedStores {
+		stores = append(stores, cs)
+	}
+	sharedStoresMu.Unlock()
+
+	purged := 0
+	for _, cs := range stores {
+		if p, ok := cs.(expiringStore); ok {
+			purged += p.PurgeExpired(ctx)
+		}
+	}
+	if purged > 0 {
+		logs.WithContext(ctx).Info(fmt.Sprintf("reclaimed %d expired cache entr(ies)", purged))
+	}
+	return purged
+}
+
+// StartSharedStoreSweeper reclaims expired entries on an interval until the
+// context is done.
+func StartSharedStoreSweeper(ctx context.Context, every time.Duration) {
+	if every <= 0 {
+		every = 10 * time.Minute
+	}
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			PurgeExpiredSharedStores(ctx)
+		}
 	}
 }

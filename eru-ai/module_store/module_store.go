@@ -627,9 +627,12 @@ func (ms *ModuleStore) GetAgentClone(ctx context.Context, projectId string, tena
 			agentObjClone.SetProvider(provider)
 		}
 	}
+	// The clone and the stored agent now resolve to the same shared store, so
+	// there is nothing to copy across - and copying a store's persistence
+	// settings onto itself is at best wasted work.
 	cacheI := agentObj.GetChatMemory()
-	if cacheI != nil {
-		err := agentObjClone.GetChatMemory().SyncPersistence(ctx, agentObj.GetChatMemory())
+	if cacheI != nil && agentObjClone.GetChatMemory() != cacheI {
+		err := agentObjClone.GetChatMemory().SyncPersistence(ctx, cacheI)
 		if err != nil {
 			return nil, err
 		}
@@ -886,6 +889,10 @@ func (ms *ModuleStore) DiscoverAgents(ctx context.Context, projectId string, ten
 				}
 			}
 		}
+		planningNote := ""
+		if advisor, ok := agentObj.(agents.PlanningAdvisor); ok {
+			planningNote = strings.TrimSpace(advisor.PlanningNote())
+		}
 		discovered = append(discovered, agents.DiscoveredAgent{
 			AgentName:             agentName,
 			AgentType:             agentType,
@@ -898,6 +905,7 @@ func (ms *ModuleStore) DiscoverAgents(ctx context.Context, projectId string, ten
 			SupportsClarification: supportsClarification,
 			IsOrchestrator:        agentType == "ORCHESTRATOR",
 			InternalCapabilities:  internalCapabilities,
+			PlanningNote:          planningNote,
 		})
 	}
 	logs.WithContext(ctx).Info(fmt.Sprint("DiscoverAgents - resolved ", len(discovered), " agent(s) for orchestrator ", selfName))

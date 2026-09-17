@@ -196,6 +196,10 @@ type Mount struct {
 	Property      string
 	PageId        string
 	Purpose       string
+	// ViewMode is the host's view_mode, where it has one. A grid only needs a
+	// card page when it is drawing a board; in table mode the property is not
+	// even shown.
+	ViewMode string
 	// Inlined are the components the client sent under the host, which are the
 	// mounted page's own components rendered in place rather than the host's
 	// children.
@@ -216,12 +220,14 @@ func FindMounts(page map[string]interface{}) []Mount {
 				purpose = purposeFromProperties(properties)
 			}
 			inlined, _ := component["children"].([]interface{})
+			viewMode, _ := properties["view_mode"].(string)
 			mounts = append(mounts, Mount{
 				ComponentId:   id,
 				ComponentType: componentType,
 				Property:      mount.Property,
 				PageId:        strings.TrimSpace(mountedId),
 				Purpose:       purpose,
+				ViewMode:      viewMode,
 				Inlined:       inlined,
 			})
 		}
@@ -426,19 +432,21 @@ func ValidateMounts(root map[string]interface{}, nested []*NestedPage, knownPage
 	mountedIds := map[string]bool{}
 	for _, mount := range FindMounts(root) {
 		path := fmt.Sprintf("components (id %q)", mount.ComponentId)
+		// A mount with no target is a property rule - "a page_ref needs a page", "a
+		// board grid needs a card page". Those live in the rule table, which the
+		// component validator enforces and the system prompt is generated from, so
+		// raising them here too would report every one of them twice. What is left
+		// for this function is the relational half: whether the page a mount names
+		// actually exists.
 		if mount.PageId == "" {
-			if mount.ComponentType == "page_ref" {
-				issues = append(issues, catalog.Issue{
-					Path:    path,
-					Message: fmt.Sprintf("page_ref has no %q - it will render an empty panel. Emit the page it should mount in \"pages\" and set %s to that page's id", mount.Property, mount.Property),
-				})
-			}
 			continue
 		}
 		mountedIds[mount.PageId] = true
 		if sent[mount.PageId] == nil && !knownPageIds[mount.PageId] {
 			issues = append(issues, catalog.Issue{
-				Path: path,
+				Path:        path,
+				Code:        catalog.CodeMountTargetMissing,
+				ComponentId: mount.ComponentId,
 				Message: fmt.Sprintf("%s.%s points at page %q, which is neither in \"pages\" nor an existing page - either emit that page in \"pages\" or point at a page that exists",
 					mount.ComponentType, mount.Property, mount.PageId),
 			})
@@ -447,7 +455,7 @@ func ValidateMounts(root map[string]interface{}, nested []*NestedPage, knownPage
 
 	for _, page := range nested {
 		if page.PageId == "" {
-			issues = append(issues, catalog.Issue{Path: "pages", Message: "a nested page was sent without an \"id\""})
+			issues = append(issues, catalog.Issue{Path: "pages", Code: catalog.CodeNestedPageMissingId, Message: "a nested page was sent without an \"id\""})
 			continue
 		}
 		if mountedIds[page.PageId] {
@@ -456,7 +464,9 @@ func ValidateMounts(root map[string]interface{}, nested []*NestedPage, knownPage
 		// A page nothing mounts is dead weight the user would have to save for
 		// no reason.
 		issues = append(issues, catalog.Issue{
-			Path: fmt.Sprintf("pages (id %q)", page.PageId),
+			Path:        fmt.Sprintf("pages (id %q)", page.PageId),
+			Code:        catalog.CodeNestedPageUnmounted,
+			ComponentId: page.PageId,
 			Message: fmt.Sprintf("nothing on the page mounts %q. Set a page_ref's \"page\" (or a grid's \"card_page_id\") to it, or drop the page",
 				page.PageId),
 		})

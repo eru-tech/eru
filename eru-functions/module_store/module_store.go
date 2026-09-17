@@ -42,6 +42,13 @@ var FuncThreads = 3
 var LoopThreads = 3
 var EventThreads = 3
 
+// FuncListItem is one entry of the func list, with the tenant the function was resolved
+// from: the route tenant, the default tenant carried on the route, or "" for project level.
+type FuncListItem struct {
+	FuncName string `json:"func_name"`
+	Source   string `json:"source"`
+}
+
 type ContextKey string
 
 const (
@@ -118,7 +125,7 @@ type ModuleStoreI interface {
 	ValidateFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, tenantId string, host string, url string, method string, headers http.Header, reqBody map[string]interface{}, s ModuleStoreI, fromAsync bool, eventName string) (funcGroup functions.FuncGroup, err error)
 	SaveFunc(ctx context.Context, funcObj functions.FuncGroup, projectId string, tenantId string, realStore ModuleStoreI, persist bool) error
 	RemoveFunc(ctx context.Context, funcName string, projectId string, tenantId string, realStore ModuleStoreI) error
-	GetFunctionNames(ctx context.Context, projectId string, tenantId string) (functions []string, err error)
+	GetFunctionNames(ctx context.Context, projectId string, tenantId string) (functions []FuncListItem, err error)
 	GetRouteNames(ctx context.Context, projectId string) (routes []string, err error)
 	SaveWf(ctx context.Context, wfObj functions.Workflow, projectId string, realStore ModuleStoreI, persist bool) error
 	RemoveWf(ctx context.Context, wfName string, projectId string, realStore ModuleStoreI) error
@@ -783,7 +790,7 @@ func (ms *ModuleStore) checkProjectExists(ctx context.Context, projectId string)
 	return nil
 }
 
-func (ms *ModuleStore) GetFunctionNames(ctx context.Context, projectId string, tenantId string) (functions []string, err error) {
+func (ms *ModuleStore) GetFunctionNames(ctx context.Context, projectId string, tenantId string) (functions []FuncListItem, err error) {
 	logs.WithContext(ctx).Debug("GetFunctionNames - Start")
 	prg, ok := ms.Projects[projectId]
 	if !ok {
@@ -792,21 +799,22 @@ func (ms *ModuleStore) GetFunctionNames(ctx context.Context, projectId string, t
 		return nil, err
 	}
 	if tenantId != "" {
-		funcNames := make(map[string]bool)
-		for _, tid := range eru_utils.TenantLookupOrder(ctx, tenantId) {
-			if tc, tcOk := prg.Tenants[tid]; tcOk {
+		funcSources := make(map[string]string)
+		lookupOrder := eru_utils.TenantLookupOrder(ctx, tenantId)
+		for i := len(lookupOrder) - 1; i >= 0; i-- {
+			if tc, tcOk := prg.Tenants[lookupOrder[i]]; tcOk {
 				for k := range tc.FuncGroups {
-					funcNames[k] = true
+					funcSources[k] = lookupOrder[i]
 				}
 			}
 		}
-		for k := range funcNames {
-			functions = append(functions, k)
+		for k, source := range funcSources {
+			functions = append(functions, FuncListItem{FuncName: k, Source: source})
 		}
 		return
 	}
 	for k := range prg.FuncGroups {
-		functions = append(functions, k)
+		functions = append(functions, FuncListItem{FuncName: k})
 	}
 	return
 }
