@@ -101,15 +101,22 @@ type ScopedAction struct {
 // action per tenant scope for every action named in writeActions - along with a lookup from
 // exposed action name back to the base action and the scope it carries.
 func ExpandScopedActions(actions []ToolAction, writeActions map[string]bool) (expanded []ToolAction, scopes map[string]ScopedAction) {
-	expanded = make([]ToolAction, 0, len(actions)+2*len(writeActions))
-	scopes = make(map[string]ScopedAction, len(actions)+2*len(writeActions))
+	return ExpandScopedActionsFor(actions, writeActions, WriteScopes)
+}
+
+// ExpandScopedActionsFor is ExpandScopedActions for a tool that offers its writes under only
+// some of the scopes. A scope left out is not exposed and has no entry in scopes, so a call
+// naming it is rejected as an unknown action rather than silently writing somewhere else.
+func ExpandScopedActionsFor(actions []ToolAction, writeActions map[string]bool, writeScopes []TenantScope) (expanded []ToolAction, scopes map[string]ScopedAction) {
+	expanded = make([]ToolAction, 0, len(actions)+len(writeScopes)*len(writeActions))
+	scopes = make(map[string]ScopedAction, len(actions)+len(writeScopes)*len(writeActions))
 	for _, action := range actions {
 		if !writeActions[action.ActionName] {
 			expanded = append(expanded, action)
 			scopes[action.ActionName] = ScopedAction{BaseName: action.ActionName, Scope: ScopeTenant}
 			continue
 		}
-		for _, scope := range WriteScopes {
+		for _, scope := range writeScopes {
 			scoped := action
 			scoped.ActionName = action.ActionName + scope.ActionSuffix()
 			scoped.Description = action.Description + scope.DescriptionSuffix()

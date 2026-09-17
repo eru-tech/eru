@@ -222,7 +222,12 @@ var processoWriteActions = map[string]bool{
 	RemoveFunc:  true,
 }
 
-var processoToolActions, processoActionScopes = tools.ExpandScopedActions(processoBaseActions, processoWriteActions)
+// Project level writes are deliberately not offered here. A query or function that every tenant
+// of the project falls back to is written through the eru-ql or eru-functions tool, so a processo
+// agent cannot reach outside its tenant and its default tenant.
+var processoWriteScopes = []tools.TenantScope{tools.ScopeTenant, tools.ScopeDefaultTenant}
+
+var processoToolActions, processoActionScopes = tools.ExpandScopedActionsFor(processoBaseActions, processoWriteActions, processoWriteScopes)
 
 var processoBaseActions = processoActions()
 

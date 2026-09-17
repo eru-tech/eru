@@ -19,11 +19,11 @@ func TestProcessoExposesTheBorrowedQueryAndFuncActions(t *testing.T) {
 	names := processoActionNames()
 	for _, want := range []string{
 		"execute_query", "list_queries", "get_query",
-		"save_query", "save_query_default", "save_query_project",
-		"remove_query", "remove_query_default", "remove_query_project",
+		"save_query", "save_query_default",
+		"remove_query", "remove_query_default",
 		"list_funcs", "fetch_func", "execute_func", "run_func",
-		"save_func", "save_func_default", "save_func_project",
-		"remove_func", "remove_func_default", "remove_func_project",
+		"save_func", "save_func_default",
+		"remove_func", "remove_func_default",
 	} {
 		if !names[want] {
 			t.Errorf("processo does not expose %s", want)
@@ -37,6 +37,35 @@ func TestProcessoExposesTheBorrowedQueryAndFuncActions(t *testing.T) {
 	}
 	if names[ProcessoSaveEntity+"_project"] {
 		t.Error("processo's own write actions were scoped, which changes their names")
+	}
+}
+
+// Project level writes belong to the eru-ql and eru-functions tools. Offered here they would let
+// an agent scoped to one tenant write the fallback every tenant of the project reads.
+func TestProcessoDoesNotOfferProjectLevelWrites(t *testing.T) {
+	names := processoActionNames()
+	for _, unwanted := range []string{
+		"save_query_project", "remove_query_project",
+		"save_func_project", "remove_func_project",
+	} {
+		if names[unwanted] {
+			t.Errorf("processo exposes %s", unwanted)
+		}
+		if _, ok := processoActionScopes[unwanted]; ok {
+			t.Errorf("%s still resolves to a scope, so a call naming it would run", unwanted)
+		}
+	}
+	for name, scoped := range processoActionScopes {
+		if scoped.Scope == tools.ScopeProject {
+			t.Errorf("%s carries the project scope", name)
+		}
+	}
+	// The tools that do own project level writes still offer them.
+	if _, ok := eruqlActionScopes["save_query_project"]; !ok {
+		t.Error("eru-ql lost its project scoped save")
+	}
+	if _, ok := erufunctionsActionScopes["save_func_project"]; !ok {
+		t.Error("eru-functions lost its project scoped save")
 	}
 }
 
@@ -77,7 +106,7 @@ func TestBorrowedWriteActionsMapBackToTheirScope(t *testing.T) {
 	}{
 		{"save_query", "save_query", tools.ScopeTenant},
 		{"save_query_default", "save_query", tools.ScopeDefaultTenant},
-		{"remove_func_project", "remove_func", tools.ScopeProject},
+		{"remove_func_default", "remove_func", tools.ScopeDefaultTenant},
 		{"list_funcs", "list_funcs", tools.ScopeTenant},
 	} {
 		scoped, ok := processoActionScopes[tc.action]
