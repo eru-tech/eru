@@ -166,30 +166,37 @@ func TestUnscopedRequestIsUntouched(t *testing.T) {
 	}
 }
 
-func TestVerifyBaseRevisionCatchesTheWrongPage(t *testing.T) {
+func TestBaseRevisionReconciliation(t *testing.T) {
 	base := scopeBasePage(t)
 	actual := studio.Revision(base)
 
-	if err := verifyBaseRevision(map[string]interface{}{}, base); err != nil {
-		t.Errorf("a request without a claimed revision was rejected: %v", err)
-	}
-	if err := verifyBaseRevision(map[string]interface{}{studio.BaseRevisionParam: actual}, base); err != nil {
-		t.Errorf("the correct revision was rejected: %v", err)
-	}
-
-	// This is the unsaved-changes case: the client sent a page that is not the
-	// one it says it is holding.
-	err := verifyBaseRevision(map[string]interface{}{studio.BaseRevisionParam: "r0000deadbeef"}, base)
-	if err == nil {
-		t.Fatal("a stale base revision was accepted")
-	}
-	for _, want := range []string{actual, "r0000deadbeef", "unsaved changes"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the error does not mention %q: %v", want, err)
+	for _, params := range []map[string]interface{}{
+		{},
+		{studio.BaseRevisionParam: actual},
+		// The same claim, still wrapped in the quotes a template left on it.
+		{studio.BaseRevisionParam: `"` + actual + `"`},
+	} {
+		notice, err := reconcileBaseRevision(params, base)
+		if err != nil || notice != "" {
+			t.Errorf("%v produced notice %q, err %v", params, notice, err)
 		}
 	}
 
-	if err := verifyBaseRevision(map[string]interface{}{studio.BaseRevisionParam: actual}, nil); err == nil {
+	// A stale claim is the client's bookkeeping drifting, not a reason to refuse
+	// the edit: the page it sent is the one to work on.
+	notice, err := reconcileBaseRevision(map[string]interface{}{studio.BaseRevisionParam: "r0000deadbeef"}, base)
+	if err != nil {
+		t.Fatalf("a stale base revision failed the request: %v", err)
+	}
+	for _, want := range []string{actual, "r0000deadbeef"} {
+		if !strings.Contains(notice, want) {
+			t.Errorf("the notice does not mention %q: %s", want, notice)
+		}
+	}
+
+	// A claim with no page is still fatal: answering it would replace a page the
+	// client holds and never sent.
+	if _, err := reconcileBaseRevision(map[string]interface{}{studio.BaseRevisionParam: actual}, nil); err == nil {
 		t.Error("a revision claim with no page was accepted")
 	}
 }

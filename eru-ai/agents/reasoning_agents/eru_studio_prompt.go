@@ -988,6 +988,16 @@ Action-specific keys:
   An entry with no "<source>:" prefix is DROPPED SILENTLY - "state_from_currency" on its own sends nothing, the
   query runs with empty variables and returns no rows, and nothing reports an error. Always write the prefix.
 
+  GIVE EVERY FILTER THAT FEEDS A QUERY A DEFAULT. A control the user has not touched yet holds "", and "" is sent
+  to the query as an empty value - which for a date is not "no filter" but a cast error, and for a currency is a
+  match on nothing. So a filter wired into api_payload_fields needs a value from the first render:
+    - a date: "default_value_mode" ("current_date" | "first_day" | "last_day" | "custom"), with
+      "default_value_offset_days" for a relative bound - Current Date with -30 is "30 days ago".
+    - any other control: its "default_value", or "default_state_key" to seed it from state.
+  With Value Source = state the default is written into the bound state variable, so the payload carries it too.
+  A dashboard whose tiles are blank until the user picks every filter is not finished; give the filters defaults
+  that produce a sensible first view.
+
   The response is NOT a fixed shape - it differs per query and per source - so never guess the path into it or the
   column names. Run the query with the run_query tool: it reports "result_path" (use it as the payload_path /
   query_result_path) and "columns" (use them for tile *_field, chart dimensions/measures, grid fields), e.g.
@@ -1283,6 +1293,31 @@ RESPONSIVE DESIGN
 - Default: place all values under properties.base / responsive_styles.base / responsive_classes.base.
 - Add sm/md/lg/xl/2xl variants ONLY when the user explicitly asks for responsive behavior, OR when the component clearly needs it (e.g. a grid_container that should switch to one column on mobile).
 - Overrides cascade upward: a value set at "lg" applies to lg/xl/2xl unless overridden.
+
+The frames the designer draws, which is what the user means by "in SM" or "on mobile":
+  sm = 390px (a phone), md = 768, lg = 1024, xl = 1280, 2xl = 1536, base = the full window.
+390px is the number that matters, and it is the one thing you cannot see: in JSON a row of two
+fields reads the same at 1536px and at 390px.
+
+What actually breaks at sm, every time, is a row of form controls. An eru form control
+(select-eru, date, number, text-field, autocomplete...) stops shrinking at roughly 200px - a "1fr"
+track does not make it narrower - so two of them side by side need ~400px before gaps and padding,
+and the content area at sm is about 340px after typical padding. They overflow. Text, icons, cards
+and charts shrink; form controls do not.
+
+So when a request is about small screens:
+- Fix the CONTAINER that holds the row, not the controls in it, and fix it with a breakpoint
+  override - never by changing base, which would change every screen size.
+- grid_container: properties.sm.grid_template_columns = "1fr" (one column). If a middle column
+  holds a decoration such as an arrow between two fields, drop it at sm too.
+- flex_container laid out as a row: properties.sm.flex_direction = "column" (and align_items
+  "stretch" so the fields still fill the width).
+- collapse_below_width on a grid_container is compared against THAT CONTAINER's own width, not the
+  screen's. A value of 320 never fires inside a 342px container. To stack on a phone it has to be
+  above the container's width at sm - about 480.
+- A button row that overflows is usually justify_content "flex-end" with fixed-size buttons: at sm
+  give it flex_direction "column" or let it wrap (flex_wrap "wrap").
+Changing a padding or a font size does not fix an overflow; only changing what sits beside what does.
 
 ============================================================
 OUTPUT REQUIREMENTS

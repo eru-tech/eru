@@ -8,6 +8,7 @@ import (
 
 	studio "github.com/eru-tech/eru/eru-ai/agents/eru_studio"
 	catalog "github.com/eru-tech/eru/eru-ai/agents/eru_studio/catalog"
+	utility "github.com/eru-tech/eru/eru-ai/tools/utility"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
 )
@@ -258,20 +259,26 @@ func eruStudioModeInstructions(mode string) string {
 	}
 }
 
-// fullAnswerDropsPage catches a whole-page answer that is not the whole page.
+// answerDropsPage catches an answer that deletes most of the user's page.
 //
-// "full" means "here is the complete page", and the client applies it verbatim -
-// so an answer that silently leaves most of the page out does not fail, it
-// deletes. That is what happened on a request to ADD one tile: the answer came
-// back as mode "full" carrying a single component, and applying it wiped a
-// 24-component dashboard off the canvas. Every component in it was individually
-// valid, so nothing else in this file had a reason to object.
+// Whatever the mode, what the client ends up rendering is one page, and an
+// answer that silently leaves most of it out does not fail - it deletes. That is
+// what happened on a request to ADD one tile: the answer came back as mode
+// "full" carrying a single component, and applying it wiped a 24-component
+// dashboard off the canvas. It happened again from the other direction: a patch
+// whose children_ids named components the model had lost track of, resolving to
+// a page with the grid, its title and its button gone. Every component in both
+// was individually valid, so nothing else in this file had a reason to object.
+//
+// The comparison is always against the page the CLIENT holds, not against
+// whatever intermediate page a repair is diffing from - the client's page is
+// what the answer replaces, so it is the only thing worth protecting.
 //
 // A genuine "replace the whole layout" still rebuilds a page of comparable size,
 // so the test is proportional rather than exact: keep most of what you were
-// given, or say mode "patch".
-func fullAnswerDropsPage(basePage map[string]interface{}, page map[string]interface{}) *catalog.Issue {
-	baseIds := studio.ComponentIds(basePage)
+// given, or say what you are deleting.
+func answerDropsPage(clientPage map[string]interface{}, page map[string]interface{}, mode string) *catalog.Issue {
+	baseIds := studio.ComponentIds(clientPage)
 	if len(baseIds) < minComponentsToGuard {
 		return nil
 	}
@@ -292,14 +299,19 @@ func fullAnswerDropsPage(basePage map[string]interface{}, page map[string]interf
 	if len(named) > maxNamedDroppedComponents {
 		named = named[:maxNamedDroppedComponents]
 	}
+	advice := "A full answer must carry the COMPLETE page: everything you were given, plus your change. " +
+		"If you only meant to change part of it, answer with mode \"patch\" instead - that is the normal case for an edit."
+	if mode == studio.ModePatch {
+		advice = "Applying this patch to the page you were given produces that result - usually because children_ids " +
+			"left components out, or a parent was replaced without its children. List in children_ids every child the " +
+			"parent keeps, and delete only what you meant to delete."
+	}
 	return &catalog.Issue{
 		Path: "page",
 		Code: catalog.CodeEnvelopeFullDropsPage,
 		Message: fmt.Sprint(
-			"mode is \"full\", which replaces the whole page, but this answer drops ", len(dropped),
-			" of the ", len(baseIds), " components you were given - including ", strings.Join(named, ", "),
-			". A full answer must carry the COMPLETE page: everything you were given, plus your change. ",
-			"If you only meant to change part of it, answer with mode \"patch\" instead - that is the normal case for an edit.",
+			"this answer drops ", len(dropped), " of the ", len(baseIds),
+			" components on the page you were given - including ", strings.Join(named, ", "), ". ", advice,
 		),
 	}
 }
@@ -480,6 +492,10 @@ func resolveStudioOutput(ctx context.Context, output map[string]interface{}, bas
 
 	envelope.Revision = studio.Revision(envelope.Page)
 	envelope.Pages = studio.Manifest(nested)
+	// Anything the request itself needed answering for - a revision claim that no
+	// longer described the page - travels with the answer rather than replacing
+	// it.
+	envelope.Warnings = append(studio.NoticesFrom(ctx).All(), envelope.Warnings...)
 
 	if studio.InlineNestedEnabled(ctx) && len(nested) > 0 {
 		// A rendering convenience: the client can draw the whole thing without
@@ -590,6 +606,7 @@ func introducedPageIssues(ctx context.Context, c *catalog.Catalog, basePage, res
 func validateStudioUpdate(ctx context.Context, output map[string]interface{}, basePage map[string]interface{}, scope *studio.ResolvedScope) []catalog.Issue {
 	c := catalog.Get()
 	issues := validateNestedPages(ctx, output, basePage)
+	issues = append(issues, unreadReferenceIssues(ctx)...)
 
 	mode, _ := output["mode"].(string)
 	switch mode {
@@ -610,10 +627,10 @@ func validateStudioUpdate(ctx context.Context, output map[string]interface{}, ba
 		// in a region the user expressly told it not to touch. It obliges, the
 		// tabs lose the property that maps them to their panels, and the page
 		// the user gets back is worse than the one they had.
+		if gutted := answerDropsPage(studio.BasePageFrom(ctx), page, studio.ModeFull); gutted != nil {
+			issues = append(issues, *gutted)
+		}
 		if len(basePage) > 0 {
-			if gutted := fullAnswerDropsPage(basePage, page); gutted != nil {
-				issues = append(issues, *gutted)
-			}
 			return append(issues, introducedPageIssues(ctx, c, basePage, page)...)
 		}
 		return append(issues, pageIssuesIn(ctx, c, page)...)
@@ -637,9 +654,27 @@ func validateStudioUpdate(ctx context.Context, output map[string]interface{}, ba
 			issues = append(issues, catalog.Issue{Path: "patch", Code: catalog.CodePatchScopeViolation, Message: violation})
 		}
 
+		// A child named in children_ids that nothing defines is not a typo the
+		// applier can absorb: the component is dropped from the tree, so the
+		// model has just deleted something it believed it was keeping.
+		for _, missing := range studio.MissingChildIds(basePage, patch) {
+			issues = append(issues, catalog.Issue{
+				Path: "patch.upsert",
+				Code: catalog.CodePatchUnknownChild,
+				Message: fmt.Sprint(missing, " - so it is dropped from the page. ",
+					"children_ids may only name components this patch defines or the page already has; ",
+					"if you meant to keep it, include it in the patch, and if you meant to remove it, say so in \"delete\"."),
+			})
+		}
+
 		resolved, _, err := studio.ApplyPatch(basePage, patch)
 		if err != nil {
 			return append(issues, catalog.Issue{Path: "patch", Code: catalog.CodePatchNotApplicable, Message: err.Error()})
+		}
+		// What the client applies is this resolved page, so the same guard that
+		// protects a full answer protects a patch.
+		if gutted := answerDropsPage(studio.BasePageFrom(ctx), resolved, studio.ModePatch); gutted != nil {
+			issues = append(issues, *gutted)
 		}
 		return append(issues, introducedPageIssues(ctx, c, basePage, resolved)...)
 	default:
@@ -715,4 +750,34 @@ func resolvedRootPage(output map[string]interface{}, basePage map[string]interfa
 		return basePage
 	}
 	return resolved
+}
+
+// unreadReferenceIssues faults an answer that imitates a page it never opened.
+//
+// The user points at another page - "make the grid look like the one on
+// invoice_360_detail" - and the agent can read it: it lists the pages, sees the
+// name, and then writes the grid from memory anyway, reporting that it matched a
+// page it never fetched. Nothing about the result looks wrong, which is what
+// makes it worth catching: the page is plausible, internally valid, and not what
+// was asked for.
+func unreadReferenceIssues(ctx context.Context) []catalog.Issue {
+	ledger := studio.LedgerFrom(ctx)
+	if !ledger.Enforceable(utility.GetPageToolName) {
+		return nil
+	}
+	currentPageId := studio.PageIdentityFrom(ctx).Id
+	var issues []catalog.Issue
+	for _, name := range ledger.UnreadReferencedPages(currentPageId) {
+		issues = append(issues, catalog.Issue{
+			Path: "page",
+			Code: catalog.CodeReferencePageNotRead,
+			Message: fmt.Sprint(
+				"this request points at the page \"", name, "\", and the page list you called shows it exists, ",
+				"but you never read it with ", utility.GetPageToolName, ". Imitating a page from memory produces something ",
+				"plausible that does not match it. Call ", utility.GetPageToolName, " with that page's id, read how the part ",
+				"the user named is actually built, and base your answer on that.",
+			),
+		})
+	}
+	return issues
 }

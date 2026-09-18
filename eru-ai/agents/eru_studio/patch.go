@@ -683,3 +683,56 @@ func ParsePatch(output map[string]interface{}) (*Patch, error) {
 	}
 	return &patch, nil
 }
+
+// MissingChildIds reports children_ids entries that name a component nothing
+// defines - not this patch, not the page it applies to.
+//
+// ApplyPatch drops such a child, which is the quiet failure worth catching: the
+// model listed the children it believed a container has, got one id wrong or
+// forgot to carry one over, and the component disappears from the page while
+// every individual component in the patch is still valid.
+func MissingChildIds(base map[string]interface{}, patch *Patch) []string {
+	if patch == nil {
+		return nil
+	}
+	known := map[string]bool{}
+	for _, id := range ComponentIds(base) {
+		known[id] = true
+	}
+	for _, component := range patch.Upsert {
+		if id, _ := component["id"].(string); id != "" {
+			known[id] = true
+		}
+		// A subtree written inline defines its descendants too.
+		markNestedIds(component["children"], known)
+	}
+
+	var missing []string
+	for _, component := range patch.Upsert {
+		parentId, _ := component["id"].(string)
+		for _, childId := range toStringSlice(component["children_ids"]) {
+			if childId == "" || known[childId] {
+				continue
+			}
+			missing = append(missing, fmt.Sprintf("%q lists child %q, which neither this patch nor the page defines", parentId, childId))
+		}
+	}
+	return missing
+}
+
+func markNestedIds(value interface{}, known map[string]bool) {
+	list, ok := value.([]interface{})
+	if !ok {
+		return
+	}
+	for _, raw := range list {
+		child, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if id, _ := child["id"].(string); id != "" {
+			known[id] = true
+		}
+		markNestedIds(child["children"], known)
+	}
+}

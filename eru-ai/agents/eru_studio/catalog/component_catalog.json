@@ -3,7 +3,7 @@
   "source": {
     "repo": "eru-studio",
     "lib_path": "projects/eru-studio/src/lib",
-    "fingerprint": "70cb811e897daf58fb1e18dca17485dc"
+    "fingerprint": "ef13b0e82d755cd28c99b5a035877215"
   },
   "common_properties": [
     {
@@ -575,10 +575,13 @@
       "icon",
       "radio",
       "multiselect",
+      "payload_fields",
       "autocomplete",
       "logic_editor",
       "status_options",
       "tabs_list",
+      "menu_items",
+      "toolbar_items",
       "color_ranges",
       "dependent_fields",
       "pivot_aggregations",
@@ -883,7 +886,7 @@
       {
         "name": "action",
         "optional": false,
-        "type": "'no-action' | 'call-function' | 'call-query' | 'fetch-page-data' | 'hide-fields' | 'unhide-fields' | 'save-page-data' | 'start-loading' | 'stop-loading' | 'hide-component' | 'show-component' | 'disable-field' | 'enable-field' | 'update-state' | 'start-timer' | 'stop-timer' | 'set-field' | 'update-property' | 'enable-component' | 'disable-component' | 'refresh-grid' | 'download-grid' | 'refresh-page-ref' | 'step-forward' | 'step-back' | 'emit-to-parent' | 'toggle-side-panel' | 'open-side-panel' | 'close-side-panel' | 'navigate-to-page' | 'set-page-data' | 'clear-page-data' | 'clear-all-page-data' | 'download-file'",
+        "type": "'no-action' | 'call-function' | 'call-query' | 'fetch-page-data' | 'hide-fields' | 'unhide-fields' | 'save-page-data' | 'start-loading' | 'stop-loading' | 'hide-component' | 'show-component' | 'disable-field' | 'enable-field' | 'update-state' | 'start-timer' | 'stop-timer' | 'set-field' | 'update-property' | 'enable-component' | 'disable-component' | 'refresh-grid' | 'download-grid' | 'refresh-page-ref' | 'step-forward' | 'step-back' | 'set-active-tab' | 'emit-to-parent' | 'toggle-side-panel' | 'open-side-panel' | 'close-side-panel' | 'navigate-to-page' | 'set-page-data' | 'clear-page-data' | 'clear-all-page-data' | 'download-file'",
         "values": [
           "no-action",
           "call-function",
@@ -910,6 +913,7 @@
           "refresh-page-ref",
           "step-forward",
           "step-back",
+          "set-active-tab",
           "emit-to-parent",
           "toggle-side-panel",
           "open-side-panel",
@@ -1082,6 +1086,17 @@
         "type": "string"
       },
       {
+        "name": "success_message",
+        "optional": true,
+        "type": "string",
+        "description": "// Snackbar text for a `call-query` / `call-function` result. Shown by the // host only when the matching message is filled in, so a call stays silent // unless the author asked it to speak."
+      },
+      {
+        "name": "error_message",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "validate_before_action",
         "optional": true,
         "type": "boolean"
@@ -1155,6 +1170,12 @@
         "name": "entityName",
         "optional": true,
         "type": "string"
+      },
+      {
+        "name": "dataKeyPrefix",
+        "optional": true,
+        "type": "string",
+        "description": "dataKey of the page_ref that hosts this component, when that page_ref is itself inside a looped nested page. Prefixed onto the component's own dataKey (see BaseComponent.getDataKey) so a nested_array loop inside one record card reads THAT card's row — `0.txns.1` — instead of resolving `txns.1` against the outer page."
       },
       {
         "name": "properties",
@@ -1797,15 +1818,15 @@
           "responsive": false,
           "options": [
             {
-              "label": "As is  -1,234.10",
+              "label": "As is",
               "value": "as_is"
             },
             {
-              "label": "No sign  1,234.10",
+              "label": "No sign",
               "value": "colored_abs"
             },
             {
-              "label": "In brackets  (1,234.10)",
+              "label": "In brackets",
               "value": "parentheses"
             }
           ]
@@ -2322,12 +2343,98 @@
       "icon": "crop_portrait",
       "properties": [
         {
+          "key": "appearance",
+          "label": "Appearance",
+          "type": "select",
+          "category": "layout",
+          "default_value": "raised",
+          "description": "Material card surface style",
+          "options": [
+            {
+              "label": "Raised",
+              "value": "raised"
+            },
+            {
+              "label": "Outlined",
+              "value": "outlined"
+            },
+            {
+              "label": "Filled",
+              "value": "filled"
+            }
+          ]
+        },
+        {
+          "key": "elevation",
+          "label": "Elevation",
+          "type": "select",
+          "category": "layout",
+          "default_value": "",
+          "description": "Shadow depth. Default leaves the appearance untouched.",
+          "options": [
+            {
+              "label": "Default",
+              "value": ""
+            },
+            {
+              "label": "None",
+              "value": 0
+            },
+            {
+              "label": "1",
+              "value": 1
+            },
+            {
+              "label": "2",
+              "value": 2
+            },
+            {
+              "label": "3",
+              "value": 3
+            },
+            {
+              "label": "4",
+              "value": 4
+            },
+            {
+              "label": "5",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "key": "header_type",
+          "label": "Header",
+          "type": "select",
+          "category": "content",
+          "default_value": "text",
+          "description": "Custom turns the header into a container you can drop components into",
+          "options": [
+            {
+              "label": "Title & Subtitle",
+              "value": "text"
+            },
+            {
+              "label": "Custom (drop components)",
+              "value": "custom"
+            },
+            {
+              "label": "None",
+              "value": "none"
+            }
+          ]
+        },
+        {
           "key": "title",
           "label": "Card Title",
           "type": "text",
           "category": "content",
           "default_value": "",
-          "description": "Title displayed in the card header"
+          "description": "Title displayed in the card header",
+          "visible_if": {
+            "key": "header_type",
+            "equals": "text"
+          }
         },
         {
           "key": "subtitle",
@@ -2335,7 +2442,48 @@
           "type": "text",
           "category": "content",
           "default_value": "",
-          "description": "Subtitle displayed below the title"
+          "description": "Subtitle displayed below the title",
+          "visible_if": {
+            "key": "header_type",
+            "equals": "text"
+          }
+        },
+        {
+          "key": "avatar_url",
+          "label": "Avatar Image URL",
+          "type": "text",
+          "category": "content",
+          "default_value": "",
+          "description": "Round image shown to the left of the title",
+          "visible_if": {
+            "key": "header_type",
+            "equals": "text"
+          }
+        },
+        {
+          "key": "image_url",
+          "label": "Card Image URL",
+          "type": "text",
+          "category": "content",
+          "default_value": "",
+          "description": "Full-width image on the card"
+        },
+        {
+          "key": "image_position",
+          "label": "Image Position",
+          "type": "select",
+          "category": "content",
+          "default_value": "top",
+          "options": [
+            {
+              "label": "Top",
+              "value": "top"
+            },
+            {
+              "label": "Bottom",
+              "value": "bottom"
+            }
+          ]
         },
         {
           "key": "content",
@@ -2343,7 +2491,7 @@
           "type": "textarea",
           "category": "content",
           "default_value": "",
-          "description": "Main content text (rendered when the card has no children)"
+          "description": "Text shown while the card body has no components in it"
         },
         {
           "key": "show_actions",
@@ -2351,18 +2499,174 @@
           "type": "boolean",
           "category": "behavior",
           "default_value": false,
-          "description": "Show action buttons at the bottom"
+          "description": "Adds an actions row at the bottom to drop buttons into"
         },
         {
-          "key": "action_text",
-          "label": "Action Button Text",
-          "type": "text",
-          "category": "content",
-          "default_value": "",
-          "description": "Text for the action button"
+          "key": "actions_align",
+          "label": "Actions Alignment",
+          "type": "select",
+          "category": "behavior",
+          "default_value": "end",
+          "options": [
+            {
+              "label": "Start",
+              "value": "start"
+            },
+            {
+              "label": "End",
+              "value": "end"
+            }
+          ],
+          "visible_if": {
+            "key": "show_actions",
+            "equals": true
+          }
         }
       ],
-      "styles": [],
+      "styles": [
+        {
+          "key": "title_font_size",
+          "label": "Title Size (px)",
+          "type": "number",
+          "category": "typography",
+          "default_value": "",
+          "min": 8,
+          "max": 64,
+          "step": 1
+        },
+        {
+          "key": "title_font_weight",
+          "label": "Title Weight",
+          "type": "select",
+          "category": "typography",
+          "default_value": "",
+          "options": [
+            {
+              "label": "Default",
+              "value": ""
+            },
+            {
+              "label": "Normal",
+              "value": "normal"
+            },
+            {
+              "label": "Medium",
+              "value": "500"
+            },
+            {
+              "label": "Semi Bold",
+              "value": "600"
+            },
+            {
+              "label": "Bold",
+              "value": "bold"
+            }
+          ]
+        },
+        {
+          "key": "title_color",
+          "label": "Title Color",
+          "type": "color",
+          "category": "typography",
+          "default_value": ""
+        },
+        {
+          "key": "title_text_align",
+          "label": "Title Align",
+          "type": "select",
+          "category": "typography",
+          "default_value": "",
+          "options": [
+            {
+              "label": "Default",
+              "value": ""
+            },
+            {
+              "label": "Left",
+              "value": "left"
+            },
+            {
+              "label": "Center",
+              "value": "center"
+            },
+            {
+              "label": "Right",
+              "value": "right"
+            }
+          ]
+        },
+        {
+          "key": "subtitle_font_size",
+          "label": "Subtitle Size (px)",
+          "type": "number",
+          "category": "typography",
+          "default_value": "",
+          "min": 8,
+          "max": 64,
+          "step": 1
+        },
+        {
+          "key": "subtitle_font_weight",
+          "label": "Subtitle Weight",
+          "type": "select",
+          "category": "typography",
+          "default_value": "",
+          "options": [
+            {
+              "label": "Default",
+              "value": ""
+            },
+            {
+              "label": "Normal",
+              "value": "normal"
+            },
+            {
+              "label": "Medium",
+              "value": "500"
+            },
+            {
+              "label": "Semi Bold",
+              "value": "600"
+            },
+            {
+              "label": "Bold",
+              "value": "bold"
+            }
+          ]
+        },
+        {
+          "key": "subtitle_color",
+          "label": "Subtitle Color",
+          "type": "color",
+          "category": "typography",
+          "default_value": ""
+        },
+        {
+          "key": "subtitle_text_align",
+          "label": "Subtitle Align",
+          "type": "select",
+          "category": "typography",
+          "default_value": "",
+          "options": [
+            {
+              "label": "Default",
+              "value": ""
+            },
+            {
+              "label": "Left",
+              "value": "left"
+            },
+            {
+              "label": "Center",
+              "value": "center"
+            },
+            {
+              "label": "Right",
+              "value": "right"
+            }
+          ]
+        }
+      ],
       "events": []
     },
     "checkbox": {
@@ -3085,19 +3389,19 @@
           "responsive": false,
           "options": [
             {
-              "label": "As is  -1,234.10",
+              "label": "As is",
               "value": "as_is"
             },
             {
-              "label": "Coloured  -1,234.10",
+              "label": "Coloured",
               "value": "colored"
             },
             {
-              "label": "Coloured, no sign  1,234.10",
+              "label": "Coloured, no sign",
               "value": "colored_abs"
             },
             {
-              "label": "Coloured, in brackets  (1,234.10)",
+              "label": "Coloured, in brackets",
               "value": "parentheses"
             }
           ]
@@ -3280,7 +3584,7 @@
           "type": "select",
           "category": "behavior",
           "default_value": "",
-          "description": "Date to seed into this field on page load. Custom takes the date from the Custom Default Date picker; None keeps the plain Default Value behaviour.",
+          "description": "Date to seed into this field on page load. Custom takes the date from the Custom Default Date picker; None keeps the plain Default Value behaviour. With Value Source = state the seeded date is written INTO the bound state variable, so a filter that feeds a query through api_payload_fields sends a real date before the user touches it - without a default the variable is \"\" on first load and the query is called with an empty value.",
           "options": [
             {
               "label": "None",
@@ -3476,7 +3780,7 @@
           "type": "select",
           "category": "behavior",
           "default_value": "",
-          "description": "Date to seed into this field on page load. Custom takes the date from the Custom Default Date picker; None keeps the plain Default Value behaviour.",
+          "description": "Date to seed into this field on page load. Custom takes the date from the Custom Default Date picker; None keeps the plain Default Value behaviour. With Value Source = state the seeded date is written INTO the bound state variable, so a filter that feeds a query through api_payload_fields sends a real date before the user touches it - without a default the variable is \"\" on first load and the query is called with an empty value.",
           "options": [
             {
               "label": "None",
@@ -4479,10 +4783,11 @@
         {
           "key": "query_payload_fields",
           "label": "Payload Fields",
-          "type": "multiselect",
+          "type": "payload_fields",
           "category": "data",
           "section": "Source",
           "default_value": [],
+          "description": "Pick state vars / page-data fields of the page. The query receives {field_name: value} for each entry. Type \"= other_name\" alongside an entry to send it under a different key.",
           "visible_if": {
             "key": "data_source",
             "in": [
@@ -5009,6 +5314,19 @@
           }
         },
         {
+          "key": "board_card_bg",
+          "label": "Card Background",
+          "type": "color",
+          "category": "layout",
+          "section": "Board View",
+          "default_value": "",
+          "description": "Background colour of every board card (token or custom). Unlike Surface Container, this paints the cards only — the column and its group header keep their own colour. Blank = default.",
+          "visible_if": {
+            "key": "view_mode",
+            "equals": "board"
+          }
+        },
+        {
           "key": "board_card_hover_bg",
           "label": "Card Hover Background",
           "type": "color",
@@ -5519,6 +5837,14 @@
           "section": "Subtotals & Grand Totals",
           "default_value": "",
           "description": "Text to display instead of zero values"
+        },
+        {
+          "key": "refresh_icon",
+          "label": "Show Refresh Icon",
+          "type": "boolean",
+          "category": "behavior",
+          "default_value": false,
+          "description": "Show a refresh icon in the grid's primary colour, in the first group header or above the grid when the group bar is off. Clicking it reloads the grid, the same as the Refresh Grid action."
         },
         {
           "key": "excel_download",
@@ -7052,15 +7378,15 @@
           "responsive": false,
           "options": [
             {
-              "label": "As is  -1,234.10",
+              "label": "As is",
               "value": "as_is"
             },
             {
-              "label": "No sign  1,234.10",
+              "label": "No sign",
               "value": "colored_abs"
             },
             {
-              "label": "In brackets  (1,234.10)",
+              "label": "In brackets",
               "value": "parentheses"
             }
           ]
@@ -7434,18 +7760,274 @@
       "allow_children": false,
       "class": "MenuComponent",
       "icon": "menu",
-      "properties": [],
-      "common_property_overrides": [
+      "properties": [
         {
-          "key": "label",
-          "label": "Label",
+          "key": "items",
+          "label": "Menu Items",
+          "type": "menu_items",
+          "category": "content",
+          "default_value": [
+            {
+              "id": "item_1",
+              "kind": "item",
+              "label": "Edit",
+              "icon": "edit",
+              "value": "edit",
+              "level": 0
+            },
+            {
+              "id": "item_2",
+              "kind": "item",
+              "label": "Duplicate",
+              "icon": "content_copy",
+              "value": "duplicate",
+              "level": 0
+            },
+            {
+              "id": "item_3",
+              "kind": "divider",
+              "level": 0
+            },
+            {
+              "id": "item_4",
+              "kind": "item",
+              "label": "Delete",
+              "icon": "delete",
+              "value": "delete",
+              "level": 0
+            }
+          ],
+          "description": "Indent an item (→) to make it a submenu entry of the item above it."
+        },
+        {
+          "key": "trigger_label",
+          "label": "Trigger Label",
           "type": "text",
           "category": "content",
-          "default_value": "Menu Label"
+          "default_value": "Menu",
+          "visible_if": {
+            "key": "open_mode",
+            "equals": "click"
+          }
+        },
+        {
+          "key": "trigger_icon",
+          "label": "Trigger Icon",
+          "type": "text",
+          "category": "content",
+          "default_value": "",
+          "description": "Material icon name, e.g. more_vert.",
+          "visible_if": {
+            "key": "open_mode",
+            "equals": "click"
+          }
+        },
+        {
+          "key": "open_mode",
+          "label": "Opens On",
+          "type": "select",
+          "category": "behavior",
+          "default_value": "click",
+          "description": "Right-click turns the component into a context-menu area instead of a button.",
+          "options": [
+            {
+              "label": "Click on trigger",
+              "value": "click"
+            },
+            {
+              "label": "Right-click on area",
+              "value": "context"
+            }
+          ]
+        },
+        {
+          "key": "context_label",
+          "label": "Area Label",
+          "type": "text",
+          "category": "content",
+          "default_value": "Right-click for options",
+          "description": "Text shown inside the right-click area.",
+          "visible_if": {
+            "key": "open_mode",
+            "equals": "context"
+          }
+        },
+        {
+          "key": "trigger_variant",
+          "label": "Trigger Style",
+          "type": "select",
+          "category": "layout",
+          "default_value": "text",
+          "options": [
+            {
+              "label": "Text",
+              "value": "text"
+            },
+            {
+              "label": "Filled",
+              "value": "filled"
+            },
+            {
+              "label": "Elevated",
+              "value": "elevated"
+            },
+            {
+              "label": "Outlined",
+              "value": "outlined"
+            },
+            {
+              "label": "Tonal",
+              "value": "tonal"
+            },
+            {
+              "label": "Icon Only",
+              "value": "icon"
+            }
+          ],
+          "visible_if": {
+            "key": "open_mode",
+            "equals": "click"
+          }
+        },
+        {
+          "key": "trigger_color",
+          "label": "Trigger Colour",
+          "type": "select",
+          "category": "layout",
+          "default_value": "",
+          "options": [
+            {
+              "label": "Default",
+              "value": ""
+            },
+            {
+              "label": "Primary",
+              "value": "primary"
+            },
+            {
+              "label": "Accent",
+              "value": "accent"
+            },
+            {
+              "label": "Warn",
+              "value": "warn"
+            }
+          ],
+          "visible_if": {
+            "key": "open_mode",
+            "equals": "click"
+          }
+        },
+        {
+          "key": "trigger_tooltip",
+          "label": "Trigger Tooltip",
+          "type": "text",
+          "category": "content",
+          "default_value": "",
+          "visible_if": {
+            "key": "open_mode",
+            "equals": "click"
+          }
+        },
+        {
+          "key": "x_position",
+          "label": "X Position",
+          "type": "select",
+          "category": "layout",
+          "default_value": "after",
+          "description": "Which side of the trigger the panel opens on.",
+          "options": [
+            {
+              "label": "After",
+              "value": "after"
+            },
+            {
+              "label": "Before",
+              "value": "before"
+            }
+          ]
+        },
+        {
+          "key": "y_position",
+          "label": "Y Position",
+          "type": "select",
+          "category": "layout",
+          "default_value": "below",
+          "options": [
+            {
+              "label": "Below",
+              "value": "below"
+            },
+            {
+              "label": "Above",
+              "value": "above"
+            }
+          ]
+        },
+        {
+          "key": "overlap_trigger",
+          "label": "Overlap Trigger",
+          "type": "boolean",
+          "category": "layout",
+          "default_value": false,
+          "description": "Let the panel sit over the trigger rather than beside it."
+        },
+        {
+          "key": "has_backdrop",
+          "label": "Has Backdrop",
+          "type": "boolean",
+          "category": "behavior",
+          "default_value": true,
+          "description": "Off lets clicks reach the page behind the open menu."
+        },
+        {
+          "key": "backdrop_class",
+          "label": "Backdrop Class",
+          "type": "text",
+          "category": "behavior",
+          "default_value": "",
+          "visible_if": {
+            "key": "has_backdrop",
+            "equals": true
+          }
+        },
+        {
+          "key": "panel_class",
+          "label": "Panel Class",
+          "type": "text",
+          "category": "layout",
+          "default_value": "",
+          "description": "CSS class put on the menu panel, for styling it from your theme."
+        },
+        {
+          "key": "restore_focus",
+          "label": "Restore Focus",
+          "type": "boolean",
+          "category": "behavior",
+          "default_value": true,
+          "description": "Return focus to the trigger when the menu closes."
+        },
+        {
+          "key": "disable_ripple",
+          "label": "Disable Ripple",
+          "type": "boolean",
+          "category": "behavior",
+          "default_value": false
+        },
+        {
+          "key": "aria_label",
+          "label": "Aria Label",
+          "type": "text",
+          "category": "behavior",
+          "default_value": ""
         }
       ],
       "styles": [],
-      "events": []
+      "events": [
+        "menu_item_select",
+        "menu_opened",
+        "menu_closed"
+      ]
     },
     "nav_menu": {
       "name": "Nav Menu",
@@ -7756,19 +8338,19 @@
           "responsive": false,
           "options": [
             {
-              "label": "As is  -1,234.10",
+              "label": "As is",
               "value": "as_is"
             },
             {
-              "label": "Coloured  -1,234.10",
+              "label": "Coloured",
               "value": "colored"
             },
             {
-              "label": "Coloured, no sign  1,234.10",
+              "label": "Coloured, no sign",
               "value": "colored_abs"
             },
             {
-              "label": "Coloured, in brackets  (1,234.10)",
+              "label": "Coloured, in brackets",
               "value": "parentheses"
             }
           ]
@@ -8031,10 +8613,10 @@
         {
           "key": "api_payload_fields",
           "label": "Payload Fields",
-          "type": "multiselect",
+          "type": "payload_fields",
           "category": "data",
           "default_value": [],
-          "description": "Pick state vars / page-data fields of the outer page. The API/Function/Query receives {field_name: value} for each selected entry.",
+          "description": "Pick state vars / page-data fields of the outer page. The API/Function/Query receives {field_name: value} for each selected entry. Type \"= other_name\" alongside an entry to send it under a different key.",
           "responsive": false,
           "visible_if": {
             "key": "data_source",
@@ -8119,6 +8701,22 @@
           "visible_if": {
             "key": "data_source",
             "equals": "state"
+          }
+        },
+        {
+          "key": "array_field",
+          "label": "Array Field",
+          "type": "text",
+          "category": "data",
+          "default_value": "",
+          "description": "Key of the array inside the hosting record, when it differs from the entity name (e.g. a query alias like \"txns\"). Leave blank to use the Entity.",
+          "responsive": false,
+          "visible_if": {
+            "key": "nesting_type",
+            "in": [
+              "nested_array",
+              "nested_object"
+            ]
           }
         },
         {
@@ -8275,6 +8873,134 @@
               "nested_array"
             ]
           }
+        },
+        {
+          "key": "loop_justify",
+          "label": "Loop Justify",
+          "type": "select",
+          "category": "content",
+          "default_value": "flex-start",
+          "description": "How the record cards are distributed along the loop direction. Only bites once cards are content or fixed width.",
+          "responsive": false,
+          "options": [
+            {
+              "label": "Start",
+              "value": "flex-start"
+            },
+            {
+              "label": "Center",
+              "value": "center"
+            },
+            {
+              "label": "End",
+              "value": "flex-end"
+            },
+            {
+              "label": "Space Between",
+              "value": "space-between"
+            },
+            {
+              "label": "Space Around",
+              "value": "space-around"
+            },
+            {
+              "label": "Space Evenly",
+              "value": "space-evenly"
+            }
+          ],
+          "visible_if": {
+            "key": "nesting_type",
+            "in": [
+              "array",
+              "nested_array"
+            ]
+          }
+        },
+        {
+          "key": "loop_align",
+          "label": "Loop Align",
+          "type": "select",
+          "category": "content",
+          "default_value": "stretch",
+          "description": "Alignment of the record cards across the loop direction (card heights in a row layout).",
+          "responsive": false,
+          "options": [
+            {
+              "label": "Stretch",
+              "value": "stretch"
+            },
+            {
+              "label": "Start",
+              "value": "flex-start"
+            },
+            {
+              "label": "Center",
+              "value": "center"
+            },
+            {
+              "label": "End",
+              "value": "flex-end"
+            }
+          ],
+          "visible_if": {
+            "key": "nesting_type",
+            "in": [
+              "array",
+              "nested_array"
+            ]
+          }
+        },
+        {
+          "key": "loop_card_sizing",
+          "label": "Card Sizing",
+          "type": "select",
+          "category": "content",
+          "default_value": "fill",
+          "description": "Fill splits the row equally between cards; Fit Content and Fixed Width size each card independently so Loop Justify controls the spacing.",
+          "responsive": false,
+          "options": [
+            {
+              "label": "Fill (equal share)",
+              "value": "fill"
+            },
+            {
+              "label": "Fit Content",
+              "value": "content"
+            },
+            {
+              "label": "Fixed Width",
+              "value": "custom"
+            }
+          ],
+          "visible_if": {
+            "key": "nesting_type",
+            "in": [
+              "array",
+              "nested_array"
+            ]
+          }
+        },
+        {
+          "key": "loop_card_width",
+          "label": "Card Width",
+          "type": "text",
+          "category": "content",
+          "default_value": "",
+          "description": "Width of each record card, e.g. 320, 320px, 30%. A plain number is read as pixels.",
+          "responsive": false,
+          "visible_if": [
+            {
+              "key": "nesting_type",
+              "in": [
+                "array",
+                "nested_array"
+              ]
+            },
+            {
+              "key": "loop_card_sizing",
+              "equals": "custom"
+            }
+          ]
         }
       ],
       "common_property_overrides": [
@@ -8843,15 +9569,15 @@
           "responsive": false,
           "options": [
             {
-              "label": "As is  -1,234.10",
+              "label": "As is",
               "value": "as_is"
             },
             {
-              "label": "No sign  1,234.10",
+              "label": "No sign",
               "value": "colored_abs"
             },
             {
-              "label": "In brackets  (1,234.10)",
+              "label": "In brackets",
               "value": "parentheses"
             }
           ]
@@ -9918,6 +10644,14 @@
           "description": "Show a search box inside the dropdown to filter options (useful for long lists)."
         },
         {
+          "key": "auto_select_first",
+          "label": "Auto Select First Option",
+          "type": "boolean",
+          "category": "behavior",
+          "default_value": false,
+          "description": "Select the first option when the field arrives empty, as soon as the list is known. A stored value, a Default Value or a Default From State always wins, and clearing the field by hand is left alone."
+        },
+        {
           "key": "appearance",
           "label": "Appearance",
           "type": "select",
@@ -10254,6 +10988,14 @@
           "category": "behavior",
           "default_value": false,
           "description": "Show a search box inside the dropdown to filter options (useful for long lists)."
+        },
+        {
+          "key": "auto_select_first",
+          "label": "Auto Select First Option",
+          "type": "boolean",
+          "category": "behavior",
+          "default_value": false,
+          "description": "Select the first option when the field arrives empty, as soon as the list is known. A stored value, a Default Value or a Default From State always wins, and clearing the field by hand is left alone."
         },
         {
           "key": "appearance",
@@ -10922,6 +11664,120 @@
           "default_value": "Tab 1, Tab 2, Tab 3",
           "description": "Add, rename, reorder or remove tabs",
           "responsive": false
+        },
+        {
+          "key": "hide_tab_headers",
+          "label": "Hide Tab Headers",
+          "type": "boolean",
+          "category": "behavior",
+          "default_value": false,
+          "description": "Hides the tab bar so the active tab can only be set by a Set Active Tab action. Hidden while designing too — turn this off to reach another tab's content.",
+          "responsive": false
+        },
+        {
+          "key": "tab_alignment",
+          "label": "Tab Alignment",
+          "type": "select",
+          "category": "layout",
+          "section": "Tab Bar",
+          "default_value": "",
+          "options": [
+            {
+              "label": "Default",
+              "value": ""
+            },
+            {
+              "label": "Start",
+              "value": "start"
+            },
+            {
+              "label": "Center",
+              "value": "center"
+            },
+            {
+              "label": "End",
+              "value": "end"
+            }
+          ],
+          "visible_if": {
+            "key": "hide_tab_headers",
+            "notEquals": true
+          }
+        },
+        {
+          "key": "stretch_tabs",
+          "label": "Stretch Tabs To Fill",
+          "type": "boolean",
+          "category": "layout",
+          "section": "Tab Bar",
+          "default_value": true,
+          "visible_if": {
+            "key": "hide_tab_headers",
+            "notEquals": true
+          }
+        },
+        {
+          "key": "header_position",
+          "label": "Header Position",
+          "type": "select",
+          "category": "layout",
+          "section": "Tab Bar",
+          "default_value": "above",
+          "options": [
+            {
+              "label": "Above Content",
+              "value": "above"
+            },
+            {
+              "label": "Below Content",
+              "value": "below"
+            }
+          ],
+          "visible_if": {
+            "key": "hide_tab_headers",
+            "notEquals": true
+          }
+        },
+        {
+          "key": "fit_ink_bar_to_content",
+          "label": "Underline Fits Label",
+          "type": "boolean",
+          "category": "layout",
+          "section": "Tab Bar",
+          "default_value": false,
+          "description": "Draws the active underline the width of the label instead of the whole tab",
+          "visible_if": {
+            "key": "hide_tab_headers",
+            "notEquals": true
+          }
+        },
+        {
+          "key": "disable_ripple",
+          "label": "Disable Ripple",
+          "type": "boolean",
+          "category": "layout",
+          "section": "Tab Bar",
+          "default_value": false,
+          "visible_if": {
+            "key": "hide_tab_headers",
+            "notEquals": true
+          }
+        },
+        {
+          "key": "dynamic_height",
+          "label": "Height Follows Active Tab",
+          "type": "boolean",
+          "category": "behavior",
+          "default_value": false
+        },
+        {
+          "key": "animation_duration",
+          "label": "Animation Duration (ms)",
+          "type": "number",
+          "category": "behavior",
+          "default_value": 500,
+          "description": "0 switches tabs with no slide",
+          "min": 0
         }
       ],
       "styles": [],
@@ -11029,6 +11885,21 @@
             }
           ],
           "description": "Add tag..."
+        },
+        {
+          "key": "options_from_field",
+          "label": "Options From Field",
+          "type": "select",
+          "category": "content",
+          "description": "Take the option list and colours from another field's data model instead of this one's. Works for a tag, select or status field — use it for a filter that offers a status column's values without writing back to it."
+        },
+        {
+          "key": "view_all_options",
+          "label": "Show All Tags In View",
+          "type": "boolean",
+          "category": "behavior",
+          "default_value": false,
+          "description": "Show every selected tag in view mode, wrapping onto the next line. Off folds whatever does not fit one row into a +N counter."
         },
         {
           "key": "appearance",
@@ -11578,6 +12449,7 @@
           "type": "select",
           "category": "data",
           "default_value": "page_data",
+          "description": "Where the *_field values are read from. A tile cannot pass variables to its own query, so Query runs it with every variable empty — use it only for a query that takes none. To show a filtered number, land the rows in page state with a call-query action and point *_field at that variable.",
           "options": [
             {
               "label": "Page Data",
@@ -11610,6 +12482,7 @@
           "type": "text",
           "category": "data",
           "default_value": "",
+          "description": "Saved query run by this tile, with no variables — a query that needs filter values will return nothing here.",
           "visible_if": {
             "key": "data_source",
             "equals": "query"
@@ -11648,7 +12521,8 @@
           "label": "Primary Value Field",
           "type": "select",
           "category": "content",
-          "default_value": ""
+          "default_value": "",
+          "description": "Field holding the value. It may also name a page-state variable, by prefixing the state key with state_ — variable \"er_rows\" is read as \"state_er_rows\" — whatever Data Source is set to. Pair it with Primary Value Path to dig into the value, e.g. path \"0.latest_rate\" for a query result row."
         },
         {
           "key": "primary_value_path",
@@ -11703,19 +12577,19 @@
           "responsive": false,
           "options": [
             {
-              "label": "As is  -1,234.10",
+              "label": "As is",
               "value": "as_is"
             },
             {
-              "label": "Coloured  -1,234.10",
+              "label": "Coloured",
               "value": "colored"
             },
             {
-              "label": "Coloured, no sign  1,234.10",
+              "label": "Coloured, no sign",
               "value": "colored_abs"
             },
             {
-              "label": "Coloured, in brackets  (1,234.10)",
+              "label": "Coloured, in brackets",
               "value": "parentheses"
             }
           ]
@@ -12363,21 +13237,180 @@
     "toolbar": {
       "name": "Toolbar",
       "category": "navigation",
-      "allow_children": true,
+      "allow_children": false,
       "class": "ToolbarComponent",
       "icon": "view_headline",
-      "properties": [],
-      "common_property_overrides": [
+      "properties": [
         {
-          "key": "label",
-          "label": "Label",
-          "type": "text",
+          "key": "items",
+          "label": "Toolbar Items",
+          "type": "toolbar_items",
           "category": "content",
-          "default_value": "Toolbar Label"
+          "default_value": [
+            {
+              "id": "item_1",
+              "kind": "title",
+              "label": "Toolbar",
+              "level": 0
+            },
+            {
+              "id": "item_2",
+              "kind": "spacer",
+              "level": 0
+            },
+            {
+              "id": "item_3",
+              "kind": "button",
+              "label": "Save",
+              "icon": "save",
+              "value": "save",
+              "variant": "filled",
+              "level": 0
+            },
+            {
+              "id": "item_4",
+              "kind": "menu",
+              "label": "More",
+              "icon": "more_vert",
+              "value": "more",
+              "level": 0
+            },
+            {
+              "id": "item_5",
+              "kind": "item",
+              "label": "Export",
+              "icon": "download",
+              "value": "export",
+              "level": 1
+            },
+            {
+              "id": "item_6",
+              "kind": "item",
+              "label": "Print",
+              "icon": "print",
+              "value": "print",
+              "level": 1
+            }
+          ],
+          "description": "Indent an item (→) under a Menu to make it an entry of that menu."
+        },
+        {
+          "key": "multi_row",
+          "label": "Multi Row",
+          "type": "boolean",
+          "category": "layout",
+          "default_value": false,
+          "description": "Lay the toolbar out as mat-toolbar-rows, using each item's row number."
+        },
+        {
+          "key": "color",
+          "label": "Colour",
+          "type": "select",
+          "category": "layout",
+          "default_value": "",
+          "description": "Applied through the theme tokens — Material's own color input has no effect under M3.",
+          "options": [
+            {
+              "label": "Default",
+              "value": ""
+            },
+            {
+              "label": "Primary",
+              "value": "primary"
+            },
+            {
+              "label": "Accent",
+              "value": "accent"
+            },
+            {
+              "label": "Warn",
+              "value": "warn"
+            }
+          ]
+        },
+        {
+          "key": "sticky",
+          "label": "Stick To Top",
+          "type": "boolean",
+          "category": "layout",
+          "default_value": false,
+          "description": "Keep the toolbar in view while the page behind it scrolls."
+        },
+        {
+          "key": "dense",
+          "label": "Dense",
+          "type": "boolean",
+          "category": "layout",
+          "default_value": false,
+          "description": "Shorter toolbar, for a secondary bar above a table or a form."
+        },
+        {
+          "key": "menu_x_position",
+          "label": "Menu X Position",
+          "type": "select",
+          "category": "layout",
+          "default_value": "after",
+          "options": [
+            {
+              "label": "After",
+              "value": "after"
+            },
+            {
+              "label": "Before",
+              "value": "before"
+            }
+          ]
+        },
+        {
+          "key": "menu_y_position",
+          "label": "Menu Y Position",
+          "type": "select",
+          "category": "layout",
+          "default_value": "below",
+          "options": [
+            {
+              "label": "Below",
+              "value": "below"
+            },
+            {
+              "label": "Above",
+              "value": "above"
+            }
+          ]
+        },
+        {
+          "key": "menu_overlap_trigger",
+          "label": "Menus Overlap Trigger",
+          "type": "boolean",
+          "category": "layout",
+          "default_value": false
+        },
+        {
+          "key": "menu_panel_class",
+          "label": "Menu Panel Class",
+          "type": "text",
+          "category": "layout",
+          "default_value": ""
+        },
+        {
+          "key": "disable_ripple",
+          "label": "Disable Ripple",
+          "type": "boolean",
+          "category": "behavior",
+          "default_value": false
+        },
+        {
+          "key": "aria_label",
+          "label": "Aria Label",
+          "type": "text",
+          "category": "behavior",
+          "default_value": ""
         }
       ],
       "styles": [],
-      "events": []
+      "events": [
+        "toolbar_action"
+      ]
     },
     "tree": {
       "name": "Tree",

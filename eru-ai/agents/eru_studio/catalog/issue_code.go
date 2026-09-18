@@ -77,10 +77,15 @@ const (
 	CodeEnvelopeFullMissingPage Code = "envelope_full_missing_page"
 	CodeEnvelopeUnknownMode     Code = "envelope_unknown_mode"
 	CodeEnvelopeFullDropsPage   Code = "envelope_full_drops_page"
+	CodeFilterWithoutDefault    Code = "filter_without_default"
+
+	CodeDuplicateStateFieldName Code = "duplicate_state_field_name"
 	CodePatchUnreadable         Code = "patch_unreadable"
 	CodePatchEmpty              Code = "patch_empty"
 	CodePatchScopeViolation     Code = "patch_scope_violation"
 	CodePatchNotApplicable      Code = "patch_not_applicable"
+	CodePatchUnknownChild       Code = "patch_unknown_child"
+	CodeReferencePageNotRead    Code = "reference_page_not_read"
 
 	// Preflight: the page claims a binding the agent never looked up.
 	CodeBindingsWithoutMetadata Code = "bindings_without_metadata"

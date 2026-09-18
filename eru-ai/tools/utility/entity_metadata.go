@@ -193,7 +193,7 @@ func extractRows(result map[string]interface{}) []map[string]interface{} {
 		return nil
 	}
 	if rows := asRows(result); len(rows) > 0 {
-		return rows
+		return unwrapEnvelopeRows(rows)
 	}
 	keys := make([]string, 0, len(result))
 	for key := range result {
@@ -204,7 +204,7 @@ func extractRows(result map[string]interface{}) []map[string]interface{} {
 		switch nested := result[key].(type) {
 		case []interface{}:
 			if rows := rowsOf(nested); len(rows) > 0 {
-				return rows
+				return unwrapEnvelopeRows(rows)
 			}
 		case map[string]interface{}:
 			if rows := extractRows(nested); len(rows) > 0 {
@@ -413,4 +413,41 @@ func init() {
 		IconType:     "svg",
 		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(EntityMetadataTool{}), []string{}),
 	})
+}
+
+// unwrapEnvelopeRows looks through the envelope a query answer arrives in.
+//
+// An eru-ql answer is [{"Results": [ ...the rows... ]}]: a list of one object,
+// which is indistinguishable from a row set until you look at what it holds.
+// Taken at face value it reads as a single row whose only column is "Results" -
+// so a caller that asks for rows gets one meaningless row, and a lookup that ran
+// perfectly well reports that the workspace is empty.
+//
+// The test is deliberately narrow - every row is an object with exactly one
+// key, and that key holds a list - so a genuine row that happens to carry a
+// nested list (a record with its line items) is left alone.
+func unwrapEnvelopeRows(rows []map[string]interface{}) []map[string]interface{} {
+	if len(rows) == 0 {
+		return rows
+	}
+	inner := make([]interface{}, 0, len(rows))
+	for _, row := range rows {
+		if len(row) != 1 {
+			return rows
+		}
+		for _, value := range row {
+			list, ok := value.([]interface{})
+			if !ok {
+				return rows
+			}
+			inner = append(inner, list...)
+		}
+	}
+	unwrapped := rowsOf(inner)
+	if len(unwrapped) == 0 {
+		// An empty envelope means the query returned nothing - which is the
+		// honest answer, and better than the envelope itself passing for a row.
+		return nil
+	}
+	return unwrapEnvelopeRows(unwrapped)
 }

@@ -30,6 +30,12 @@ type Ledger struct {
 	// enough that being told the difference in prose has not been enough.
 	entityNames   map[string]bool
 	tableToEntity map[string]string
+	// request is the user's own words for this run, listedPages is what the
+	// page list returned, and fetchedPages is which of those were actually
+	// read. Together they answer "was the page the user pointed at opened?".
+	request      string
+	listedPages  map[string]string
+	fetchedPages map[string]bool
 }
 
 func NewLedger() *Ledger {
@@ -39,6 +45,8 @@ func NewLedger() *Ledger {
 		broken:        map[string]string{},
 		entityNames:   map[string]bool{},
 		tableToEntity: map[string]string{},
+		listedPages:   map[string]string{},
+		fetchedPages:  map[string]bool{},
 	}
 }
 

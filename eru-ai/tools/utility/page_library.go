@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	studio "github.com/eru-tech/eru/eru-ai/agents/eru_studio"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
@@ -140,12 +141,24 @@ func (plTool *PageLibraryTool) listPages(ctx context.Context, projectId string, 
 	if filter, _ := params["name_contains"].(string); strings.TrimSpace(filter) != "" {
 		pages = filterPages(pages, filter)
 		if len(pages) == 0 {
+			studio.LedgerFrom(ctx).Record(ListPagesToolName)
 			return map[string]interface{}{
 				"pages": []pageSummary{},
 				"note":  fmt.Sprintf("no page name or id contains %q - call again without name_contains to see every page", filter),
 			}, false, nil
 		}
 	}
+	// What the list returned is what the model can be held to: a page it was
+	// shown and the user named is one it has no excuse for not opening.
+	refs := make([]studio.PageRef, 0, len(pages))
+	for _, page := range pages {
+		refs = append(refs, studio.PageRef{PageId: page.PageId, Name: page.Name})
+	}
+	studio.LedgerFrom(ctx).RecordListedPages(refs)
+	studio.LedgerFrom(ctx).Record(ListPagesToolName)
+
+	logs.WithContext(ctx).Info(fmt.Sprint(ListPagesToolName, ": name_contains=", strings.TrimSpace(asText(params["name_contains"])), " returned ", len(pages), " page(s)"))
+
 	out := map[string]interface{}{"pages": pages, "count": len(pages)}
 	if len(pages) == 0 {
 		out["note"] = "this workspace has no other pages to reference"
@@ -172,6 +185,11 @@ func (plTool *PageLibraryTool) getPage(ctx context.Context, projectId string, te
 	}
 
 	page := firstPageDefinition(result)
+	logs.WithContext(ctx).Info(fmt.Sprint(GetPageToolName, ": ", pageId, " read=", page != nil))
+	if page != nil {
+		studio.LedgerFrom(ctx).RecordFetchedPage(pageId)
+		studio.LedgerFrom(ctx).Record(GetPageToolName)
+	}
 	if page == nil {
 		return map[string]interface{}{
 			"page_id": pageId,
@@ -338,4 +356,9 @@ func init() {
 		IconType:     "svg",
 		ToolSchema:   utils.StructToJSONSchema(reflect.TypeOf(PageLibraryTool{}), []string{}),
 	})
+}
+
+func asText(value interface{}) string {
+	text, _ := value.(string)
+	return text
 }

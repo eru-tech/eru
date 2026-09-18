@@ -62,14 +62,22 @@ func (eruStudioAgent *EruStudioAgent) Execute(ctx context.Context, agentMessage 
 	// and, in patch mode, the base a patch is applied to.
 	basePage := basePageFromParams(agentMessage.Params)
 
+	// Notices are the things the client should hear about its own request while
+	// the edit still goes ahead; they come back on the envelope.
+	notices := studio.NewNotices()
+	ctx = studio.WithNotices(ctx, notices)
+
 	// The client holds the only copy of the page that includes unsaved edits, so
 	// the page it sends is the base of truth. When it also tells us which
-	// revision that is, a mismatch means it sent something other than what the
-	// user is looking at - a cached copy, the wrong page - and patching that
-	// would resolve to a page that quietly undoes their work.
-	if err := verifyBaseRevision(agentMessage.Params, basePage); err != nil {
+	// revision that is, the two have to agree.
+	notice, err := reconcileBaseRevision(agentMessage.Params, basePage)
+	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return agents.AgentMessage{}, err
+	}
+	if notice != "" {
+		logs.WithContext(ctx).Info(notice)
+		notices.Add(notice)
 	}
 
 	requested, _ := agentMessage.Params[studio.OutputModeParam].(string)
@@ -113,6 +121,9 @@ func (eruStudioAgent *EruStudioAgent) Execute(ctx context.Context, agentMessage 
 	// edit already has its pages, and asking again would be a model call spent
 	// restating the request.
 	userPrompt := agentMessage.Content
+	// Kept on the ledger so a claim about a page the user named can be checked
+	// against whether that page was ever opened.
+	studio.LedgerFrom(ctx).RecordRequest(userPrompt)
 	var plan *studio.PagePlan
 	if planningApplies(ctx, basePage, resolvedScope) {
 		plan = eruStudioAgent.planPages(ctx, agentMessage, projectId, tenantId)
@@ -155,24 +166,37 @@ func (eruStudioAgent *EruStudioAgent) Execute(ctx context.Context, agentMessage 
 	return eruStudioResolveEnvelope(ctx, agentOutput, effectiveBasePage(ctx))
 }
 
-// verifyBaseRevision holds the client to the page it says it is holding.
-func verifyBaseRevision(params map[string]interface{}, basePage map[string]interface{}) error {
+// reconcileBaseRevision settles the client's claim about which page it holds
+// against the page it actually sent.
+//
+// The page in `code` wins, always: it is the live editor content, unsaved edits
+// included, and it is what the edit has to be built on. So a stale claim is
+// reported, not enforced - the client's bookkeeping drifting (an apply that
+// merged in something extra, a runtime write) is not a reason to throw away the
+// edit the user asked for, and failing the run leaves them with nothing and no
+// way to act on it.
+//
+// A revision sent with NO page is different, and still fatal: the client
+// believes it is holding a page, so generating a fresh one would replace work it
+// never sent.
+func reconcileBaseRevision(params map[string]interface{}, basePage map[string]interface{}) (string, error) {
 	claimed, _ := params[studio.BaseRevisionParam].(string)
-	claimed = strings.TrimSpace(claimed)
+	// A claim that arrives still wrapped in its JSON quotes is the same claim.
+	claimed = strings.Trim(strings.TrimSpace(claimed), `"`)
 	if claimed == "" {
-		return nil
+		return "", nil
 	}
 	if len(basePage) == 0 {
-		return fmt.Errorf("%s %q was sent without a page in `code` - send the page the revision belongs to, or drop the revision",
+		return "", fmt.Errorf("%s %q was sent without a page in `code` - send the page the revision belongs to, or drop the revision",
 			studio.BaseRevisionParam, claimed)
 	}
 	actual := studio.Revision(basePage)
-	if claimed != actual {
-		return fmt.Errorf("the page in `code` is revision %s, but %s says %s. "+
-			"Send the page as it currently stands in the editor, including unsaved changes - patching a different page would resolve to one that undoes them",
-			actual, studio.BaseRevisionParam, claimed)
+	if claimed == actual {
+		return "", nil
 	}
-	return nil
+	return fmt.Sprintf("the page in `code` is revision %s, but %s said %s. The page you sent is what this edit was built on; "+
+		"the revision you recorded was stale, so take the one this answer carries",
+		actual, studio.BaseRevisionParam, claimed), nil
 }
 
 // applyEruStudioScope narrows a scoped edit down to the part of the page it is
@@ -455,6 +479,13 @@ but for payments". When that happens:
 3. Read the reference for the SPECIFIC thing the user asked for - a layout, a header, an event
    wiring, a grid configuration - and build that into the page you are working on.
 
+Step 2 is not optional. list_pages returns names and ids only - it tells you a page EXISTS, never
+how it is built - so an answer written after list_pages alone is written from memory. You will
+produce something plausible: a grid with a toolbar, sensible density, tidy chrome. It will not be
+the page the user pointed at, and saying it matches that page is then untrue. If you catch yourself
+about to write "matching <page>" without having called get_page on <page>, stop and call it.
+The same applies to a page you have seen in an earlier turn: read it again rather than recalling it.
+
 A reference page is not your answer:
 - Never return it, and never copy it wholesale unless the user asked for a duplicate.
 - Never reuse its component ids: ids are unique per page, so generate fresh ones.
@@ -463,8 +494,11 @@ A reference page is not your answer:
 - If a very large page comes back as a structure only (ids and types), that is usually enough to
   imitate a layout. Ask for it again only when you need one component's properties, and say which.
 
-If the user names a page that list_pages does not contain, say so and ask which page they meant
-rather than guessing at a similar name.
+Never ask the user to paste a page's JSON, or to describe how another page is built. You can read
+every page in this workspace yourself; asking them to fetch what you already have a tool for wastes
+their time and reads as though the tool is not there. The only page question worth asking is WHICH
+page they meant, and only when list_pages does not contain the name they used - then say what you
+did find and ask them to pick.
 
 You may also look without being asked, when it would change what you build:
 - A NEW page in a product that already has pages: read one or two of the existing ones first and
@@ -724,6 +758,7 @@ func eruStudioPageIssues(ctx context.Context, output map[string]interface{}) (ma
 		resolved := resolvedRootPage(output, basePage)
 		nested := nestedPagesForPreflight(output, basePage)
 		issues = append(issues, preflightIssues(ctx, resolved, basePage, nested)...)
+		issues = append(issues, introducedWiringIssues(basePage, resolved)...)
 		return output, append(issues, entityBindingIssues(ctx, resolved, basePage, nested)...)
 	}
 	// A bare page can carry no nested page, so every mount on it must point at a
@@ -759,6 +794,12 @@ func buildEruStudioContextAugmentation(_ context.Context, params map[string]any,
 		} else {
 			b.WriteString("No existing EruPage was provided. Build the page from scratch.\n\n")
 		}
+	}
+
+	// What the page looks like on a phone is the one thing the model cannot read
+	// out of the JSON, so it is measured and told.
+	if page := basePageFromParams(params); len(page) > 0 {
+		b.WriteString(studio.SmallScreenNote(studio.SmallScreenOverflows(page)))
 	}
 
 	if ctxRaw, ok := params["context"]; ok {
