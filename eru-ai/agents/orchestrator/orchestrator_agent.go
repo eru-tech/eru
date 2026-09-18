@@ -727,6 +727,7 @@ func (oa *OrchestratorAgent) repairPlan(ctx context.Context, agentMessage agents
 		// compiled here, before anything is validated, so the rest of the
 		// pipeline only ever sees a plan with real templates in it.
 		issues := compileStepRequests(plan)
+		autoForwardParams(plan, oa.discoveredAgents, cc)
 		issues = append(issues, validatePlan(ctx, plan, oa.discoveredAgents, oa.discoveredTools, cc)...)
 		if len(issues) == 0 {
 			return plan, traces, nil
@@ -1169,7 +1170,7 @@ read a prior step's output, use:
   (index .ResVars.<prev_step>.Body.actions 0).action.<field>
 NEVER use .ResVars.<prev_step>.Body.content for an agent step — the text is NOT there.
 
-  First step (from the user's message — .Vars.Body IS already {"content":...}):
+  First step (from the user's message — .Vars.OrgBody IS already {"content":...}):
     "request": {"content": {"from": "user.content"}}
 
   Chained step (feed prior agent's output field as the next input). Example: a
@@ -1181,8 +1182,8 @@ transform_response) MUST end with " | stringify" (or wrap in stringify) so the
 final output is a JSON string. A bare dict renders as Go's map[...] and is invalid.
 
 WRONG (these all break the agent):
-  "{{dict \"content\" .Vars.Body.content}}"                  → renders map[...], invalid JSON (not stringified)
-  "{{.Vars.Body.content}}"                                     → bare unquoted string, not an object
+  "{{dict \"content\" .Vars.OrgBody.content}}"                  → renders map[...], invalid JSON (not stringified)
+  "{{.Vars.OrgBody.content}}"                                     → bare unquoted string, not an object
   "{{stringify (dict \"content\" .ResVars.generate_sql.Body.content)}}" → wrong path; agent output is in actions[0].action.<field>, not .content
   passing the whole .ResVars.prev.Body                         → carries unknown AgentMessage fields → rejected
 
@@ -1201,7 +1202,7 @@ unanswered, and the agent asks again or guesses at what the user chose.
 
 So for EVERY agent step whose agent can ask a question, forward the answer:
 
-  "params": {"clarification_answers": {{stringify .Vars.Body.params.clarification_answers}}}
+  "params": {"clarification_answers": {{stringify .Vars.OrgBody.params.clarification_answers}}}
 
 Forward it on every call, not only after a question: the key renders as null when
 nothing was asked, and the agent ignores that. You cannot know in advance whether
@@ -1311,7 +1312,7 @@ Example — WRONG (independent steps needlessly serialised):
   }
 }
 topic_classifier never reads .ResVars.sentiment_analyzer — both read only
-.Vars.Body.content, so they MUST be siblings (see the parallel example below).
+.Vars.OrgBody.content, so they MUST be siblings (see the parallel example below).
 
 Example — sequential: extract data, then summarize it:
 {
@@ -1362,7 +1363,7 @@ Example — parallel then sequential merge:
 TEMPLATE VARIABLES
 ============================================================
 
-.Vars.Body              — original user input (request body)
+.Vars.OrgBody              — original user input (request body)
 .Vars.Headers           — original request headers
 .Vars.Params            — original query params
 .Vars.Token             — auth token
@@ -1373,17 +1374,17 @@ TEMPLATE VARIABLES
 (index .ResVars.<step_key>.Body.actions 0).action.<field> — a prior agent's output value
 
 Syntax:
-  {{.Vars.Body.content}}                                   — the user's input string
+  {{.Vars.OrgBody.content}}                                   — the user's input string
   {{(index .ResVars.<step>.Body.actions 0).action.<field>}} — a prior agent's output value
-  {{stringify (dict "content" .Vars.Body.content)}}        — wrap into the agent input object (JSON string)
+  {{stringify (dict "content" .Vars.OrgBody.content)}}        — wrap into the agent input object (JSON string)
   {{printf "%s / %s" .X .Y}}                                — combine strings before wrapping
-  {{index .Vars.Body "field-with-dash"}}
+  {{index .Vars.OrgBody "field-with-dash"}}
 
 stringify (= JSON-encode) is MANDATORY whenever the template builds a dict/object,
 in BOTH transform_request and transform_response. Output must be a JSON string.
 
 Conditions:
-  {{if eq .Vars.Body.status "active"}}true{{else}}false{{end}}
+  {{if eq .Vars.OrgBody.status "active"}}true{{else}}false{{end}}
 
 ============================================================
 OPTIONAL STEP FIELDS
@@ -1414,7 +1415,7 @@ CHECKLIST (verify before outputting)
 [ ] Tool steps: transform_request renders {"params": {<Input schema fields>}} (Rule #3)
 [ ] EVERY dict/object in transform_request AND transform_response ends with " | stringify"
 [ ] EVERY template parses: each "{{" has a matching "}}", every "(" a matching ")", and no stray brace or parenthesis is left at the end of an action
-[ ] No step passes a bare string or the raw .Vars.Body / whole AgentMessage
+[ ] No step passes a bare string or the raw .Vars.OrgBody / whole AgentMessage
 [ ] func_category_name and func_group_name are set (snake_case)
 [ ] Each step uses ONLY (agent_name) OR (tool_name+tool_action), with no tenant_id (no query/function/api)
 [ ] Sequential steps are NESTED, parallel steps are SIBLINGS

@@ -86,14 +86,14 @@ func validateAgainstSpecs(ctx context.Context, plan map[string]interface{}) []pl
 }
 
 func TestValidateStepPayloadAcceptsDeclaredParams(t *testing.T) {
-	plan := agentStepPlan(t, `{{stringify (dict "content" .Vars.Body.content "params" (dict "context" (stringify .Vars.Body) "entities" "[]"))}}`)
+	plan := agentStepPlan(t, `{{stringify (dict "content" .Vars.OrgBody.content "params" (dict "context" (stringify .Vars.Body) "entities" "[]"))}}`)
 	if issues := validateAgainstSpecs(context.Background(), plan); len(issues) != 0 {
 		t.Fatalf("expected no issues, got %v", issues)
 	}
 }
 
 func TestValidateStepPayloadRejectsUndeclaredParamKey(t *testing.T) {
-	plan := agentStepPlan(t, `{{stringify (dict "content" .Vars.Body.content "params" (dict "rows" (stringify .Vars.Body)))}}`)
+	plan := agentStepPlan(t, `{{stringify (dict "content" .Vars.OrgBody.content "params" (dict "rows" (stringify .Vars.Body)))}}`)
 	issues := validateAgainstSpecs(context.Background(), plan)
 	if len(issues) != 1 {
 		t.Fatalf("expected 1 issue, got %d : %v", len(issues), issues)
@@ -107,7 +107,7 @@ func TestValidateStepPayloadRejectsUndeclaredParamKey(t *testing.T) {
 }
 
 func TestValidateStepPayloadRejectsUnknownTopLevelKey(t *testing.T) {
-	plan := agentStepPlan(t, `{{stringify (dict "content" .Vars.Body.content "rows" (stringify .Vars.Body))}}`)
+	plan := agentStepPlan(t, `{{stringify (dict "content" .Vars.OrgBody.content "rows" (stringify .Vars.Body))}}`)
 	issues := validateAgainstSpecs(context.Background(), plan)
 	if len(issues) != 1 || !strings.Contains(issues[0].Err, "not part of the agent request body") {
 		t.Fatalf("expected unknown top-level key issue, got %v", issues)
@@ -115,7 +115,7 @@ func TestValidateStepPayloadRejectsUnknownTopLevelKey(t *testing.T) {
 }
 
 func TestValidateStepPayloadRejectsMissingContent(t *testing.T) {
-	plan := agentStepPlan(t, `{{.Vars.Body.content}}`)
+	plan := agentStepPlan(t, `{{.Vars.OrgBody.content}}`)
 	issues := validateAgainstSpecs(context.Background(), plan)
 	if len(issues) != 1 || !strings.Contains(issues[0].Err, `without a "content" key`) {
 		t.Fatalf("expected missing content issue, got %v", issues)
@@ -154,7 +154,7 @@ func TestValidateStepPayloadToolAcceptsValidParams(t *testing.T) {
 }
 
 func TestValidateStepPayloadToolRejectsAgentEnvelope(t *testing.T) {
-	plan := toolStepPlan(t, `{{stringify (dict "content" .Vars.Body.content)}}`)
+	plan := toolStepPlan(t, `{{stringify (dict "content" .Vars.OrgBody.content)}}`)
 	issues := validateAgainstSpecs(context.Background(), plan)
 	if len(issues) != 1 || !strings.Contains(issues[0].Err, `without a root "params" object`) {
 		t.Fatalf("expected missing params issue, got %v", issues)
@@ -162,7 +162,7 @@ func TestValidateStepPayloadToolRejectsAgentEnvelope(t *testing.T) {
 }
 
 func TestValidateStepPayloadSkipsDynamicParams(t *testing.T) {
-	plan := toolStepPlan(t, `{{stringify (dict "params" .Vars.Body.params)}}`)
+	plan := toolStepPlan(t, `{{stringify (dict "params" .Vars.OrgBody.params)}}`)
 	if issues := validateAgainstSpecs(context.Background(), plan); len(issues) != 0 {
 		t.Fatalf("expected no issues when params is passed by reference, got %v", issues)
 	}
@@ -173,7 +173,7 @@ func TestValidateStepPayloadSkipsUnknownAgent(t *testing.T) {
 		"other": map[string]interface{}{
 			"agent_name":        "other",
 			"tenant_id":         "processo",
-			"transform_request": `{{stringify (dict "content" .Vars.Body.content "params" (dict "rows" "x"))}}`,
+			"transform_request": `{{stringify (dict "content" .Vars.OrgBody.content "params" (dict "rows" "x"))}}`,
 		},
 	})
 	issues := validateAgainstSpecs(context.Background(), plan)
@@ -272,24 +272,24 @@ func TestValidateStepKeyUniquenessRejectsCrossBranchDuplicate(t *testing.T) {
 		"branch_a": map[string]interface{}{
 			"agent_name":        "branch_a",
 			"tenant_id":         "processo",
-			"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+			"transform_request": `{{stringify (dict "content" .Vars.OrgBody.content)}}`,
 			"func_steps": map[string]interface{}{
 				"generate_sql": map[string]interface{}{
 					"agent_name":        "generate_sql",
 					"tenant_id":         "processo",
-					"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+					"transform_request": `{{stringify (dict "content" .Vars.OrgBody.content)}}`,
 				},
 			},
 		},
 		"branch_b": map[string]interface{}{
 			"agent_name":        "branch_b",
 			"tenant_id":         "processo",
-			"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+			"transform_request": `{{stringify (dict "content" .Vars.OrgBody.content)}}`,
 			"func_steps": map[string]interface{}{
 				"generate_sql": map[string]interface{}{
 					"agent_name":        "generate_sql",
 					"tenant_id":         "processo",
-					"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+					"transform_request": `{{stringify (dict "content" .Vars.OrgBody.content)}}`,
 				},
 			},
 		},
@@ -314,12 +314,12 @@ func TestValidateStepKeyUniquenessAcceptsSuffixedDuplicates(t *testing.T) {
 		"generate_sql": map[string]interface{}{
 			"agent_name":        "generate_sql",
 			"tenant_id":         "processo",
-			"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+			"transform_request": `{{stringify (dict "content" .Vars.OrgBody.content)}}`,
 			"func_steps": map[string]interface{}{
 				"generate_sql2": map[string]interface{}{
 					"agent_name":        "generate_sql",
 					"tenant_id":         "processo",
-					"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+					"transform_request": `{{stringify (dict "content" .Vars.OrgBody.content)}}`,
 				},
 			},
 		},

@@ -72,14 +72,14 @@ func TestReferencesCompileToTheRightPaths(t *testing.T) {
 		t.Fatalf("issues: %v", issues)
 	}
 	first := templateOf(t, plan, "first")
-	if !strings.Contains(first, "{{stringify .Vars.Body.content}}") {
+	if !strings.Contains(first, "{{stringify .Vars.OrgBody.content}}") {
 		t.Errorf("user.content compiled to %s", first)
 	}
 	second := templateOf(t, plan, "second")
 	if !strings.Contains(second, "(index .ResVars.first.Body.actions 0).action.sql") {
 		t.Errorf("step reference compiled to %s", second)
 	}
-	if !strings.Contains(second, `"params": {"scope": {{stringify .Vars.Body.params.scope}}}`) {
+	if !strings.Contains(second, `"params": {"scope": {{stringify .Vars.OrgBody.params.scope}}}`) {
 		t.Errorf("params compiled to %s", second)
 	}
 	if issues := validatePlanTemplates(context.Background(), plan); len(issues) != 0 {
@@ -122,7 +122,7 @@ func TestJoinDoesNotTreatLiteralsAsFormatVerbs(t *testing.T) {
 // A hand-written template is not silently rewritten under its author.
 func TestAHandWrittenTemplateWins(t *testing.T) {
 	plan := planWith(t, `{"func_steps": {"a": {"agent_name": "x",
-	  "transform_request": "{{stringify (dict \"content\" .Vars.Body.content)}}",
+	  "transform_request": "{{stringify (dict \"content\" .Vars.OrgBody.content)}}",
 	  "request": {"content": "ignored"}}}}`)
 	compileStepRequests(plan)
 	if got := templateOf(t, plan, "a"); !strings.Contains(got, "dict") {
@@ -193,7 +193,7 @@ func TestAttachmentsCanBeNamedByAPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("user.files is not a reference: %v", err)
 	}
-	if expr != ".Vars.Body.files" {
+	if expr != ".Vars.OrgBody.files" {
 		t.Fatalf("user.files resolved to %q", expr)
 	}
 }
@@ -203,7 +203,7 @@ func TestASingleAttachmentCanBeNamed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("user.files.0 is not a reference: %v", err)
 	}
-	if expr != "(index .Vars.Body.files 0)" {
+	if expr != "(index .Vars.OrgBody.files 0)" {
 		t.Fatalf("user.files.0 resolved to %q", expr)
 	}
 }
@@ -228,7 +228,7 @@ func TestAStepCanBeGivenTheUsersAttachments(t *testing.T) {
 	if !strings.Contains(body, `"files": `) {
 		t.Fatalf("the compiled body carries no files key:\n%s", body)
 	}
-	if !strings.Contains(body, ".Vars.Body.files") {
+	if !strings.Contains(body, ".Vars.OrgBody.files") {
 		t.Fatalf("files does not resolve to the request's attachments:\n%s", body)
 	}
 	if !strings.Contains(body, `"content": `) {
@@ -254,7 +254,7 @@ func TestFilesIsNotNestedUnderParams(t *testing.T) {
 		t.Fatalf("files was emitted before params, which would put it inside the params object:\n%s", body)
 	}
 	var decoded map[string]interface{}
-	probe := strings.ReplaceAll(body, "{{stringify .Vars.Body.files}}", `"FILES"`)
+	probe := strings.ReplaceAll(body, "{{stringify .Vars.OrgBody.files}}", `"FILES"`)
 	if err := json.Unmarshal([]byte(probe), &decoded); err != nil {
 		t.Fatalf("the compiled body is not valid JSON: %v\n%s", err, probe)
 	}

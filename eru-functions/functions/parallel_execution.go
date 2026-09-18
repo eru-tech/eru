@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"runtime/debug"
+	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -101,6 +104,15 @@ func signalStep(ctx context.Context, stepName string, responseVars map[string]Fu
 	}
 }
 
+func waitForStepTimeout() time.Duration {
+	if v := os.Getenv("FUNC_WAIT_FOR_TIMEOUT_SEC"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return 10 * time.Minute
+}
+
 func WaitForStep(ctx context.Context, stepName string) (map[string]FuncTemplateVars, map[string]FuncTemplateVars) {
 	ssI := ctx.Value(stepSyncKey)
 	if ssI == nil {
@@ -110,8 +122,56 @@ func WaitForStep(ctx context.Context, stepName string) (map[string]FuncTemplateV
 	ss := ssI.(*StepSync)
 	statusI, _ := ss.Steps.LoadOrStore(stepName, &StepStatus{Finished: make(chan struct{})})
 	status := statusI.(*StepStatus)
-	<-status.Finished
-	return status.ResponseVars, status.RequestVars
+
+	timeout := time.NewTimer(waitForStepTimeout())
+	defer timeout.Stop()
+	select {
+	case <-status.Finished:
+		return status.ResponseVars, status.RequestVars
+	case <-ctx.Done():
+		logs.WithContext(ctx).Error(fmt.Sprint("wait_for ", stepName, " abandoned: the request was cancelled before that step finished"))
+		return nil, nil
+	case <-timeout.C:
+		logs.WithContext(ctx).Error(fmt.Sprint("wait_for ", stepName, " timed out - that step never signalled, so it either never ran or is itself blocked"))
+		return nil, nil
+	}
+}
+
+func orderedFuncStepKeys(funcSteps map[string]*FuncStep) []string {
+	keys := make([]string, 0, len(funcSteps))
+	for key := range funcSteps {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	emitted := make(map[string]bool, len(keys))
+	ordered := make([]string, 0, len(keys))
+	for len(ordered) < len(keys) {
+		progressed := false
+		for _, key := range keys {
+			if emitted[key] {
+				continue
+			}
+			waitFor := funcSteps[key].WaitFor
+			if waitFor != "" && !emitted[waitFor] {
+				if _, sibling := funcSteps[waitFor]; sibling {
+					continue
+				}
+			}
+			ordered = append(ordered, key)
+			emitted[key] = true
+			progressed = true
+		}
+		if !progressed {
+			for _, key := range keys {
+				if !emitted[key] {
+					ordered = append(ordered, key)
+					emitted[key] = true
+				}
+			}
+		}
+	}
+	return ordered
 }
 
 func worker(ctx context.Context, route *Route, wg *sync.WaitGroup, jobs chan Job, results chan Result) {
@@ -176,7 +236,8 @@ func allocateFunc(ctx context.Context, req *http.Request, funcSteps map[string]*
 		}
 	}()
 	loopCounter := 0
-	for fk, fs := range funcSteps {
+	for _, fk := range orderedFuncStepKeys(funcSteps) {
+		fs := funcSteps[fk]
 		//logs.FileLogger.Info(fmt.Sprint("parallel_execution allocateFunc started for ", fk))
 		childStart := false
 		fs.FuncKey = fk

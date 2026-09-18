@@ -64,7 +64,7 @@ func validateUserMessagePassthrough(funcGroup functions.FuncGroup, cc codeContex
 		return nil
 	}
 	// Already forwarding the message is exactly what we want.
-	if strings.Contains(template, ".Vars.Body.content") {
+	if strings.Contains(template, userRequestRoot+".content") || strings.Contains(template, staleRequestRoot+".content") {
 		return nil
 	}
 

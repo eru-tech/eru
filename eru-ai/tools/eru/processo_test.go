@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
+	utils "github.com/eru-tech/eru/eru-utils"
 )
 
 func processoActionNames() map[string]bool {
@@ -133,5 +134,29 @@ func TestTheProcessoProjectIsTheOneBorrowedActionsAddress(t *testing.T) {
 	}
 	if (&ProcessoTool{MandatoryVarsQuery: "q", MandatoryVarsTransform: "json"}).eruqlDelegate().MandatoryVarsTransform != "json" {
 		t.Error("the delegate did not carry the configured transform")
+	}
+}
+
+func TestBorrowedQueryActionsGetAnAlias(t *testing.T) {
+	tool := ProcessoTool{}
+	if got := tool.eruqlDelegate().DbAlias; got != processoDefaultDbAlias {
+		t.Fatalf("an unconfigured processo tool must still hand its delegate an alias, got %q", got)
+	}
+
+	tool.DbAlias = "otherdb"
+	if got := tool.eruqlDelegate().DbAlias; got != "otherdb" {
+		t.Fatalf("a configured alias must win, got %q", got)
+	}
+
+	tool.DbAlias = "   "
+	if got := tool.eruqlDelegate().DbAlias; got != processoDefaultDbAlias {
+		t.Fatalf("a blank alias must fall back, got %q", got)
+	}
+}
+
+func TestSaveQueryParamsDoNotExposeDbAlias(t *testing.T) {
+	schema := utils.StructToJSONSchema(reflect.TypeOf(EruqlSaveQueryParams{}), []string{})
+	if _, present := schema.Properties["db_alias"]; present {
+		t.Fatal("db_alias must not be model-facing: the caller guesses it, and a query saved against the wrong alias cannot be executed")
 	}
 }

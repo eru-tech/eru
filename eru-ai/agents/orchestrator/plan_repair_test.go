@@ -29,7 +29,7 @@ func TestRealFailuresAreDiagnosed(t *testing.T) {
 }
 
 func TestJSONBodyFormIsAcceptedToday(t *testing.T) {
-	jsonForm := `{"content": "Build a page:\n\n1. BASIC INFORMATION\n   - First Name (text)", "params": {"code": {{stringify .Vars.Body.params.code}}, "entities": "[{\"name\":\"business_card\"}]"}}`
+	jsonForm := `{"content": "Build a page:\n\n1. BASIC INFORMATION\n   - First Name (text)", "params": {"code": {{stringify .Vars.OrgBody.params.code}}, "entities": "[{\"name\":\"business_card\"}]"}}`
 	if issue, ok := validateStepTemplate(context.Background(), "eru_studio", "transform_request", jsonForm); !ok {
 		t.Fatalf("the JSON body form was rejected: %s", issue.Err)
 	}
@@ -50,7 +50,7 @@ func TestDroppedShapingParamIsCaught(t *testing.T) {
 	}
 
 	// The plan the orchestrator actually produced.
-	dropped := planWithTransform("eru_studio", `{{stringify (dict "content" "Change the pie chart title." "params" (dict "code" .Vars.Body.params.code))}}`)
+	dropped := planWithTransform("eru_studio", `{{stringify (dict "content" "Change the pie chart title." "params" (dict "code" .Vars.OrgBody.params.code))}}`)
 	issues := validatePlan(context.Background(), dropped, []agents.DiscoveredAgent{studio}, nil, cc)
 	joined := ""
 	for _, issue := range issues {
@@ -63,7 +63,7 @@ func TestDroppedShapingParamIsCaught(t *testing.T) {
 	}
 
 	// Forwarding them passes.
-	forwarded := planWithTransform("eru_studio", `{"content": "Change the pie chart title.", "params": {"code": {{stringify .Vars.Body.params.code}}, "output_mode": {{stringify .Vars.Body.params.output_mode}}, "inline_nested_pages": {{stringify .Vars.Body.params.inline_nested_pages}}}}`)
+	forwarded := planWithTransform("eru_studio", `{"content": "Change the pie chart title.", "params": {"code": {{stringify .Vars.OrgBody.params.code}}, "output_mode": {{stringify .Vars.OrgBody.params.output_mode}}, "inline_nested_pages": {{stringify .Vars.OrgBody.params.inline_nested_pages}}}}`)
 	if issues := validatePlan(context.Background(), forwarded, []agents.DiscoveredAgent{studio}, nil, cc); len(issues) > 0 {
 		t.Errorf("a plan that forwards the params was rejected: %v", issues)
 	}
@@ -73,7 +73,7 @@ func TestParamsTheAgentDoesNotReadAreNotDemanded(t *testing.T) {
 	// An agent with no output_mode param must not be asked to take one.
 	plain := discoveredWithParams("processo_generate_sql", "context")
 	cc := describeCodeParam(map[string]interface{}{"output_mode": "auto"})
-	plan := planWithTransform("processo_generate_sql", `{{stringify (dict "content" .Vars.Body.content)}}`)
+	plan := planWithTransform("processo_generate_sql", `{{stringify (dict "content" .Vars.OrgBody.content)}}`)
 	if issues := validatePlan(context.Background(), plan, []agents.DiscoveredAgent{plain}, nil, cc); len(issues) > 0 {
 		t.Errorf("an agent that does not read the param was asked to forward it: %v", issues)
 	}

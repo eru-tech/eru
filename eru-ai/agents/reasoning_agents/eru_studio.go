@@ -20,9 +20,13 @@ import (
 
 type EruStudioAgent struct {
 	ReasoningAgent
-	// PageOrgProcessId scopes the existing-page lookups. It defaults to the
-	// tenant id, which is how this deployment keys them; set it only when a
-	// deployment keys pages by something other than the tenant.
+	// PageOrgProcessId scopes the existing-page lookups.
+	//
+	// fetch_page and fetch_pages take an org_process_id, and an org process IS a
+	// tenant - the same id under two names - so the default is the tenant the
+	// request is running for and every page that tenant owns is reachable
+	// without configuring anything. This remains only as an escape hatch for a
+	// deployment where the two ever come apart; leave it empty.
 	PageOrgProcessId string `json:"page_org_process_id,omitempty"`
 	// internalTools are the tenant tools resolved for this agent's own lookups.
 	internalTools map[string]tools.Tooling
@@ -437,13 +441,14 @@ func (eruStudioAgent *EruStudioAgent) GetSystemPrompt() string {
 // invents a layout or asks a question it could have answered itself.
 const pageLibraryGuidance = `
 ============================================================
-WHEN THE USER POINTS AT ANOTHER PAGE
+EVERY PAGE IN THIS WORKSPACE IS READABLE
 ============================================================
-The pages already built in this workspace are readable, and the user will refer to them by name
-rather than by id: "make it look like the invoice page", "same header as the dashboard", "copy the
-filters from the one I built yesterday", "like page X but for payments".
+You can read ANY page this workspace has - not a configured subset, and not only the page being
+edited. list_pages returns all of them, and get_page returns any one of them by id.
 
-When that happens:
+Most often the user points at one by name rather than by id: "make it look like the invoice page",
+"same header as the dashboard", "copy the filters from the one I built yesterday", "like page X
+but for payments". When that happens:
 1. Call list_pages to find it. Pass name_contains with the words the user used to narrow a long list.
 2. Call get_page with the id from that list. Never invent a page id, and never pass the id of the
    page you are editing.
@@ -460,6 +465,18 @@ A reference page is not your answer:
 
 If the user names a page that list_pages does not contain, say so and ask which page they meant
 rather than guessing at a similar name.
+
+You may also look without being asked, when it would change what you build:
+- A NEW page in a product that already has pages: read one or two of the existing ones first and
+  follow the conventions you find there - page structure, header treatment, where filters and
+  actions sit, spacing. A page that looks nothing like the rest of the product is wrong even when
+  every component in it is right.
+- A page the user describes but does not name, where list_pages shows an obvious match.
+
+That is a lookup or two before you start, not a habit. Do not read pages you have no use for, do
+not read them one after another hoping something helps, and never read one to confirm something
+the user has already told you. An edit to an existing page needs no reference at all unless the
+user asked for one.
 `
 
 // entityMetadataGuidance is added only when the agent can actually run the
@@ -562,8 +579,22 @@ func (eruStudioAgent *EruStudioAgent) ExtraTools(ctx context.Context) map[string
 		metadataTool.SetToolAction(utility.EntityMetadataToolName)
 		extra[utility.EntityMetadataToolName] = metadataTool
 		studio.LedgerFrom(ctx).Offer(utility.EntityMetadataToolName)
+
+		// The shape of a query result cannot be guessed - the path into the
+		// response and the column names differ per query - and a page bound to a
+		// wrong guess renders blank without failing. Running it is the only way
+		// to know.
+		runTool := &utility.RunQueryTool{Delegate: delegate}
+		_ = runTool.SetAttribute(ctx, "parameters", utility.RunQueryToolSchema())
+		_ = runTool.SetAttribute(ctx, "description", utility.RunQueryToolDescription())
+		_ = runTool.SetAttribute(ctx, "system_prompt", "")
+		_ = runTool.SetAttribute(ctx, "tool_name", utility.RunQueryToolName)
+		_ = runTool.SetAttribute(ctx, "tool_type", "RUN_QUERY")
+		runTool.SetToolAction(utility.RunQueryToolName)
+		extra[utility.RunQueryToolName] = runTool
+		studio.LedgerFrom(ctx).Offer(utility.RunQueryToolName)
 	} else {
-		logs.WithContext(ctx).Info("eru studio: no tool offers execute_query, so " + utility.EntityMetadataToolName + " is not offered")
+		logs.WithContext(ctx).Info("eru studio: no tool offers execute_query, so " + utility.EntityMetadataToolName + " and " + utility.RunQueryToolName + " are not offered")
 	}
 
 	// "Make it look like the invoice page" needs the list of pages to find that
@@ -622,8 +653,9 @@ func (eruStudioAgent *EruStudioAgent) entityMetadataDelegate(ctx context.Context
 // agent's execution context - only the project and the tenant are. It defaults to
 // the tenant id, because that is how the entity metadata query is keyed
 // (org_process_id = the tenant id) and it is the only mapping this code can see.
-// A deployment that keys pages differently sets page_org_process_id on the agent;
-// this is the one place it is decided.
+// Because the two are the same id, no configuration is needed for an agent to
+// read any page its tenant owns. page_org_process_id overrides it if a
+// deployment ever separates them; this is the one place it is decided.
 func (eruStudioAgent *EruStudioAgent) pageScopeFor(tenantId string) studio.PageScope {
 	scope := studio.PageScope{OrgProcessId: eruStudioAgent.PageOrgProcessId}
 	if scope.OrgProcessId == "" {

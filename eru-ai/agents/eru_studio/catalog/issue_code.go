@@ -76,6 +76,7 @@ const (
 	// Envelope-level complaints about the shape of the answer itself.
 	CodeEnvelopeFullMissingPage Code = "envelope_full_missing_page"
 	CodeEnvelopeUnknownMode     Code = "envelope_unknown_mode"
+	CodeEnvelopeFullDropsPage   Code = "envelope_full_drops_page"
 	CodePatchUnreadable         Code = "patch_unreadable"
 	CodePatchEmpty              Code = "patch_empty"
 	CodePatchScopeViolation     Code = "patch_scope_violation"

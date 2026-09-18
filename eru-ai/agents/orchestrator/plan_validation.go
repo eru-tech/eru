@@ -66,6 +66,7 @@ func validatePlan(ctx context.Context, plan map[string]interface{}, allowedAgent
 
 	issues := validateStepTemplates(ctx, "", funcGroup.FuncSteps)
 	issues = append(issues, validateStepReferences(ctx, funcGroup.FuncSteps)...)
+	issues = append(issues, validateUserRequestRoot(funcGroup.FuncSteps)...)
 	issues = append(issues, validateStepKeyUniqueness(funcGroup.FuncSteps)...)
 	issues = append(issues, validateStepIdentity(funcGroup.FuncSteps, allowedAgents, allowedTools)...)
 	issues = append(issues, validateStepPayload(ctx, funcGroup.FuncSteps, allowedAgents, allowedTools)...)
@@ -190,7 +191,7 @@ func validateClarificationForwarding(steps map[string]*functions.FuncStep, allow
 			Template: step.TransformRequest,
 			Err: fmt.Sprint("agent \"", step.AgentName, "\" can ask the user a question, but this step does not forward the answer back. ",
 				"Without it the agent re-runs with its question unanswered and guesses. Add it to the step's params: \"",
-				agents.ClarificationAnswersParamKey, "\": {{stringify .Vars.Body.params.", agents.ClarificationAnswersParamKey,
+				agents.ClarificationAnswersParamKey, "\": {{stringify .Vars.OrgBody.params.", agents.ClarificationAnswersParamKey,
 				"}} - it renders as null on the calls where nothing was asked, which the agent ignores."),
 		})
 	})
@@ -234,7 +235,7 @@ func validateParamForwarding(steps map[string]*functions.FuncStep, allowedAgents
 				Template: template,
 				Err: fmt.Sprint("the caller set params.", name, " and agent \"", step.AgentName,
 					"\" reads it, but this step does not forward it - the agent would answer in a different shape than the caller asked for. ",
-					"Add it to the step's params: \"", name, "\": {{stringify .Vars.Body.params.", name, "}}"),
+					"Add it to the step's params: \"", name, "\": {{stringify .Vars.OrgBody.params.", name, "}}"),
 			})
 		}
 	})
@@ -283,7 +284,7 @@ func validateAgentStepPayload(ctx context.Context, stepPath string, step *functi
 			StepPath: stepPath,
 			Field:    "transform_request",
 			Err: fmt.Sprint("agent step has no transform_request - it is mandatory. Render the agent request body, e.g. ",
-				`"{{stringify (dict \"content\" .Vars.Body.content)}}"`),
+				`"{{stringify (dict \"content\" .Vars.OrgBody.content)}}"`),
 		}}
 	}
 	if !strings.Contains(template, `"content"`) {
@@ -451,14 +452,14 @@ func validateCodeRouting(ctx context.Context, steps map[string]*functions.FuncSt
 					StepPath: stepPath,
 					Field:    templateField.Name,
 					Template: templateField.Template,
-					Err:      "reads .Vars.Body.params.code but the request carried no code artifact - remove the code key from this step's params",
+					Err:      "reads .Vars.OrgBody.params.code but the request carried no code artifact - remove the code key from this step's params",
 				})
 			}
 			if fingerprint != "" && strings.Contains(normaliseForFingerprint(templateField.Template), fingerprint) {
 				issues = append(issues, planIssue{
 					StepPath: stepPath,
 					Field:    templateField.Name,
-					Err:      "the existing artifact from params.code is pasted into this template - pass it by reference instead, as (dict \"code\" .Vars.Body.params.code), and remove the pasted copy",
+					Err:      "the existing artifact from params.code is pasted into this template - pass it by reference instead, as (dict \"code\" .Vars.OrgBody.params.code), and remove the pasted copy",
 				})
 			}
 		}
@@ -468,6 +469,34 @@ func validateCodeRouting(ctx context.Context, steps map[string]*functions.FuncSt
 
 // templateReadsCodeParam reports whether a template feeds the caller's
 // params.code artifact into its step.
+func validateUserRequestRoot(steps map[string]*functions.FuncStep) []planIssue {
+	var issues []planIssue
+	walkSteps(steps, "", func(stepPath string, stepKey string, step *functions.FuncStep) {
+		if !readsStaleRequestRoot(step.TransformRequest) {
+			return
+		}
+		issues = append(issues, planIssue{
+			StepPath: stepPath,
+			Field:    "transform_request",
+			Template: step.TransformRequest,
+			Err: fmt.Sprint(staleRequestRoot, " is the body of whichever step ran before this one, not the caller's request - below or after the first step it resolves to that step's own body and the caller's params are silently gone. ",
+				"Read the caller's request as ", userRequestRoot, " instead: replace ", staleRequestRoot, " with ", userRequestRoot, " in this template."),
+		})
+	})
+	return issues
+}
+
+const staleRequestRoot = ".Vars.Body"
+
+func readsStaleRequestRoot(template string) bool {
+	for _, field := range []string{".content", ".params", ".files"} {
+		if strings.Contains(template, staleRequestRoot+field) {
+			return true
+		}
+	}
+	return false
+}
+
 func templateReadsCodeParam(ctx context.Context, stepPath string, templateField stepTemplateField) bool {
 	goTmpl := gotemplate.GoTemplate{Name: fmt.Sprint(stepPath, ".", templateField.Name), Template: templateField.Template}
 	refs, err := goTmpl.FieldReferences(ctx)
@@ -475,7 +504,7 @@ func templateReadsCodeParam(ctx context.Context, stepPath string, templateField 
 		return strings.Contains(templateField.Template, fmt.Sprint("params.", codeParamKey))
 	}
 	for _, ref := range refs {
-		if len(ref) >= 4 && ref[0] == "Vars" && ref[1] == "Body" && ref[2] == "params" && ref[3] == codeParamKey {
+		if len(ref) >= 4 && ref[0] == "Vars" && (ref[1] == "OrgBody" || ref[1] == "Body") && ref[2] == "params" && ref[3] == codeParamKey {
 			return true
 		}
 	}
@@ -801,7 +830,7 @@ func templateParseRemedy(templateString string) string {
 
 	remedies = append(remedies, "Do NOT retry the same nested \"{{stringify (dict ...)}}\" expression - rewriting it tends to mis-balance somewhere else. "+
 		"Write the request body as JSON instead, with {{...}} only where a value has to be interpolated. That is a valid template and there is nothing to balance:\n"+
-		`  "transform_request": "{\"content\": \"your instruction, with \\n for line breaks\", \"params\": {\"code\": {{stringify .Vars.Body.params.code}}}}"`+"\n"+
+		`  "transform_request": "{\"content\": \"your instruction, with \\n for line breaks\", \"params\": {\"code\": {{stringify .Vars.OrgBody.params.code}}}}"`+"\n"+
 		"Use the JSON form whenever the content is long, spans lines, or contains quotes.")
 
 	return "\n    " + strings.Join(remedies, "\n    ")

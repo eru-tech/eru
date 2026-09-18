@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+	"strings"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -192,7 +193,10 @@ type ProcessoTool struct {
 	// on the eru-ql tool. Left empty - the default - execute_query runs the query as given.
 	MandatoryVarsQuery     string `json:"mandatory_vars_query" desc:"query to fetch mandatory variables before running a stored query"`
 	MandatoryVarsTransform string `json:"mandatory_vars_transform" desc:"gotemplate to transform the mandatory variables query output"`
+	DbAlias                string `json:"db_alias" desc:"eru-ql database alias the borrowed query actions run and save against"`
 }
+
+const processoDefaultDbAlias = "pdb"
 
 const (
 	ProcessoSaveEntity                   = "save_entity"
@@ -505,9 +509,17 @@ func (processoTool *ProcessoTool) projectIdSegment() string {
 // and claims from the context, so a bare delegate carries everything the call needs.
 func (processoTool *ProcessoTool) eruqlDelegate() *EruqlTool {
 	return &EruqlTool{
+		DbAlias:                processoTool.eruqlDbAlias(),
 		MandatoryVarsQuery:     processoTool.MandatoryVarsQuery,
 		MandatoryVarsTransform: processoTool.MandatoryVarsTransform,
 	}
+}
+
+func (processoTool *ProcessoTool) eruqlDbAlias() string {
+	if alias := strings.TrimSpace(processoTool.DbAlias); alias != "" {
+		return alias
+	}
+	return processoDefaultDbAlias
 }
 
 func (processoTool *ProcessoTool) erufuncDelegate() *ErufunctionsTool {

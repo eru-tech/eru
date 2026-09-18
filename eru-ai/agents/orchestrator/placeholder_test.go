@@ -25,7 +25,7 @@ func TestPlaceholderPatternMatchesTheMarkersWeUse(t *testing.T) {
 		}
 	}
 	// Go template actions and ordinary prose are not placeholders.
-	for _, notMarker := range []string{"{{stringify .Vars.Body.content}}", "a {{ b }} c", "plain text"} {
+	for _, notMarker := range []string{"{{stringify .Vars.OrgBody.content}}", "a {{ b }} c", "plain text"} {
 		if placeholderPattern.MatchString(notMarker) {
 			t.Errorf("%q should not be taken for a placeholder", notMarker)
 		}

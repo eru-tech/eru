@@ -310,7 +310,7 @@ func TestSystemPromptTemplateVariables(t *testing.T) {
 	prompt := oa.GetSystemPrompt()
 
 	vars := []string{
-		".Vars.Body",
+		".Vars.OrgBody",
 		".ResVars.<step_key>.Body",
 		".ReqVars.<step_key>.Body",
 		"| stringify",

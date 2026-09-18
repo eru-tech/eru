@@ -18,13 +18,13 @@ func testPlan() map[string]interface{} {
 			"processo_generate_sql": map[string]interface{}{
 				"agent_name":        "processo_generate_sql",
 				"tenant_id":         "processo",
-				"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+				"transform_request": `{{stringify (dict "content" .Vars.OrgBody.content)}}`,
 				"func_steps": map[string]interface{}{
 					"eruql_processo_execute_sql": map[string]interface{}{
 						"tool_name":         "eruql_processo",
 						"tool_action":       "execute_sql",
 						"tenant_id":         "processo",
-						"condition":         `{{if .Vars.Body.content}}true{{else}}false{{end}}`,
+						"condition":         `{{if .Vars.OrgBody.content}}true{{else}}false{{end}}`,
 						"transform_request": `{{stringify (dict "params" (dict "query" "select 1"))}}`,
 						"func_steps": map[string]interface{}{
 							"eru_widget": map[string]interface{}{

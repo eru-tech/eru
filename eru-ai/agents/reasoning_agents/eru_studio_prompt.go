@@ -263,6 +263,12 @@ tile (rich KPI / metric tile):
   DATA SOURCE
   data_source ("page_data"|"query"|"static"; default "page_data"),
   entity_name (when data_source="page_data"), query (when data_source="query"),
+  A tile has NO way to pass variables to its own query - data_source="query" runs it with every variable empty,
+  which for a filtered query means no rows and a blank tile. A tile that has to show a FILTERED number is fed from
+  page state instead: put a call-query on the filter's Apply button (api_payload_fields carry the filter values),
+  land the rows in a state variable with set-from-payload, and point the tile at that variable - see STATE-BOUND
+  VALUES below. Keep data_source="query" only for a tile whose query takes no variables at all. Confirm the value
+  field with run_query before binding it.
 
   CONTENT (each *_field names a field/column; the matching *_path digs into it when it holds a JSON object/array)
   title, title_field, title_path, subtitle,
@@ -295,6 +301,15 @@ tile (rich KPI / metric tile):
   COLOUR
   color_rules (stringified JSON array, e.g. [{"min":0,"max":30,"bg":"#fee2e2","text":"#ef4444"}]),
   bg_color, text_color.
+
+  STATE-BOUND VALUES
+  Any *_field may name a page-state variable instead of a data field, by prefixing the state key with "state_":
+  a variable named "er_rows" is read as "state_er_rows". This works whatever data_source is set to, and the
+  matching *_path digs into the value, so one call-query result feeds several tiles:
+    "primary_value_field": "state_er_rows",   "primary_value_path": "0.latest_rate",
+    "secondary_value_field": "state_er_rows", "secondary_value_path": "0.period_change_pct"
+  (Note the doubled prefix when the variable is itself called state_*: state key "state_total" is "state_state_total".
+  Prefer plain variable names like "er_rows" to keep this readable.)
 
 timer:
   duration (seconds; default 300), display_format ("seconds"|"mm:ss"; default "seconds"), auto_start (bool).
@@ -961,6 +976,25 @@ Action-specific keys:
                                on_success[], on_error[], validate_before_action, validate_field_names[],
                                error_field, error_state_key.
   - call-query                 REQUIRES "query_name". Same optional keys as call-function.
+
+  api_payload_fields is how a call-function / call-query / page_ref passes VALUES to what it calls. Each entry is
+  a string "<source>:<path>[=<name>]":
+    source is "state" (page state), "app" (app state) or "page" (page data, e.g. "page:entity_data.fc").
+    path is the key inside that source - a page-state entry is "state:<the state_key>", written in full.
+    =<name> renames it to the parameter the target expects; without it the key is the LAST path segment.
+  Example - a filter bar in page state driving a query whose variables are fc, tc, dt_from, dt_to:
+    "api_payload_fields": ["state:state_from_currency=fc", "state:state_to_currency=tc",
+                           "state:state_date_from=dt_from", "state:state_date_to=dt_to"]
+  An entry with no "<source>:" prefix is DROPPED SILENTLY - "state_from_currency" on its own sends nothing, the
+  query runs with empty variables and returns no rows, and nothing reports an error. Always write the prefix.
+
+  The response is NOT a fixed shape - it differs per query and per source - so never guess the path into it or the
+  column names. Run the query with the run_query tool: it reports "result_path" (use it as the payload_path /
+  query_result_path) and "columns" (use them for tile *_field, chart dimensions/measures, grid fields), e.g.
+    on_success: [{ "action": "update-state", "state_key": "er_rows",
+                   "state_formula": { "fn": "set-from-payload", "payload_path": "<result_path from run_query>" } }]
+  A path or a column name that is wrong resolves to nothing rather than failing, so the page renders blank and
+  every call still reports success. run_query is the only thing that tells you which it is.
   - fetch-page-data            page_id, payload.
   - save-page-data             payload (optional).
   - set-page-data              Loads a record INTO the page. record_source ("event"|"state"|"app_state";

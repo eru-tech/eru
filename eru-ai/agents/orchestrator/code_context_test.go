@@ -37,7 +37,7 @@ func TestDescribeCodeParamClassifiesArtifacts(t *testing.T) {
 		{"eru page", `{"id":"p1","name":"page","components":[{"id":"c1"}]}`, "eru_page_json", []string{"components", "id", "name"}},
 		{"func group", `{"func_group_name":"g","func_steps":{}}`, "func_group_json", []string{"func_group_name", "func_steps"}},
 		{"sql", "  SELECT a, b FROM t WHERE x = 1", "sql", nil},
-		{"go template", `{{stringify (dict "content" .Vars.Body.content)}}`, "go_template", nil},
+		{"go template", `{{stringify (dict "content" .Vars.OrgBody.content)}}`, "go_template", nil},
 		{"json object", map[string]interface{}{"sql": "select 1"}, "json_object", []string{"sql"}},
 		{"json array", `[{"a":1}]`, "json_array", nil},
 		{"text", "just some notes", "text", nil},
@@ -76,7 +76,7 @@ func TestPromptSectionOnlyWhenPresent(t *testing.T) {
 	}
 	cc := describeCodeParam(map[string]interface{}{"code": `{"id":"p1","components":[]}`})
 	section := cc.promptSection(nil)
-	for _, want := range []string{"RULE #2c", "eru_page_json", ".Vars.Body.params.code", "Do NOT pass it to steps"} {
+	for _, want := range []string{"RULE #2c", "eru_page_json", ".Vars.OrgBody.params.code", "Do NOT pass it to steps"} {
 		if !strings.Contains(section, want) {
 			t.Errorf("prompt section missing %q :\n%s", want, section)
 		}
@@ -99,7 +99,7 @@ func TestPromptSectionHintsCandidateAgents(t *testing.T) {
 }
 
 func TestValidateCodeRoutingRejectsCodeRefWithoutCode(t *testing.T) {
-	plan := planWithTransformRequest(t, `{{stringify (dict "content" .Vars.Body.content "params" (dict "code" .Vars.Body.params.code))}}`)
+	plan := planWithTransformRequest(t, `{{stringify (dict "content" .Vars.OrgBody.content "params" (dict "code" .Vars.OrgBody.params.code))}}`)
 	issues := validatePlan(context.Background(), plan, nil, nil, codeContext{})
 	if len(issues) != 1 {
 		t.Fatalf("expected 1 issue, got %d : %v", len(issues), issues)
@@ -111,7 +111,7 @@ func TestValidateCodeRoutingRejectsCodeRefWithoutCode(t *testing.T) {
 
 func TestValidateCodeRoutingAcceptsCodeRefWhenCodePresent(t *testing.T) {
 	cc := describeCodeParam(map[string]interface{}{"code": `{"id":"p1","components":[{"id":"c1"}]}`})
-	plan := planWithTransformRequest(t, `{{stringify (dict "content" .Vars.Body.content "params" (dict "code" .Vars.Body.params.code))}}`)
+	plan := planWithTransformRequest(t, `{{stringify (dict "content" .Vars.OrgBody.content "params" (dict "code" .Vars.OrgBody.params.code))}}`)
 	if issues := validatePlan(context.Background(), plan, nil, nil, cc); len(issues) != 0 {
 		t.Fatalf("expected no issues, got %v", issues)
 	}
@@ -120,7 +120,7 @@ func TestValidateCodeRoutingAcceptsCodeRefWhenCodePresent(t *testing.T) {
 func TestValidateCodeRoutingRejectsPastedArtifact(t *testing.T) {
 	code := `{"id":"page-1","name":"outstanding","components":[{"id":"table-1","type":"table","properties":{"columns":["financier","amount"]}}]}`
 	cc := describeCodeParam(map[string]interface{}{"code": code})
-	pasted := `{{stringify (dict "content" .Vars.Body.content "params" (dict "code" ` + "`" + code + "`" + `))}}`
+	pasted := `{{stringify (dict "content" .Vars.OrgBody.content "params" (dict "code" ` + "`" + code + "`" + `))}}`
 	issues := validatePlan(context.Background(), planWithTransformRequest(t, pasted), nil, nil, cc)
 	if len(issues) != 1 {
 		t.Fatalf("expected 1 issue, got %d : %v", len(issues), issues)
@@ -139,7 +139,7 @@ func TestCodeRoutedSteps(t *testing.T) {
 		"func_steps": map[string]interface{}{
 			"generate_sql": map[string]interface{}{
 				"agent_name":        "generate_sql",
-				"transform_request": `{{stringify (dict "content" .Vars.Body.content "params" (dict "code" .Vars.Body.params.code))}}`,
+				"transform_request": `{{stringify (dict "content" .Vars.OrgBody.content "params" (dict "code" .Vars.OrgBody.params.code))}}`,
 				"func_steps": map[string]interface{}{
 					"summarizer": map[string]interface{}{
 						"agent_name":        "summarizer",

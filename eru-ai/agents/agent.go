@@ -698,12 +698,39 @@ func (agent *Agent) ExecuteAgentFunctionResumable(ctx context.Context, agentMess
 		err = logs.Err(ctx, fmt.Errorf("function %s failed with status %d : %s", agent.Function.FuncGroupName, response.StatusCode, string(responseBody)), "")
 		return nil, funcVarsMap, err
 	}
-	err = json.Unmarshal(responseBody, &responseContent)
+	responseContent, err = decodeFuncGroupResponse(responseBody)
 	if err != nil {
 		logs.WithContext(ctx).Error(err.Error())
 		return nil, nil, err
 	}
 	return responseContent, funcVarsMap, nil
+}
+
+// decodeFuncGroupResponse reads the body a FuncGroup answers with.
+//
+// One top-level step answers with that step's object; several answer with an
+// array of them, and decoding only the object shape failed the whole run on
+// "cannot unmarshal array" - a replan spent on a plan that had in fact just
+// succeeded. The per-step outputs the caller actually reads come from
+// funcVarsMap either way; this is the summary handed to synthesis.
+func decodeFuncGroupResponse(body []byte) (map[string]interface{}, error) {
+	var decoded interface{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, err
+	}
+	switch typed := decoded.(type) {
+	case map[string]interface{}:
+		return typed, nil
+	case []interface{}:
+		if len(typed) == 1 {
+			if only, ok := typed[0].(map[string]interface{}); ok {
+				return only, nil
+			}
+		}
+		return map[string]interface{}{"results": typed}, nil
+	default:
+		return map[string]interface{}{"result": decoded}, nil
+	}
 }
 func (agent *Agent) LoadConversations(ctx context.Context, conversationId string, agentMessage AgentMessage, projectId string, tenantId string) (chatRequest models.ChatRequest, conversation *Conversation, err error) {
 	conversation, err = agent.LoadConversationHistory(ctx, conversationId, projectId, tenantId)

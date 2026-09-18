@@ -32,7 +32,7 @@ func validateAttachmentRouting(funcGroup functions.FuncGroup, cc codeContext) []
 			return
 		}
 		for _, templateField := range stepTemplateFields(step) {
-			if strings.Contains(templateField.Template, ".Vars.Body.files") {
+			if strings.Contains(templateField.Template, userRequestRoot+".files") || strings.Contains(templateField.Template, staleRequestRoot+".files") {
 				forwarded = true
 				return
 			}

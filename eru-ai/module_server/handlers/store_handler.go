@@ -810,9 +810,25 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			writeSSE := func(event agents.StreamEvent) {
 				data, err := json.Marshal(event)
 				if err != nil {
+					logs.WithContext(r.Context()).Error(fmt.Sprint("stream event ", event.Event, " could not be encoded, sending an error in its place : ", err.Error()))
+					data, err = json.Marshal(agents.StreamEvent{
+						Event:    agents.StreamEventError,
+						Data:     fmt.Sprint("the ", event.Event, " payload could not be encoded for the stream : ", err.Error()),
+						Agent:    event.Agent,
+						Chain:    event.Chain,
+						RunId:    event.RunId,
+						ThreadId: event.ThreadId,
+						Seq:      event.Seq,
+					})
+					if err != nil {
+						logs.WithContext(r.Context()).Error(fmt.Sprint("stream error event could not be encoded either : ", err.Error()))
+						return
+					}
+				}
+				if _, err := fmt.Fprintf(w, "data: %s\n\n", string(data)); err != nil {
+					logs.WithContext(r.Context()).Error(fmt.Sprint("stream event ", event.Event, " could not be written to the client : ", err.Error()))
 					return
 				}
-				fmt.Fprintf(w, "data: %s\n\n", string(data))
 				if canFlush {
 					flusher.Flush()
 				}

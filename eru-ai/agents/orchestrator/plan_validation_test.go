@@ -60,7 +60,7 @@ func TestValidatePlanTemplatesNestedStepsAndUnknownFunc(t *testing.T) {
 		"func_steps": map[string]interface{}{
 			"generate_sql": map[string]interface{}{
 				"agent_name":        "generate_sql",
-				"transform_request": `{{stringify (dict "content" .Vars.Body.content)}}`,
+				"transform_request": `{{stringify (dict "content" .Vars.OrgBody.content)}}`,
 				"func_steps": map[string]interface{}{
 					"eruql_processo_execute_sql": map[string]interface{}{
 						"tool_name":         "eruql_processo",

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
@@ -38,7 +39,6 @@ type EruqlSaveQueryParams struct {
 	QueryType    string                 `json:"query_type" eru:"required" desc:"type of the query: sql or graphql"`
 	Query        string                 `json:"query" eru:"required" desc:"query content to save"`
 	Variables    map[string]interface{} `json:"variables" desc:"variables for the query" default:"{}"`
-	DbAlias      string                 `json:"db_alias" desc:"database alias (used for sql queries)"`
 	Cols         string                 `json:"cols" desc:"column specifications (used for sql queries)"`
 	Operation    string                 `json:"operation" desc:"GraphQL operation name (used for graphql queries)"`
 	SecurityRule map[string]interface{} `json:"security_rule" desc:"security rule for the query" default:"{}"`
@@ -543,7 +543,10 @@ func (eruqlTool *EruqlTool) SaveQuery(ctx context.Context, projectId string, ten
 		body["security_rule"] = saveParams.SecurityRule
 	}
 	if saveParams.QueryType == "sql" {
-		body["db_alias"] = saveParams.DbAlias
+		if strings.TrimSpace(eruqlTool.DbAlias) == "" {
+			return nil, nil, false, fmt.Errorf("cannot save sql query %q: this tool has no db_alias configured, and a query saved against the wrong alias cannot be executed", saveParams.QueryName)
+		}
+		body["db_alias"] = eruqlTool.DbAlias
 		body["cols"] = saveParams.Cols
 	} else {
 		body["operation"] = saveParams.Operation

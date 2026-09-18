@@ -130,7 +130,7 @@ func TestAPlanThatCannotDeliverAnAnswerIsInvalid(t *testing.T) {
 	}
 
 	forwarded := planWithTransform("eru_studio",
-		`{"content": "Build a business card page.", "params": {"clarification_answers": {{stringify .Vars.Body.params.clarification_answers}}}}`)
+		`{"content": "Build a business card page.", "params": {"clarification_answers": {{stringify .Vars.OrgBody.params.clarification_answers}}}}`)
 	if issues := validatePlan(context.Background(), forwarded, []agents.DiscoveredAgent{asker}, nil, codeContext{}); len(issues) > 0 {
 		t.Errorf("a plan that forwards the answer was rejected: %v", issues)
 	}
@@ -142,7 +142,7 @@ func TestAnAgentThatNeverAsksIsNotBurdened(t *testing.T) {
 		SupportsClarification: false,
 		InputSchema:           agents.AgentInputSchema(nil, nil),
 	}
-	plan := planWithTransform("processo_generate_sql", `{{stringify (dict "content" .Vars.Body.content)}}`)
+	plan := planWithTransform("processo_generate_sql", `{{stringify (dict "content" .Vars.OrgBody.content)}}`)
 	if issues := validatePlan(context.Background(), plan, []agents.DiscoveredAgent{quiet}, nil, codeContext{}); len(issues) > 0 {
 		t.Errorf("an agent that cannot ask was required to forward answers: %v", issues)
 	}
@@ -203,7 +203,7 @@ func TestForwardingTheAnswerSatisfiesEveryRuleAtOnce(t *testing.T) {
 	// The form the planner actually emits - stringify over a dict, which is the
 	// form whose params keys the validator can read.
 	plan := planWithTransform("eru_studio",
-		`{{stringify (dict "content" "Build a business card page." "params" (dict "clarification_answers" .Vars.Body.params.clarification_answers))}}`)
+		`{{stringify (dict "content" "Build a business card page." "params" (dict "clarification_answers" .Vars.OrgBody.params.clarification_answers))}}`)
 
 	issues := validatePlan(context.Background(), plan, []agents.DiscoveredAgent{theStudioAgent()}, nil, codeContext{})
 	for _, issue := range issues {

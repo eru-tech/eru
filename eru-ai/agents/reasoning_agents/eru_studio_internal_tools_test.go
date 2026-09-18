@@ -69,7 +69,7 @@ func TestNothingHasToBeAttachedForTheLookupsToAppear(t *testing.T) {
 	ctx := studio.WithPageScope(context.Background(), studio.PageScope{OrgProcessId: "org_process_1"})
 	offered := agent.ExtraTools(ctx)
 
-	want := []string{utility.ComponentSpecToolName, utility.EntityMetadataToolName, utility.GetPageToolName, utility.ListPagesToolName}
+	want := []string{utility.ComponentSpecToolName, utility.EntityMetadataToolName, utility.GetPageToolName, utility.ListPagesToolName, utility.RunQueryToolName}
 	if got := toolNames(offered); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("offered %v, want %v", got, want)
 	}
@@ -107,7 +107,7 @@ func TestTheComponentLookupIsAlwaysThereAndTheRestDegrade(t *testing.T) {
 	if strings.Contains(prompt, utility.EntityMetadataToolName) {
 		t.Error("the prompt mentions get_entity_metadata when the tool is absent")
 	}
-	if strings.Contains(prompt, "WHEN THE USER POINTS AT ANOTHER PAGE") {
+	if strings.Contains(prompt, "EVERY PAGE IN THIS WORKSPACE IS READABLE") {
 		t.Error("the prompt teaches page references when the lookups are absent")
 	}
 }
@@ -130,7 +130,7 @@ func TestOnlyWhatTheTenantHasIsOffered(t *testing.T) {
 	}
 
 	prompt := agent.GetSystemPrompt()
-	if !strings.Contains(prompt, "WHEN THE USER POINTS AT ANOTHER PAGE") {
+	if !strings.Contains(prompt, "EVERY PAGE IN THIS WORKSPACE IS READABLE") {
 		t.Error("the page-reference guidance is missing although the lookup exists")
 	}
 	if strings.Contains(prompt, "FIELD NAMES AND LABELS COME FROM") {

@@ -18,10 +18,10 @@ func funcGroupFrom(t *testing.T, raw string) functions.FuncGroup {
 }
 
 const planWithoutFiles = `{"func_steps":{"build":{"agent_name":"eru_studio",
-  "transform_request":"{{stringify (dict \"content\" .Vars.Body.content)}}"}}}`
+  "transform_request":"{{stringify (dict \"content\" .Vars.OrgBody.content)}}"}}}`
 
 const planWithFiles = `{"func_steps":{"build":{"agent_name":"eru_studio",
-  "transform_request":"{{stringify (dict \"content\" .Vars.Body.content \"files\" .Vars.Body.files)}}"}}}`
+  "transform_request":"{{stringify (dict \"content\" .Vars.OrgBody.content \"files\" .Vars.OrgBody.files)}}"}}}`
 
 func TestAnAttachmentNoStepReceivesIsAPlanDefect(t *testing.T) {
 	issues := validateAttachmentRouting(funcGroupFrom(t, planWithoutFiles), codeContext{
@@ -58,7 +58,7 @@ func TestNothingIsRequiredWhenNothingWasAttached(t *testing.T) {
 func TestOneOfSeveralStepsIsEnough(t *testing.T) {
 	plan := funcGroupFrom(t, `{"func_steps":{
 	  "lookup":{"agent_name":"processo_sql","transform_request":"{{stringify (dict \"content\" \"find the entity\")}}"},
-	  "build":{"agent_name":"eru_studio","transform_request":"{{stringify (dict \"content\" .Vars.Body.content \"files\" .Vars.Body.files)}}"}}}`)
+	  "build":{"agent_name":"eru_studio","transform_request":"{{stringify (dict \"content\" .Vars.OrgBody.content \"files\" .Vars.OrgBody.files)}}"}}}`)
 	if issues := validateAttachmentRouting(plan, codeContext{Attachments: []string{"a.png"}}); len(issues) != 0 {
 		t.Fatalf("every step was expected to carry the file, when one is the point: %+v", issues)
 	}

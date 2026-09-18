@@ -206,7 +206,7 @@ RULE #2c - INCOMING params.code : ROUTE IT, DO NOT BROADCAST IT
 ============================================================
 
 The caller sent an EXISTING structured output (produced by an earlier run) in the
-request payload. It is available to every step as .Vars.Body.params.code, but NO
+request payload. It is available to every step as .Vars.OrgBody.params.code, but NO
 step receives it unless your transform_request passes it explicitly.
 
 What was sent:
@@ -253,18 +253,18 @@ Only an agent whose "Params keys this agent READS" line includes "code" can rece
 it. Passing params.code to any other agent silently discards it.
 
 HOW TO PASS IT (by reference - never paste the artifact into the template):
-  "transform_request": "{{stringify (dict \"content\" .Vars.Body.content \"params\" (dict \"code\" .Vars.Body.params.code))}}"
+  "transform_request": "{{stringify (dict \"content\" .Vars.OrgBody.content \"params\" (dict \"code\" .Vars.OrgBody.params.code))}}"
 
 Combined with fetched data for the same step (Rule #2b), both keys go in one params dict:
-  "transform_request": "{{stringify (dict \"content\" .Vars.Body.content \"params\" (dict \"code\" .Vars.Body.params.code \"context\" (stringify .ResVars.<data_step>.Body)))}}"
+  "transform_request": "{{stringify (dict \"content\" .Vars.OrgBody.content \"params\" (dict \"code\" .Vars.OrgBody.params.code \"context\" (stringify .ResVars.<data_step>.Body)))}}"
 
 WRONG:
   pasting the artifact's text/JSON literally into transform_request  -> bloats the plan, breaks the template on quotes
   adding params.code to every step                                  -> information overload, wasted tokens
-  "params" (dict "code" .Vars.Body.content)                          -> that is the user's instruction, not the artifact
+  "params" (dict "code" .Vars.OrgBody.content)                          -> that is the user's instruction, not the artifact
 
 CHECKLIST ADDITION:
-[ ] params.code is passed - by .Vars.Body.params.code reference - only to the step(s) that revise the artifact described above, and to no other step`)
+[ ] params.code is passed - by .Vars.OrgBody.params.code reference - only to the step(s) that revise the artifact described above, and to no other step`)
 	return sb.String()
 }
 
@@ -290,7 +290,7 @@ drops one of these silently answers in a protocol the caller did not ask for.
 	sb.WriteString("For EVERY agent step whose agent declares one of these params (check \"Params keys this agent READS\"),\n")
 	sb.WriteString("pass the caller's value straight through:\n")
 	for _, name := range cc.ForwardParams {
-		sb.WriteString(fmt.Sprint("  \"", name, "\": {{stringify .Vars.Body.params.", name, "}}\n"))
+		sb.WriteString(fmt.Sprint("  \"", name, "\": {{stringify .Vars.OrgBody.params.", name, "}}\n"))
 	}
 	sb.WriteString("\nAn agent that does not declare the param simply does not get it - never invent a value,\n")
 	sb.WriteString("and never substitute your own: forward exactly what the caller sent.\n")

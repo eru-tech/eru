@@ -37,6 +37,8 @@ import (
 
 const stepRequestKey = "request"
 
+const userRequestRoot = ".Vars.OrgBody"
+
 // compileStepRequests rewrites every `request` in a plan into the
 // `transform_request` the executor runs. It reports what it could not compile in
 // the same form as plan validation, so a bad reference comes back to the model
@@ -257,27 +259,27 @@ func referenceExpression(reference string) (string, error) {
 	reference = strings.TrimSpace(reference)
 	switch {
 	case reference == "user.content":
-		return ".Vars.Body.content", nil
+		return userRequestRoot + ".content", nil
 	case strings.HasPrefix(reference, "user.params."):
 		key := strings.TrimPrefix(reference, "user.params.")
 		if key == "" || strings.Contains(key, " ") {
 			return "", fmt.Errorf("%q does not name a param", reference)
 		}
-		return ".Vars.Body.params." + key, nil
+		return userRequestRoot + ".params." + key, nil
 	case reference == "user.params":
-		return ".Vars.Body.params", nil
+		return userRequestRoot + ".params", nil
 	case reference == "user.files":
 		// The attachments the user sent with this message. They already sit in
 		// the request body alongside content and params; what was missing was
 		// any way for a plan to name them, which left the orchestrator able to
 		// see an attached image and unable to hand it on.
-		return ".Vars.Body.files", nil
+		return userRequestRoot + ".files", nil
 	case strings.HasPrefix(reference, "user.files."):
 		index := strings.TrimPrefix(reference, "user.files.")
 		if !isIndex(index) {
 			return "", fmt.Errorf("%q does not name an attachment - use \"user.files\" for all of them, or \"user.files.0\" for the first", reference)
 		}
-		return "(index .Vars.Body.files " + index + ")", nil
+		return "(index " + userRequestRoot + ".files " + index + ")", nil
 	default:
 		step, field, found := strings.Cut(reference, ".")
 		if !found || step == "" || field == "" {

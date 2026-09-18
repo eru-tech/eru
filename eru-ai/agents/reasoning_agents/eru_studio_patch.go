@@ -258,6 +258,60 @@ func eruStudioModeInstructions(mode string) string {
 	}
 }
 
+// fullAnswerDropsPage catches a whole-page answer that is not the whole page.
+//
+// "full" means "here is the complete page", and the client applies it verbatim -
+// so an answer that silently leaves most of the page out does not fail, it
+// deletes. That is what happened on a request to ADD one tile: the answer came
+// back as mode "full" carrying a single component, and applying it wiped a
+// 24-component dashboard off the canvas. Every component in it was individually
+// valid, so nothing else in this file had a reason to object.
+//
+// A genuine "replace the whole layout" still rebuilds a page of comparable size,
+// so the test is proportional rather than exact: keep most of what you were
+// given, or say mode "patch".
+func fullAnswerDropsPage(basePage map[string]interface{}, page map[string]interface{}) *catalog.Issue {
+	baseIds := studio.ComponentIds(basePage)
+	if len(baseIds) < minComponentsToGuard {
+		return nil
+	}
+	kept := map[string]bool{}
+	for _, id := range studio.ComponentIds(page) {
+		kept[id] = true
+	}
+	dropped := make([]string, 0, len(baseIds))
+	for _, id := range baseIds {
+		if !kept[id] {
+			dropped = append(dropped, id)
+		}
+	}
+	if len(dropped)*2 <= len(baseIds) {
+		return nil
+	}
+	named := dropped
+	if len(named) > maxNamedDroppedComponents {
+		named = named[:maxNamedDroppedComponents]
+	}
+	return &catalog.Issue{
+		Path: "page",
+		Code: catalog.CodeEnvelopeFullDropsPage,
+		Message: fmt.Sprint(
+			"mode is \"full\", which replaces the whole page, but this answer drops ", len(dropped),
+			" of the ", len(baseIds), " components you were given - including ", strings.Join(named, ", "),
+			". A full answer must carry the COMPLETE page: everything you were given, plus your change. ",
+			"If you only meant to change part of it, answer with mode \"patch\" instead - that is the normal case for an edit.",
+		),
+	}
+}
+
+// minComponentsToGuard keeps the check off pages small enough that a rewrite is
+// plausibly the whole job.
+const minComponentsToGuard = 4
+
+// maxNamedDroppedComponents is how many ids go in the message: enough for the
+// model to recognise what it lost, not the whole page again.
+const maxNamedDroppedComponents = 8
+
 // autoModeInstructions is the note for a client that reads the envelope and left
 // the choice to the agent. It has to say both halves out loud, because the two
 // are easy to conflate: whether this answer is a patch or a whole page, and
@@ -268,7 +322,10 @@ This client reads the page-update envelope, so you choose the shape of this answ
 - You were given an existing page: set "mode" to "patch" and send only what changed, following the
   patch rules. That is the normal case for an edit.
 - You were NOT given a page, or the prompt replaces the whole layout: set "mode" to "full" and put
-  the complete EruPage in "page".
+  the complete EruPage in "page". "full" REPLACES what the user has: every component you leave out
+  is deleted from their page. So a full answer repeats the entire page you were given - all of it,
+  not just the part you touched - plus your change. If repeating it is not what you meant, the
+  answer is "patch".
 - EITHER WAY you may return nested pages in "pages". Building a page from scratch does not restrict
   you to one page: a repeatable row still needs its template page, a side panel is still its own
   page, a board card is still its own page. Create them, give each a fresh id, mount each from the
@@ -554,6 +611,9 @@ func validateStudioUpdate(ctx context.Context, output map[string]interface{}, ba
 		// tabs lose the property that maps them to their panels, and the page
 		// the user gets back is worse than the one they had.
 		if len(basePage) > 0 {
+			if gutted := fullAnswerDropsPage(basePage, page); gutted != nil {
+				issues = append(issues, *gutted)
+			}
 			return append(issues, introducedPageIssues(ctx, c, basePage, page)...)
 		}
 		return append(issues, pageIssuesIn(ctx, c, page)...)
