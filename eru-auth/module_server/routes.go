@@ -1,8 +1,11 @@
 package module_server
 
 import (
+	"fmt"
 	"net/http"
 
+	"github.com/eru-tech/eru/eru-auth/auth"
+	"github.com/eru-tech/eru/eru-auth/module_model"
 	module_handlers "github.com/eru-tech/eru/eru-auth/module_server/handlers"
 	"github.com/eru-tech/eru/eru-auth/module_store"
 	server_handlers "github.com/eru-tech/eru/eru-server/server/handlers"
@@ -20,6 +23,28 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	//serverRouter.Path("/auth/openid/login").HandlerFunc(module_handlers.OpenIdLoginHandler(sh.Store))
 	//serverRouter.Path("/auth/openid/callback").HandlerFunc(module_handlers.OpenIdCallbackHandler(sh.Store))
 	//serverRouter.Path("/auth/openid/getloginflow/{loginchallenge}").HandlerFunc(module_handlers.GetLoginFlowHandlerandler(sh.Store))
+	// OAuth 2.0 protected resource metadata (RFC 9728). An MCP client reads this from the root
+	// of the host serving the MCP endpoint, so it is registered ahead of the /{project} subrouter
+	// and takes the project from the header the gateway listener rule adds.
+	oauthResourceHandler := module_handlers.OAuthProtectedResourceHandler(sh)
+	serverRouter.Methods(http.MethodGet).Path(module_model.McpWellKnownPath).HandlerFunc(oauthResourceHandler)
+	serverRouter.Methods(http.MethodGet).PathPrefix(fmt.Sprint(module_model.McpWellKnownPath, "/")).HandlerFunc(oauthResourceHandler)
+
+	// Authorization server discovery (RFC 8414) and dynamic client registration (RFC 7591). Both are
+	// read from the root of the issuer, so they sit beside the resource metadata rather than under
+	// /{project}, and resolve the auth from the listener rule headers.
+	asMetadataHandler := module_handlers.AuthorizationServerMetadataHandler(sh)
+	serverRouter.Methods(http.MethodGet).Path(auth.AuthorizationServerWellKnownPath).HandlerFunc(asMetadataHandler)
+	serverRouter.Methods(http.MethodGet).Path(auth.OpenIdWellKnownPath).HandlerFunc(asMetadataHandler)
+	serverRouter.Methods(http.MethodPost).Path(auth.OAuthRegisterPath).HandlerFunc(module_handlers.RegisterOAuthClientHandler(sh))
+
+	// Interactive leg of the authorization code grant. The authorization server redirects the
+	// browser here, so these must stay public in the listener rule's authorizer exception.
+	serverRouter.Methods(http.MethodGet).Path(auth.OAuthLoginPath).HandlerFunc(module_handlers.LoginPageHandler(sh))
+	serverRouter.Methods(http.MethodPost).Path(auth.OAuthLoginPath).HandlerFunc(module_handlers.LoginSubmitHandler(sh))
+	serverRouter.Methods(http.MethodGet).Path(auth.OAuthConsentPath).HandlerFunc(module_handlers.ConsentPageHandler(sh))
+	serverRouter.Methods(http.MethodPost).Path(auth.OAuthConsentPath).HandlerFunc(module_handlers.ConsentSubmitHandler(sh))
+
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 	storeRouter.Methods(http.MethodGet).Path("/load").HandlerFunc(module_handlers.StoreLoadHandler(sh))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/compare").HandlerFunc(module_handlers.StoreCompareHandler(sh))
@@ -35,6 +60,9 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove/messagetemplate/{templatename}").HandlerFunc(module_handlers.MessageTemplateRemoveHandler(sh))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save/gateway/{gatewaytype}/{channel}").HandlerFunc(module_handlers.GatewaySaveHandler(sh))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove/gateway/{gatewayname}/{gatewaytype}/{channel}").HandlerFunc(module_handlers.GatewayRemoveHandler(sh))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/{authname}/save/oauthclient").HandlerFunc(module_handlers.OAuthClientSaveHandler(sh))
+	storeRouter.Methods(http.MethodGet).Path("/{project}/{authname}/oauthclient/{clientid}").HandlerFunc(module_handlers.OAuthClientGetHandler(sh))
+	storeRouter.Methods(http.MethodDelete).Path("/{project}/{authname}/remove/oauthclient/{clientid}").HandlerFunc(module_handlers.OAuthClientRemoveHandler(sh))
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save/auth").HandlerFunc(module_handlers.AuthSaveHandler(sh))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove/auth/{authname}").HandlerFunc(module_handlers.AuthRemoveHandler(sh))
 

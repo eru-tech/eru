@@ -634,12 +634,11 @@ func convertTools(ctx context.Context, toolsMap map[string]tools.Tooling) ([]ant
 	var sdkTools []anthropic.ToolUnionParam
 	var toolPrompt string
 
-	for _, tool := range toolsMap {
-		toolNameI, _ := tool.GetAttribute(ctx, "tool_name")
+	for toolKey, tool := range toolsMap {
 		toolDescI, _ := tool.GetAttribute(ctx, "description")
 		toolSysPromptI, _ := tool.GetAttribute(ctx, "system_prompt")
 
-		toolName := toolNameI.(string)
+		toolName := ToolNameForModel(ctx, toolKey, tool)
 		toolDesc := toolDescI.(string)
 		toolParams := tool.GetParameters()
 		toolSysPrompt := toolSysPromptI.(string)

@@ -70,17 +70,12 @@ func convertGeminiTools(ctx context.Context, toolsMap map[string]tools.Tooling) 
 	var declarations []GeminiFunctionDeclaration
 	toolPrompt := ""
 
-	for _, tool := range toolsMap {
+	for toolKey, tool := range toolsMap {
 		if tool == nil {
 			continue
 		}
-		toolNameAttr, err := tool.GetAttribute(ctx, "tool_name")
-		if err != nil {
-			logs.WithContext(ctx).Error(err.Error())
-			continue
-		}
-		toolName, ok := toolNameAttr.(string)
-		if !ok || toolName == "" {
+		toolName := ToolNameForModel(ctx, toolKey, tool)
+		if toolName == "" {
 			continue
 		}
 

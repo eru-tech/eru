@@ -11,6 +11,7 @@ import (
 	"github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/go-cmp/cmp"
+	"net/http"
 	"strings"
 )
 
@@ -45,6 +46,48 @@ type ProjectSettings struct {
 	ClaimsKey string `json:"claims_key" eru:"required"`
 	KidKey    string `json:"kid_key" eru:"required"`
 }
+
+// OAuthProtectedResource is the OAuth 2.0 protected resource metadata (RFC 9728) an MCP client
+// reads to find out which authorization server guards the MCP endpoint.
+type OAuthProtectedResource struct {
+	Resource               string   `json:"resource"`
+	AuthorizationServers   []string `json:"authorization_servers"`
+	ScopesSupported        []string `json:"scopes_supported,omitempty"`
+	BearerMethodsSupported []string `json:"bearer_methods_supported"`
+	ResourceName           string   `json:"resource_name,omitempty"`
+}
+
+const (
+	McpWellKnownPath   = "/.well-known/oauth-protected-resource"
+	defaultMcpResource = "/mcp"
+)
+
+var McpScopesSupported = []string{"openid", "offline_access"}
+
+// McpResourceUrl rebuilds the MCP endpoint the metadata describes from the url the caller hit.
+// The path after McpWellKnownPath is the resource path RFC 9728 inserts, so a request for
+// /.well-known/oauth-protected-resource/mcp describes <base url>/mcp. The gateway forwards the
+// host it was addressed on in X-Forwarded-Host, since it overwrites Host with the internal
+// target before proxying.
+func McpResourceUrl(r *http.Request) string {
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	scheme := r.Header.Get("X-Forwarded-Proto")
+	if scheme == "" {
+		scheme = "https"
+		if r.TLS == nil {
+			scheme = "http"
+		}
+	}
+	resourcePath := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, McpWellKnownPath), "/")
+	if resourcePath == "" {
+		resourcePath = defaultMcpResource
+	}
+	return fmt.Sprint(scheme, "://", host, resourcePath)
+}
+
 type ApiToken struct {
 	TokenId     string `json:"kid"`
 	IdentityId  string `json:"user_id"`

@@ -13,6 +13,7 @@ import (
 	"github.com/eru-tech/eru/eru-gateway/module_model"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	"github.com/eru-tech/eru/eru-secret-manager/sm"
+	"github.com/eru-tech/eru/eru-server/server"
 	"github.com/eru-tech/eru/eru-store/store"
 	utils "github.com/eru-tech/eru/eru-utils"
 	"github.com/google/go-cmp/cmp"
@@ -176,6 +177,12 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(ctx context.Context, r *http.Req
 						//do nothing
 					}
 				}
+				// The auth this rule is guarded by travels with the request, so a service can resolve
+				// its own auth config without the rule repeating it in add_headers. It is stamped even
+				// on the exception path, where the request is not authorized but still belongs to the
+				// same auth, and it is always overwritten so a caller cannot supply its own.
+				ms.setAuthNameHeader(ctx, r, v.AuthorizerName)
+
 				if pathExceptionFound || v.AuthorizerName == "" {
 					return v.TargetHosts[0], module_model.Authorizer{}, v.AddHeaders, instanceId, nil
 				} else {
@@ -188,10 +195,26 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(ctx context.Context, r *http.Req
 			}
 		}
 	}
+	r.Header.Del(server.AuthNameHeaderKey)
 	err := errors.New(fmt.Sprint("Listener Rule not found for request host = ", r.Host, " and path = ", r.URL))
 	logs.WithContext(ctx).Error(err.Error())
 	//TODO add_headers
 	return module_model.TargetHost{}, module_model.Authorizer{}, nil, instanceId, err
+}
+
+// setAuthNameHeader stamps the auth behind the listener rule's authorizer onto the request. The
+// authorizer may name the auth explicitly through AuthName; otherwise the authorizer name is taken
+// to be the auth name, which is the existing convention.
+func (ms *ModuleStore) setAuthNameHeader(ctx context.Context, r *http.Request, authorizerName string) {
+	r.Header.Del(server.AuthNameHeaderKey)
+	if authorizerName == "" {
+		return
+	}
+	authName := authorizerName
+	if authorizer, err := ms.GetAuthorizer(ctx, authorizerName); err == nil && authorizer.AuthName != "" {
+		authName = authorizer.AuthName
+	}
+	r.Header.Set(server.AuthNameHeaderKey, authName)
 }
 
 func (ms *ModuleStore) GetListenerRule(ctx context.Context, listenerRuleName string) (*module_model.ListenerRule, error) {

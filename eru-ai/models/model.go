@@ -11,6 +11,32 @@ import (
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 )
 
+// ToolNameForModel is the name a tool is presented to an LLM under.
+//
+// It is the key of the agent's tool map - the AgentTools entry's tool_key - and
+// not the tool's own name. One physical tool attached under several actions
+// appears in the map once per action, and every one of those answers
+// GetAttribute("tool_name") with the same string. Presented that way the
+// provider rejects the request outright ("tool names must be unique"), and if it
+// did not, every call would resolve to whichever action happened to be first -
+// a silent wrong write rather than an error.
+//
+// The map key is already unique, and the agent's tool executor resolves the
+// model's chosen name back through the same key. An agent that sets no tool_key
+// keeps its old name, because the key falls back to the tool name when the map
+// is built.
+func ToolNameForModel(ctx context.Context, key string, tool tools.Tooling) string {
+	if key != "" {
+		return key
+	}
+	if nameI, err := tool.GetAttribute(ctx, "tool_name"); err == nil {
+		if name, ok := nameI.(string); ok {
+			return name
+		}
+	}
+	return ""
+}
+
 type StepTrace struct {
 	Iteration  int                    `json:"iteration"`
 	Thinking   string                 `json:"thinking,omitempty"`

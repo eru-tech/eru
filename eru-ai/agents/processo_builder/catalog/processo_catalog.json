@@ -1,0 +1,689 @@
+{
+  "catalog_version": "1.0",
+  "source": {
+    "repo": "processo",
+    "app_path": "projects/processo/src/app",
+    "files": [
+      "projects/processo/src/app/components/data-model/data-model.component.ts",
+      "projects/processo/src/app/components/field-editor/field-editor.component.ts"
+    ],
+    "fingerprint": "1a1baecfe62d48a511d7b83689a8ec94"
+  },
+  "note": "Required-ness is not described here. It is enforced by the Go param structs in eru-ai/tools/eru/processo.go (eru:\"required\" + ValidateStruct), which are the only thing that rejects a bad payload.",
+  "entity": {
+    "name_pattern": "/^[a-zA-Z][a-zA-Z0-9_]*$/",
+    "form_controls": [
+      {
+        "key": "name",
+        "default": "",
+        "required": true
+      },
+      {
+        "key": "label",
+        "default": "",
+        "required": true
+      },
+      {
+        "key": "description",
+        "default": ""
+      },
+      {
+        "key": "icon",
+        "default": "person"
+      },
+      {
+        "key": "is_people",
+        "default": false
+      },
+      {
+        "key": "allow_single_entry",
+        "default": false
+      },
+      {
+        "key": "allow_import",
+        "default": false
+      },
+      {
+        "key": "is_nested",
+        "default": false
+      },
+      {
+        "key": "g_name",
+        "default": ""
+      },
+      {
+        "key": "gd_name",
+        "default": ""
+      }
+    ],
+    "system_field_names": [
+      "bu_file_id_xx",
+      "bu_file_name_xx",
+      "bu_file_uploaded_by_xx",
+      "error",
+      "rcd_crdt_xx",
+      "rcd_crdttm_xx",
+      "rcd_crtm_xx",
+      "rcd_onr_xx",
+      "rcd_updt_xx",
+      "rcd_updttm_xx",
+      "rcd_uptm_xx"
+    ],
+    "datatype_only_keys_note": "save_entity takes the COMPLETE entity list and replaces it; save_tabs does the same for an entity's tabs."
+  },
+  "field": {
+    "name_pattern": "/^[a-z_][a-z_]*$/",
+    "common_keys": [
+      "can_edit",
+      "can_group",
+      "datatype",
+      "default",
+      "default_group",
+      "description",
+      "editable",
+      "grid_index",
+      "is_ephi",
+      "is_hidden",
+      "is_pf",
+      "is_pii",
+      "is_unique",
+      "label",
+      "mandatory",
+      "name",
+      "show_grid",
+      "show_mobile",
+      "tab_name",
+      "tf_idx",
+      "to_encrypt",
+      "tool_tip",
+      "unique_fn",
+      "unq_sa"
+    ],
+    "conditional_keys": [
+      "allow_days",
+      "ce",
+      "cef",
+      "cefa",
+      "dfc",
+      "option_type"
+    ],
+    "per_datatype": {
+      "attachment": [
+        "default",
+        "folder_name",
+        "storage_name"
+      ],
+      "phone": [
+        "default"
+      ],
+      "rm": [
+        "default"
+      ],
+      "textbox": [
+        "data_length",
+        "data_length_check",
+        "default",
+        "rich_text"
+      ],
+      "textarea": [
+        "data_length",
+        "data_length_check",
+        "default",
+        "rich_text"
+      ],
+      "number": [
+        "decimal",
+        "default",
+        "display_number_as",
+        "dynamic_number",
+        "num_val",
+        "num_val_check",
+        "seperator"
+      ],
+      "currency": [
+        "decimal",
+        "default",
+        "display_number_as",
+        "dynamic_number",
+        "num_val",
+        "num_val_check",
+        "seperator",
+        "symbol",
+        "symbol_field"
+      ],
+      "progress": [
+        "color_ranges",
+        "default",
+        "end_value",
+        "is_perc",
+        "start_value"
+      ],
+      "date": [
+        "allow_days",
+        "date_format",
+        "default",
+        "default_value_offset_days"
+      ],
+      "datetime": [
+        "allow_days",
+        "date_format",
+        "default"
+      ],
+      "rating": [
+        "default",
+        "emoji_value",
+        "end_value",
+        "start_value"
+      ],
+      "tag": [
+        "default",
+        "options"
+      ],
+      "priority": [
+        "default",
+        "options"
+      ],
+      "status": [
+        "close_status",
+        "default",
+        "open_status"
+      ],
+      "people": [
+        "api_field",
+        "default",
+        "multiple"
+      ],
+      "email": [
+        "default",
+        "ssv_api",
+        "system_validate"
+      ],
+      "website": [
+        "default",
+        "hypl_nm",
+        "is_hyp"
+      ],
+      "location": [
+        "default"
+      ],
+      "checkbox": [
+        "default",
+        "value_false",
+        "value_true"
+      ],
+      "time": [
+        "default"
+      ],
+      "dropdown_single_select": [
+        "api_field",
+        "api_name",
+        "def",
+        "default",
+        "df_fields",
+        "dpef",
+        "entity_name",
+        "field_name",
+        "option_type",
+        "options"
+      ],
+      "dropdown_multi_select": [
+        "api_field",
+        "api_name",
+        "def",
+        "default",
+        "df_fields",
+        "dpef",
+        "entity_name",
+        "field_name",
+        "option_type",
+        "options"
+      ],
+      "object_single_select": [
+        "nested_entity",
+        "nested_fields"
+      ],
+      "object_multi_select": [
+        "nested_entity",
+        "nested_fields"
+      ],
+      "duration": []
+    },
+    "per_datatype_not_offered": [
+      "rm"
+    ],
+    "enums": {
+      "optionTypeMap": {
+        "STATIC": "STATIC",
+        "ENTITY": "ENTITY_DATA",
+        "API": "API"
+      }
+    },
+    "form_controls": [
+      {
+        "key": "name",
+        "default": "",
+        "required": true
+      },
+      {
+        "key": "label",
+        "default": "",
+        "required": true
+      },
+      {
+        "key": "type",
+        "default": "attachment",
+        "required": true
+      },
+      {
+        "key": "nestedEntity",
+        "default": ""
+      },
+      {
+        "key": "updateNestedEntityFieldToggle",
+        "default": false
+      },
+      {
+        "key": "description",
+        "default": ""
+      },
+      {
+        "key": "dropdownSource",
+        "default": "STATIC"
+      },
+      {
+        "key": "dropdownOptions",
+        "default": ""
+      },
+      {
+        "key": "dropdownDefaultValue",
+        "default": ""
+      },
+      {
+        "key": "independentDefaultValue",
+        "default": ""
+      },
+      {
+        "key": "entityDropdownDefaultValue",
+        "default": ""
+      },
+      {
+        "key": "apiDropdownDefaultValue",
+        "default": ""
+      },
+      {
+        "key": "entity",
+        "default": ""
+      },
+      {
+        "key": "entityField",
+        "default": ""
+      },
+      {
+        "key": "isDependent",
+        "default": false
+      },
+      {
+        "key": "dependentField",
+        "default": ""
+      },
+      {
+        "key": "parentEntityField",
+        "default": ""
+      },
+      {
+        "key": "dependentFieldPairs"
+      },
+      {
+        "key": "api",
+        "default": ""
+      },
+      {
+        "key": "apiField",
+        "default": ""
+      },
+      {
+        "key": "isApiDependent",
+        "default": false
+      },
+      {
+        "key": "apiDependentField",
+        "default": ""
+      },
+      {
+        "key": "apiName",
+        "default": ""
+      },
+      {
+        "key": "fieldName",
+        "default": ""
+      },
+      {
+        "key": "peopleDefaultValue"
+      },
+      {
+        "key": "startValue",
+        "default": 0
+      },
+      {
+        "key": "endValue",
+        "default": 100
+      },
+      {
+        "key": "progressDefaultValue",
+        "default": ""
+      },
+      {
+        "key": "showPercentage",
+        "default": true
+      },
+      {
+        "key": "dataLength",
+        "default": ""
+      },
+      {
+        "key": "dataLengthCheck",
+        "default": null
+      },
+      {
+        "key": "dateFormat",
+        "default": "dd-MM-yyyy"
+      },
+      {
+        "key": "dateValue",
+        "default": ""
+      },
+      {
+        "key": "dateTimeFormat",
+        "default": "dd-MM-yyyy hh:mm:ss"
+      },
+      {
+        "key": "dateTimeValue",
+        "default": ""
+      },
+      {
+        "key": "decimal",
+        "default": "0"
+      },
+      {
+        "key": "decimalSeparator",
+        "default": "none"
+      },
+      {
+        "key": "numberValue",
+        "default": ""
+      },
+      {
+        "key": "numberValueCheck",
+        "default": ""
+      },
+      {
+        "key": "symbol",
+        "default": ""
+      },
+      {
+        "key": "storageName",
+        "default": ""
+      },
+      {
+        "key": "folderName",
+        "default": ""
+      },
+      {
+        "key": "defaultValue",
+        "default": "false"
+      },
+      {
+        "key": "useDefaultValue",
+        "default": false
+      },
+      {
+        "key": "defaultStatus",
+        "default": ""
+      },
+      {
+        "key": "defaultPriority",
+        "default": ""
+      },
+      {
+        "key": "defaultTag",
+        "default": ""
+      },
+      {
+        "key": "priorityFilter",
+        "default": false
+      },
+      {
+        "key": "isMandatory",
+        "default": false
+      },
+      {
+        "key": "isHidden",
+        "default": false
+      },
+      {
+        "key": "isUnique",
+        "default": false
+      },
+      {
+        "key": "standaloneUnique",
+        "default": false
+      },
+      {
+        "key": "showGrid",
+        "default": false
+      },
+      {
+        "key": "canEdit",
+        "default": true
+      },
+      {
+        "key": "canGroup",
+        "default": false
+      },
+      {
+        "key": "defaultGroup",
+        "default": false
+      },
+      {
+        "key": "richText",
+        "default": false
+      },
+      {
+        "key": "hyperLink",
+        "default": false
+      },
+      {
+        "key": "hyperLinkName",
+        "default": ""
+      },
+      {
+        "key": "childentity",
+        "default": ""
+      },
+      {
+        "key": "childfield",
+        "default": ""
+      },
+      {
+        "key": "derivedFromChild",
+        "default": false
+      },
+      {
+        "key": "editable",
+        "default": false
+      },
+      {
+        "key": "aggregation",
+        "default": "min"
+      },
+      {
+        "key": "showMobile",
+        "default": false
+      },
+      {
+        "key": "systemValidate",
+        "default": false
+      },
+      {
+        "key": "ratingEmoji",
+        "default": "star"
+      },
+      {
+        "key": "ratingCount",
+        "default": 1
+      },
+      {
+        "key": "ratingStart",
+        "default": 1
+      },
+      {
+        "key": "allowMultiple",
+        "default": true
+      },
+      {
+        "key": "valueTrue",
+        "default": ""
+      },
+      {
+        "key": "valueFalse",
+        "default": ""
+      },
+      {
+        "key": "dynamicNumber",
+        "default": false
+      },
+      {
+        "key": "displayNumberAs",
+        "default": "mn"
+      },
+      {
+        "key": "symbolField",
+        "default": ""
+      },
+      {
+        "key": "dateOffsetDays",
+        "default": null
+      },
+      {
+        "key": "tab",
+        "default": "",
+        "required": true
+      },
+      {
+        "key": "toolTip",
+        "default": ""
+      },
+      {
+        "key": "pii",
+        "default": false
+      },
+      {
+        "key": "encrypt",
+        "default": false
+      },
+      {
+        "key": "ephi",
+        "default": false
+      }
+    ]
+  },
+  "datatypes": [
+    {
+      "value": "attachment",
+      "label": "Attachment"
+    },
+    {
+      "value": "checkbox",
+      "label": "Checkbox"
+    },
+    {
+      "value": "currency",
+      "label": "Currency"
+    },
+    {
+      "value": "date",
+      "label": "Date"
+    },
+    {
+      "value": "datetime",
+      "label": "Date Time"
+    },
+    {
+      "value": "duration",
+      "label": "Duration"
+    },
+    {
+      "value": "dropdown_single_select",
+      "label": "Dropdown"
+    },
+    {
+      "value": "dropdown_multi_select",
+      "label": "Dropdown (Multi)"
+    },
+    {
+      "value": "email",
+      "label": "Email"
+    },
+    {
+      "value": "location",
+      "label": "Location"
+    },
+    {
+      "value": "number",
+      "label": "Number"
+    },
+    {
+      "value": "object_single_select",
+      "label": "Object"
+    },
+    {
+      "value": "object_multi_select",
+      "label": "Object (Multi)"
+    },
+    {
+      "value": "people",
+      "label": "People"
+    },
+    {
+      "value": "phone",
+      "label": "Phone"
+    },
+    {
+      "value": "priority",
+      "label": "Priority"
+    },
+    {
+      "value": "progress",
+      "label": "Progress"
+    },
+    {
+      "value": "rating",
+      "label": "Rating"
+    },
+    {
+      "value": "status",
+      "label": "Status"
+    },
+    {
+      "value": "tag",
+      "label": "Tag"
+    },
+    {
+      "value": "textarea",
+      "label": "Text area"
+    },
+    {
+      "value": "textbox",
+      "label": "Textbox"
+    },
+    {
+      "value": "time",
+      "label": "Time"
+    },
+    {
+      "value": "website",
+      "label": "Website (url)"
+    }
+  ],
+  "extraction_warnings": []
+}

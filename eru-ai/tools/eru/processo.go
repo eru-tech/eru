@@ -35,6 +35,23 @@ type ProcessoSaveEntityParams struct {
 	EntityData  []ProcessoEntityData `json:"entity_data" eru:"required" desc:"list of entities metadata to add or edit"`
 }
 
+type ProcessoRemoveEntityParams struct {
+	OrgId      string `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId  string `json:"process_id" eru:"required" desc:"process id"`
+	EntityName string `json:"entity_name" eru:"required" desc:"name of the entity to remove - this deletes the entity and its records and cannot be undone"`
+}
+
+type ProcessoGetEntityFieldDataParams struct {
+	OrgId       string `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId   string `json:"process_id" eru:"required" desc:"process id"`
+	ProcessName string `json:"process_name" eru:"required" desc:"name of the process"`
+	EntityName  string `json:"entity_name" eru:"required" desc:"entity holding the field whose values are wanted"`
+	FieldName   string `json:"field_name" eru:"required" desc:"field whose distinct values are wanted"`
+	Limit       int    `json:"limit" desc:"maximum number of values to return - defaults to 50"`
+	Skip        int    `json:"skip" desc:"number of values to skip, for paging"`
+	FieldStr    string `json:"field_str" desc:"filter the values by this text"`
+}
+
 type ProcessoFieldOption struct {
 	OptionName string `json:"name" eru:"required" desc:"option value shown to the user"`
 }
@@ -200,6 +217,8 @@ const processoDefaultDbAlias = "pdb"
 
 const (
 	ProcessoSaveEntity                   = "save_entity"
+	ProcessoRemoveEntity                 = "remove_entity"
+	ProcessoGetEntityFieldData           = "get_entity_field_data"
 	ProcessoSaveField                    = "save_field"
 	ProcessoSaveEntityData               = "save_entity_data"
 	ProcessoDeleteEntityData             = "delete_entity_data"
@@ -265,6 +284,26 @@ var processoOwnActions = []tools.ToolAction{
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
 			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoSaveEntityParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoRemoveEntity,
+		Description:  "allows user to delete an entity and every record in it - this cannot be undone",
+		SystemPrompt: "This tool DELETES an entity of a process under processo, along with its records. Pass org_id, process_id and entity_name. This cannot be undone - confirm with the user, naming the entity and what it holds, before calling it.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoRemoveEntityParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoGetEntityFieldData,
+		Description:  "returns the distinct values already stored in one field of an entity",
+		SystemPrompt: "This tool reads the distinct values held in one field of an entity under processo. Pass org_id, process_id, process_name, entity_name and field_name, with limit and skip to page and field_str to filter. Use it to see what a field actually contains before deciding how to configure or bind it.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoGetEntityFieldDataParams{}), []string{})
 		},
 	},
 	{
@@ -547,6 +586,10 @@ func (processoTool *ProcessoTool) Execute(ctx context.Context, projectId string,
 	switch scopedAction.BaseName {
 	case ProcessoSaveEntity:
 		toolResult, toolRequest, persistStore, err = processoTool.SaveEntity(ctx, projectId, tenantId, params)
+	case ProcessoRemoveEntity:
+		toolResult, toolRequest, persistStore, err = processoTool.RemoveEntity(ctx, projectId, tenantId, params)
+	case ProcessoGetEntityFieldData:
+		toolResult, toolRequest, persistStore, err = processoTool.GetEntityFieldData(ctx, projectId, tenantId, params)
 	case ProcessoSaveField:
 		toolResult, toolRequest, persistStore, err = processoTool.SaveField(ctx, projectId, tenantId, params)
 	case ProcessoSaveEntityData:
@@ -658,6 +701,71 @@ func (processoTool *ProcessoTool) SaveEntity(ctx context.Context, projectId stri
 	}
 	toolResult = map[string]interface{}{"result": res}
 	return toolResult, body, true, nil
+}
+
+func (processoTool *ProcessoTool) RemoveEntity(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool RemoveEntity - Start")
+	p := ProcessoRemoveEntityParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	if p.EntityName == "" {
+		return nil, nil, false, errors.New("entity_name is mandatory")
+	}
+	baseUrl, err := processoTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/remove_user_process_entity")
+	body := map[string]interface{}{
+		"org_id":      p.OrgId,
+		"process_id":  p.ProcessId,
+		"entity_name": p.EntityName,
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, true, nil
+}
+
+func (processoTool *ProcessoTool) GetEntityFieldData(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool GetEntityFieldData - Start")
+	p := ProcessoGetEntityFieldDataParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	if p.EntityName == "" || p.FieldName == "" {
+		return nil, nil, false, errors.New("entity_name and field_name are mandatory")
+	}
+	if p.Limit <= 0 {
+		p.Limit = 50
+	}
+	baseUrl, err := processoTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/getentityfielddata")
+	body := map[string]interface{}{
+		"org_id":       p.OrgId,
+		"process_id":   p.ProcessId,
+		"process_name": p.ProcessName,
+		"entity_name":  p.EntityName,
+		"field_name":   p.FieldName,
+		"limit":        p.Limit,
+		"skip":         p.Skip,
+		"field_str":    p.FieldStr,
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	// A read, so nothing on the tool changed and nothing needs persisting.
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, false, nil
 }
 
 const (

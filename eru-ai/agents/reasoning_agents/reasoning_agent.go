@@ -177,6 +177,25 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	}
 
 	toolExecutor := func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error) {
+		// Resolve by the key the model was actually shown, which is the entry's
+		// tool_key. Matching on the tool's own name instead would run the first
+		// entry that shares it - so an agent holding one tool under several
+		// actions would call save_entity no matter which action the model picked.
+		for _, at := range ra.AgentTools {
+			if at.Tool == nil {
+				continue
+			}
+			key := at.ToolKey
+			if key == "" {
+				key = at.ToolName
+			}
+			if key == toolName {
+				result, _, execErr := at.Tool.Execute(ctx, projectId, tenantId, at.ActionName, input)
+				return result, execErr
+			}
+		}
+		// An agent configured before tool_key was meaningful still names its tools
+		// by the tool's own name.
 		for _, at := range ra.AgentTools {
 			if at.Tool == nil {
 				continue

@@ -70,7 +70,7 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 		}
 		logs.WithContext(r.Context()).Info(fmt.Sprint("authorizer.AuthorizerName = ", authorizer.AuthorizerName))
 		if authorizer.AuthorizerName != "" {
-			accessToken := r.Header.Get(authorizer.TokenHeaderKey)
+			accessToken := authorizer.RequestToken(r)
 			idToken := r.Header.Get(authorizer.IdTokenKey)
 			token := ""
 			if idToken != "" {
@@ -80,8 +80,7 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 			}
 			if token == "" || accessToken == "" {
 				logs.WithContext(r.Context()).Info("token = \"\"")
-				server_handlers.FormatResponse(w, http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
+				respondUnauthorized(w, r, "", "Unauthorized Request")
 				logs.WithContext(r.Context()).Info(fmt.Sprint(http.StatusUnauthorized))
 				return
 			}
@@ -89,32 +88,36 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 			accessClaims, err := authorizer.VerifyToken(r.Context(), accessToken, r.Header.Get(authorizer.KidHeaderKey))
 			if err != nil {
 				logs.WithContext(r.Context()).Error("access token verification failed")
-				server_handlers.FormatResponse(w, http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				respondUnauthorized(w, r, "invalid_token", err.Error())
 				return
 			}
 			accessClaimsMap, accessClaimsMapOk := accessClaims.(map[string]interface{})
 			if !accessClaimsMapOk {
 				logs.WithContext(r.Context()).Error("access token is not a map")
 				logs.WithContext(r.Context()).Error(err.Error())
-				server_handlers.FormatResponse(w, http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				respondUnauthorized(w, r, "invalid_token", err.Error())
 				return
 			}
+			// A valid signature only says who minted the token, not that it was minted for this
+			// resource. Audience and scope are what separate a token meant for us from any other
+			// token the same authorization server issued.
+			if err = authorizer.VerifyClaimsRestrictions(r.Context(), accessClaimsMap); err != nil {
+				respondUnauthorized(w, r, "invalid_token", err.Error())
+				return
+			}
+
 			accessSub, accessSubOk := accessClaimsMap["sub"]
 			if !accessSubOk {
 				err = fmt.Errorf("access token sub is not set")
 				logs.WithContext(r.Context()).Error(err.Error())
-				server_handlers.FormatResponse(w, http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				respondUnauthorized(w, r, "invalid_token", err.Error())
 				return
 			}
 
 			claims, err := authorizer.VerifyToken(r.Context(), token, r.Header.Get(authorizer.KidHeaderKey))
 			if err != nil {
 				logs.WithContext(r.Context()).Error("id token verification failed")
-				server_handlers.FormatResponse(w, http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				respondUnauthorized(w, r, "invalid_token", err.Error())
 				return
 			}
 
@@ -122,24 +125,21 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 			if !claimsMapOk {
 				logs.WithContext(r.Context()).Error("id token is not a map")
 				logs.WithContext(r.Context()).Error(err.Error())
-				server_handlers.FormatResponse(w, http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				respondUnauthorized(w, r, "invalid_token", err.Error())
 				return
 			}
 			idSub, idSubOk := claimsMap["sub"]
 			if !idSubOk {
 				err = fmt.Errorf("id token sub is not set")
 				logs.WithContext(r.Context()).Error(err.Error())
-				server_handlers.FormatResponse(w, http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				respondUnauthorized(w, r, "invalid_token", err.Error())
 				return
 			}
 
 			if idSub.(string) != accessSub.(string) {
 				err = fmt.Errorf("sub mismatch")
 				logs.WithContext(r.Context()).Error(err.Error())
-				server_handlers.FormatResponse(w, http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				respondUnauthorized(w, r, "invalid_token", err.Error())
 				return
 			}
 
@@ -152,18 +152,22 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 			claimsBytes, err := json.Marshal(claims)
 			if err != nil {
 				logs.WithContext(r.Context()).Error(err.Error())
-				server_handlers.FormatResponse(w, http.StatusUnauthorized)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				respondUnauthorized(w, r, "invalid_token", err.Error())
 				return
 			}
 			r.Header.Set(utils.ClaimsHeaderKey, string(claimsBytes))
 
 			if authorizer.KidHeaderKey == "" {
-				valid := authorizer.VerifyAccessToken(r.Context(), accessToken)
-				if !valid {
+				// An opaque token carries no readable claims, so the audience and scope have to come
+				// back from introspection rather than from the token itself.
+				introspectedClaims, introspectErr := authorizer.IntrospectAccessToken(r.Context(), accessToken)
+				if introspectErr != nil {
 					logs.WithContext(r.Context()).Info("invalid access token")
-					server_handlers.FormatResponse(w, http.StatusUnauthorized)
-					_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized Request"})
+					respondUnauthorized(w, r, "invalid_token", "Unauthorized Request")
+					return
+				}
+				if err = authorizer.VerifyClaimsRestrictions(r.Context(), introspectedClaims); err != nil {
+					respondUnauthorized(w, r, "invalid_token", err.Error())
 					return
 				}
 			}
@@ -197,6 +201,19 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 				headerValue = v.Value
 			}
 			r.Header.Set(v.Key, headerValue)
+		}
+
+		// Record the host and scheme the gateway was addressed on before they are swapped for the
+		// target, so a service can rebuild the public url it was reached through.
+		if r.Header.Get("X-Forwarded-Host") == "" {
+			r.Header.Set("X-Forwarded-Host", r.Host)
+		}
+		if r.Header.Get("X-Forwarded-Proto") == "" {
+			scheme := "http"
+			if r.TLS != nil {
+				scheme = "https"
+			}
+			r.Header.Set("X-Forwarded-Proto", scheme)
 		}
 
 		port := ""
@@ -328,4 +345,22 @@ func RouteHandler(sh *module_store.StoreHolder, rh *RegistryHandler) http.Handle
 }
 func extractHostUrl(request *http.Request) (string, string) {
 	return strings.Split(request.Host, ":")[0], request.URL.Path
+}
+
+func authChallenge(r *http.Request, oauthError string) string {
+	scheme := "https"
+	if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" {
+		scheme = "http"
+	}
+	challenge := fmt.Sprintf(`Bearer resource_metadata="%s://%s/.well-known/oauth-protected-resource"`, scheme, r.Host)
+	if oauthError != "" {
+		challenge = fmt.Sprint(challenge, `, error="`, oauthError, `"`)
+	}
+	return challenge
+}
+
+func respondUnauthorized(w http.ResponseWriter, r *http.Request, oauthError string, errMsg string) {
+	w.Header().Set("WWW-Authenticate", authChallenge(r, oauthError))
+	server_handlers.FormatResponse(w, http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": errMsg})
 }

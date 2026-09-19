@@ -19,6 +19,8 @@ func GetAgent(agentType string) agents.AgentI {
 		return new(reasoning_agents.EruFuncAgent)
 	case "ERU_STUDIO":
 		return new(reasoning_agents.EruStudioAgent)
+	case "PROCESSO_BUILDER":
+		return new(reasoning_agents.ProcessoBuilderAgent)
 	case "REASONING":
 		return new(reasoning_agents.ReasoningAgent)
 	case "ORCHESTRATOR":

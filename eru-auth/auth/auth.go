@@ -36,6 +36,11 @@ type AuthI interface {
 	Logout(ctx context.Context, req *http.Request) (res interface{}, resStatusCode int, err error)
 	VerifyToken(ctx context.Context, tokenType string, token string) (res interface{}, err error)
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
+	OAuthServer(ctx context.Context) OAuthServerConfig
+	OAuthIssuer(ctx context.Context) string
+	ClientRegistry(ctx context.Context) (ClientRegistryI, error)
+	AuthorizationServerMetadata(ctx context.Context) (OAuthServerMetadata, error)
+	AuthorizationFlow(ctx context.Context) (AuthorizationFlowI, error)
 	GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error)
 	FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error)
 	GetTokens(ctx context.Context, code string) (res interface{}, err error)
@@ -150,15 +155,16 @@ type IdentityAuth struct {
 }
 
 type Auth struct {
-	AuthType       string        `json:"auth_type"`
-	AuthName       string        `json:"auth_name"`
-	TokenHeaderKey string        `json:"token_header_key"`
-	Hooks          AuthHooks     `json:"hooks" eru:"optional"`
-	AuthDb         AuthDbI       `json:"-"`
-	PKCE           bool          `json:"pkce"`
-	Hydra          HydraConfig   `json:"hydra" eru:"required"`
-	KmsId          string        `json:"key_id"`
-	KmsKey         kms.KmsStoreI `json:"-"`
+	AuthType          string            `json:"auth_type"`
+	AuthName          string            `json:"auth_name"`
+	TokenHeaderKey    string            `json:"token_header_key"`
+	Hooks             AuthHooks         `json:"hooks" eru:"optional"`
+	AuthDb            AuthDbI           `json:"-"`
+	PKCE              bool              `json:"pkce"`
+	Hydra             HydraConfig       `json:"hydra" eru:"required"`
+	OAuthServerConfig OAuthServerConfig `json:"oauth_server"`
+	KmsId             string            `json:"key_id"`
+	KmsKey            kms.KmsStoreI     `json:"-"`
 }
 
 type AuthHooks struct {
@@ -386,6 +392,12 @@ func (auth *Auth) GetAttribute(ctx context.Context, attributeName string) (attri
 		return auth.PKCE, nil
 	case "key_id":
 		return auth.KmsId, nil
+	case "hydra_public_url":
+		return auth.Hydra.GetPublicUrl(), nil
+	case "oauth_issuer":
+		return auth.OAuthIssuer(ctx), nil
+	case "oauth_server":
+		return auth.OAuthServerConfig, nil
 	default:
 		err := errors.New("Attribute not found")
 		logs.WithContext(ctx).Error(err.Error())

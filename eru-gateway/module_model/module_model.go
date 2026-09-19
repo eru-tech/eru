@@ -29,6 +29,7 @@ type ModuleProjectI interface {
 
 type Authorizer struct {
 	AuthorizerName string   `json:"authorizer_name"`
+	AuthName       string   `json:"auth_name"`
 	TokenHeaderKey string   `json:"token_header_key"`
 	KidHeaderKey   string   `json:"kid_header_key"`
 	SecretAlgo     string   `json:"secret_algo"`
@@ -39,6 +40,8 @@ type Authorizer struct {
 	TokenJwkUrl    string   `json:"token_jwk_url"`
 	Audience       []string `json:"audience"`
 	Issuer         []string `json:"issuer"`
+	VerifyClaims   bool     `json:"verify_claims"`
+	RequiredScope  []string `json:"required_scope"`
 	AccessTokenUrl string   `json:"access_token_url"`
 	IdTokenKey     string   `json:"id_token_key"`
 }
@@ -84,6 +87,146 @@ type TargetHost struct {
 }
 type ProjectSettings struct {
 	ClaimsKey string `json:"claims_key" eru:"required"`
+}
+
+// RequestToken reads the access token the caller presented. The configured header wins, so a
+// deployment that sends its own header is unaffected. An Authorization: Bearer header is only read
+// when that header is absent - which is how an oauth client that knows nothing of eru's header
+// names presents a token, and which today is simply a 401.
+func (authorizer Authorizer) RequestToken(r *http.Request) string {
+	if token := r.Header.Get(authorizer.TokenHeaderKey); token != "" {
+		return token
+	}
+	return BearerToken(r)
+}
+
+// BearerToken reads an RFC 6750 bearer token off the Authorization header.
+func BearerToken(r *http.Request) string {
+	authorization := r.Header.Get("Authorization")
+	const bearerPrefix = "bearer "
+	if len(authorization) <= len(bearerPrefix) || !strings.EqualFold(authorization[:len(bearerPrefix)], bearerPrefix) {
+		return ""
+	}
+	return strings.TrimSpace(authorization[len(bearerPrefix):])
+}
+
+// VerifyClaimsRestrictions enforces the audience, issuer and scope the authorizer was configured
+// with. A token that is merely signed by the right key is not thereby meant for this resource:
+// without an audience check, any token the same authorization server ever minted is accepted here.
+//
+// Audience and issuer are gated behind VerifyClaims because both fields have been accepted in
+// config for a long time without ever being read. Enforcing them silently would start rejecting
+// tokens that work today. RequiredScope is new, so it is enforced whenever it is set.
+func (authorizer Authorizer) VerifyClaimsRestrictions(ctx context.Context, claims map[string]interface{}) error {
+	if authorizer.VerifyClaims {
+		if len(authorizer.Audience) > 0 && !claimMatchesAny(claims["aud"], authorizer.Audience) {
+			err := fmt.Errorf("token audience is not accepted by this authorizer")
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+		if len(authorizer.Issuer) > 0 && !claimMatchesAny(claims["iss"], authorizer.Issuer) {
+			err := fmt.Errorf("token issuer is not accepted by this authorizer")
+			logs.WithContext(ctx).Error(err.Error())
+			return err
+		}
+	}
+	if len(authorizer.RequiredScope) > 0 {
+		grantedScope := claimScopes(claims)
+		for _, requiredScope := range authorizer.RequiredScope {
+			if !claimContains(grantedScope, requiredScope) {
+				err := fmt.Errorf("token is missing the required scope : %s", requiredScope)
+				logs.WithContext(ctx).Error(err.Error())
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// IntrospectAccessToken returns what the authorization server says about an opaque token. An
+// inactive token yields an error rather than empty claims, so a caller cannot mistake one for the
+// other.
+func (authorizer Authorizer) IntrospectAccessToken(ctx context.Context, accessToken string) (map[string]interface{}, error) {
+	logs.WithContext(ctx).Debug("IntrospectAccessToken - Start")
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/x-www-form-urlencoded")
+	postBody := make(map[string]string)
+	postBody["token"] = accessToken
+	introspectRes, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, authorizer.AccessTokenUrl, headers, postBody, nil, nil, nil)
+	if err != nil {
+		return nil, logs.Err(ctx, err, "")
+	}
+	resMap, resMapOk := introspectRes.(map[string]interface{})
+	if !resMapOk {
+		err = fmt.Errorf("token introspection response is not a map")
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+	active, activeOk := resMap["active"].(bool)
+	if !activeOk || !active {
+		err = fmt.Errorf("token is not active")
+		logs.WithContext(ctx).Info(err.Error())
+		return nil, err
+	}
+	return resMap, nil
+}
+
+// claimMatchesAny reports whether a claim that may be a string or a list of strings overlaps the
+// accepted values.
+func claimMatchesAny(claim interface{}, accepted []string) bool {
+	switch claimValue := claim.(type) {
+	case string:
+		return claimContains(accepted, claimValue)
+	case []interface{}:
+		for _, value := range claimValue {
+			if valueStr, ok := value.(string); ok && claimContains(accepted, valueStr) {
+				return true
+			}
+		}
+	case []string:
+		for _, value := range claimValue {
+			if claimContains(accepted, value) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// claimScopes reads the granted scopes, which arrive space delimited in scope or as a list in scp
+// depending on the authorization server.
+func claimScopes(claims map[string]interface{}) []string {
+	switch scopeClaim := claims["scope"].(type) {
+	case string:
+		return strings.Fields(scopeClaim)
+	case []interface{}:
+		var scopes []string
+		for _, value := range scopeClaim {
+			if valueStr, ok := value.(string); ok {
+				scopes = append(scopes, valueStr)
+			}
+		}
+		return scopes
+	}
+	if scpClaim, scpClaimOk := claims["scp"].([]interface{}); scpClaimOk {
+		var scopes []string
+		for _, value := range scpClaim {
+			if valueStr, ok := value.(string); ok {
+				scopes = append(scopes, valueStr)
+			}
+		}
+		return scopes
+	}
+	return nil
+}
+
+func claimContains(values []string, value string) bool {
+	for _, v := range values {
+		if v == value {
+			return true
+		}
+	}
+	return false
 }
 
 func (authorizer Authorizer) VerifyAccessToken(ctx context.Context, accessToken string) (valid bool) {

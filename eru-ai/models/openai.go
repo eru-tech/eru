@@ -655,12 +655,11 @@ func (openaiModel *OpenAIModel) makeOpenAIChatToolRequest(ctx context.Context, c
 
 	var openAIRequestTools []OpenAIRequestTools
 	toolPrompt := ""
-	for _, tool := range tools {
-		toolNameI, _ := tool.GetAttribute(ctx, "tool_name")
+	for toolKey, tool := range tools {
 		toolDescriptionI, _ := tool.GetAttribute(ctx, "description")
 		//toolParametersI, _ := tool.GetAttribute(ctx, "parameters")
 		toolSystemPromptI, _ := tool.GetAttribute(ctx, "system_prompt")
-		toolName := toolNameI.(string)
+		toolName := ToolNameForModel(ctx, toolKey, tool)
 		toolDescription := toolDescriptionI.(string)
 		//toolParameters := toolParametersI.(eru_models.JSONSchema)
 
@@ -970,11 +969,10 @@ func (openaiModel *OpenAIModel) supportsDimensions() bool {
 func convertOpenAITools(ctx context.Context, toolsMap map[string]tools.Tooling) ([]OpenAIRequestTools, string) {
 	var openAIRequestTools []OpenAIRequestTools
 	toolPrompt := ""
-	for _, tool := range toolsMap {
-		toolNameI, _ := tool.GetAttribute(ctx, "tool_name")
+	for toolKey, tool := range toolsMap {
 		toolDescriptionI, _ := tool.GetAttribute(ctx, "description")
 		toolSystemPromptI, _ := tool.GetAttribute(ctx, "system_prompt")
-		toolName := toolNameI.(string)
+		toolName := ToolNameForModel(ctx, toolKey, tool)
 		toolDescription := toolDescriptionI.(string)
 		toolParameters := tool.GetParameters()
 
@@ -1140,12 +1138,11 @@ func (openaiModel *OpenAIModel) queryModelResponsesWithTool(ctx context.Context,
 	var openAIResponsesRequestText OpenAIResponsesRequestText
 	var openAIRequestTools []OpenAIRequestTools
 	toolPrompt := ""
-	for _, tool := range tools {
+	for toolKey, tool := range tools {
 		toolType, _ := tool.GetAttribute(ctx, "tool_type")
-		toolNameI, _ := tool.GetAttribute(ctx, "tool_name")
 		toolDescriptionI, _ := tool.GetAttribute(ctx, "description")
 		toolSystemPromptI, _ := tool.GetAttribute(ctx, "system_prompt")
-		toolName := toolNameI.(string)
+		toolName := ToolNameForModel(ctx, toolKey, tool)
 		toolDescription := toolDescriptionI.(string)
 		toolParameters := tool.GetParameters()
 

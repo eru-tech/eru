@@ -424,6 +424,36 @@ func JWKHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	}
 }
 
+func OAuthProtectedResourceHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("OAuthProtectedResourceHandler - Start")
+		authObj, err := authFromRequest(sh, r)
+		if err != nil {
+			server_handlers.FormatResponse(w, 404)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		issuer := authObj.OAuthIssuer(r.Context())
+		if issuer == "" {
+			err = fmt.Errorf("no oauth issuer resolved - set oauth_server.issuer or the hydra public url")
+			logs.WithContext(r.Context()).Error(err.Error())
+			server_handlers.FormatResponse(w, 404)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(module_model.OAuthProtectedResource{
+			Resource:               module_model.McpResourceUrl(r),
+			AuthorizationServers:   []string{issuer},
+			ScopesSupported:        authObj.OAuthServer(r.Context()).Scopes(),
+			BearerMethodsSupported: []string{"header"},
+		})
+	}
+}
+
 func ApiTokenListHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 

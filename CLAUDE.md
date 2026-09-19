@@ -294,3 +294,13 @@ Services include OpenTelemetry tracing integration. Set `TRACE_URL` environment 
 
 - Removed references to `eru-channels` and `eru-alerts`
 - Note: Internal services like `eru-store`, `eru-logs`, and `eru-crypto` are for internal use
+
+## Architecture Reference
+
+- `docs/AGENT_PLATFORM.md` — how agents and tools work in eru-ai, how eru-ql/eru-functions/
+  eru-files/processo are exposed as tools, how the orchestrator plans over eru-functions,
+  how agents and tools reach the outside world (HTTP/SSE, MCP, A2A), and the pattern for
+  building a specialized agent. Read it before touching `eru-ai/agents/` or `eru-ai/tools/`.
+- `eru-ai/docs/human-in-the-loop.md` — the clarification pause/resume protocol.
+- The processo application layer that sits on these services is documented in the Angular
+  repo at `processo/docs/PROCESSO_PLATFORM.md`.
