@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	catalog "github.com/eru-tech/eru/eru-ai/agents/processo_builder/catalog"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	logs "github.com/eru-tech/eru/eru-logs/eru-logs"
 	eru_models "github.com/eru-tech/eru/eru-models"
@@ -19,20 +20,129 @@ import (
 
 type ProcessoEntityData struct {
 	Name        string `json:"name" eru:"required" desc:"unique name of the entity"`
-	Index       int    `json:"index" desc:"display order index of the entity"`
-	IsPeople    string `json:"is_people" desc:"whether the entity represents people - \"true\" or \"false\""`
+	Index       int    `json:"index" desc:"display order position. Leave it out when creating - the entity goes to the end. Setting it on an edit moves the entity"`
+	IsPeople    string `json:"is_people" enum:"true,false" desc:"whether the entity represents people - \"true\" or \"false\""`
 	DisplayName string `json:"display_name" desc:"display name of the entity"`
 	Description string `json:"description" desc:"description of what the entity stores"`
-	HideEntity  string `json:"hide_entity" desc:"whether the entity is hidden - \"true\" or \"false\""`
+	HideEntity  string `json:"hide_entity" enum:"true,false" desc:"whether the entity is hidden - \"true\" or \"false\""`
 	IsConv      bool   `json:"is_conv" desc:"whether the entity is a conversation entity"`
-	Exet        bool   `json:"exet" desc:"whether the entity is an external entity"`
+	Exet        bool   `json:"exet" eru:"required" desc:"whether this entity ALREADY EXISTS. false creates it and builds its table; true edits the existing one. Getting this wrong on a new entity registers it with no table behind it"`
 }
 
 type ProcessoSaveEntityParams struct {
 	OrgId       string               `json:"org_id" eru:"required" desc:"organization id"`
 	ProcessId   string               `json:"process_id" eru:"required" desc:"process id"`
 	ProcessName string               `json:"process_name" eru:"required" desc:"name of the process"`
-	EntityData  []ProcessoEntityData `json:"entity_data" eru:"required" desc:"list of entities metadata to add or edit"`
+	EntityData  []ProcessoEntityData `json:"entity_data" eru:"required" desc:"only the entities being added or edited - NOT the whole model. Entities left out keep what they already have; they are not removed"`
+}
+
+// ProcessoAttrRule is one row of an att_rules list.
+//
+// A row is EITHER a rule - attr / op / value - OR a group of rules joined by
+// cond. The two shapes share one struct because a JSON schema generated from Go
+// cannot express the union, so both sets of keys are declared and the
+// description says which combination is meant. Sending keys from both is what
+// produces a rule that silently matches nobody.
+type ProcessoAttrRule struct {
+	Attr  string        `json:"attr" desc:"RULE FORM: the key in the user's user_data this rule tests, e.g. fn or con"`
+	Op    string        `json:"op" enum:"in,nin,eq,neq" desc:"RULE FORM: in, nin, eq or neq"`
+	Value []interface{} `json:"value" desc:"RULE FORM: the values the page is scoped to - always a list, even for eq and neq"`
+	Cond  string        `json:"cond" enum:"and,or" desc:"GROUP FORM: and or or, joining this group's own rules"`
+	Rules []struct {
+		Attr  string        `json:"attr" desc:"the key in the user's user_data this rule tests"`
+		Op    string        `json:"op" enum:"in,nin,eq,neq" desc:"in, nin, eq or neq"`
+		Value []interface{} `json:"value" desc:"the values the page is scoped to"`
+	} `json:"rules" desc:"GROUP FORM: the rules in this group - only one level of nesting is supported"`
+}
+
+type ProcessoSavePageVisibilityParams struct {
+	OrgId          string             `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId      string             `json:"process_id" eru:"required" desc:"process id"`
+	ProcessName    string             `json:"process_name" eru:"required" desc:"name of the process"`
+	PageId         string             `json:"page_id" eru:"required" desc:"id of the page whose access is being set"`
+	VisibilityType string             `json:"visibility_type" eru:"required" enum:"public,private" desc:"public makes the page visible to everyone, private restricts it to the users, roles and attribute rules below"`
+	MapUsers       []string           `json:"map_users" desc:"user ids the page is visible to - applicable when visibility_type is private"`
+	MapRoles       []string           `json:"map_roles" desc:"process roles the page is visible to - applicable when visibility_type is private"`
+	AttCond        string             `json:"att_cond" desc:"and or or, joining the att_rules entries - defaults to and"`
+	AttRules       []ProcessoAttrRule `json:"att_rules" desc:"rules on the logged in user's attributes"`
+	TemplateId     string             `json:"template_id" desc:"a visibility template applied IN ADDITION to the above - the two are a union, not an intersection"`
+}
+
+type ProcessoSavePageVisibilityTemplateParams struct {
+	OrgId        string             `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId    string             `json:"process_id" eru:"required" desc:"process id"`
+	OrgProcessId string             `json:"org_process_id" eru:"required" desc:"this organization's instance of the process - the tenant the template belongs to"`
+	TemplateName string             `json:"template_name" eru:"required" desc:"display name of the template"`
+	MapUsers     []string           `json:"map_users" desc:"user ids the template admits"`
+	MapRoles     []string           `json:"map_roles" desc:"process roles the template admits"`
+	AttCond      string             `json:"att_cond" desc:"and or or, joining the att_rules entries - defaults to and"`
+	AttRules     []ProcessoAttrRule `json:"att_rules" desc:"rules on the logged in user's attributes"`
+	TemplateId   string             `json:"template_id" desc:"the template to update - OMIT it to create a new one, because the upsert key must be absent on an insert"`
+}
+
+type ProcessoDeletePageVisibilityTemplateParams struct {
+	OrgId        string `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId    string `json:"process_id" eru:"required" desc:"process id"`
+	OrgProcessId string `json:"org_process_id" eru:"required" desc:"this organization's instance of the process"`
+	TemplateId   string `json:"template_id" eru:"required" desc:"id of the template to delete - pages still pointing at it lose that part of their rule"`
+}
+
+type ProcessoFetchPageVisibilityTemplatesParams struct {
+	OrgId        string `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId    string `json:"process_id" eru:"required" desc:"process id"`
+	OrgProcessId string `json:"org_process_id" eru:"required" desc:"this organization's instance of the process"`
+}
+
+type ProcessoGetUserAttributeEntitiesParams struct {
+	OrgId      string `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId  string `json:"process_id" eru:"required" desc:"process id"`
+	EntityName string `json:"entity_name" desc:"narrow the answer to the attributes reachable from this entity"`
+}
+
+// The approval matrix routes a record through up to three sequential levels of
+// approval. Within a level the rules are tried in `frank` order and the FIRST
+// whose filter matches decides who approves - so a rule with no filter is an
+// "else" and nothing may follow it.
+type ProcessoApprovalActionMeta struct {
+	Fields []string `json:"fields" desc:"the entity fields this approver is allowed to edit"`
+}
+
+type ProcessoApprovalRule struct {
+	Frank          int                        `json:"frank" eru:"required" desc:"order of this rule within its level, starting at 1 - rules are tried in this order and the first match wins"`
+	Filter         map[string]interface{}     `json:"filter" desc:"the condition, in the flat form: keys are \"<index>___<field>\" or \"<index>___<entity>~<field>\" and values are {\"$op\": [value]}, with an optional \"$or\" list. Leave empty for the catch-all rule, which must be last in the level."`
+	Filter2        map[string]interface{}     `json:"filter2" desc:"the SAME condition in the global-filter form ({id, logic, rules, type}). filter and filter2 are two encodings of one condition - send both or neither."`
+	AutoApprove    bool                       `json:"auto_approve" desc:"true skips approvers entirely and passes the record at this level"`
+	Users          []string                   `json:"users" desc:"user names who may approve at this rule"`
+	Roles          []string                   `json:"roles" desc:"process roles who may approve at this rule"`
+	ActionMetaData ProcessoApprovalActionMeta `json:"action_meta_data" desc:"what the approver may change"`
+	NoOfApprover   int                        `json:"no_of_approver" desc:"how many of the named users/roles must approve - at least 1 unless auto_approve"`
+}
+
+type ProcessoApprovalLevel struct {
+	Filters []ProcessoApprovalRule   `json:"filters" eru:"required" desc:"the rules of this level, in frank order"`
+	Pfilter []map[string]interface{} `json:"pfilter" desc:"parent-entity conditions for this level - usually empty"`
+}
+
+type ProcessoApprovalMatrix struct {
+	MatrixName       string                           `json:"matrix_name" desc:"display name of the matrix"`
+	EntityName       string                           `json:"entity_name" eru:"required" desc:"entity this matrix approves"`
+	ApprovalLevelCnt string                           `json:"approval_level_cnt" desc:"number of levels, as a string e.g. \"2\" - derived from approval_levels when omitted"`
+	ApprovalLevels   map[string]ProcessoApprovalLevel `json:"approval_levels" eru:"required" desc:"levels keyed by their number as a string, \"1\" upwards and contiguous. Level 2 runs only after level 1 approves. At most three."`
+	ApprovalFields   []map[string]interface{}         `json:"approval_fields" desc:"the entity fields the approval is about"`
+	Mrank            int                              `json:"mrank" desc:"echo back the value get_approval_matrix returned, when it returned one"`
+}
+
+type ProcessoSaveApprovalMatrixParams struct {
+	OrgId      string                 `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId  string                 `json:"process_id" eru:"required" desc:"process id"`
+	EntityName string                 `json:"entity_name" eru:"required" desc:"entity whose approval matrix is being saved"`
+	MatrixJson ProcessoApprovalMatrix `json:"matrix_json" eru:"required" desc:"the COMPLETE matrix - this replaces the entity's existing one"`
+}
+
+type ProcessoGetApprovalMatrixParams struct {
+	OrgId      string `json:"org_id" eru:"required" desc:"organization id"`
+	ProcessId  string `json:"process_id" eru:"required" desc:"process id"`
+	EntityName string `json:"entity_name" eru:"required" desc:"entity whose approval matrix is wanted"`
 }
 
 type ProcessoRemoveEntityParams struct {
@@ -52,8 +162,21 @@ type ProcessoGetEntityFieldDataParams struct {
 	FieldStr    string `json:"field_str" desc:"filter the values by this text"`
 }
 
+type ProcessoColorRange struct {
+	From  interface{} `json:"from" desc:"lower bound of the band"`
+	To    interface{} `json:"to" desc:"upper bound of the band"`
+	Color string      `json:"color" desc:"colour as a hex code e.g. #ffea16"`
+}
+
+type ProcessoDfField struct {
+	Def  string `json:"def" eru:"required" desc:"key in THIS entity supplying the value"`
+	Dpef string `json:"dpef" eru:"required" desc:"key in the option-source entity to filter on"`
+}
+
 type ProcessoFieldOption struct {
-	OptionName string `json:"name" eru:"required" desc:"option value shown to the user"`
+	OptionName  string `json:"name" eru:"required" desc:"option value shown to the user"`
+	OptionColor string `json:"color" desc:"option colour as a hex code e.g. #ffea16 - tag and priority"`
+	OptionIcon  string `json:"icon" desc:"option icon - priority"`
 }
 
 type ProcessoFieldStatus struct {
@@ -65,8 +188,7 @@ type ProcessoFieldStatus struct {
 type ProcessoFieldDef struct {
 	Name             string                `json:"name" eru:"required" desc:"unique name of the field"`
 	Label            string                `json:"label" eru:"required" desc:"display label of the field"`
-	Datatype         string                `json:"datatype" eru:"required" desc:"datatype of the field - textbox, date, email, dropdown_single_select, dropdown_multi_select, status"`
-	TabName          string                `json:"tab_name" eru:"required" desc:"name of the tab under which the field is displayed"`
+	Datatype         string                `json:"datatype" eru:"required" enum:"attachment,checkbox,currency,date,datetime,duration,dropdown_single_select,dropdown_multi_select,email,location,number,object_single_select,object_multi_select,people,phone,priority,progress,rating,status,tag,textarea,textbox,time,website" desc:"datatype of the field - textbox, date, email, dropdown_single_select, dropdown_multi_select, status"`
 	Description      string                `json:"description" desc:"description of the field"`
 	Default          string                `json:"default" desc:"default value of the field"`
 	ToolTip          string                `json:"tool_tip" desc:"tool tip displayed for the field"`
@@ -78,7 +200,7 @@ type ProcessoFieldDef struct {
 	Editable         bool                  `json:"editable" desc:"whether the field value can be edited after creation"`
 	IsUnique         bool                  `json:"is_unique" desc:"whether the field value must be unique"`
 	UnqSa            bool                  `json:"unq_sa" desc:"whether uniqueness is checked across all statuses"`
-	ShowGrid         string                `json:"show_grid" desc:"whether the field is shown in the grid - yes or no"`
+	ShowGrid         string                `json:"show_grid" enum:"yes,no" desc:"whether the field is shown in the grid - yes or no"`
 	GridIndex        int                   `json:"grid_index" desc:"position of the field in the grid"`
 	DefaultGroup     bool                  `json:"default_group" desc:"whether the field is the default grouping field"`
 	IsPii            bool                  `json:"is_pii" desc:"whether the field holds personally identifiable information"`
@@ -92,17 +214,44 @@ type ProcessoFieldDef struct {
 	TfIdx            int                   `json:"tf_idx" desc:"position of the field in the tab/form"`
 	UniqueFn         []string              `json:"unique_fn" desc:"list of field names forming a composite uniqueness check - applicable for textbox and email"`
 	DataLength       string                `json:"data_length" desc:"allowed data length as a number - applicable for textbox"`
-	DataLengthCheck  string                `json:"data_length_check" desc:"how data_length is enforced - applicable for textbox"`
+	DataLengthCheck  string                `json:"data_length_check" enum:"MAX,MIN,EXACT" desc:"how data_length is enforced - applicable for textbox"`
 	DateFormat       string                `json:"date_format" desc:"date format e.g. dd-MM-YYYY - mandatory for datatype date"`
-	AllowDays        []string              `json:"allow_days" desc:"days allowed for selection - Mon, Tue, Wed, Thu, Fri, Sat, Sun - applicable for datatype date"`
-	SystemValidate   string                `json:"system_validate" desc:"whether the email is validated by the system - true or false - applicable for datatype email"`
+	AllowDays        []string              `json:"allow_days" enum:"Mon,Tue,Wed,Thu,Fri,Sat,Sun" desc:"days allowed for selection - Mon, Tue, Wed, Thu, Fri, Sat, Sun - applicable for datatype date"`
+	SystemValidate   string                `json:"system_validate" enum:"true,false" desc:"whether the email is validated by the system - true or false - applicable for datatype email"`
 	SsvApi           string                `json:"ssv_api" desc:"api used to validate the email when system_validate is true - applicable for datatype email"`
-	FieldOptionType  string                `json:"option_type" desc:"source of the dropdown options - STATIC, ENTITY_DATA or API - mandatory for dropdown datatypes"`
+	FieldOptionType  string                `json:"option_type" enum:"STATIC,ENTITY_DATA,API" desc:"source of the dropdown options - STATIC, ENTITY_DATA or API - mandatory for dropdown datatypes"`
 	ApiName          string                `json:"api_name" desc:"api providing the options when option_type is API"`
 	ApiField         string                `json:"api_field" desc:"api response field providing the options when option_type is API"`
 	OptionEntityName string                `json:"entity_name" desc:"entity providing the options when option_type is ENTITY_DATA"`
 	OptionFieldName  string                `json:"field_name" desc:"field of the option entity providing the options when option_type is ENTITY_DATA"`
 	Options          []ProcessoFieldOption `json:"options" desc:"static list of options when option_type is STATIC"`
+	Decimal          string                `json:"decimal" desc:"decimal places - number and currency"`
+	Seperator        string                `json:"seperator" desc:"thousands separator - number and currency. Note the spelling."`
+	NumVal           string                `json:"num_val" desc:"the number the value is checked against - number and currency"`
+	NumValCheck      string                `json:"num_val_check" desc:"how num_val is enforced - number and currency"`
+	DynamicNumber    bool                  `json:"dynamic_number" desc:"whether the number is computed - number and currency"`
+	DisplayNumberAs  string                `json:"display_number_as" enum:"lacs,mn" desc:"scale the number is shown in - number and currency"`
+	Symbol           string                `json:"symbol" desc:"currency symbol - currency"`
+	SymbolField      string                `json:"symbol_field" desc:"field on the same record supplying the symbol, for a multi-currency column - currency. Takes precedence over symbol."`
+	StartValue       interface{}           `json:"start_value" desc:"lower bound - progress and rating"`
+	EndValue         interface{}           `json:"end_value" desc:"upper bound - progress and rating"`
+	IsPerc           bool                  `json:"is_perc" desc:"show the value as a percentage - progress"`
+	ColorRanges      []ProcessoColorRange  `json:"color_ranges" desc:"colour bands - progress"`
+	EmojiValue       string                `json:"emoji_value" enum:"smile,tick,like,star" desc:"the symbol the rating is drawn with - rating"`
+	StorageName      string                `json:"storage_name" desc:"storage the file is written to - attachment"`
+	FolderName       string                `json:"folder_name" desc:"folder within the storage - attachment"`
+	ValueTrue        string                `json:"value_true" desc:"value stored when ticked - checkbox"`
+	ValueFalse       string                `json:"value_false" desc:"value stored when unticked - checkbox"`
+	IsHyp            bool                  `json:"is_hyp" desc:"render as a hyperlink - website"`
+	HyplNm           string                `json:"hypl_nm" desc:"text shown for the hyperlink - website"`
+	Multiple         bool                  `json:"multiple" desc:"allow more than one person - people"`
+	NestedEntity     string                `json:"nested_entity" desc:"the entity embedded in this field - object datatypes"`
+	NestedFields     []interface{}         `json:"nested_fields" desc:"the embedded entity's fields to show - object datatypes"`
+	RichText         bool                  `json:"rich_text" desc:"allow formatting - textarea"`
+	DateTimeOffset   *int                  `json:"default_value_offset_days" desc:"default the date to today plus this many days - date"`
+	Def              string                `json:"def" desc:"legacy single dependent-field key - dropdown with option_type ENTITY_DATA"`
+	Dpef             string                `json:"dpef" desc:"legacy single parent-field key - dropdown with option_type ENTITY_DATA"`
+	DfFields         []ProcessoDfField     `json:"df_fields" desc:"dependent-dropdown mapping - dropdown with option_type ENTITY_DATA"`
 	OpenStatus       []ProcessoFieldStatus `json:"open_status" desc:"open statuses - mandatory for datatype status"`
 	CloseStatus      []ProcessoFieldStatus `json:"close_status" desc:"close statuses - mandatory for datatype status"`
 	Sts              string                `json:"_sts" desc:"reserved status attribute - applicable for datatype status"`
@@ -115,7 +264,7 @@ type ProcessoSaveFieldParams struct {
 	ProcessName  string           `json:"process_name" eru:"required" desc:"name of the process"`
 	ParentEntity string           `json:"parent_entity" desc:"option source entity - set when the field options come from another entity"`
 	ChildField   string           `json:"child_field" desc:"name of the field being saved - defaults to field.name"`
-	OptionType   string           `json:"option_type" desc:"option source of the field - STATIC, ENTITY_DATA or API - defaults to field.option_type"`
+	OptionType   string           `json:"option_type" enum:"STATIC,ENTITY_DATA,API" desc:"option source of the field - STATIC, ENTITY_DATA or API - defaults to field.option_type"`
 	ParentField  string           `json:"parent_field" desc:"option source field of the parent entity - set when option_type is ENTITY_DATA"`
 	Field        ProcessoFieldDef `json:"field" eru:"required" desc:"field metadata to add or edit"`
 }
@@ -153,8 +302,8 @@ type ProcessoSaveEntityVisibilityParams struct {
 	ProcessId      string   `json:"process_id" eru:"required" desc:"process id"`
 	ProcessName    string   `json:"process_name" eru:"required" desc:"name of the process"`
 	EntityName     string   `json:"entity_name" eru:"required" desc:"name of the entity whose visibility is being saved"`
-	VisibilityType string   `json:"visibility_type" eru:"required" desc:"visibility of the entity - public makes it visible to everyone, private restricts it to the mapped users and roles"`
-	MapUsers       []string `json:"map_users" desc:"user ids the entity is visible to - applicable when visibility_type is private"`
+	VisibilityType string   `json:"visibility_type" eru:"required" enum:"public,private" desc:"visibility of the entity - public makes it visible to everyone, private restricts it to the mapped users and roles"`
+	MapUsers       []string `json:"map_users" desc:"the users the entity is visible to, as a FLAT list of id and name alternating - [id1, name1, id2, name2]. A list of ids alone is accepted by the backend and silently shows the entity to nobody. Applicable when visibility_type is private."`
 	MapRoles       []string `json:"map_roles" desc:"roles the entity is visible to - applicable when visibility_type is private"`
 	EnvMapUsers    []string `json:"env_map_users" desc:"user ids the entity is visible to in the environment - must be a subset of map_users"`
 	EnvMapRoles    []string `json:"env_map_roles" desc:"roles the entity is visible to in the environment - must be a subset of map_roles"`
@@ -165,15 +314,15 @@ type ProcessoSaveEntityRecordVisibilityParams struct {
 	ProcessId       string                 `json:"process_id" eru:"required" desc:"process id"`
 	ProcessName     string                 `json:"process_name" eru:"required" desc:"name of the process"`
 	EntityName      string                 `json:"entity_name" eru:"required" desc:"name of the entity whose record visibility is being saved"`
-	VisibilityType  string                 `json:"visibility_type" eru:"required" desc:"record visibility of the entity - public makes all records visible to everyone, private restricts records to the mapped users and roles"`
+	VisibilityType  string                 `json:"visibility_type" eru:"required" enum:"public,private" desc:"record visibility of the entity - public makes all records visible to everyone, private restricts records to the mapped users and roles"`
 	MapRoles        []string               `json:"map_roles" desc:"roles the records are visible to - applicable when visibility_type is private"`
 	MapUsers        []string               `json:"map_users" desc:"user ids the records are visible to - applicable when visibility_type is private"`
 	UserOpFn        []interface{}          `json:"user_op_fn" desc:"operations allowed to the mapped users and roles on the visible records"`
 	UserAttFilter   map[string]interface{} `json:"user_att_filter" desc:"record filter on the logged in user attributes as attribute name and value pairs"`
-	Cond            string                 `json:"cond" desc:"condition joining the user_att_filter attributes e.g. and, or"`
+	Cond            string                 `json:"cond" enum:"and,or" desc:"condition joining the user_att_filter attributes e.g. and, or"`
 	ParentEntities  []interface{}          `json:"parent_entities" desc:"parent entities through which the record visibility is derived"`
 	ParentAttFilter map[string]interface{} `json:"parent_att_filter" desc:"record filter on the parent entity attributes as attribute name and value pairs"`
-	PjCond          string                 `json:"pj_cond" desc:"condition joining the parent_att_filter attributes e.g. and, or"`
+	PjCond          string                 `json:"pj_cond" enum:"and,or" desc:"condition joining the parent_att_filter attributes e.g. and, or"`
 }
 
 type ProcessoSaveEntityDownloadVisibilityParams struct {
@@ -181,7 +330,7 @@ type ProcessoSaveEntityDownloadVisibilityParams struct {
 	ProcessId      string   `json:"process_id" eru:"required" desc:"process id"`
 	ProcessName    string   `json:"process_name" eru:"required" desc:"name of the process"`
 	EntityName     string   `json:"entity_name" eru:"required" desc:"name of the entity whose download visibility is being saved"`
-	VisibilityType string   `json:"visibility_type" eru:"required" desc:"download visibility of the entity - public allows everyone to download, private restricts the download to the mapped users and roles"`
+	VisibilityType string   `json:"visibility_type" eru:"required" enum:"public,private" desc:"download visibility of the entity - public allows everyone to download, private restricts the download to the mapped users and roles"`
 	MapUsers       []string `json:"map_users" desc:"user ids allowed to download - applicable when visibility_type is private"`
 	MapRoles       []string `json:"map_roles" desc:"roles allowed to download - applicable when visibility_type is private"`
 }
@@ -218,6 +367,13 @@ const processoDefaultDbAlias = "pdb"
 const (
 	ProcessoSaveEntity                   = "save_entity"
 	ProcessoRemoveEntity                 = "remove_entity"
+	ProcessoSavePageVisibility           = "save_page_visibility"
+	ProcessoSavePageVisibilityTemplate   = "save_page_visibility_template"
+	ProcessoDeletePageVisibilityTemplate = "delete_page_visibility_template"
+	ProcessoFetchPageVisibilityTemplates = "fetch_page_visibility_templates"
+	ProcessoGetUserAttributeEntities     = "get_user_attribute_entities"
+	ProcessoGetApprovalMatrix            = "get_approval_matrix"
+	ProcessoSaveApprovalMatrix           = "save_approval_matrix"
 	ProcessoGetEntityFieldData           = "get_entity_field_data"
 	ProcessoSaveField                    = "save_field"
 	ProcessoSaveEntityData               = "save_entity_data"
@@ -284,6 +440,76 @@ var processoOwnActions = []tools.ToolAction{
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {
 			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoSaveEntityParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoSavePageVisibility,
+		Description:  "allows user to define who can see a page",
+		SystemPrompt: "This tool saves the access rule of a page under processo. Pass org_id, process_id, process_name, page_id and visibility_type. When private, pass map_users, map_roles and att_rules with att_cond - the three are a UNION, so a user who matches any one of them sees the page, and a private rule that names none of them admits nobody. template_id applies a shared template IN ADDITION, also as a union. Saving page content never touches this rule and this never touches the content.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoSavePageVisibilityParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoSavePageVisibilityTemplate,
+		Description:  "allows user to create or edit a reusable page access template",
+		SystemPrompt: "This tool saves a page visibility template under processo - a named access rule several pages can share. Pass org_id, process_id, org_process_id and template_name with the rule. OMIT template_id to create a new template; pass it only to update an existing one. A template is applied to a page through save_page_visibility's template_id.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoSavePageVisibilityTemplateParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoDeletePageVisibilityTemplate,
+		Description:  "allows user to delete a page access template",
+		SystemPrompt: "This tool deletes a page visibility template under processo. Pass org_id, process_id, org_process_id and template_id. Pages that reference the template lose that part of their access rule, so check which pages use it before deleting.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoDeletePageVisibilityTemplateParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoFetchPageVisibilityTemplates,
+		Description:  "returns the page access templates defined for this workspace",
+		SystemPrompt: "This tool lists the page visibility templates of a workspace under processo. Pass org_id, process_id and org_process_id. Read it before applying a template so the template_id is one that exists.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoFetchPageVisibilityTemplatesParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoGetUserAttributeEntities,
+		Description:  "returns the user attributes an access rule can be written against",
+		SystemPrompt: "This tool lists the user attributes available for record and page access rules under processo. Pass org_id, process_id and optionally entity_name. Read it before writing att_rules or user_att_filter so the attribute keys are ones that exist.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoGetUserAttributeEntitiesParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoGetApprovalMatrix,
+		Description:  "returns the approval matrix configured on an entity",
+		SystemPrompt: "This tool reads the approval matrix of an entity under processo. Pass org_id, process_id and entity_name. Always read the matrix before saving one: save_approval_matrix replaces it wholesale, and the mrank it returns has to be echoed back.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoGetApprovalMatrixParams{}), []string{})
+		},
+	},
+	{
+		ActionName:   ProcessoSaveApprovalMatrix,
+		Description:  "allows user to define the approval routing of an entity - up to three sequential levels, each with first-match rules",
+		SystemPrompt: "This tool saves the approval matrix of an entity under processo, REPLACING the existing one - read it with get_approval_matrix first and send the whole thing back with your change. approval_levels is keyed by level number as a string, \"1\" upwards and contiguous, at most three; level 2 runs only after level 1 approves. Within a level the rules are tried in frank order and the FIRST whose filter matches decides, so a rule with an empty filter is the catch-all and must be last. Every rule needs either auto_approve, or users/roles with no_of_approver.",
+		OutputSchema: eru_models.JSONSchema{},
+		Parameters:   eru_models.JSONSchema{},
+		GetParameters: func() eru_models.JSONSchema {
+			return utils.StructToJSONSchema(reflect.TypeOf(ProcessoSaveApprovalMatrixParams{}), []string{})
 		},
 	},
 	{
@@ -586,6 +812,20 @@ func (processoTool *ProcessoTool) Execute(ctx context.Context, projectId string,
 	switch scopedAction.BaseName {
 	case ProcessoSaveEntity:
 		toolResult, toolRequest, persistStore, err = processoTool.SaveEntity(ctx, projectId, tenantId, params)
+	case ProcessoSavePageVisibility:
+		toolResult, toolRequest, persistStore, err = processoTool.SavePageVisibility(ctx, projectId, tenantId, params)
+	case ProcessoSavePageVisibilityTemplate:
+		toolResult, toolRequest, persistStore, err = processoTool.SavePageVisibilityTemplate(ctx, projectId, tenantId, params)
+	case ProcessoDeletePageVisibilityTemplate:
+		toolResult, toolRequest, persistStore, err = processoTool.DeletePageVisibilityTemplate(ctx, projectId, tenantId, params)
+	case ProcessoFetchPageVisibilityTemplates:
+		toolResult, toolRequest, persistStore, err = processoTool.FetchPageVisibilityTemplates(ctx, projectId, tenantId, params)
+	case ProcessoGetUserAttributeEntities:
+		toolResult, toolRequest, persistStore, err = processoTool.GetUserAttributeEntities(ctx, projectId, tenantId, params)
+	case ProcessoGetApprovalMatrix:
+		toolResult, toolRequest, persistStore, err = processoTool.GetApprovalMatrix(ctx, projectId, tenantId, params)
+	case ProcessoSaveApprovalMatrix:
+		toolResult, toolRequest, persistStore, err = processoTool.SaveApprovalMatrix(ctx, projectId, tenantId, params)
 	case ProcessoRemoveEntity:
 		toolResult, toolRequest, persistStore, err = processoTool.RemoveEntity(ctx, projectId, tenantId, params)
 	case ProcessoGetEntityFieldData:
@@ -680,8 +920,20 @@ func (processoTool *ProcessoTool) SaveEntity(ctx context.Context, projectId stri
 	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
 		return nil, nil, false, err
 	}
-	if len(p.EntityData) == 0 {
-		return nil, nil, false, errors.New("entity_data must have at least one entity")
+	// One entity per call. The backend merges what it is given against what is
+	// already stored, so the whole model never needs to be sent - and sending it
+	// rewrites every entity's display order on a request that changed one thing.
+	if len(p.EntityData) != 1 {
+		return nil, nil, false, fmt.Errorf(
+			"entity_data must carry exactly one entity - the one being created or edited - but %d were sent. "+
+				"Do not send the existing model: entities you leave out keep everything they have. "+
+				"Call save_entity once per entity instead",
+			len(p.EntityData))
+	}
+	for i := range p.EntityData {
+		if err = processoValidateEntityName(p.EntityData[i].Name); err != nil {
+			return nil, nil, false, fmt.Errorf("entity_data[%d]: %w", i, err)
+		}
 	}
 	baseUrl, err := processoTool.getEruFuncBaseUrl(ctx)
 	if err != nil {
@@ -693,6 +945,331 @@ func (processoTool *ProcessoTool) SaveEntity(ctx context.Context, projectId stri
 		"process_id":   p.ProcessId,
 		"process_name": p.ProcessName,
 		"entity_data":  p.EntityData,
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, true, nil
+}
+
+func processoSliceOrEmptyStrings(list []string) []string {
+	if list == nil {
+		return []string{}
+	}
+	return list
+}
+
+func processoAttrRulesOrEmpty(rules []ProcessoAttrRule) []ProcessoAttrRule {
+	if rules == nil {
+		return []ProcessoAttrRule{}
+	}
+	return rules
+}
+
+// A private rule is a UNION of users, roles and attribute rules. Naming none of
+// them admits nobody - which is valid but is almost never what was meant, so it
+// is refused rather than quietly locking everyone out.
+func processoCheckAudience(visibilityType string, users []string, roles []string, rules []ProcessoAttrRule, templateId string) error {
+	if strings.ToLower(visibilityType) != "private" {
+		return nil
+	}
+	if len(users) == 0 && len(roles) == 0 && len(rules) == 0 && templateId == "" {
+		return errors.New("a private rule with no map_users, no map_roles, no att_rules and no template_id admits nobody - name an audience, or use visibility_type public")
+	}
+	return nil
+}
+
+func (processoTool *ProcessoTool) SavePageVisibility(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool SavePageVisibility - Start")
+	p := ProcessoSavePageVisibilityParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	if p.PageId == "" {
+		return nil, nil, false, errors.New("page_id is mandatory")
+	}
+	if err = processoCheckAudience(p.VisibilityType, p.MapUsers, p.MapRoles, p.AttRules, p.TemplateId); err != nil {
+		return nil, nil, false, err
+	}
+	// Public wipes the audience rather than leaving a rule behind that would
+	// reappear if the page were made private again.
+	if strings.ToLower(p.VisibilityType) != "private" {
+		p.MapUsers, p.MapRoles, p.AttRules, p.TemplateId = nil, nil, nil, ""
+		if p.AttCond == "" {
+			p.AttCond = "and"
+		}
+	}
+	if p.AttCond == "" {
+		p.AttCond = "and"
+	}
+	baseUrl, err := processoTool.getEruFuncBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/", processoTool.projectIdSegment(), "/func/save_page_visibility")
+	body := map[string]interface{}{
+		"org_id":          p.OrgId,
+		"process_id":      p.ProcessId,
+		"process_name":    p.ProcessName,
+		"page_id":         p.PageId,
+		"visibility_type": p.VisibilityType,
+		"map_users":       processoSliceOrEmptyStrings(p.MapUsers),
+		"map_roles":       processoSliceOrEmptyStrings(p.MapRoles),
+		"att_cond":        p.AttCond,
+		"att_rules":       processoAttrRulesOrEmpty(p.AttRules),
+		"template_id":     nil,
+	}
+	if p.TemplateId != "" {
+		body["template_id"] = p.TemplateId
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, true, nil
+}
+
+func (processoTool *ProcessoTool) SavePageVisibilityTemplate(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool SavePageVisibilityTemplate - Start")
+	p := ProcessoSavePageVisibilityTemplateParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	if strings.TrimSpace(p.TemplateName) == "" {
+		return nil, nil, false, errors.New("template_name is mandatory")
+	}
+	if len(p.MapUsers) == 0 && len(p.MapRoles) == 0 && len(p.AttRules) == 0 {
+		return nil, nil, false, errors.New("a template with no map_users, no map_roles and no att_rules admits nobody")
+	}
+	if p.AttCond == "" {
+		p.AttCond = "and"
+	}
+	baseUrl, err := processoTool.getEruFuncBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/", processoTool.projectIdSegment(), "/func/save_page_visibility_template")
+	body := map[string]interface{}{
+		"org_id":         p.OrgId,
+		"process_id":     p.ProcessId,
+		"org_process_id": p.OrgProcessId,
+		"template_name":  strings.TrimSpace(p.TemplateName),
+		"map_users":      processoSliceOrEmptyStrings(p.MapUsers),
+		"map_roles":      processoSliceOrEmptyStrings(p.MapRoles),
+		"att_cond":       p.AttCond,
+		"att_rules":      processoAttrRulesOrEmpty(p.AttRules),
+	}
+	// The upsert key must be absent on an insert, so an empty template_id is
+	// omitted rather than sent blank.
+	if p.TemplateId != "" {
+		body["template_id"] = p.TemplateId
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, true, nil
+}
+
+func (processoTool *ProcessoTool) DeletePageVisibilityTemplate(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool DeletePageVisibilityTemplate - Start")
+	p := ProcessoDeletePageVisibilityTemplateParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	if p.TemplateId == "" {
+		return nil, nil, false, errors.New("template_id is mandatory")
+	}
+	baseUrl, err := processoTool.getEruFuncBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/", processoTool.projectIdSegment(), "/func/delete_page_visibility_template")
+	body := map[string]interface{}{
+		"org_id":         p.OrgId,
+		"process_id":     p.ProcessId,
+		"org_process_id": p.OrgProcessId,
+		"template_id":    p.TemplateId,
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, true, nil
+}
+
+func (processoTool *ProcessoTool) FetchPageVisibilityTemplates(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool FetchPageVisibilityTemplates - Start")
+	p := ProcessoFetchPageVisibilityTemplatesParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	baseUrl, err := processoTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/fetch_page_visibility_templates")
+	body := map[string]interface{}{
+		"org_id":         p.OrgId,
+		"process_id":     p.ProcessId,
+		"org_process_id": p.OrgProcessId,
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, false, nil
+}
+
+func (processoTool *ProcessoTool) GetUserAttributeEntities(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool GetUserAttributeEntities - Start")
+	p := ProcessoGetUserAttributeEntitiesParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	baseUrl, err := processoTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/get_user_attribute_entities")
+	body := map[string]interface{}{
+		"org_id":      p.OrgId,
+		"process_id":  p.ProcessId,
+		"entity_name": p.EntityName,
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, false, nil
+}
+
+const processoMaxApprovalLevels = 3
+
+// validateApprovalMatrix enforces the rules the approval screen enforces and the
+// backend does not. Each one is a way to save a matrix that looks configured and
+// routes nothing.
+func processoValidateApprovalMatrix(m *ProcessoApprovalMatrix) error {
+	if len(m.ApprovalLevels) == 0 {
+		return errors.New("approval_levels must have at least one level, keyed \"1\"")
+	}
+	if len(m.ApprovalLevels) > processoMaxApprovalLevels {
+		return fmt.Errorf("an approval matrix may have at most %d levels, got %d", processoMaxApprovalLevels, len(m.ApprovalLevels))
+	}
+	// Levels are sequential, so they have to be "1".."n" with no gaps - a matrix
+	// keyed "1" and "3" silently never reaches the third level.
+	for i := 1; i <= len(m.ApprovalLevels); i++ {
+		key := strconv.Itoa(i)
+		if _, ok := m.ApprovalLevels[key]; !ok {
+			return fmt.Errorf("approval_levels is missing level %q - levels must run from \"1\" upwards with no gaps", key)
+		}
+	}
+	for key, level := range m.ApprovalLevels {
+		if len(level.Filters) == 0 {
+			return fmt.Errorf("level %s has no rules", key)
+		}
+		ranks := make(map[int]bool, len(level.Filters))
+		catchAllAt := -1
+		for i, rule := range level.Filters {
+			if ranks[rule.Frank] {
+				return fmt.Errorf("level %s has two rules with frank %d - frank decides which rule is tried first, so it must be unique", key, rule.Frank)
+			}
+			ranks[rule.Frank] = true
+			if !rule.AutoApprove && len(rule.Users) == 0 && len(rule.Roles) == 0 {
+				return fmt.Errorf("level %s rule %d approves through nobody - set auto_approve, or name users or roles", key, rule.Frank)
+			}
+			if !rule.AutoApprove && rule.NoOfApprover < 1 {
+				return fmt.Errorf("level %s rule %d needs no_of_approver of at least 1", key, rule.Frank)
+			}
+			if len(rule.Filter) == 0 && len(rule.Filter2) == 0 {
+				catchAllAt = i
+				continue
+			}
+			// A rule after the catch-all can never be reached, because the
+			// catch-all matches everything.
+			if catchAllAt >= 0 {
+				return fmt.Errorf("level %s rule %d comes after a rule with no filter, so it can never be reached - the catch-all must be last", key, rule.Frank)
+			}
+		}
+	}
+	if m.ApprovalLevelCnt == "" {
+		m.ApprovalLevelCnt = strconv.Itoa(len(m.ApprovalLevels))
+	}
+	if m.ApprovalFields == nil {
+		m.ApprovalFields = []map[string]interface{}{}
+	}
+	return nil
+}
+
+func (processoTool *ProcessoTool) GetApprovalMatrix(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool GetApprovalMatrix - Start")
+	p := ProcessoGetApprovalMatrixParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	if p.EntityName == "" {
+		return nil, nil, false, errors.New("entity_name is mandatory")
+	}
+	baseUrl, err := processoTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/get_approval_matrix")
+	body := map[string]interface{}{
+		"org_id":      p.OrgId,
+		"process_id":  p.ProcessId,
+		"entity_name": p.EntityName,
+	}
+	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, nil, false, err
+	}
+	toolResult = map[string]interface{}{"result": res}
+	return toolResult, body, false, nil
+}
+
+func (processoTool *ProcessoTool) SaveApprovalMatrix(ctx context.Context, projectId string, tenantId string, params map[string]interface{}) (toolResult map[string]interface{}, toolRequest interface{}, persistStore bool, err error) {
+	logs.WithContext(ctx).Debug("processoTool SaveApprovalMatrix - Start")
+	p := ProcessoSaveApprovalMatrixParams{}
+	if err = processoTool.unmarshalParams(ctx, params, &p); err != nil {
+		return nil, nil, false, err
+	}
+	if p.EntityName == "" {
+		return nil, nil, false, errors.New("entity_name is mandatory")
+	}
+	if p.MatrixJson.EntityName == "" {
+		p.MatrixJson.EntityName = p.EntityName
+	}
+	if p.MatrixJson.EntityName != p.EntityName {
+		return nil, nil, false, fmt.Errorf("matrix_json.entity_name is %q but entity_name is %q - the matrix would be saved against the wrong entity", p.MatrixJson.EntityName, p.EntityName)
+	}
+	if err = processoValidateApprovalMatrix(&p.MatrixJson); err != nil {
+		return nil, nil, false, err
+	}
+	baseUrl, err := processoTool.getEruqlBaseUrl(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	url := fmt.Sprint(baseUrl, "/store/", processoTool.projectIdSegment(), "/myquery/execute/save_approval_matrix")
+	body := map[string]interface{}{
+		"org_id":      p.OrgId,
+		"process_id":  p.ProcessId,
+		"entity_name": p.EntityName,
+		"matrix_json": p.MatrixJson,
 	}
 	res, _, _, _, err := utils.CallHttp(ctx, http.MethodPost, url, processoTool.buildHeaders(ctx), map[string]string{}, []*http.Cookie{}, map[string]string{}, body)
 	if err != nil {
@@ -775,6 +1352,19 @@ const (
 	ProcessoDatatypeDropdownSs = "dropdown_single_select"
 	ProcessoDatatypeDropdownMs = "dropdown_multi_select"
 	ProcessoDatatypeStatus     = "status"
+	ProcessoDatatypeTextarea   = "textarea"
+	ProcessoDatatypeNumber     = "number"
+	ProcessoDatatypeCurrency   = "currency"
+	ProcessoDatatypeProgress   = "progress"
+	ProcessoDatatypeRating     = "rating"
+	ProcessoDatatypeTag        = "tag"
+	ProcessoDatatypePriority   = "priority"
+	ProcessoDatatypeAttachment = "attachment"
+	ProcessoDatatypeCheckbox   = "checkbox"
+	ProcessoDatatypeWebsite    = "website"
+	ProcessoDatatypePeople     = "people"
+	ProcessoDatatypeObjectSs   = "object_single_select"
+	ProcessoDatatypeObjectMs   = "object_multi_select"
 )
 
 var processoAllowedDays = []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
@@ -791,7 +1381,6 @@ type ProcessoFieldCommon struct {
 	Description  string `json:"description"`
 	Default      string `json:"default"`
 	Datatype     string `json:"datatype" eru:"required"`
-	TabName      string `json:"tab_name" eru:"required"`
 	CanGroup     bool   `json:"can_group"`
 	Mandatory    bool   `json:"mandatory"`
 	IsHidden     bool   `json:"is_hidden"`
@@ -843,11 +1432,173 @@ type ProcessoFieldDropdown struct {
 	Options    []ProcessoFieldOption `json:"options"`
 }
 
+type ProcessoFieldNumber struct {
+	ProcessoFieldCommon
+	Decimal         string `json:"decimal"`
+	Seperator       string `json:"seperator"`
+	NumVal          string `json:"num_val"`
+	NumValCheck     string `json:"num_val_check"`
+	DynamicNumber   bool   `json:"dynamic_number"`
+	DisplayNumberAs string `json:"display_number_as"`
+}
+
+type ProcessoFieldCurrency struct {
+	ProcessoFieldNumber
+	Symbol      string `json:"symbol"`
+	SymbolField string `json:"symbol_field"`
+}
+
+type ProcessoFieldProgress struct {
+	ProcessoFieldCommon
+	StartValue  interface{}          `json:"start_value" eru:"required"`
+	EndValue    interface{}          `json:"end_value" eru:"required"`
+	IsPerc      bool                 `json:"is_perc"`
+	ColorRanges []ProcessoColorRange `json:"color_ranges"`
+}
+
+type ProcessoFieldRating struct {
+	ProcessoFieldCommon
+	StartValue interface{} `json:"start_value"`
+	EndValue   interface{} `json:"end_value" eru:"required"`
+	EmojiValue string      `json:"emoji_value"`
+}
+
+type ProcessoFieldOptionList struct {
+	ProcessoFieldCommon
+	Options []ProcessoFieldOption `json:"options" eru:"required"`
+}
+
+type ProcessoFieldAttachment struct {
+	ProcessoFieldCommon
+	StorageName string `json:"storage_name" eru:"required"`
+	FolderName  string `json:"folder_name"`
+}
+
+type ProcessoFieldCheckbox struct {
+	ProcessoFieldCommon
+	ValueTrue  string `json:"value_true"`
+	ValueFalse string `json:"value_false"`
+}
+
+type ProcessoFieldWebsite struct {
+	ProcessoFieldCommon
+	IsHyp  bool   `json:"is_hyp"`
+	HyplNm string `json:"hypl_nm"`
+}
+
+type ProcessoFieldPeople struct {
+	ProcessoFieldCommon
+	ApiField string `json:"api_field"`
+	Multiple bool   `json:"multiple"`
+}
+
+type ProcessoFieldObject struct {
+	ProcessoFieldCommon
+	NestedEntity string        `json:"nested_entity" eru:"required"`
+	NestedFields []interface{} `json:"nested_fields"`
+}
+
+type ProcessoFieldTextarea struct {
+	ProcessoFieldTextbox
+	RichText bool `json:"rich_text"`
+}
+
 type ProcessoFieldStatusDef struct {
 	ProcessoFieldCommon
 	OpenStatus  []ProcessoFieldStatus `json:"open_status" eru:"required"`
 	CloseStatus []ProcessoFieldStatus `json:"close_status" eru:"required"`
 	Sts         string                `json:"_sts"`
+}
+
+// processoNumeric coerces the loosely-typed bounds the model sends - a JSON
+// number arrives as float64, but a model that writes "10" sends a string.
+// The name rules and the reserved names come from the generated catalog, which
+// is exported from the field editor - so the tool refuses exactly what the editor
+// refuses, and neither can drift from the other.
+//
+// This matters more than most validation because it is irreversible: processo has
+// no rename. A field created as "dealValue" can only be deleted and recreated, and
+// until then it is a field the editor cannot open.
+func processoValidateFieldName(name string) error {
+	c := catalog.Get()
+	switch {
+	case strings.TrimSpace(name) == "":
+		return errors.New("field.name is mandatory")
+	case c.IsSystemFieldName(name):
+		return fmt.Errorf("field.name %q is a system field processo creates on every entity - writing it would overwrite the platform's own column", name)
+	case !c.ValidFieldName(name):
+		return fmt.Errorf("field.name %q does not match %s - lower case and underscore only, no digits, no camelCase. A field cannot be renamed later, only deleted and recreated", name, c.FieldNamePattern())
+	}
+	return nil
+}
+
+func processoValidateEntityName(name string) error {
+	c := catalog.Get()
+	if strings.TrimSpace(name) == "" {
+		return errors.New("entity name is mandatory")
+	}
+	if !c.ValidEntityName(name) {
+		return fmt.Errorf("entity name %q does not match %s - it must start with a letter. An entity cannot be renamed later", name, c.EntityNamePattern())
+	}
+	return nil
+}
+
+func processoValidateDataLength(f ProcessoFieldDef) error {
+	if f.DataLength == "" {
+		return nil
+	}
+	dataLength, atoiErr := strconv.Atoi(f.DataLength)
+	if atoiErr != nil || dataLength <= 0 {
+		return errors.New("field.data_length must be a positive number")
+	}
+	if f.DataLengthCheck == "" {
+		return errors.New("field.data_length_check is mandatory when data_length is provided")
+	}
+	return nil
+}
+
+// number and currency share every numeric key; currency only adds the symbol.
+func processoNumberPayload(common ProcessoFieldCommon, f ProcessoFieldDef) ProcessoFieldNumber {
+	return ProcessoFieldNumber{
+		ProcessoFieldCommon: common,
+		Decimal:             f.Decimal,
+		Seperator:           f.Seperator,
+		NumVal:              f.NumVal,
+		NumValCheck:         f.NumValCheck,
+		DynamicNumber:       f.DynamicNumber,
+		DisplayNumberAs:     f.DisplayNumberAs,
+	}
+}
+
+func processoNumeric(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		return f, err == nil
+	}
+	return 0, false
+}
+
+func processoValidateHexColours(path string, ranges []ProcessoColorRange) error {
+	for i, r := range ranges {
+		if r.Color != "" && !strings.HasPrefix(r.Color, "#") {
+			return fmt.Errorf("%s[%d].color must be a hex code starting with #, got %q", path, i, r.Color)
+		}
+	}
+	return nil
+}
+
+func processoValidateOptionColours(path string, options []ProcessoFieldOption) error {
+	for i, o := range options {
+		if o.OptionColor != "" && !strings.HasPrefix(o.OptionColor, "#") {
+			return fmt.Errorf("%s[%d].color must be a hex code starting with #, got %q", path, i, o.OptionColor)
+		}
+	}
+	return nil
 }
 
 func processoValidateStatusList(listName string, statusList []ProcessoFieldStatus) error {
@@ -870,6 +1621,9 @@ func (processoTool *ProcessoTool) buildFieldBody(ctx context.Context, f Processo
 	if f.Datatype == "" {
 		return nil, errors.New("field.datatype is mandatory")
 	}
+	if err := processoValidateFieldName(f.Name); err != nil {
+		return nil, err
+	}
 	showGrid := f.ShowGrid
 	if showGrid == "" {
 		showGrid = "yes"
@@ -889,7 +1643,6 @@ func (processoTool *ProcessoTool) buildFieldBody(ctx context.Context, f Processo
 		Description:  f.Description,
 		Default:      f.Default,
 		Datatype:     f.Datatype,
-		TabName:      f.TabName,
 		CanGroup:     f.CanGroup,
 		Mandatory:    f.Mandatory,
 		IsHidden:     f.IsHidden,
@@ -919,14 +1672,8 @@ func (processoTool *ProcessoTool) buildFieldBody(ctx context.Context, f Processo
 	var fieldPayload interface{}
 	switch f.Datatype {
 	case ProcessoDatatypeTextbox:
-		if f.DataLength != "" {
-			dataLength, atoiErr := strconv.Atoi(f.DataLength)
-			if atoiErr != nil || dataLength <= 0 {
-				return nil, errors.New("field.data_length must be a positive number")
-			}
-			if f.DataLengthCheck == "" {
-				return nil, errors.New("field.data_length_check is mandatory when data_length is provided")
-			}
+		if err := processoValidateDataLength(f); err != nil {
+			return nil, err
 		}
 		fieldPayload = ProcessoFieldTextbox{
 			ProcessoFieldCommon: commonField,
@@ -1010,6 +1757,106 @@ func (processoTool *ProcessoTool) buildFieldBody(ctx context.Context, f Processo
 			OpenStatus:          f.OpenStatus,
 			CloseStatus:         f.CloseStatus,
 			Sts:                 f.Sts,
+		}
+	case ProcessoDatatypeTextarea:
+		if err := processoValidateDataLength(f); err != nil {
+			return nil, err
+		}
+		fieldPayload = ProcessoFieldTextarea{
+			ProcessoFieldTextbox: ProcessoFieldTextbox{
+				ProcessoFieldCommon: commonField,
+				DataLength:          f.DataLength,
+				DataLengthCheck:     f.DataLengthCheck,
+			},
+			RichText: f.RichText,
+		}
+	case ProcessoDatatypeNumber:
+		fieldPayload = processoNumberPayload(commonField, f)
+	case ProcessoDatatypeCurrency:
+		fieldPayload = ProcessoFieldCurrency{
+			ProcessoFieldNumber: processoNumberPayload(commonField, f),
+			Symbol:              f.Symbol,
+			SymbolField:         f.SymbolField,
+		}
+	case ProcessoDatatypeProgress:
+		start, startOk := processoNumeric(f.StartValue)
+		end, endOk := processoNumeric(f.EndValue)
+		if !startOk || !endOk {
+			return nil, errors.New("field.start_value and field.end_value are mandatory numbers for datatype progress")
+		}
+		if start >= end {
+			return nil, fmt.Errorf("field.start_value (%v) must be less than field.end_value (%v) for datatype progress", f.StartValue, f.EndValue)
+		}
+		if err := processoValidateHexColours("field.color_ranges", f.ColorRanges); err != nil {
+			return nil, err
+		}
+		fieldPayload = ProcessoFieldProgress{
+			ProcessoFieldCommon: commonField,
+			StartValue:          f.StartValue,
+			EndValue:            f.EndValue,
+			IsPerc:              f.IsPerc,
+			ColorRanges:         f.ColorRanges,
+		}
+	case ProcessoDatatypeRating:
+		if _, ok := processoNumeric(f.EndValue); !ok {
+			return nil, errors.New("field.end_value is mandatory for datatype rating - it is how many symbols the rating shows")
+		}
+		start := f.StartValue
+		if _, ok := processoNumeric(start); !ok {
+			start = 1
+		}
+		fieldPayload = ProcessoFieldRating{
+			ProcessoFieldCommon: commonField,
+			StartValue:          start,
+			EndValue:            f.EndValue,
+			EmojiValue:          f.EmojiValue,
+		}
+	case ProcessoDatatypeTag, ProcessoDatatypePriority:
+		if len(f.Options) == 0 {
+			return nil, fmt.Errorf("field.options must have at least one option for datatype %s", f.Datatype)
+		}
+		if err := processoValidateOptionColours("field.options", f.Options); err != nil {
+			return nil, err
+		}
+		fieldPayload = ProcessoFieldOptionList{ProcessoFieldCommon: commonField, Options: f.Options}
+	case ProcessoDatatypeAttachment:
+		if f.StorageName == "" {
+			return nil, errors.New("field.storage_name is mandatory for datatype attachment - it names the storage the file is written to")
+		}
+		fieldPayload = ProcessoFieldAttachment{
+			ProcessoFieldCommon: commonField,
+			StorageName:         f.StorageName,
+			FolderName:          f.FolderName,
+		}
+	case ProcessoDatatypeCheckbox:
+		fieldPayload = ProcessoFieldCheckbox{
+			ProcessoFieldCommon: commonField,
+			ValueTrue:           f.ValueTrue,
+			ValueFalse:          f.ValueFalse,
+		}
+	case ProcessoDatatypeWebsite:
+		if f.IsHyp && f.HyplNm == "" {
+			return nil, errors.New("field.hypl_nm is mandatory when field.is_hyp is true - a hyperlink with no text renders empty")
+		}
+		fieldPayload = ProcessoFieldWebsite{
+			ProcessoFieldCommon: commonField,
+			IsHyp:               f.IsHyp,
+			HyplNm:              f.HyplNm,
+		}
+	case ProcessoDatatypePeople:
+		fieldPayload = ProcessoFieldPeople{
+			ProcessoFieldCommon: commonField,
+			ApiField:            f.ApiField,
+			Multiple:            f.Multiple,
+		}
+	case ProcessoDatatypeObjectSs, ProcessoDatatypeObjectMs:
+		if f.NestedEntity == "" {
+			return nil, fmt.Errorf("field.nested_entity is mandatory for datatype %s - it names the entity embedded in this field", f.Datatype)
+		}
+		fieldPayload = ProcessoFieldObject{
+			ProcessoFieldCommon: commonField,
+			NestedEntity:        f.NestedEntity,
+			NestedFields:        f.NestedFields,
 		}
 	default:
 		fieldPayload = commonField

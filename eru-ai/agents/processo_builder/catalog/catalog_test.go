@@ -89,7 +89,7 @@ func TestCommonKeysCoverTheIdentityAndFlags(t *testing.T) {
 	for _, key := range c.Field.CommonKeys {
 		common[key] = true
 	}
-	for _, want := range []string{"name", "label", "datatype", "tab_name", "mandatory", "is_hidden", "is_pii", "to_encrypt", "grid_index"} {
+	for _, want := range []string{"name", "label", "datatype", "mandatory", "is_hidden", "is_pii", "to_encrypt", "grid_index"} {
 		if !common[want] {
 			t.Errorf("%s is no longer a common key", want)
 		}
@@ -178,7 +178,7 @@ func TestSuggestDatatypePointsSomewhere(t *testing.T) {
 func TestValidateFieldAcceptsAGoodField(t *testing.T) {
 	c := Get()
 	issues := c.ValidateField("field", map[string]interface{}{
-		"name": "deal_value", "label": "Deal Value", "datatype": "number", "tab_name": "general",
+		"name": "deal_value", "label": "Deal Value", "datatype": "number",
 		"decimal": "2", "mandatory": true,
 	})
 	if len(issues) != 0 {
@@ -195,7 +195,7 @@ func TestValidateFieldCatchesTheNameRules(t *testing.T) {
 	}
 	for name, want := range cases {
 		issues := c.ValidateField("field", map[string]interface{}{
-			"name": name, "label": "X", "datatype": "textbox", "tab_name": "general",
+			"name": name, "label": "X", "datatype": "textbox",
 		})
 		if !hasCode(issues, want) {
 			t.Errorf("name %q should raise %s, got %s", name, want, FormatIssues(issues, 5))
@@ -205,7 +205,7 @@ func TestValidateFieldCatchesTheNameRules(t *testing.T) {
 
 func TestValidateFieldCatchesTheDatatype(t *testing.T) {
 	c := Get()
-	base := map[string]interface{}{"name": "x_y", "label": "X", "tab_name": "general"}
+	base := map[string]interface{}{"name": "x_y", "label": "X"}
 
 	missing := clone(base)
 	if issues := c.ValidateField("field", missing); !hasCode(issues, CodeDatatypeMissing) {
@@ -234,7 +234,7 @@ func TestValidateFieldCatchesTheDatatype(t *testing.T) {
 func TestValidateFieldCatchesKeysFromAnotherDatatype(t *testing.T) {
 	c := Get()
 	issues := c.ValidateField("field", map[string]interface{}{
-		"name": "stage", "label": "Stage", "datatype": "textbox", "tab_name": "general",
+		"name": "stage", "label": "Stage", "datatype": "textbox",
 		"open_status": []interface{}{},
 	})
 	if !hasCode(issues, CodeKeyNotOnDatatype) {

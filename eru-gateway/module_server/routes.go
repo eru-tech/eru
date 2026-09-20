@@ -60,7 +60,10 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder, rh 
 	serverRouter.Get("sch").HandlerFunc(module_handlers.RouteHandler(sh, rh))
 	serverRouter.Get("sch_list").HandlerFunc(module_handlers.RouteHandler(sh, rh))
 
+	// The gateway's own config routes. ConfigApiKeyMiddleware is mounted here and on the registry
+	// subrouter only - never on the catch-all below, which forwards to other services.
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
+	storeRouter.Use(module_handlers.ConfigApiKeyMiddleware)
 	storeRouter.Methods(http.MethodGet).Path("/load").HandlerFunc(module_handlers.StoreLoadHandler(sh))
 	storeRouter.Methods(http.MethodPost).Path("/compare").HandlerFunc(module_handlers.StoreCompareHandler(sh))
 	storeRouter.Methods(http.MethodGet).Path("/config").HandlerFunc(module_handlers.GetConfigHandler(sh))
@@ -78,6 +81,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder, rh 
 
 	// Add registry routes
 	registryRouter := serverRouter.PathPrefix("/registry").Subrouter()
+	registryRouter.Use(module_handlers.ConfigApiKeyMiddleware)
 	registryRouter.Methods(http.MethodPost).Path("/register").HandlerFunc(rh.RegisterHandler)
 	registryRouter.Methods(http.MethodDelete).Path("/deregister/{serviceid}").HandlerFunc(rh.DeregisterHandler)
 	registryRouter.Methods(http.MethodPost).Path("/heartbeat/{serviceid}").HandlerFunc(rh.HeartbeatHandler)

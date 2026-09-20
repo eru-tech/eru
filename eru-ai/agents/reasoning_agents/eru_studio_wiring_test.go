@@ -109,3 +109,23 @@ func TestPayloadEntryFormsAreRead(t *testing.T) {
 		}
 	}
 }
+
+// The planner only learns WHEN an agent is needed from what that agent
+// advertises. Without this, a requirement phrased purely as data ("we need to
+// capture X") is planned as entities alone and nobody can enter a record.
+func TestEruStudioAdvertisesWhenAPageIsNeeded(t *testing.T) {
+	note := (&EruStudioAgent{}).PlanningNote()
+
+	for _, phrase := range []string{
+		"WHEN TO INCLUDE IT",
+		"enter, review or browse",
+		"not only when a page is asked for by name",
+	} {
+		if !strings.Contains(note, phrase) {
+			t.Errorf("eru_studio no longer tells the planner when a page is needed: missing %q", phrase)
+		}
+	}
+	if !strings.Contains(note, "ONE step, always") {
+		t.Error("the one-step rule must survive alongside the when-to-include guidance")
+	}
+}

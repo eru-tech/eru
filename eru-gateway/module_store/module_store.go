@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -29,6 +30,7 @@ type ModuleStoreI interface {
 	ReplaceListenerRule(ctx context.Context, listenerRule *module_model.ListenerRule) error
 	RemoveListenerRule(ctx context.Context, listenerRuleName string, realStore ModuleStoreI) error
 	GetListenerRules(ctx context.Context) []*module_model.ListenerRule
+	SortListenerRules(ctx context.Context)
 	GetListenerRule(ctx context.Context, listenerRuleName string) (*module_model.ListenerRule, error)
 	GetTargetGroupAuthorizer(ctx context.Context, r *http.Request) (module_model.TargetHost, module_model.Authorizer, []module_model.MapStructCustom, string, error)
 	SaveAuthorizer(ctx context.Context, authorizer module_model.Authorizer, realStore ModuleStoreI, persist bool) error
@@ -71,8 +73,9 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(ctx context.Context, r *http.Req
 	listenerRuleFound := false
 	instanceId := ""
 	if ms.ListenerRules != nil {
+		// ListenerRules is kept sorted by rule_rank, so the first rule that matches is the one the
+		// configured precedence intends.
 		for _, v := range ms.ListenerRules {
-			//TODO to sort the array on RuleRank before looping
 			//check for hosts
 			for _, host := range v.Hosts {
 				if strings.Split(r.Host, ":")[0] == host {
@@ -217,6 +220,16 @@ func (ms *ModuleStore) setAuthNameHeader(ctx context.Context, r *http.Request, a
 	r.Header.Set(server.AuthNameHeaderKey, authName)
 }
 
+// SortListenerRules orders the rules by rule_rank ascending, so the lowest rank is matched first.
+// Ranks are allowed to repeat: a stable sort leaves rules that share a rank in the order they were
+// already in, so a tie stays put rather than shuffling on every save.
+func (ms *ModuleStore) SortListenerRules(ctx context.Context) {
+	logs.WithContext(ctx).Debug("SortListenerRules - Start")
+	sort.SliceStable(ms.ListenerRules, func(i, j int) bool {
+		return ms.ListenerRules[i].RuleRank < ms.ListenerRules[j].RuleRank
+	})
+}
+
 func (ms *ModuleStore) GetListenerRule(ctx context.Context, listenerRuleName string) (*module_model.ListenerRule, error) {
 	logs.WithContext(ctx).Debug("GetListenerRule - Start")
 	if ms.ListenerRules != nil {
@@ -252,11 +265,11 @@ func (ms *ModuleStore) SaveListenerRule(ctx context.Context, listenerRule *modul
 		realStore.GetMutex().Lock()
 		defer realStore.GetMutex().Unlock()
 	}
-	//TODO to check for duplicate rank
 	err := ms.ReplaceListenerRule(ctx, listenerRule)
 	if err != nil {
 		ms.ListenerRules = append(ms.ListenerRules, listenerRule)
 	}
+	ms.SortListenerRules(ctx)
 	if persist == true {
 		logs.WithContext(ctx).Info("SaveStore called from SaveListenerRule")
 		return realStore.SaveStore(ctx, "gateway", "", realStore)
@@ -606,6 +619,7 @@ func LoadStore(ctx context.Context, StoreTableName string, StoreTenantTableName 
 			logs.WithContext(ctx).Error(err.Error())
 			return nil, err
 		}
+		myStore.SortListenerRules(ctx)
 	} else {
 		logs.WithContext(ctx).Error(err.Error())
 	}

@@ -51,8 +51,18 @@ func TestProcessoBuilderPromptCarriesTheGeneratedCatalog(t *testing.T) {
 			t.Errorf("the prompt does not mention %s", want)
 		}
 	}
-	// The instructions that stop the two irreversible mistakes.
-	for _, want := range []string{"get_processo_context", "REPLACES", "f_name"} {
+	// A required value it was not given must be an ask, not an invention: the
+	// agent was observed inventing storage_name "default", which saves without
+	// error and writes nothing.
+	for _, want := range []string{"storage_name", "never a guess"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt does not tell the model to ask rather than invent (%s)", want)
+		}
+	}
+	// The instructions that stop the two irreversible mistakes. save_entity does
+	// not replace the model - it merges - so what the prompt must carry is that
+	// one entity goes per call, not a warning about replacement.
+	for _, want := range []string{"get_processo_context", "single-object array", "f_name"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt does not warn about %s", want)
 		}
@@ -336,22 +346,80 @@ func TestProcessoBuilderDoesNotFailWhenItCannotConfirm(t *testing.T) {
 	}
 }
 
-// A field the answer already reports as failed is an honest report; confirming
-// it would turn one failure into two.
-func TestProcessoBuilderSkipsConfirmationForReportedFailures(t *testing.T) {
+func failedField(name string) map[string]interface{} {
+	return map[string]interface{}{
+		"summary": "could not save",
+		"fields": []interface{}{
+			map[string]interface{}{"entity_name": "test", "name": name, "datatype": "textbox", "action": "failed", "note": "tool returned an empty result"},
+		},
+	}
+}
+
+// A reported failure is checked against the model like any other claim: if the
+// field really is absent, the report is honest and stands.
+func TestProcessoBuilderAcceptsAFailureThatReallyFailed(t *testing.T) {
 	agent, delegate := builderWithMetadata(t, []string{"fn"})
 	ctx := withBuilderScope(context.Background(), "processo", "tenant-1")
 
-	err := agent.ValidateOutput(ctx, map[string]interface{}{
-		"summary": "could not save",
-		"fields": []interface{}{
-			map[string]interface{}{"entity_name": "test", "name": "test_note", "datatype": "textbox", "action": "failed", "note": "tool returned an empty result"},
-		},
-	})
-	if err != nil {
-		t.Errorf("a reported failure should pass, got %v", err)
+	if err := agent.ValidateOutput(ctx, failedField("test_note")); err != nil {
+		t.Errorf("a field reported failed and genuinely absent should pass, got %v", err)
 	}
-	if delegate.calls != 0 {
-		t.Errorf("nothing was claimed written, so nothing should be read back; got %d calls", delegate.calls)
+	if delegate.calls != 1 {
+		t.Errorf("a reported failure should still be read back once, got %d calls", delegate.calls)
+	}
+}
+
+// The false failure: the save landed and the answer says it did not. Left
+// alone, the user is told the data model is unchanged while it has changed.
+// This is what a "Save Entity Field Ignored" message in the response produced.
+func TestProcessoBuilderRejectsAFailureThatActuallyLanded(t *testing.T) {
+	agent, _ := builderWithMetadata(t, []string{"fn", "test_note"})
+	ctx := withBuilderScope(context.Background(), "processo", "tenant-1")
+
+	err := agent.ValidateOutput(ctx, failedField("test_note"))
+	if err == nil {
+		t.Fatal("a field reported failed that is present in the model should be rejected")
+	}
+	if !strings.Contains(err.Error(), "test.test_note") {
+		t.Errorf("the error should name the field that landed: %v", err)
+	}
+	if !strings.Contains(err.Error(), "Ignored") {
+		t.Errorf("the error should explain what an Ignored message means: %v", err)
+	}
+}
+
+// A workspace in use already holds most of what gets asked for, under names the
+// request does not use. Creating a second entity meaning the same thing splits
+// the records across two places with no way to merge them, so the builder has to
+// weigh extending against creating and say which it chose.
+func TestProcessoBuilderWeighsExtendingBeforeCreating(t *testing.T) {
+	prompt := newBuilderAgent(t, "").GetSystemPrompt()
+
+	for _, phrase := range []string{
+		"EXTENDING",
+		"by what it HOLDS, not by",
+		"add the missing fields to it rather than creating a",
+		"without having named the alternative you rejected",
+	} {
+		if !strings.Contains(prompt, phrase) {
+			t.Errorf("the builder no longer has to justify a new entity against the existing model: missing %q", phrase)
+		}
+	}
+}
+
+// The whole model must never be sent: the backend merges, so anything left out
+// is untouched, and a full list rewrites every entity's display order on a
+// request that changed one thing.
+func TestProcessoBuilderSendsOneEntityPerSave(t *testing.T) {
+	prompt := newBuilderAgent(t, "").GetSystemPrompt()
+
+	for _, phrase := range []string{
+		"single-object array",
+		"Never send the existing model",
+		"exet=false when creating",
+	} {
+		if !strings.Contains(prompt, phrase) {
+			t.Errorf("the builder no longer knows save_entity takes one entity: missing %q", phrase)
+		}
 	}
 }

@@ -3,6 +3,7 @@ package reasoning_agents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -91,21 +92,45 @@ BEFORE YOU WRITE ANYTHING
 2. Call get_entity_metadata to see what already exists. An entity you "create" that is
    already there, under a name you did not check, is the most common way to make a mess that
    cannot be undone: entities and fields cannot be renamed, only deleted and recreated.
+3. Then decide, deliberately, between EXTENDING what is there and creating something new.
+   A workspace that has been in use has entities that already hold most of what is being
+   asked for, under names the user did not think to mention - the same thing is called a
+   contact in one company and a lead, a party or a card in another. A new entity beside an
+   existing one that means the same thing is not a clean addition: the records split across
+   two places, and neither can be merged afterwards.
+   So before creating an entity, look for the closest existing one by what it HOLDS, not by
+   what it is called, and then:
+   - if one already covers the request, add the missing fields to it rather than creating a
+     new entity, and say in your summary which one you extended and why;
+   - if the closest match is genuinely a different thing, create the new entity and say in
+     your summary what you compared it against and why it is not the same;
+   - if it is a real toss-up and the answer changes what gets built, ask the user, naming the
+     candidate and what it already holds.
+   Creating a new entity without having named the alternative you rejected is not acceptable.
 
 ============================================================
 {{FIELD_CATALOG}}
 ============================================================
 HOW A WRITE WORKS
 ============================================================
-save_entity takes the COMPLETE entity list and REPLACES it. Read the current list first, add
-yours to it, and send the whole thing. Sending only the new entity deletes every other one.
+save_entity writes ONE entity - entity_data is a single-object array holding just the entity
+you are creating or editing. Never send the existing model: the backend merges what you give
+it against what is already stored, so an entity you leave out keeps everything it has. Sending
+the whole list is rejected, and it would rewrite every entity's display order besides.
+Set exet=false when creating (this also builds the entity's table) and exet=true when editing
+one that already exists. Creating with exet=true registers an entity with no table behind it.
 
 save_field writes ONE field. An empty field object ({}) with f_name set is how a field is
 DELETED - never send an empty field object unless deletion is what was asked for.
 
-A field's tab_name must be a tab that already exists on the entity. Check the entity's tabs
-before you place a field; if the tab the field needs is not there, say so rather than
-inventing one - creating tabs is not something you can do.
+READING THE SAVE RESPONSE. A save runs through a group of conditional steps, and a step whose
+condition is false comes back as "<step> Ignored". That is a branch that did not apply - it is
+ordinary control flow, NOT a rejection, and it tells you nothing about whether another step
+wrote. So a response containing "Save Entity Field Ignored" does not mean the field was not
+saved; more often than not it was. Never report a field as failed on the strength of an
+"Ignored" message. If you genuinely need to know whether a write landed, read the model back
+with get_entity_metadata and look. Reporting a successful write as a failure is its own bug:
+it tells the user their data model is unchanged when it has in fact changed.
 
 ============================================================
 WHAT TO ASK ABOUT
@@ -116,8 +141,21 @@ Ask, do not guess, when the answer changes something that cannot be undone:
 - whether a field holds personal or financial data, which decides is_pii / to_encrypt / is_pf
 - deleting anything
 
+**A required value you were not given and cannot look up is an ASK, never a guess.** If a
+save is rejected for a missing key, that rejection is the signal to ask the user for it -
+not to invent something and send it again. A plausible-looking invention is the worst
+outcome available: the save is ACCEPTED and the field IS written, pointing at something that
+does not exist. Nothing complains now; it breaks later, at the moment a user tries to use the
+field, and by then nobody connects the two. A name like "default" is a guess, not a default.
+These are the ones with no default worth guessing:
+- attachment: storage_name names a storage that must already exist
+- dropdown with option_type ENTITY_DATA or API: the entity, field or api it reads from
+- status: the actual open and close statuses this business uses
+- object: the entity to embed
+
 Do not ask about things you can look up. The catalog tells you what keys a datatype takes;
-get_entity_metadata tells you what exists.
+get_entity_metadata tells you what exists. Ask once, with the options you can see, and
+carry on when you have the answer.
 
 ============================================================
 WHEN YOU ARE DONE
@@ -331,23 +369,39 @@ func (pbAgent *ProcessoBuilderAgent) ValidateOutput(ctx context.Context, output 
 		catalog.FormatIssues(issues, maxReportedBuilderIssues))
 }
 
-// confirmWrites re-reads the data model and checks that the fields the answer
-// claims to have written are actually there.
+// confirmWrites re-reads the data model and checks the answer against it in
+// both directions: fields reported as written must be there, and fields
+// reported as failed must not.
 //
-// It exists because a processo write can fail without saying so. The save runs
+// It exists because the save response does not say what happened. The save runs
 // through a function group whose steps are individually conditional, and a step
-// that does not apply answers with an informational "Ignored" message and an
-// empty result envelope - which is indistinguishable, at the tool boundary, from
-// a step that applied and wrote nothing. The model has no error to report and
-// truthfully reports what it was told, so "created" can mean "submitted and not
-// contradicted" rather than "present".
+// whose condition is false is reported with an informational "<step> Ignored"
+// message. That is ordinary control flow - a branch that did not apply - and it
+// says nothing about whether some other branch wrote. So the envelope is
+// ambiguous both ways: "created" can mean "submitted and not contradicted", and
+// "Ignored" reads like a refusal when the field in fact landed.
 //
-// Reading the model back is the only thing that tells the two apart.
+// Reading the model back is the only thing that settles it, which is why a
+// reported failure is checked just as hard as a reported success. Of the two,
+// the false failure is the worse one to let through: the caller is told the
+// data model is unchanged while it has in fact changed.
 func (pbAgent *ProcessoBuilderAgent) confirmWrites(ctx context.Context, output map[string]interface{}) error {
-	claimed := map[string][]string{} // entity -> field names the answer says it wrote
+	claimed := map[string][]string{}    // entity -> field names the answer says it wrote
+	disclaimed := map[string][]string{} // entity -> field names the answer says it did not write
 	for _, raw := range sliceOf(output["fields"]) {
 		field, ok := raw.(map[string]interface{})
-		if !ok || skipUnwritten(field) {
+		if !ok {
+			continue
+		}
+		if action, _ := field["action"].(string); action == "failed" {
+			name, _ := field["name"].(string)
+			entity, _ := field["entity_name"].(string)
+			if name != "" && entity != "" {
+				disclaimed[entity] = append(disclaimed[entity], name)
+			}
+			continue
+		}
+		if skipUnwritten(field) {
 			continue
 		}
 		if action, _ := field["action"].(string); action == "deleted" {
@@ -363,7 +417,7 @@ func (pbAgent *ProcessoBuilderAgent) confirmWrites(ctx context.Context, output m
 		}
 		claimed[entity] = append(claimed[entity], name)
 	}
-	if len(claimed) == 0 {
+	if len(claimed) == 0 && len(disclaimed) == 0 {
 		return nil
 	}
 
@@ -385,9 +439,15 @@ func (pbAgent *ProcessoBuilderAgent) confirmWrites(ctx context.Context, output m
 	}
 	metadata := pbAgent.entityMetadataTool(ctx, delegate)
 
-	entityNames := make([]interface{}, 0, len(claimed))
-	for entity := range claimed {
-		entityNames = append(entityNames, entity)
+	entityNames := make([]interface{}, 0, len(claimed)+len(disclaimed))
+	seenEntity := map[string]bool{}
+	for _, set := range []map[string][]string{claimed, disclaimed} {
+		for entity := range set {
+			if !seenEntity[entity] {
+				seenEntity[entity] = true
+				entityNames = append(entityNames, entity)
+			}
+		}
 	}
 	result, _, err := metadata.Execute(ctx, scope.projectId, scope.tenantId, utility.EntityMetadataToolName,
 		map[string]interface{}{"entity_names": entityNames})
@@ -450,21 +510,54 @@ func (pbAgent *ProcessoBuilderAgent) confirmWrites(ctx context.Context, output m
 			}
 		}
 	}
-	if len(missing) == 0 {
+
+	// A field reported as failed that is present in the read-back is a false
+	// failure: the write landed and the caller is about to be told it did not.
+	var landed []string
+	for entity, names := range disclaimed {
+		fields, seen := present[entity]
+		if !seen {
+			continue
+		}
+		for _, name := range names {
+			if fields[name] {
+				landed = append(landed, entity+"."+name)
+			}
+		}
+	}
+
+	if len(missing) == 0 && len(landed) == 0 {
 		return nil
 	}
-	sort.Strings(missing)
-	return fmt.Errorf(
-		"you reported these as written but they are not in the data model when it is read back: %s.\n"+
-			"A processo save can answer without an error and still write nothing - an \"Ignored\" message with an "+
-			"empty result means the step did not apply, not that it succeeded. Check the arguments you sent "+
-			"(entity_name, tab_name and the datatype's own keys), try the save again, and if it still does not "+
-			"appear, report it as failed with what the tool returned - do not report it as created",
-		strings.Join(missing, ", "))
+
+	var problems []string
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		problems = append(problems, fmt.Sprintf(
+			"you reported these as written but they are not in the data model when it is read back: %s.\n"+
+				"Check the arguments you sent (entity_name and the datatype's own keys), try the save "+
+				"again, and if it still does not appear, report it as failed with what the tool returned - do not "+
+				"report it as created",
+			strings.Join(missing, ", ")))
+	}
+	if len(landed) > 0 {
+		sort.Strings(landed)
+		problems = append(problems, fmt.Sprintf(
+			"you reported these as failed but they ARE in the data model when it is read back: %s.\n"+
+				"The save succeeded. A \"<step> Ignored\" message in the response is not a refusal - it reports a "+
+				"conditional step whose condition was false and which was therefore skipped, which is ordinary "+
+				"control flow and says nothing about whether another step wrote. Report these with the action they "+
+				"actually had (created, or updated) rather than as failed",
+			strings.Join(landed, ", ")))
+	}
+	return errors.New(strings.Join(problems, "\n\n"))
 }
 
 // A field reported as failed or unchanged was not written, so holding it to the
 // catalog would turn an honest report of a failure into a second failure.
+// confirmWrites does not use this to dismiss failures - it checks those against
+// the read-back too - but the catalog check has nothing to say about a payload
+// that was never accepted.
 func skipUnwritten(entry map[string]interface{}) bool {
 	action, _ := entry["action"].(string)
 	return action == "failed" || action == "unchanged"

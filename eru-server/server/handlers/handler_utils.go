@@ -20,7 +20,7 @@ func MakeCorsObject() *cors.Cors {
 	return cors.New(cors.Options{
 		AllowCredentials: true,
 		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Original-Endpoint", "Id_token", "Claims", "Mcp-Session-Id", "Mcp-Protocol-Version"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Original-Endpoint", "Id_token", "Claims", "Mcp-Session-Id", "Mcp-Protocol-Version", "X-Config-Api-Key"},
 		ExposedHeaders:   []string{"Mcp-Session-Id", "Mcp-Protocol-Version", "WWW-Authenticate"},
 		AllowOriginRequestFunc: func(r *http.Request, s string) bool {
 			if AllowedOrigins == "" {

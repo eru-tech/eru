@@ -7,7 +7,7 @@
       "projects/processo/src/app/components/data-model/data-model.component.ts",
       "projects/processo/src/app/components/field-editor/field-editor.component.ts"
     ],
-    "fingerprint": "1a1baecfe62d48a511d7b83689a8ec94"
+    "fingerprint": "5a0114d9fe20c652dbf6cc89efb19f2e"
   },
   "note": "Required-ness is not described here. It is enforced by the Go param structs in eru-ai/tools/eru/processo.go (eru:\"required\" + ValidateStruct), which are the only thing that rejects a bad payload.",
   "entity": {
@@ -92,7 +92,6 @@
       "name",
       "show_grid",
       "show_mobile",
-      "tab_name",
       "tf_idx",
       "to_encrypt",
       "tool_tip",
@@ -563,11 +562,6 @@
       {
         "key": "dateOffsetDays",
         "default": null
-      },
-      {
-        "key": "tab",
-        "default": "",
-        "required": true
       },
       {
         "key": "toolTip",

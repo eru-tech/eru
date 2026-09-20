@@ -1382,6 +1382,31 @@ func StructToJSONSchema(t reflect.Type, seenFields []string) eru_models.JSONSche
 		if format := field.Tag.Get("format"); format != "" {
 			fieldSchema.Format = format
 		}
+
+		// Add the allowed values from an `enum:"a,b,c"` tag.
+		//
+		// Worth the tag rather than prose in `desc`: the enum travels into the
+		// provider's own tool schema, so a value outside the set is rejected
+		// against the tool call itself instead of reaching the service and
+		// coming back as a retry. A list applies to the items, not the array -
+		// `enum` on a []string means each element is one of the set.
+		if enumTag := field.Tag.Get("enum"); enumTag != "" {
+			values := make([]interface{}, 0)
+			for _, v := range strings.Split(enumTag, ",") {
+				if trimmed := strings.TrimSpace(v); trimmed != "" {
+					values = append(values, trimmed)
+				}
+			}
+			if len(values) > 0 {
+				if fieldSchema.Type == "array" && fieldSchema.Items != nil {
+					items := *fieldSchema.Items
+					items.Enum = values
+					fieldSchema.Items = &items
+				} else {
+					fieldSchema.Enum = values
+				}
+			}
+		}
 		if defaultVal := field.Tag.Get("default"); defaultVal != "" {
 			fieldSchema.Description += fmt.Sprint(" - default value: ", defaultVal)
 			requiredFields = append(requiredFields, name)

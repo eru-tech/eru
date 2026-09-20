@@ -367,5 +367,10 @@ func stampPlannedIdentity(page map[string]interface{}, planned studio.PlanPage) 
 func (eruStudioAgent *EruStudioAgent) PlanningNote() string {
 	return "ONE step, always. This agent produces the whole design in a single call - the page being " +
 		"edited and every page it mounts (a board's card, a side panel's form) come back together as " +
-		"separate actions. Never plan a second step for another page, and never chain two of these."
+		"separate actions. Never plan a second step for another page, and never chain two of these. " +
+		"WHEN TO INCLUDE IT: whenever the request implies a person will enter, review or browse the " +
+		"data - not only when a page is asked for by name. A requirement phrased as data (\"we need to " +
+		"capture X\", \"track Y against Z\") is not met by storage alone: until there is a page, nobody " +
+		"can put a record in or read one out. Plan the data model step first and this one after it, " +
+		"naming the entities that step creates."
 }

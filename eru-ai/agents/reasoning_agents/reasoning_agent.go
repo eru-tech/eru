@@ -292,6 +292,7 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		if normalized, ok := deepUnstringifyJSON(agentResponse, "").(map[string]interface{}); ok {
 			agentResponse = normalized
 		}
+		agentResponse = unwrapOutputEnvelope(agentResponse, outputSchema)
 
 		if response.TerminalTool == models.TerminalToolAskUser {
 			break
@@ -626,7 +627,20 @@ func escapeControlCharsInStrings(s string) string {
 
 // agentValidationRetryPrompt is fed back to the model when its output fails
 // JSON validation, so it can self-correct on the next attempt.
+//
+// It is explicit that the rejection is about the shape of the report because
+// models read "your previous output was rejected, send it again" as evidence
+// that the work behind the report already happened. One then reported a field
+// as created on a retry without ever having called the save tool: the earlier
+// attempt had been rejected for a missing key, and it took "call it again" to
+// mean the save was done and only the reporting had to be fixed.
 const agentValidationRetryPrompt = `Your previous structured_output was NOT valid and was rejected: %s
+
+This rejection is about the SHAPE of your report, nothing else. It is not a signal that your
+work succeeded, and it is not a signal that it failed - it says nothing at all about what you
+did or did not do. Do NOT assume any tool call has already happened. Judge that only from the
+tool results you can actually see in this conversation: if the work has not been done yet, do
+it now before reporting, and report only outcomes your tool results support.
 
 Call structured_output again with a corrected result. Requirements:
 - The ENTIRE output must be a single valid, parseable JSON object.
@@ -817,4 +831,37 @@ func findOuterJSONObject(s string) (int, int, bool) {
 		}
 	}
 	return 0, 0, false
+}
+
+// unwrapOutputEnvelope undoes a wrapper the model sometimes puts around an
+// otherwise correct answer: {"output": {...the real answer...}}.
+//
+// The tool's input schema is flat and says so, but models still wrap, and every
+// wrap costs a full retry - and worse, the retry tells the model its output was
+// rejected, which it can read as "the work is done, just re-report" and answer
+// with fabricated results. Undoing it here is deterministic and costs nothing.
+//
+// It only unwraps when the answer cannot be anything else: exactly one top-level
+// key, a key the schema does not declare, and an inner object that carries every
+// key the schema requires. Anything less is left alone for validation to judge.
+func unwrapOutputEnvelope(response map[string]interface{}, schema eru_models.JSONSchema) map[string]interface{} {
+	if len(response) != 1 || len(schema.Required) == 0 {
+		return response
+	}
+	for key, value := range response {
+		if _, declared := schema.Properties[key]; declared {
+			return response
+		}
+		inner, ok := value.(map[string]interface{})
+		if !ok {
+			return response
+		}
+		for _, required := range schema.Required {
+			if _, found := inner[required]; !found {
+				return response
+			}
+		}
+		return inner
+	}
+	return response
 }
