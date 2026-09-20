@@ -233,6 +233,24 @@ func CloneRequest(ctx context.Context, request *http.Request) (req *http.Request
 			err = logs.Err(ctx, fmt.Errorf("io.ReadAll error : %w", err3), "")
 			return
 		}
+		// A body already read to the end reads back empty rather than failing, so
+		// a caller that clones the same request twice silently gets an empty one
+		// the second time - and the step then dies decoding a body its
+		// Content-Length promised. GetBody exists to hand the body out again;
+		// when the source offers one, use it rather than the spent reader.
+		if len(body) == 0 && request.ContentLength > 0 && request.GetBody != nil {
+			replay, errGb := request.GetBody()
+			if errGb != nil {
+				err = logs.Err(ctx, fmt.Errorf("request.GetBody error : %w", errGb), "")
+				return
+			}
+			body, err3 = io.ReadAll(replay)
+			_ = replay.Close()
+			if err3 != nil {
+				err = logs.Err(ctx, fmt.Errorf("io.ReadAll(GetBody) error : %w", err3), "")
+				return
+			}
+		}
 		request.Body = io.NopCloser(bytes.NewReader(body))
 		req.Body = io.NopCloser(bytes.NewReader(body))
 	}

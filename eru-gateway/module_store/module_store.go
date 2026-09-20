@@ -76,70 +76,76 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(ctx context.Context, r *http.Req
 		// ListenerRules is kept sorted by rule_rank, so the first rule that matches is the one the
 		// configured precedence intends.
 		for _, v := range ms.ListenerRules {
+			// A rule matches when every criterion it sets matches, and a criterion that lists several
+			// values matches when any one of them does. A criterion left empty places no constraint.
+			// A rule that sets no criterion at all matches nothing, so an empty rule never swallows
+			// traffic.
+			if len(v.Hosts)+len(v.Methods)+len(v.Paths)+len(v.Headers)+len(v.Params)+len(v.SourceIP) == 0 {
+				continue
+			}
+			listenerRuleFound = true
+
 			//check for hosts
-			for _, host := range v.Hosts {
-				if strings.Split(r.Host, ":")[0] == host {
-					logs.WithContext(ctx).Info(fmt.Sprint("host match = ", host))
-					listenerRuleFound = true
-					break
+			if len(v.Hosts) > 0 {
+				listenerRuleFound = false
+				for _, host := range v.Hosts {
+					if strings.Split(r.Host, ":")[0] == host {
+						logs.WithContext(ctx).Info(fmt.Sprint("host match = ", host))
+						listenerRuleFound = true
+						break
+					}
 				}
 			}
 
 			//check for Methods
-			for _, method := range v.Methods {
-				//resetting listenerRuleFound to false as Method array length > 1 - so it has to pass this match too
+			if listenerRuleFound && len(v.Methods) > 0 {
 				listenerRuleFound = false
-				if r.Method == method {
-					logs.WithContext(ctx).Info(fmt.Sprint("method match = ", method))
-					listenerRuleFound = true
-					break
+				for _, method := range v.Methods {
+					if r.Method == method {
+						logs.WithContext(ctx).Info(fmt.Sprint("method match = ", method))
+						listenerRuleFound = true
+						break
+					}
 				}
 			}
 
 			//check for Paths
-			for _, path := range v.Paths {
-				//resetting listenerRuleFound to false as Path array length > 1 - so it has to pass this match too
+			if listenerRuleFound && len(v.Paths) > 0 {
 				listenerRuleFound = false
-				switch path.MatchType {
-				case MatchTypePrefix:
-					if strings.HasPrefix(r.URL.Path, path.Path) {
+				for _, path := range v.Paths {
+					if matchPath(r.URL.Path, path) {
 						logs.WithContext(ctx).Info(fmt.Sprint("path match = ", path.Path))
 						listenerRuleFound = true
 						break
 					}
-				case MatchTypeExact:
-					if r.URL.Path == path.Path {
-						logs.WithContext(ctx).Info(fmt.Sprint("path match = ", path.Path))
-						listenerRuleFound = true
-						break
-					}
-				default:
-					//do nothing
 				}
 			}
+
 			//check for Headers
-			for _, header := range v.Headers {
-				//resetting listenerRuleFound to false as Headers array length > 1 - so it has to pass this match too
+			if listenerRuleFound && len(v.Headers) > 0 {
 				listenerRuleFound = false
-				if r.Header.Get(header.Key) == header.Value {
-					logs.WithContext(ctx).Info(fmt.Sprint("header match = ", header.Key, " = ", header.Value))
-					listenerRuleFound = true
-					break
+				for _, header := range v.Headers {
+					if r.Header.Get(header.Key) == header.Value {
+						logs.WithContext(ctx).Info(fmt.Sprint("header match = ", header.Key, " = ", header.Value))
+						listenerRuleFound = true
+						break
+					}
 				}
 			}
 			if r.Header.Get("instance_id") != "" {
 				instanceId = r.Header.Get("instance_id")
 			}
+
 			//check for Params
 			reqParams := r.URL.Query()
-			for _, param := range v.Params {
-				//resetting listenerRuleFound to false as Headers array length > 1 - so it has to pass this match too
+			if listenerRuleFound && len(v.Params) > 0 {
 				listenerRuleFound = false
-				if reqParams.Get(param.Key) == param.Value {
-					listenerRuleFound = true
-					logs.WithContext(ctx).Info(fmt.Sprint("param match = ", param.Key, " = ", param.Value))
-					r.URL.RawQuery = reqParams.Encode()
-					break
+				for _, param := range v.Params {
+					if reqParams.Get(param.Key) == param.Value {
+						logs.WithContext(ctx).Info(fmt.Sprint("param match = ", param.Key, " = ", param.Value))
+						listenerRuleFound = true
+						break
+					}
 				}
 			}
 			if reqParams.Get("instance_id") != "" {
@@ -148,36 +154,25 @@ func (ms *ModuleStore) GetTargetGroupAuthorizer(ctx context.Context, r *http.Req
 			r.URL.RawQuery = reqParams.Encode()
 
 			//check for SourceIP
-			for _, sourceIP := range v.SourceIP {
-				//resetting listenerRuleFound to false as SourceIP array length > 1 - so it has to pass this match too
+			if listenerRuleFound && len(v.SourceIP) > 0 {
 				listenerRuleFound = false
-				if strings.Split(r.RemoteAddr, ":")[0] == sourceIP {
-					logs.WithContext(ctx).Info(fmt.Sprint("sourceIP match = ", sourceIP))
-					listenerRuleFound = true
-					break
+				for _, sourceIP := range v.SourceIP {
+					if strings.Split(r.RemoteAddr, ":")[0] == sourceIP {
+						logs.WithContext(ctx).Info(fmt.Sprint("sourceIP match = ", sourceIP))
+						listenerRuleFound = true
+						break
+					}
 				}
 			}
 			logs.WithContext(ctx).Info(fmt.Sprint("listenerRuleFound = ", listenerRuleFound))
 			if listenerRuleFound {
 				pathExceptionFound := false
 				for _, pathException := range v.AuthorizerException {
-					switch pathException.MatchType {
-					case MatchTypePrefix:
-						if strings.HasPrefix(r.URL.Path, pathException.Path) {
-							logs.WithContext(ctx).Info(fmt.Sprint("pathException MatchTypePrefix = ", pathException.Path))
-							pathExceptionFound = true
-							r.Header.Set("is_public", "true")
-							break
-						}
-					case MatchTypeExact:
-						if r.URL.Path == pathException.Path {
-							logs.WithContext(ctx).Info(fmt.Sprint("pathException MatchTypeExact = ", pathException.Path))
-							pathExceptionFound = true
-							r.Header.Set("is_public", "true")
-							break
-						}
-					default:
-						//do nothing
+					if matchPath(r.URL.Path, pathException) {
+						logs.WithContext(ctx).Info(fmt.Sprint("pathException ", pathException.MatchType, " = ", pathException.Path))
+						pathExceptionFound = true
+						r.Header.Set("is_public", "true")
+						break
 					}
 				}
 				// The auth this rule is guarded by travels with the request, so a service can resolve
@@ -223,6 +218,19 @@ func (ms *ModuleStore) setAuthNameHeader(ctx context.Context, r *http.Request, a
 // SortListenerRules orders the rules by rule_rank ascending, so the lowest rank is matched first.
 // Ranks are allowed to repeat: a stable sort leaves rules that share a rank in the order they were
 // already in, so a tie stays put rather than shuffling on every save.
+// matchPath applies one path rule to a request path. MatchType is compared case insensitively so a
+// rule saved with "prefix" rather than "PREFIX" matches rather than being silently ignored.
+func matchPath(requestPath string, path module_model.PathStruct) bool {
+	switch strings.ToUpper(path.MatchType) {
+	case MatchTypePrefix:
+		return strings.HasPrefix(requestPath, path.Path)
+	case MatchTypeExact:
+		return requestPath == path.Path
+	default:
+		return false
+	}
+}
+
 func (ms *ModuleStore) SortListenerRules(ctx context.Context) {
 	logs.WithContext(ctx).Debug("SortListenerRules - Start")
 	sort.SliceStable(ms.ListenerRules, func(i, j int) bool {

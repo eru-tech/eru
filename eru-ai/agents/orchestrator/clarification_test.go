@@ -140,8 +140,12 @@ func TestBuildPendingResumeFromVarsParallel(t *testing.T) {
 	if len(pr.PausedBranches) != 1 || pr.PausedBranches[0].StartStep != "sentiment_analyzer" {
 		t.Fatalf("unexpected branches: %+v", pr.PausedBranches)
 	}
-	if pr.PausedBranches[0].EndStep != "sentiment_analyzer" {
-		t.Fatalf("end step should equal start step, got %q", pr.PausedBranches[0].EndStep)
+	// No wait_for anywhere, so there is no join to protect from running twice
+	// and the branch is left unbounded. These two steps have no children, so it
+	// changes nothing here - see TestResumeOfAChainRunsTheStepsAfterTheQuestion
+	// for the shape where it matters.
+	if pr.PausedBranches[0].EndStep != "" {
+		t.Fatalf("a plan with no join step should not bound the branch, got %q", pr.PausedBranches[0].EndStep)
 	}
 	if len(merged.Questions) != 1 || merged.Questions[0].Id != "sentiment_analyzer::q1" {
 		t.Fatalf("unexpected merged questions: %+v", merged.Questions)
@@ -171,5 +175,67 @@ func TestResVarsToResult(t *testing.T) {
 	m, ok := res["step1"].(map[string]interface{})
 	if !ok || m["k"] != "v" {
 		t.Fatalf("unexpected result: %+v", res)
+	}
+}
+
+// A chain carries its continuation as the nested children of each step. Bounding
+// the branch to the step that asked ran that one step and silently dropped the
+// rest of the plan: a four-step chain whose FIRST step asked for a storage name
+// created one entity and never ran the three steps after it.
+func TestResumeOfAChainRunsTheStepsAfterTheQuestion(t *testing.T) {
+	plan := map[string]interface{}{
+		"func_steps": map[string]interface{}{
+			"builder": map[string]interface{}{
+				"agent_name": "processo_builder",
+				"func_steps": map[string]interface{}{
+					"builder2": map[string]interface{}{
+						"agent_name": "processo_builder",
+						"func_steps": map[string]interface{}{
+							"pages": map[string]interface{}{"agent_name": "eru_studio"},
+						},
+					},
+				},
+			},
+		},
+	}
+	resVars := map[string]*functions.TemplateVars{"builder": {Body: questionBody()}}
+
+	pr, _, paused := buildPendingResumeFromVars(plan, resVars, "run1")
+	if !paused {
+		t.Fatal("expected paused")
+	}
+	if len(pr.PausedBranches) != 1 || pr.PausedBranches[0].StartStep != "builder" {
+		t.Fatalf("unexpected branches: %+v", pr.PausedBranches)
+	}
+	if pr.PausedBranches[0].EndStep != "" {
+		t.Errorf("the branch must run to the end of the chain, but it is bounded to %q - the steps after the question would be dropped", pr.PausedBranches[0].EndStep)
+	}
+	if pr.JoinStep != "" {
+		t.Errorf("a chain has no join step, got %q", pr.JoinStep)
+	}
+}
+
+// The bound still applies when there IS a join: it stops a join nested under
+// several paused siblings being run once per sibling.
+func TestResumeStillBoundsBranchesWhenThePlanHasAJoin(t *testing.T) {
+	plan := map[string]interface{}{
+		"func_steps": map[string]interface{}{
+			"left": map[string]interface{}{"agent_name": "a"},
+			"right": map[string]interface{}{"agent_name": "b", "func_steps": map[string]interface{}{
+				"join": map[string]interface{}{"agent_name": "c", "wait_for": "left"},
+			}},
+		},
+	}
+	resVars := map[string]*functions.TemplateVars{"left": {Body: questionBody()}}
+
+	pr, _, paused := buildPendingResumeFromVars(plan, resVars, "run1")
+	if !paused {
+		t.Fatal("expected paused")
+	}
+	if pr.JoinStep != "join" {
+		t.Fatalf("join step should be found, got %q", pr.JoinStep)
+	}
+	if pr.PausedBranches[0].EndStep != "left" {
+		t.Errorf("with a join present the branch must stay bounded, got %q", pr.PausedBranches[0].EndStep)
 	}
 }

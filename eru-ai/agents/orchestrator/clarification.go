@@ -309,6 +309,21 @@ func buildPendingResumeFromVars(plan map[string]interface{}, resVars map[string]
 
 	var tagged []taggedQuestion
 	pr := PendingResume{RunId: runId, Plan: plan}
+
+	// A branch is bounded to the step that asked ONLY when the plan has a join
+	// step. That bound exists so a join nested under several paused siblings is
+	// not run once per sibling - the join is run once, afterwards.
+	//
+	// A plan with no join is a chain, and there the step that asked carries its
+	// continuation as its own nested children. Bounding it would run that step
+	// and stop: the question gets answered and the rest of the plan is dropped
+	// without a word. Observed on a four-step chain where the first step asked
+	// for a storage name - the entity it was building was created and the three
+	// steps after it never ran. Leaving EndStep empty runs the branch to the end
+	// of the plan, and RunFuncStepInner only skips the children of a step that
+	// still carries a question, which a resumed step no longer does.
+	joinStep := deriveJoinStep(plan)
+
 	for stepKey, vars := range resVars {
 		if vars == nil {
 			continue
@@ -324,7 +339,11 @@ func buildPendingResumeFromVars(plan map[string]interface{}, resVars map[string]
 		for _, q := range req.Questions {
 			qids = append(qids, fmt.Sprintf("%s::%s", stepKey, q.Id))
 		}
-		pr.PausedBranches = append(pr.PausedBranches, PausedBranch{StartStep: stepKey, EndStep: stepKey, QuestionIds: qids})
+		endStep := ""
+		if joinStep != "" {
+			endStep = stepKey
+		}
+		pr.PausedBranches = append(pr.PausedBranches, PausedBranch{StartStep: stepKey, EndStep: endStep, QuestionIds: qids})
 		tagged = append(tagged, taggedQuestion{Step: stepKey, Request: req})
 	}
 
@@ -332,7 +351,7 @@ func buildPendingResumeFromVars(plan map[string]interface{}, resVars map[string]
 		return PendingResume{}, agents.ClarificationRequest{}, false
 	}
 
-	pr.JoinStep = deriveJoinStep(plan)
+	pr.JoinStep = joinStep
 	pr.ResVarsJSON = marshalVars(resVars)
 	return pr, mergeQuestions(tagged), true
 }

@@ -643,6 +643,15 @@ func (agent *Agent) ExecuteAgentFunctionResumable(ctx context.Context, agentMess
 		Header:        headers,
 		Body:          io.NopCloser(bytes.NewBuffer(chatRequestJSON)),
 		ContentLength: int64(len(chatRequestJSON)),
+		// A body is read once. Every step in the plan needs the original message,
+		// and on a resume the steps that already ran are skipped - so the request
+		// is not re-buffered on the way down and the first step after the resumed
+		// one read an exhausted body: ContentLength said there was content, the
+		// read returned none, and the step died on "decode request body : EOF".
+		// GetBody is the standard way to hand out the body again.
+		GetBody: func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(chatRequestJSON)), nil
+		},
 	}
 	r.Header.Set("Content-Length", strconv.Itoa(len(chatRequestJSON)))
 	reqBody := make(map[string]interface{})
