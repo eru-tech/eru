@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -130,6 +131,39 @@ func TestExternalUiUrlKeepsExistingQuery(t *testing.T) {
 	}
 	if got := externalUiUrl("https://app.example/login?theme=dark", "login_challenge", "a b"); got != "https://app.example/login?theme=dark&login_challenge=a+b" {
 		t.Errorf("unexpected url %s", got)
+	}
+}
+
+// The rest of eru's login api takes the password base64 encoded, and EruAuth.Login decodes it.
+// A browser form cannot do that itself, so the handler must.
+func TestFormPasswordIsBase64Encoded(t *testing.T) {
+	form := httptest.NewRequest(http.MethodPost, auth.OAuthLoginPath,
+		strings.NewReader("login_challenge=abc&username=u&password=p%40ssw0rd%21"))
+	form.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	credentials, err := readLoginSubmission(form)
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	want := base64.StdEncoding.EncodeToString([]byte("p@ssw0rd!"))
+	if credentials.Password != want {
+		t.Errorf("form password must be base64 encoded, got %q want %q", credentials.Password, want)
+	}
+}
+
+// A json body already carries the encoding the login api expects, so it is passed through as is.
+func TestJsonPasswordIsPassedThrough(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString([]byte("p@ssw0rd!"))
+	jsonReq := httptest.NewRequest(http.MethodPost, auth.OAuthLoginPath,
+		strings.NewReader(`{"login_challenge":"abc","username":"u","password":"`+encoded+`"}`))
+	jsonReq.Header.Set("Content-Type", "application/json")
+
+	credentials, err := readLoginSubmission(jsonReq)
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	if credentials.Password != encoded {
+		t.Errorf("json password must not be re-encoded, got %q", credentials.Password)
 	}
 }
 

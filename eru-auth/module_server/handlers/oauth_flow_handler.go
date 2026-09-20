@@ -259,7 +259,8 @@ type loginSubmission struct {
 	CsrfToken string `json:"csrf_token"`
 }
 
-// readLoginSubmission accepts the built in form post and a json body from an external ui.
+// readLoginSubmission accepts the built in form post and a json body from an external ui. Password
+// is returned base64 encoded either way, which is the encoding the rest of eru's login api uses.
 func readLoginSubmission(r *http.Request) (loginSubmission, error) {
 	credentials := loginSubmission{}
 	if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
@@ -272,8 +273,12 @@ func readLoginSubmission(r *http.Request) (loginSubmission, error) {
 		}
 		credentials.Challenge = r.PostFormValue("login_challenge")
 		credentials.Username = r.PostFormValue("username")
-		credentials.Password = r.PostFormValue("password")
 		credentials.CsrfToken = r.PostFormValue("csrf_token")
+		// A browser form posts the password as typed. Everywhere else in eru it travels base64
+		// encoded - which is what EruAuth.Login decodes - so encode it here rather than leaving the
+		// auth layer to guess which form it was handed. A json body is already in that shape, the
+		// same as the /{project}/{authname}/login api, and is passed through untouched.
+		credentials.Password = base64.StdEncoding.EncodeToString([]byte(r.PostFormValue("password")))
 	}
 	if credentials.Challenge == "" {
 		return credentials, fmt.Errorf("login_challenge is missing")
