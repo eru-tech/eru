@@ -294,6 +294,11 @@ func oauthFlowFromRequest(sh *module_store.StoreHolder, r *http.Request) (auth.A
 	if !authObj.OAuthServer(r.Context()).Enabled {
 		return nil, nil, fmt.Errorf("oauth server is not enabled")
 	}
+	// GetAuth hands back a clone with no database connection, so verifying credentials needs the
+	// store's connection wired in first - the same thing LoginHandler does before calling Login.
+	if authObj.GetAuthDb() != nil {
+		authObj.GetAuthDb().SetConn(sh.Store.GetConn())
+	}
 	flow, err := authObj.AuthorizationFlow(r.Context())
 	if err != nil {
 		return nil, nil, err
