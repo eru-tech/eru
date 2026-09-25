@@ -873,6 +873,13 @@ func AgentExecuteHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			}
 
 			agentResult, execErr := agent.Execute(ctx, agentMessage, conversationId, projectId, tenantId)
+			if execErr == nil {
+				// See delivery.go: the artifact a caller receives must be the one
+				// the loop validated. Reported, never fatal - the answer already
+				// exists, and refusing to deliver it would turn a reporting
+				// problem into an outage.
+				_ = agents.VerifyDelivery(ctx, agent.GetProvider(), agentResult)
+			}
 
 			// Stop accepting relayed events, let the writer flush what is queued, and
 			// only then write the terminal event directly - by now this goroutine is the

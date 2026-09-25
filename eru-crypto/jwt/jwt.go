@@ -188,3 +188,58 @@ func CreateJWT(ctx context.Context, privateKeyStr string, claimsMap map[string]i
 	}
 	return
 }
+
+// VerifyTokenWithPublicKey validates a token against a PEM public key held locally, for a service
+// that issued the token itself and so has no reason to fetch its own key set over http. The signing
+// method is pinned to RSA: without that check a token could name "none" and verify with no key at
+// all, which is the oldest trick against a jwt library.
+func VerifyTokenWithPublicKey(ctx context.Context, strToken string, publicKeyStr string) (claims map[string]interface{}, err error) {
+	publicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(publicKeyStr))
+	if err != nil {
+		logs.WithContext(ctx).Error(err.Error())
+		return nil, err
+	}
+
+	tokenObj, err := jwt.Parse(strToken, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method : %v", token.Header["alg"])
+		}
+		return publicKey, nil
+	})
+	if err != nil {
+		logs.WithContext(ctx).Info(err.Error())
+		return nil, err
+	}
+
+	tokenClaims, claimsOk := tokenObj.Claims.(jwt.MapClaims)
+	if !claimsOk || !tokenObj.Valid {
+		err = errors.New("token is not valid")
+		logs.WithContext(ctx).Info(err.Error())
+		return nil, err
+	}
+	if err = tokenClaims.Valid(); err != nil {
+		logs.WithContext(ctx).Info(err.Error())
+		return nil, err
+	}
+
+	claims = make(map[string]interface{}, len(tokenClaims))
+	for key, value := range tokenClaims {
+		claims[key] = value
+	}
+	return claims, nil
+}
+
+// TokenKid reads the kid from a token header without validating the token, so the right key can be
+// looked up before verification.
+func TokenKid(ctx context.Context, strToken string) string {
+	parser := jwt.Parser{SkipClaimsValidation: true}
+	token, _, err := parser.ParseUnverified(strToken, jwt.MapClaims{})
+	if err != nil {
+		logs.WithContext(ctx).Info(err.Error())
+		return ""
+	}
+	if kid, ok := token.Header["kid"].(string); ok {
+		return kid
+	}
+	return ""
+}

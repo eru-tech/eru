@@ -271,6 +271,11 @@ tile (rich KPI / metric tile):
   field with run_query before binding it.
 
   CONTENT (each *_field names a field/column; the matching *_path digs into it when it holds a JSON object/array)
+  The *_path properties are NOT the query result path. By the time they are read the row has already been picked
+  out, so *_field is a plain column name and its *_path stays EMPTY unless that one column holds JSON. Writing the
+  result path there - primary_value_path "0.amt" beside primary_value_field "amt" - walks into a number and the
+  tile shows a dash with a 200 response behind it. Nor does the result path belong anywhere else on a tile: a tile
+  has no query_result_path property at all, because its row is unwrapped for it.
   title, title_field, title_path, subtitle,
   primary_value_field, primary_value_path, primary_value_label,
   secondary_value_field, secondary_value_path, secondary_value_label,
@@ -1005,6 +1010,27 @@ Action-specific keys:
                    "state_formula": { "fn": "set-from-payload", "payload_path": "<result_path from run_query>" } }]
   A path or a column name that is wrong resolves to nothing rather than failing, so the page renders blank and
   every call still reports success. run_query is the only thing that tells you which it is.
+  "result_path" reaches the ROW ARRAY, so it belongs only in payload_path / query_result_path. It never goes in a
+  tile *_path, a value_path or any other per-field path: those start from a column value that has already been
+  read out of the row.
+
+  A query's column names are what the DATABASE calls them, not what a reader calls them. run_query reports them,
+  and codes like "an", "cl", "os_amt", "pn" or "avg_bal" mean nothing to the person looking at the page:
+  - grid: put every column's heading in column_overrides, e.g. {"an": {"label": "Anchor"}, "os_amt": {"label":
+    "Outstanding"}}. A query grid heads each column with the raw column name, so without this the page ships with
+    "an" and "avg_bal" as headings.
+  - chart: each dimension and measure takes a "label" - you already write these; hold the grid to the same standard.
+  - tile: primary_value_label / secondary_value_label.
+  A dashboard for senior management with raw column codes on it is not finished.
+
+  A count is not money. On a tile showing an amount with its count beside it, set secondary_is_currency false, or
+  the currency symbol prints on the count too - "$ 125" for 125 invoices.
+
+  Give a chart a title only when it needs one. A chart inside a container that already carries a heading should set
+  title to "" rather than repeat it or leave the default, which renders "Line Chart" or "Bar Chart" on the page.
+
+  Build what was asked for and nothing else. A grid row with an empty cell is finished; a decorative tile invented
+  to fill it is not an improvement, and a tile with no data behind it reads as a component that failed to load.
   - fetch-page-data            page_id, payload.
   - save-page-data             payload (optional).
   - set-page-data              Loads a record INTO the page. record_source ("event"|"state"|"app_state";

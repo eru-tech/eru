@@ -51,6 +51,10 @@ const (
 const (
 	StepGenerate = "generate"
 	StepValidate = "validate"
+	// StepJudge is the quality gate: asked only of an answer that already
+	// passed validation, so a client can distinguish "wrong" from "not good
+	// enough yet".
+	StepJudge = "judge"
 	// StepPlanPages and StepBuildPage are the steps of a design that takes more
 	// than one page: deciding what the pages are, then building each of them.
 	StepPlanPages   = "plan_pages"
@@ -84,6 +88,7 @@ type StepPayload struct {
 // Error codes carried by a failing step or agent.
 const (
 	CodeOutputValidation = "output_validation_failed"
+	CodeQualityBelowBar  = "quality_below_bar"
 	CodePatchUnresolved  = "patch_could_not_be_applied"
 	CodeModelError       = "model_error"
 	CodeToolError        = "tool_error"

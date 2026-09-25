@@ -294,6 +294,12 @@ func (s *EruAIMCPServer) executeAgent(ctx context.Context, conversationId, proje
 	ctx = agents.WithStreamCallback(ctx, streamCb)
 
 	result, err := agent.Execute(ctx, agentMessage, conversationId, project, tenant)
+	// The framework's own check that the answer handed over is the answer the
+	// loop judged. It lives here, and at the other invocation site, precisely
+	// because an agent type cannot remove it.
+	if err == nil {
+		_ = agents.VerifyDelivery(ctx, agent.GetProvider(), result)
+	}
 	result.ConversationId = conversationId
 	if err != nil {
 		return server.MCPCallToolResult{

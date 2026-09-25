@@ -3,6 +3,7 @@ package module_model
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type StoreCompare struct {
@@ -40,7 +42,7 @@ type Project struct {
 	MessageTemplates map[string]MessageTemplate  `json:"message_templates"`
 	Auth             map[string]auth.AuthI       `json:"auth"`
 	ProjectSettings  ProjectSettings             `json:"project_settings"`
-	Kids             map[string]string           `json:"kids"`
+	Kids             Kids                        `json:"kids"`
 }
 type ProjectSettings struct {
 	ClaimsKey string `json:"claims_key" eru:"required"`
@@ -138,14 +140,70 @@ func (prj *Project) AddGateway(ctx context.Context, gatewayObjI gateway.GatewayI
 	prj.Gateways[gKey] = gatewayObjI
 	return nil
 }
+
+const (
+	KidStatusActive  = "ACTIVE"
+	KidStatusRetired = "RETIRED"
+)
+
+// Kid is one signing key in the project's index. The key material itself never appears here - it
+// lives in the secret manager. This carries only what is needed to reason about rotation: when the
+// key appeared, and whether it is still allowed to sign.
+type Kid struct {
+	Kid       string    `json:"kid"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Kids indexes a project's signing keys by their stored name.
+type Kids map[string]Kid
+
+// UnmarshalJSON accepts both the shape this index used to have - a plain map of name to name - and
+// the current one, so a project saved before keys carried metadata still loads. An older entry is
+// read as active with no creation date, which is the truthful answer: nobody recorded one.
+func (kids *Kids) UnmarshalJSON(b []byte) error {
+	current := make(map[string]Kid)
+	if err := json.Unmarshal(b, &current); err == nil {
+		*kids = current
+		return nil
+	}
+	legacy := make(map[string]string)
+	if err := json.Unmarshal(b, &legacy); err != nil {
+		return err
+	}
+	*kids = make(Kids, len(legacy))
+	for name := range legacy {
+		(*kids)[name] = Kid{Kid: name, Status: KidStatusActive}
+	}
+	return nil
+}
+
+// Retired reports whether a key may no longer sign. It may still verify - that is the whole point
+// of retiring rather than removing.
+func (kid Kid) Retired() bool {
+	return strings.EqualFold(kid.Status, KidStatusRetired)
+}
+
 func (prj *Project) AddKid(ctx context.Context, kid string) error {
 	logs.WithContext(ctx).Debug("AddKid - Start")
 	if prj.Kids == nil {
-		prj.Kids = make(map[string]string)
+		prj.Kids = make(Kids)
 	}
-	logs.WithContext(ctx).Info("addding kid")
-	prj.Kids[kid] = kid
-	logs.WithContext(ctx).Info(fmt.Sprint(prj.Kids))
+	prj.Kids[kid] = Kid{Kid: kid, Status: KidStatusActive, CreatedAt: time.Now().UTC()}
+	return nil
+}
+
+// SetKidStatus retires or reactivates a key without touching the key material.
+func (prj *Project) SetKidStatus(ctx context.Context, kid string, status string) error {
+	logs.WithContext(ctx).Debug("SetKidStatus - Start")
+	existing, ok := prj.Kids[kid]
+	if !ok {
+		err := errors.New(fmt.Sprint("kid ", kid, " does not exists"))
+		logs.WithContext(ctx).Info(err.Error())
+		return err
+	}
+	existing.Status = strings.ToUpper(status)
+	prj.Kids[kid] = existing
 	return nil
 }
 func (prj *Project) RemoveKid(ctx context.Context, kid string) error {
@@ -273,7 +331,7 @@ func (ePrj *ExtendedProject) UnmarshalJSON(b []byte) error {
 			ePrj.Variables = vars
 		}
 	}
-	var kids map[string]string
+	var kids Kids
 	if _, ok := ePrjMap["kids"]; ok {
 		if ePrjMap["kids"] != nil {
 			err = json.Unmarshal(*ePrjMap["kids"], &kids)

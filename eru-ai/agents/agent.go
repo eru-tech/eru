@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	ruleset "github.com/eru-tech/eru/eru-ai/agents/ruleset"
 	models "github.com/eru-tech/eru/eru-ai/models"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	"github.com/eru-tech/eru/eru-cache/cache"
@@ -27,10 +28,19 @@ import (
 )
 
 type ExecutionMetrics struct {
-	TotalIterations int                `json:"total_iterations"`
-	ToolCalls       []ToolCallMetric   `json:"tool_calls,omitempty"`
-	Usage           *models.TokenUsage `json:"usage,omitempty"`
-	DurationMs      int64              `json:"duration_ms"`
+	TotalIterations int              `json:"total_iterations"`
+	ToolCalls       []ToolCallMetric `json:"tool_calls,omitempty"`
+	// ToolRecord is every invocation with its arguments, in order. Counts answer
+	// "did it call this"; arguments answer "did it call this with the right
+	// thing", which is the question that catches a query bound without being
+	// probed or a field saved with an invented storage name.
+	ToolRecord []ToolInvocation   `json:"tool_record,omitempty"`
+	Usage      *models.TokenUsage `json:"usage,omitempty"`
+	DurationMs int64              `json:"duration_ms"`
+	// Quality is every verdict the quality gate reached, in order. An answer
+	// that shipped despite a poor verdict is the interesting case, and it is
+	// only visible if the unenforced verdict is kept rather than discarded.
+	Quality []QualityVerdict `json:"quality,omitempty"`
 }
 
 type ToolCallMetric struct {
@@ -52,6 +62,14 @@ type AgentMessage struct {
 	Role             string                 `json:"role,omitempty"`
 	MessageTimestamp time.Time              `json:"message_timestamp,omitempty"`
 	RetryCount       int                    `json:"retry_count,omitempty"`
+	// StopReason says why the run ended, from a closed set. "It finished", "it
+	// asked something", "it ran out of attempts" and "it was cut off" used to be
+	// distinguishable only by reading prose. See stop.go.
+	StopReason StopReason `json:"stop_reason,omitempty"`
+	// Seal fingerprints the actions as they were when the loop validated them,
+	// so the framework can tell whether the answer a caller receives is the
+	// answer it judged. See delivery.go.
+	Seal Seal `json:"seal,omitempty"`
 }
 
 type AgentOutputAction struct {
@@ -146,6 +164,11 @@ type AgentTools struct {
 	ToolKey        string        `json:"tool_key"`
 	ToolOutputType string        `json:"tool_output_type"`
 	Tool           tools.Tooling `json:"-"`
+	// Effect declares what calling this does - whether it writes, whether
+	// repeating it is safe. Left nil the call is made exactly as before; set, it
+	// lets the framework stop a retry from doing the same write twice. See
+	// tool_effects.go.
+	Effect *ToolEffect `json:"effect,omitempty"`
 }
 type DiscoveredAgent struct {
 	AgentName             string                `json:"agent_name"`
@@ -502,6 +525,35 @@ type Agent struct {
 	Provider            SystemPromptProvider     `json:"-"`
 	SemanticMemory      vectorstore.VectorStoreI `json:"-"`
 	MemoryNamespace     string                   `json:"memory_namespace,omitempty"`
+	// ValidationRules are the constraints this agent's answer must satisfy,
+	// declared as data.
+	//
+	// This is what lets an agent configured through the product have a real
+	// inner correction loop. Without it an agent gets the SHAPE of the loop and
+	// none of its judgement - it retries RetryCount times and every attempt
+	// passes, because nothing is checking - unless someone writes a Go
+	// OutputValidator for it, which a product user cannot do.
+	//
+	// Rules marked SeverityQuality feed the quality gate instead of the
+	// validator: worth one more attempt, never worth failing the request. Both
+	// kinds are stated in the system prompt, so the model is told what it will
+	// be judged on rather than only being told afterwards.
+	ValidationRules []ruleset.RuleSet `json:"validation_rules,omitempty"`
+	// Evidence declares what to remember from tool calls, so a validation rule
+	// can ask whether a value in the answer is something the agent actually saw.
+	// See evidence_config.go; this is eru_studio's Ledger with the page removed.
+	Evidence []EvidenceRule `json:"evidence,omitempty"`
+	// Budget is the ceiling on one run - attempts, tokens, wall clock. Every
+	// field is optional; an agent that declares none behaves exactly as it did
+	// before budgets existed. See stop.go.
+	Budget Budget `json:"budget,omitempty"`
+	// MaxDelegationDepth bounds how many agents deep a chain starting here may
+	// go. Zero uses DefaultMaxDelegationDepth. An agent that appears twice in
+	// one chain is refused whatever this says. See delegation.go.
+	MaxDelegationDepth int `json:"max_delegation_depth,omitempty"`
+	// Claims holds the agent to what its answer SAYS it did, by checking each
+	// claim against the record of what actually ran. See claims.go.
+	Claims []ClaimRule `json:"claims,omitempty"`
 }
 
 type AgentI interface {
@@ -893,6 +945,22 @@ func (agent *Agent) UnmarshalJSON(b []byte) error {
 		ModelName       string                `json:"model"`
 		OutputSchema    eru_models.JSONSchema `json:"output_schema"`
 		RetryCount      int                   `json:"retry_count"`
+		// Everything below is read here or it is read nowhere.
+		//
+		// This allow-list is the only door a configuration comes through, and a
+		// field absent from it is silently dropped: the struct field exists, the
+		// loop reads it, Go tests that build the struct directly all pass, and no
+		// config file can ever set it. Five fields spent a day in that state -
+		// added, tested, documented as "reachable from config", and unreachable.
+		//
+		// If you add a field to Agent, add it here too. TestEveryConfigFieldSurvivesTheDoor
+		// fails if you forget.
+		ValidationRules    []ruleset.RuleSet `json:"validation_rules"`
+		Evidence           []EvidenceRule    `json:"evidence"`
+		Claims             []ClaimRule       `json:"claims"`
+		Budget             Budget            `json:"budget"`
+		MaxDelegationDepth int               `json:"max_delegation_depth"`
+		MemoryNamespace    string            `json:"memory_namespace"`
 	}
 	var tempAgent TempAgent
 	if err := json.Unmarshal(b, &tempAgent); err != nil {
@@ -910,6 +978,12 @@ func (agent *Agent) UnmarshalJSON(b []byte) error {
 	agent.OutputSchema = tempAgent.OutputSchema
 	agent.RetryCount = tempAgent.RetryCount
 	agent.Function = tempAgent.Function
+	agent.ValidationRules = tempAgent.ValidationRules
+	agent.Evidence = tempAgent.Evidence
+	agent.Claims = tempAgent.Claims
+	agent.Budget = tempAgent.Budget
+	agent.MaxDelegationDepth = tempAgent.MaxDelegationDepth
+	agent.MemoryNamespace = tempAgent.MemoryNamespace
 	var agentMap map[string]*json.RawMessage
 	err := json.Unmarshal(b, &agentMap)
 	if err != nil {
@@ -1415,7 +1489,14 @@ func (agent *Agent) InitializeConversationManager(ctx context.Context) {
 	agent.ConversationManager = &cm
 }
 
-func BuildMetrics(traces []models.StepTrace, startTime time.Time, usage *models.TokenUsage) *ExecutionMetrics {
+// BuildMetrics summarises a run.
+//
+// The tool tally used to come from the traces alone, which made it a projection
+// of them rather than a second source: where a loop traced nothing, the tally
+// reported nothing, and the page agent showed one run_query in a run that made
+// four. The record is written at the tool boundary and sees them all, so it
+// takes precedence and the traces only fill gaps.
+func BuildMetrics(ctx context.Context, traces []models.StepTrace, startTime time.Time, usage *models.TokenUsage) *ExecutionMetrics {
 	toolCounts := make(map[string]int)
 	maxIteration := 0
 
@@ -1427,6 +1508,12 @@ func BuildMetrics(traces []models.StepTrace, startTime time.Time, usage *models.
 			toolCounts[trace.ToolName]++
 		}
 	}
+	record := ToolRecordFrom(ctx)
+	for name, count := range record.Tally() {
+		if count > toolCounts[name] {
+			toolCounts[name] = count
+		}
+	}
 
 	var toolCalls []ToolCallMetric
 	for name, count := range toolCounts {
@@ -1436,6 +1523,7 @@ func BuildMetrics(traces []models.StepTrace, startTime time.Time, usage *models.
 	return &ExecutionMetrics{
 		TotalIterations: maxIteration,
 		ToolCalls:       toolCalls,
+		ToolRecord:      record.Calls(),
 		Usage:           usage,
 		DurationMs:      time.Since(startTime).Milliseconds(),
 	}

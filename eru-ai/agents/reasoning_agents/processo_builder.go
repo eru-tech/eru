@@ -92,6 +92,19 @@ BEFORE YOU WRITE ANYTHING
 2. Call get_entity_metadata to see what already exists. An entity you "create" that is
    already there, under a name you did not check, is the most common way to make a mess that
    cannot be undone: entities and fields cannot be renamed, only deleted and recreated.
+2b. A field that ALREADY MATCHES what was asked for needs nothing doing - but it has to be
+   THAT field. Match on the exact name you were given, never on a similar one: asked for
+   test_ask_a and finding test_scan_a, the answer is that test_ask_a does not exist and must
+   be created, NOT that the request is already satisfied. Reporting a near-miss as a match
+   tells the user their field is there when nothing was written, which is the one failure
+   they cannot see. Compare what you
+   were asked for against what get_entity_metadata returned, attribute by attribute: if the
+   field is already there with that datatype and that storage, report it "unchanged" with a
+   one-line note and move on. Do NOT offer to delete and recreate it. Deletion is
+   irreversible and there is nothing to gain by it - the request is already satisfied, and
+   asking the user to authorise destroying data to reach the state they are already in is
+   the worst answer available. Only a field whose datatype or storage genuinely DIFFERS from
+   the request is a delete-and-recreate question, and then you ask before touching it.
 3. Then decide, deliberately, between EXTENDING what is there and creating something new.
    A workspace that has been in use has entities that already hold most of what is being
    asked for, under names the user did not think to mention - the same thing is called a
@@ -117,8 +130,9 @@ save_entity writes ONE entity - entity_data is a single-object array holding jus
 you are creating or editing. Never send the existing model: the backend merges what you give
 it against what is already stored, so an entity you leave out keeps everything it has. Sending
 the whole list is rejected, and it would rewrite every entity's display order besides.
-Set exet=false when creating (this also builds the entity's table) and exet=true when editing
-one that already exists. Creating with exet=true registers an entity with no table behind it.
+An entity carries exactly these: name, display_name, description, hide_entity, is_people and
+is_conv. Creating and editing take the same payload - the backend works out which it is and
+where the entity sits - so there is no flag to set and none to get the wrong way round.
 
 save_field writes ONE field. An empty field object ({}) with f_name set is how a field is
 DELETED - never send an empty field object unless deletion is what was asked for.
@@ -388,6 +402,16 @@ func (pbAgent *ProcessoBuilderAgent) ValidateOutput(ctx context.Context, output 
 func (pbAgent *ProcessoBuilderAgent) confirmWrites(ctx context.Context, output map[string]interface{}) error {
 	claimed := map[string][]string{}    // entity -> field names the answer says it wrote
 	disclaimed := map[string][]string{} // entity -> field names the answer says it did not write
+	// asserted are fields reported "unchanged", which is not a neutral
+	// non-statement: it claims the field is ALREADY in the data model and
+	// already correct, so nothing needed doing.
+	//
+	// That claim went unchecked until a run answered a request for test_ask_a by
+	// reporting test_scan_a - a different, similarly named field - as unchanged,
+	// and told the user their request was already satisfied. Nothing was written
+	// and nothing was wrong as far as any check could see. A false "already
+	// there" is worse than a false "created": the user has no reason to look.
+	asserted := map[string][]string{}
 	for _, raw := range sliceOf(output["fields"]) {
 		field, ok := raw.(map[string]interface{})
 		if !ok {
@@ -398,6 +422,14 @@ func (pbAgent *ProcessoBuilderAgent) confirmWrites(ctx context.Context, output m
 			entity, _ := field["entity_name"].(string)
 			if name != "" && entity != "" {
 				disclaimed[entity] = append(disclaimed[entity], name)
+			}
+			continue
+		}
+		if action, _ := field["action"].(string); action == "unchanged" {
+			name, _ := field["name"].(string)
+			entity, _ := field["entity_name"].(string)
+			if name != "" && entity != "" {
+				asserted[entity] = append(asserted[entity], name)
 			}
 			continue
 		}
@@ -417,7 +449,7 @@ func (pbAgent *ProcessoBuilderAgent) confirmWrites(ctx context.Context, output m
 		}
 		claimed[entity] = append(claimed[entity], name)
 	}
-	if len(claimed) == 0 && len(disclaimed) == 0 {
+	if len(claimed) == 0 && len(disclaimed) == 0 && len(asserted) == 0 {
 		return nil
 	}
 
@@ -439,9 +471,9 @@ func (pbAgent *ProcessoBuilderAgent) confirmWrites(ctx context.Context, output m
 	}
 	metadata := pbAgent.entityMetadataTool(ctx, delegate)
 
-	entityNames := make([]interface{}, 0, len(claimed)+len(disclaimed))
+	entityNames := make([]interface{}, 0, len(claimed)+len(disclaimed)+len(asserted))
 	seenEntity := map[string]bool{}
-	for _, set := range []map[string][]string{claimed, disclaimed} {
+	for _, set := range []map[string][]string{claimed, disclaimed, asserted} {
 		for entity := range set {
 			if !seenEntity[entity] {
 				seenEntity[entity] = true
@@ -450,7 +482,7 @@ func (pbAgent *ProcessoBuilderAgent) confirmWrites(ctx context.Context, output m
 		}
 	}
 	result, _, err := metadata.Execute(ctx, scope.projectId, scope.tenantId, utility.EntityMetadataToolName,
-		map[string]interface{}{"entity_names": entityNames})
+		map[string]interface{}{"entity_names": entityNames, utility.FreshReadParam: true})
 	if err != nil {
 		// A lookup that cannot run must not turn a good answer into a failure.
 		logs.WithContext(ctx).Error(fmt.Sprintf("ProcessoBuilderAgent could not confirm its writes: %v", err))
@@ -495,6 +527,21 @@ func (pbAgent *ProcessoBuilderAgent) confirmWrites(ctx context.Context, output m
 		present[entity.Name] = fields
 	}
 
+	// What the read-back actually contains, beside what is about to be compared
+	// against it. Three confident diagnoses of this check have been wrong, all
+	// for want of this one line: "the field is missing" cannot be told from "the
+	// name differs by a character" or "the read is stale" without seeing both
+	// sides.
+	for entity, fields := range present {
+		names := make([]string, 0, len(fields))
+		for name := range fields {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		logs.WithContext(ctx).Info(fmt.Sprintf("confirmWrites read back %q with %d field(s): %s", entity, len(names), strings.Join(names, ", ")))
+	}
+	logs.WithContext(ctx).Info(fmt.Sprintf("confirmWrites is checking claimed=%v asserted=%v disclaimed=%v", claimed, asserted, disclaimed))
+
 	var missing []string
 	for entity, names := range claimed {
 		fields, seen := present[entity]
@@ -526,7 +573,12 @@ func (pbAgent *ProcessoBuilderAgent) confirmWrites(ctx context.Context, output m
 		}
 	}
 
-	if len(missing) == 0 && len(landed) == 0 {
+	// A field reported "unchanged" that is NOT in the read-back was never there:
+	// the answer told the user the request was already satisfied by something
+	// that does not exist.
+	absent := comparePresence(asserted, present)
+
+	if len(missing) == 0 && len(landed) == 0 && len(absent) == 0 {
 		return nil
 	}
 
@@ -550,7 +602,55 @@ func (pbAgent *ProcessoBuilderAgent) confirmWrites(ctx context.Context, output m
 				"actually had (created, or updated) rather than as failed",
 			strings.Join(landed, ", ")))
 	}
+	if len(absent) > 0 {
+		sort.Strings(absent)
+		problems = append(problems, fmt.Sprintf(
+			"you reported these as unchanged, which says they are already in the data model, but they are NOT there "+
+				"when it is read back: %s.\n"+
+				"Reporting a field as unchanged claims it already exists and already matches the request. Check the "+
+				"name you were asked for against the names that came back: a similarly named field is a DIFFERENT "+
+				"field, and answering about it tells the user their request is done when nothing was written. Create "+
+				"the field you were actually asked for",
+			strings.Join(absent, ", ")))
+	}
 	return errors.New(strings.Join(problems, "\n\n"))
+}
+
+// comparePresence is which of these claimed-present fields are not in the
+// read-back. Separated from confirmWrites so the comparison can be tested
+// without a live workspace.
+func comparePresence(asserted map[string][]string, present map[string]map[string]bool) []string {
+	var absent []string
+	for entity, names := range asserted {
+		fields, seen := present[entity]
+		for _, name := range names {
+			if !seen || !fields[name] {
+				absent = append(absent, entity+"."+name)
+			}
+		}
+	}
+	return absent
+}
+
+// unchangedButAbsent reads the "unchanged" claims out of an answer and reports
+// the ones the workspace does not actually hold.
+func unchangedButAbsent(output map[string]interface{}, present map[string]map[string]bool) []string {
+	asserted := map[string][]string{}
+	for _, raw := range sliceOf(output["fields"]) {
+		field, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if action, _ := field["action"].(string); action != "unchanged" {
+			continue
+		}
+		name, _ := field["name"].(string)
+		entity, _ := field["entity_name"].(string)
+		if name != "" && entity != "" {
+			asserted[entity] = append(asserted[entity], name)
+		}
+	}
+	return comparePresence(asserted, present)
 }
 
 // A field reported as failed or unchanged was not written, so holding it to the

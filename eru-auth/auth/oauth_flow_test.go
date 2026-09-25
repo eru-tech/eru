@@ -24,7 +24,7 @@ func TestGrantableScopeEmptyWhenNothingMatches(t *testing.T) {
 
 func TestAuthorizationFlowResolvesHydra(t *testing.T) {
 	authObj := &Auth{Hydra: HydraConfig{PublicScheme: "https", PublicHost: "hydra.example"}}
-	flow, err := authObj.AuthorizationFlow(context.Background())
+	flow, err := authObj.AuthorizationFlow(context.Background(), "smartvalues")
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
@@ -35,7 +35,7 @@ func TestAuthorizationFlowResolvesHydra(t *testing.T) {
 
 func TestAuthorizationFlowRejectsUnknownBackend(t *testing.T) {
 	authObj := &Auth{OAuthServerConfig: OAuthServerConfig{Backend: "SOMETHING_ELSE"}}
-	if _, err := authObj.AuthorizationFlow(context.Background()); err == nil {
+	if _, err := authObj.AuthorizationFlow(context.Background(), "smartvalues"); err == nil {
 		t.Error("expected an unknown backend to be rejected")
 	}
 }

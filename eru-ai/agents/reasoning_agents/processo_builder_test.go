@@ -416,10 +416,52 @@ func TestProcessoBuilderSendsOneEntityPerSave(t *testing.T) {
 	for _, phrase := range []string{
 		"single-object array",
 		"Never send the existing model",
-		"exet=false when creating",
 	} {
 		if !strings.Contains(prompt, phrase) {
 			t.Errorf("the builder no longer knows save_entity takes one entity: missing %q", phrase)
 		}
+	}
+
+	// exet, index, allow_single_entry and g_name left the payload. The prompt
+	// must not teach a flag the tool no longer accepts - and exet was the
+	// sharpest of them, because getting it wrong registered an entity with no
+	// table behind it.
+	for _, gone := range []string{"exet=false", "exet=true", "allow_single_entry", "g_name"} {
+		if strings.Contains(prompt, gone) {
+			t.Errorf("the prompt still teaches %q, which is no longer part of the payload", gone)
+		}
+	}
+}
+
+// "unchanged" is a claim, not a shrug: it says the field is already in the data
+// model and already correct. A run answered a request for test_ask_a by
+// reporting test_scan_a - a different field - as unchanged, and told the user
+// the request was already satisfied. Nothing was written and no check objected.
+func TestUnchangedIsVerifiedAgainstTheReadBack(t *testing.T) {
+	answer := map[string]interface{}{
+		"fields": []interface{}{
+			map[string]interface{}{
+				"name": "test_ask_a", "entity_name": "test", "action": "unchanged",
+				"note": "already exists",
+			},
+		},
+	}
+	present := map[string]map[string]bool{"test": {"test_scan_a": true}}
+
+	absent := unchangedButAbsent(answer, present)
+	if len(absent) != 1 || absent[0] != "test.test_ask_a" {
+		t.Fatalf("a field claimed unchanged that is not there must be reported, got %v", absent)
+	}
+}
+
+func TestUnchangedThatReallyExistsIsAccepted(t *testing.T) {
+	answer := map[string]interface{}{
+		"fields": []interface{}{
+			map[string]interface{}{"name": "test_scan_a", "entity_name": "test", "action": "unchanged"},
+		},
+	}
+	present := map[string]map[string]bool{"test": {"test_scan_a": true}}
+	if absent := unchangedButAbsent(answer, present); len(absent) != 0 {
+		t.Errorf("a genuine no-op must pass: %v", absent)
 	}
 }

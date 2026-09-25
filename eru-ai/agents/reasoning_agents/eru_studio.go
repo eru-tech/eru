@@ -157,13 +157,27 @@ func (eruStudioAgent *EruStudioAgent) Execute(ctx context.Context, agentMessage 
 	if err != nil {
 		return agentOutput, err
 	}
-	if !studio.EnvelopeEnabled(ctx) {
-		return eruStudioStampBarePage(ctx, agentOutput), nil
-	}
-	if plan != nil && plan.IsMultiPage() {
-		agentOutput = eruStudioAgent.attachPlannedPages(ctx, agentOutput, *plan, userPrompt, projectId, tenantId)
-	}
-	return eruStudioResolveEnvelope(ctx, agentOutput, effectiveBasePage(ctx))
+	// Everything below changes the answer AFTER the loop judged it, so it goes
+	// through the framework rather than round it: DeliverTransformed re-runs
+	// ValidateOutput on the result and refuses a transform that introduces a
+	// fault. This is what makes "the page that was validated is the page that is
+	// delivered" true rather than hoped for - it was not, and the gap shipped a
+	// dashboard bound to a query that does not exist.
+	// FaultReports rather than FaultRefuses: the page composer attaches a nested
+	// page that still has a flaw WITH a warning, on the stated grounds that a
+	// flawed card page beats a mount pointing at nothing. That fault reaches the
+	// user in the answer, so refusing to deliver it would override a deliberate
+	// decision and turn one imperfection into an error. The seal still logs it,
+	// and the eval still sees it.
+	return agents.DeliverTransformed(ctx, eruStudioAgent, agentOutput, agents.FaultReports, func(out agents.AgentMessage) (agents.AgentMessage, error) {
+		if !studio.EnvelopeEnabled(ctx) {
+			return eruStudioStampBarePage(ctx, out), nil
+		}
+		if plan != nil && plan.IsMultiPage() {
+			out = eruStudioAgent.attachPlannedPages(ctx, out, *plan, userPrompt, projectId, tenantId)
+		}
+		return eruStudioResolveEnvelope(ctx, out, effectiveBasePage(ctx))
+	})
 }
 
 // reconcileBaseRevision settles the client's claim about which page it holds
@@ -277,6 +291,12 @@ func eruStudioResolveEnvelope(ctx context.Context, agentOutput agents.AgentMessa
 			detail = fmt.Sprintf("%s + %d nested page(s)", mode, len(nested))
 		}
 		agents.EmitStepFinished(ctx, agents.StepApplyPatch, 1, agents.OutcomeSuccess, started, detail, "")
+
+		// The page that goes out, named alongside the page that was checked.
+		// These must match: the loop validates the resolved page, and this
+		// resolves it again for delivery. If the two ever disagree, everything
+		// the validator concluded was about a page nobody receives.
+		logs.WithContext(ctx).Info(fmt.Sprintf("delivering page: binds %v", allBoundQueryNames([]map[string]interface{}{rootPageOf(root)})))
 
 		action.Action = root
 		actions = append(actions, action)
@@ -758,6 +778,8 @@ func eruStudioPageIssues(ctx context.Context, output map[string]interface{}) (ma
 		resolved := resolvedRootPage(output, basePage)
 		nested := nestedPagesForPreflight(output, basePage)
 		issues = append(issues, preflightIssues(ctx, resolved, basePage, nested)...)
+		issues = append(issues, unprobedQueryIssues(ctx, resolved, nested)...)
+		issues = append(issues, unboundProbedQueryIssues(ctx, resolved, nested)...)
 		issues = append(issues, introducedWiringIssues(basePage, resolved)...)
 		return output, append(issues, entityBindingIssues(ctx, resolved, basePage, nested)...)
 	}
@@ -773,6 +795,8 @@ func eruStudioPageIssues(ctx context.Context, output map[string]interface{}) (ma
 	}
 	issues = append(issues, studio.ValidateMounts(output, nil, known)...)
 	issues = append(issues, preflightIssues(ctx, output, basePage, nil)...)
+	issues = append(issues, unprobedQueryIssues(ctx, output, nil)...)
+	issues = append(issues, unboundProbedQueryIssues(ctx, output, nil)...)
 	return output, append(issues, entityBindingIssues(ctx, output, basePage, nil)...)
 }
 
@@ -1194,4 +1218,12 @@ func writableIds(scope *studio.ResolvedScope) map[string]bool {
 		return nil
 	}
 	return scope.Writable
+}
+
+// rootPageOf is the page inside a resolved envelope, for diagnostics.
+func rootPageOf(envelope map[string]interface{}) map[string]interface{} {
+	if page, ok := envelope["page"].(map[string]interface{}); ok {
+		return page
+	}
+	return envelope
 }

@@ -23,10 +23,11 @@ import (
 var oauthTemplatesFS embed.FS
 
 const (
-	oauthCsrfCookieName = "eru_oauth_csrf"
-	defaultOAuthAppName = "Sign in"
-	defaultAccentColor  = "#2f6fed"
-	defaultBgColor      = "#f4f6f9"
+	oauthCsrfCookieName    = "eru_oauth_csrf"
+	oauthSessionCookieName = "eru_oauth_session"
+	defaultOAuthAppName    = "Sign in"
+	defaultAccentColor     = "#2f6fed"
+	defaultBgColor         = "#f4f6f9"
 )
 
 // scopeDescriptions turn the scope names a client asks for into something a person can weigh up.
@@ -144,6 +145,9 @@ func LoginSubmitHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			writeOAuthPageError(w, r, oAuthServer, err)
 			return
 		}
+		// With our own backend the browser gets a session so the next authorization does not ask for
+		// credentials again. Hydra keeps its own session and needs nothing here.
+		issueOAuthSession(w, r, oAuthServer, flow, identity.Id)
 		respondWithRedirect(w, r, redirectTo)
 	}
 }
@@ -299,7 +303,7 @@ func oauthFlowFromRequest(sh *module_store.StoreHolder, r *http.Request) (auth.A
 	if authObj.GetAuthDb() != nil {
 		authObj.GetAuthDb().SetConn(sh.Store.GetConn())
 	}
-	flow, err := authObj.AuthorizationFlow(r.Context())
+	flow, err := authObj.AuthorizationFlow(r.Context(), server.RequestProject(r))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -400,6 +404,76 @@ func writeOAuthPageError(w http.ResponseWriter, r *http.Request, oAuthServer aut
 		Branding: brandingWithDefaults(oAuthServer),
 		Error:    err.Error(),
 	})
+}
+
+// oauthSessionId reads the browser session cookie, if there is one.
+func oauthSessionId(r *http.Request) string {
+	cookie, err := r.Cookie(oauthSessionCookieName)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+// issueOAuthSession records the session and sets its cookie. A failure here is not fatal: the
+// authorization still completes, the next one just asks for credentials again.
+func issueOAuthSession(w http.ResponseWriter, r *http.Request, oAuthServer auth.OAuthServerConfig, flowI auth.AuthorizationFlowI, identityId string) {
+	flow, flowOk := flowI.(auth.EruAuthorizationFlow)
+	if !flowOk {
+		return
+	}
+	lifespan := oAuthServer.SessionLifespanSeconds()
+	sessionId, err := flow.CreateSession(r.Context(), identityId, lifespan)
+	if err != nil {
+		logs.WithContext(r.Context()).Error(fmt.Sprint("oauth session could not be created : ", err.Error()))
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthSessionCookieName,
+		Value:    sessionId,
+		Path:     "/",
+		MaxAge:   lifespan,
+		HttpOnly: true,
+		Secure:   isRequestSecure(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// clearOAuthSession removes the cookie whether or not the session could be revoked, so a browser is
+// never left holding one it cannot use.
+func clearOAuthSession(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthSessionCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   isRequestSecure(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// OAuthLogoutHandler ends the browser session. It does not revoke issued tokens - those have their own
+// lifetime and their own revocation endpoint.
+func OAuthLogoutHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("OAuthLogoutHandler - Start")
+		_, flowI, err := oauthFlowFromRequest(sh, r)
+		if err == nil {
+			if flow, flowOk := flowI.(auth.EruAuthorizationFlow); flowOk {
+				_ = flow.RevokeSession(r.Context(), oauthSessionId(r))
+			}
+		}
+		clearOAuthSession(w, r)
+
+		if redirectTo := r.URL.Query().Get("post_logout_redirect_uri"); redirectTo != "" {
+			http.Redirect(w, r, redirectTo, http.StatusFound)
+			return
+		}
+		server_handlers.FormatResponse(w, http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": "signed out"})
+	}
 }
 
 func issueCsrfToken(w http.ResponseWriter, r *http.Request) string {

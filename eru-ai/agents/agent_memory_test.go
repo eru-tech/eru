@@ -384,7 +384,7 @@ func TestBuildMetricsFromTraces(t *testing.T) {
 	}
 
 	startTime := time.Now().Add(-2 * time.Second)
-	metrics := BuildMetrics(traces, startTime, nil)
+	metrics := BuildMetrics(context.Background(), traces, startTime, nil)
 
 	if metrics.TotalIterations != 3 {
 		t.Errorf("expected 3 iterations, got %d", metrics.TotalIterations)
@@ -416,7 +416,7 @@ func TestBuildMetricsWithUsage(t *testing.T) {
 		TotalTokens:     650,
 	}
 
-	metrics := BuildMetrics(nil, time.Now(), usage)
+	metrics := BuildMetrics(context.Background(), nil, time.Now(), usage)
 
 	if metrics.TotalIterations != 0 {
 		t.Errorf("expected 0 iterations, got %d", metrics.TotalIterations)
@@ -430,7 +430,7 @@ func TestBuildMetricsWithUsage(t *testing.T) {
 }
 
 func TestBuildMetricsEmptyTraces(t *testing.T) {
-	metrics := BuildMetrics([]models.StepTrace{}, time.Now(), nil)
+	metrics := BuildMetrics(context.Background(), []models.StepTrace{}, time.Now(), nil)
 
 	if metrics.TotalIterations != 0 {
 		t.Errorf("expected 0 iterations, got %d", metrics.TotalIterations)

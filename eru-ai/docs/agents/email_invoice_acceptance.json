@@ -1,0 +1,271 @@
+{
+  "agent_type": "REASONING",
+  "agent_name": "email_invoice_acceptance",
+  "description": "Reads a Microsoft Graph email and its attachments, and reports who the seller and buyer are, which invoices are referred to, and whether each is accepted.",
+  "model": "eru_model_anthropic",
+  "is_system": false,
+  "retry_count": 2,
+  "max_iterations": 8,
+  "thinking_budget": 12000,
+  "enable_clarification": false,
+  "budget": {
+    "max_attempts": 6,
+    "max_total_tokens": 400000,
+    "max_duration_seconds": 300
+  },
+  "system_prompt": "You read one email from a seller-buyer invoice discounting exchange and report what it says. You answer with the structured output and nothing else: no explanation, no commentary, no preamble.\n\nWHAT YOU ARE LOOKING AT\nThe input is a Microsoft Graph message. Its attachments are supplied to you as files, not as text in the prompt - read them. They are typically a Bill of Exchange (BOE), an invoice acceptance or deed of assignment, and a purchase request.\n\nSELLER AND BUYER\nThe seller raises the invoice and wants it discounted. The buyer accepts it and owes the money. Work out which is which from the documents, not from who sent the email: a seller often forwards a buyer's signed acceptance, and the sender is then the seller. Use the party names exactly as the documents write them.\n\nINVOICES\nList every invoice the email or its attachments refer to. For each one give the invoice number exactly as written, the amount as a number with no separators or currency symbol, and whether it is accepted.\n\nAn invoice is accepted only when something in front of you says so - a signed BOE, a signed acceptance, an explicit statement in the body. Say what that something was in reason_for_is_accepted, naming the document. If nothing shows acceptance, answer NO and say what is missing. Do not infer acceptance from the email merely attaching documents.\n\ninv_total is the sum of the invoice amounts you listed. Add them.\n\nCREDIT NOTES\nList credit notes separately in credit_notes when the documents mention them. They reduce what is owed and must never be listed as invoices.\n\nWHEN THE EMAIL DEPENDS ON SOMETHING YOU CANNOT SEE\nA reply may refer to an earlier message - \"as discussed\", \"per my last mail\", \"the invoices below\" with nothing below, a subject starting RE: whose body assumes context. When the email cannot be understood on its own, call read_conversation with the message's conversationId and read the thread before answering. Do not guess at what an earlier message said.\n\nCall it only when you actually need it. An email that stands on its own does not need the thread.\n\nFIELDS THAT COME STRAIGHT FROM THE INPUT\nCopy these verbatim; do not reformat or abbreviate them.\n  ad              receivedDateTime as YYYY-MM-DD\n  fem             from.emailAddress.address\n  subject         subject\n  message_id      id\n  conversation_id conversationId\n  at              always the literal string \"Email\"\n\nEMAIL STATUS\nemail_status summarises the email as a whole, and email_status_reason says why in one sentence.\n\nBEING HONEST ABOUT WHAT YOU COULD NOT READ\nIf an attachment is unreadable, or an invoice number or amount is not legible, say so in email_status_reason and leave the field you could not fill empty rather than inventing a plausible value. A wrong invoice number is worse than a missing one: it will be matched against a real record.",
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "ad",
+      "at",
+      "buy",
+      "sel",
+      "fem",
+      "subject",
+      "message_id",
+      "conversation_id",
+      "inv",
+      "inv_total",
+      "credit_notes",
+      "email_status",
+      "email_status_reason"
+    ],
+    "properties": {
+      "ad": {
+        "type": "string",
+        "description": "Date the email was received, YYYY-MM-DD, from receivedDateTime."
+      },
+      "at": {
+        "type": "string",
+        "description": "Always the literal string \"Email\".",
+        "enum": [
+          "Email"
+        ]
+      },
+      "buy": {
+        "type": "string",
+        "description": "Buyer - the party accepting the invoice and owing the money, named as the documents write it."
+      },
+      "sel": {
+        "type": "string",
+        "description": "Seller - the party that raised the invoice, named as the documents write it."
+      },
+      "fem": {
+        "type": "string",
+        "description": "Sender address, from.emailAddress.address."
+      },
+      "subject": {
+        "type": "string",
+        "description": "The email subject, verbatim."
+      },
+      "message_id": {
+        "type": "string",
+        "description": "The message id, verbatim."
+      },
+      "conversation_id": {
+        "type": "string",
+        "description": "The conversationId, verbatim."
+      },
+      "inv_total": {
+        "type": "number",
+        "description": "Sum of inv_amount across every invoice listed."
+      },
+      "email_status": {
+        "type": "string",
+        "description": "How the email resolves as a whole.",
+        "enum": [
+          "INFO_ACCEPTED",
+          "INFO_PARTIAL",
+          "INFO_REJECTED",
+          "INFO_INCOMPLETE",
+          "NOT_RELEVANT"
+        ]
+      },
+      "email_status_reason": {
+        "type": "string",
+        "description": "One sentence saying why that status, naming the evidence."
+      },
+      "inv": {
+        "type": "array",
+        "description": "Every invoice the email or its attachments refer to.",
+        "items": {
+          "type": "object",
+          "required": [
+            "inv_no",
+            "inv_amount",
+            "is_accepted",
+            "reason_for_is_accepted"
+          ],
+          "properties": {
+            "inv_no": {
+              "type": "string",
+              "description": "Invoice number exactly as written in the document."
+            },
+            "inv_amount": {
+              "type": "number",
+              "description": "Invoice amount as a number, no separators or currency symbol."
+            },
+            "is_accepted": {
+              "type": "string",
+              "enum": [
+                "YES",
+                "NO"
+              ],
+              "description": "Whether a document in front of you shows this invoice accepted."
+            },
+            "reason_for_is_accepted": {
+              "type": "string",
+              "description": "The evidence, naming the document - or what is missing when NO."
+            }
+          }
+        }
+      },
+      "credit_notes": {
+        "type": "array",
+        "description": "Credit notes referred to. Empty when there are none. Never list an invoice here.",
+        "items": {
+          "type": "object",
+          "required": [
+            "cn_no",
+            "cn_amount"
+          ],
+          "properties": {
+            "cn_no": {
+              "type": "string",
+              "description": "Credit note number as written."
+            },
+            "cn_amount": {
+              "type": "number",
+              "description": "Credit note amount as a number."
+            },
+            "against_inv_no": {
+              "type": "string",
+              "description": "Invoice it is raised against, when the document says."
+            }
+          }
+        }
+      }
+    }
+  },
+  "agent_tools": [
+    {
+      "tool_name": "artfine_data",
+      "action_name": "read_conversation",
+      "tool_key": "read_conversation",
+      "action_prompt": "Read the earlier messages of this email thread. Call this only when the email cannot be understood on its own - it refers to something not in front of you. Pass the message's conversationId.",
+      "effect": {
+        "read_only": true
+      }
+    }
+  ],
+  "evidence": [
+    {
+      "name": "threads_read",
+      "action": "read_conversation",
+      "from_arg": "conversation_id"
+    }
+  ],
+  "validation_rules": [
+    {
+      "subjects": "",
+      "rules": [
+        {
+          "property": "sel",
+          "code": "seller_missing",
+          "message": "the answer names no seller. The seller is the party that raised the invoice; if the documents genuinely do not say, put what they do say and explain in email_status_reason",
+          "guidance": "Always name the seller and the buyer. If a document does not make it clear, say so in email_status_reason rather than leaving the field empty."
+        },
+        {
+          "property": "buy",
+          "code": "buyer_missing",
+          "message": "the answer names no buyer. The buyer is the party accepting the invoice and owing the money"
+        },
+        {
+          "property": "email_status_reason",
+          "code": "status_unexplained",
+          "message": "email_status was set with no email_status_reason. The status is a judgement and has to say what it rests on",
+          "guidance": "email_status_reason is required, and should name the document or the absence that decided the status."
+        },
+        {
+          "property": "message_id",
+          "code": "message_id_missing",
+          "message": "message_id is empty. Copy it verbatim from the input's id"
+        },
+        {
+          "property": "conversation_id",
+          "code": "conversation_id_missing",
+          "message": "conversation_id is empty. Copy it verbatim from the input's conversationId"
+        },
+        {
+          "kind": "one_of",
+          "property": "at",
+          "allowed": [
+            "Email"
+          ],
+          "code": "channel_wrong",
+          "message": "at must be the literal string \"Email\", got {value}"
+        },
+        {
+          "kind": "sum_of",
+          "property": "inv_total",
+          "over": "inv",
+          "field": "inv_amount",
+          "code": "total_does_not_add_up",
+          "message": "inv_total is {value} but the invoices you listed add up to {sum}. Either an amount is wrong or the total is - check each invoice against its document, then restate both",
+          "guidance": "inv_total must equal the sum of the inv_amount values you list. A total that does not add up is the one error nobody notices: every invoice looks right and the figure the downstream system reads is wrong."
+        }
+      ]
+    },
+    {
+      "subjects": "inv",
+      "name_key": "inv_no",
+      "rules": [
+        {
+          "property": "inv_no",
+          "code": "invoice_unnumbered",
+          "message": "an invoice was listed with no inv_no. If a number is not legible, leave the invoice out and say so in email_status_reason - a blank number cannot be matched to a record",
+          "guidance": "Every invoice needs its number exactly as written. An illegible number is reported in email_status_reason, not guessed."
+        },
+        {
+          "kind": "range",
+          "property": "inv_amount",
+          "min": 0,
+          "code": "invoice_amount_negative",
+          "message": "{subject} has inv_amount {value}, which must be {field}. A negative figure is a credit note and belongs in credit_notes",
+          "guidance": "Invoice amounts are positive. A negative figure is a credit note - put it in credit_notes, never in inv."
+        },
+        {
+          "kind": "one_of",
+          "property": "is_accepted",
+          "allowed": [
+            "YES",
+            "NO"
+          ],
+          "code": "acceptance_not_yes_no",
+          "message": "{subject}.is_accepted is {value}; it must be exactly YES or NO"
+        },
+        {
+          "property": "reason_for_is_accepted",
+          "code": "acceptance_unexplained",
+          "message": "{subject} says is_accepted with no reason_for_is_accepted. Acceptance is a claim about a document, so name the document - or say what is missing when NO",
+          "guidance": "Every acceptance decision states its evidence: which document shows it, or what was absent. \"Accepted\" with no basis is a guess presented as a fact."
+        }
+      ]
+    },
+    {
+      "subjects": "credit_notes",
+      "name_key": "cn_no",
+      "rules": [
+        {
+          "property": "cn_no",
+          "code": "credit_note_unnumbered",
+          "message": "a credit note was listed with no cn_no"
+        }
+      ]
+    }
+  ],
+  "conversation_config": null,
+  "memory_namespace": "",
+  "max_delegation_depth": 0
+}

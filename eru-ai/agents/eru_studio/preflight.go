@@ -36,18 +36,126 @@ type Ledger struct {
 	request      string
 	listedPages  map[string]string
 	fetchedPages map[string]bool
+	// probedQueries names the saved queries actually run this turn. A query's
+	// response shape is not fixed, so the path into it and its column names can
+	// only be known by running it - and a wrong path resolves to nothing rather
+	// than failing, leaving a page that renders blank while every call reports
+	// success.
+	probedQueries map[string]bool
+	// missingQueries are the names the query tool answered about by saying they
+	// do not exist. That is the tool WORKING, and it has to be recorded apart
+	// from the tool failing - see RecordMissingQuery.
+	missingQueries map[string]bool
 }
 
 func NewLedger() *Ledger {
 	return &Ledger{
-		called:        map[string]int{},
-		offered:       map[string]bool{},
-		broken:        map[string]string{},
-		entityNames:   map[string]bool{},
-		tableToEntity: map[string]string{},
-		listedPages:   map[string]string{},
-		fetchedPages:  map[string]bool{},
+		called:         map[string]int{},
+		offered:        map[string]bool{},
+		broken:         map[string]string{},
+		entityNames:    map[string]bool{},
+		tableToEntity:  map[string]string{},
+		listedPages:    map[string]string{},
+		fetchedPages:   map[string]bool{},
+		probedQueries:  map[string]bool{},
+		missingQueries: map[string]bool{},
 	}
+}
+
+// RecordQuery notes that a saved query was actually run, so a binding to it can
+// be told apart from a binding to a query the model only assumed the shape of.
+func (l *Ledger) RecordQuery(name string) {
+	if l == nil || name == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.probedQueries == nil {
+		l.probedQueries = map[string]bool{}
+	}
+	l.probedQueries[name] = true
+}
+
+// RecordMissingQuery notes that the query tool ran and reported that the query
+// does not exist.
+//
+// This is the distinction Enforceable could not make, and it mattered: a run_query
+// failure of ANY kind marked the whole action unenforceable, on the reasonable
+// principle that an agent should not be held to a tool that is broken. But
+// "Query db_monthly_collections_summary not found" is not a broken tool. It is
+// the tool answering the question, and answering it in the one way that makes
+// the probe rule matter most.
+//
+// The effect was exact and backwards: the first query that did not exist turned
+// off "do not bind a query you have not probed" for the rest of the turn, so a
+// page could then bind to anything. A held-out fixture caught it on its first
+// run - the agent was told twice that the query was not found and bound a chart
+// to it regardless, and nothing objected.
+func (l *Ledger) RecordMissingQuery(name string) {
+	if l == nil || name == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.missingQueries == nil {
+		l.missingQueries = map[string]bool{}
+	}
+	l.missingQueries[name] = true
+}
+
+// MissingQuery reports whether the tool said this query does not exist.
+func (l *Ledger) MissingQuery(name string) bool {
+	if l == nil || name == "" {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.missingQueries[name]
+}
+
+// ProbedQuery reports whether this query was run this turn.
+func (l *Ledger) ProbedQuery(name string) bool {
+	if l == nil || name == "" {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.probedQueries[name]
+}
+
+// MissingQueries lists the names the tool reported as absent, for diagnostics.
+func (l *Ledger) MissingQueries() []string {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	names := make([]string, 0, len(l.missingQueries))
+	for name := range l.missingQueries {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// ProbedQueries lists every saved query run this turn.
+//
+// A query is only probed because the model meant to bind something to it, so
+// one that ends the turn unbound is the signature of a binding that was dropped
+// rather than fixed - which is how a page satisfies "do not bind a query you
+// have not probed" by binding nothing at all.
+func (l *Ledger) ProbedQueries() []string {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	names := make([]string, 0, len(l.probedQueries))
+	for name := range l.probedQueries {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // RecordEntities notes what the metadata lookup actually returned, so a page can

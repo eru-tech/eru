@@ -606,3 +606,49 @@ func TestANewPageIsStillJudgedWhole(t *testing.T) {
 		t.Fatal("with no base page the whole answer is the agent's own work")
 	}
 }
+
+// An envelope that carries a patch AND an empty "page" used to resolve to the
+// empty page: the base was discarded and every binding with it.
+//
+// The damage is not the empty page, it is what the checks then say about it.
+// Every probed query reads as unbound and the model is told it deleted the
+// dashboard - a fault it cannot fix, because it never happened.
+func TestAnEmptyPageKeyDoesNotDiscardTheBase(t *testing.T) {
+	base := map[string]interface{}{
+		"id": "dash", "name": "dash", "styles": map[string]interface{}{},
+		"components": []interface{}{
+			map[string]interface{}{"id": "c1", "type": "line_chart",
+				"properties": map[string]interface{}{"base": map[string]interface{}{
+					"query": "db_disb", "title": "Disbursement"}}},
+		},
+	}
+	out := map[string]interface{}{
+		"mode": "patch",
+		"page": map[string]interface{}{},
+		"patch": map[string]interface{}{
+			"upsert": []interface{}{map[string]interface{}{
+				"id":         "c1",
+				"properties": map[string]interface{}{"base": map[string]interface{}{"title": "Disbursement by month"}},
+			}},
+		},
+	}
+	resolved := resolvedRootPage(out, base)
+	bound := boundQueryNames(resolved)
+	if len(bound) != 1 || bound[0] != "db_disb" {
+		t.Fatalf("the base's binding must survive an empty page key, got %v", bound)
+	}
+	components, _ := resolved["components"].([]interface{})
+	if len(components) != 1 {
+		t.Fatalf("the base's components must survive, got %d", len(components))
+	}
+}
+
+// A page that genuinely carries content still wins over the patch, which is the
+// whole point of "full" mode.
+func TestAPopulatedPageKeyStillWins(t *testing.T) {
+	base := map[string]interface{}{"id": "old", "components": []interface{}{}}
+	out := map[string]interface{}{"page": map[string]interface{}{"id": "new"}}
+	if resolvedRootPage(out, base)["id"] != "new" {
+		t.Error("a real page must be used as it stands")
+	}
+}

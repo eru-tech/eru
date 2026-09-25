@@ -261,3 +261,27 @@ func TestIsEruqlToolIdentifiesTheDelegate(t *testing.T) {
 		t.Error("the component spec tool was recognised as an eru-ql tool")
 	}
 }
+
+// The two types the metadata query returns are not interchangeable: data_type is
+// the SQL column type, app_datatype is the data model's. An attachment lives in
+// a varchar column, so preferring the wrong one tells the agent every attachment
+// is a string.
+func TestTheModelDatatypeBeatsTheSqlColumnType(t *testing.T) {
+	row := map[string]interface{}{
+		"key_name":     "test_scan",
+		"app_datatype": "attachment",
+		"data_type":    "string",
+	}
+	if got := firstString(row, fieldTypeCandidates); got != "attachment" {
+		t.Fatalf("type = %q, want attachment - the SQL column type must not win", got)
+	}
+}
+
+// A tenant whose query predates app_datatype still gets an answer rather than
+// nothing: the SQL type is a poor type, but it is better than no type.
+func TestTheSqlTypeIsStillTheFallback(t *testing.T) {
+	row := map[string]interface{}{"key_name": "amount", "data_type": "numeric"}
+	if got := firstString(row, fieldTypeCandidates); got != "numeric" {
+		t.Fatalf("type = %q, want numeric", got)
+	}
+}

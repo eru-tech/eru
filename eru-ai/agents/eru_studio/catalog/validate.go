@@ -247,7 +247,7 @@ func (v *validator) component(path string, component map[string]interface{}) {
 		}
 	}
 
-	v.checkRules(label, componentType, basePropertyBag(component))
+	v.checkRules(ScopeBase, label, componentType, basePropertyBag(component))
 	if componentType == "tabs" {
 		v.checkTabs(label, component, basePropertyBag(component))
 	}
@@ -356,6 +356,9 @@ func (v *validator) propertyBag(path, componentType string, bag map[string]inter
 		}
 		v.propertyValue(path, componentType, property, value)
 	}
+	// The value-shape rules live in the rule table and are checked against every
+	// breakpoint's bag, which is where the hand-written versions ran.
+	v.checkRules(ScopeEveryBreakpoint, path, componentType, bag)
 }
 
 func (v *validator) propertyValue(path, componentType string, property Property, value interface{}) {

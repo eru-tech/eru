@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
@@ -64,6 +65,9 @@ type ModuleStoreI interface {
 	RevokeApiToken(ctx context.Context, token_id string, realStore ModuleStoreI) (err error)
 	GetApiTokens(ctx context.Context, identity_id string, realStore ModuleStoreI) (tokens []module_model.ApiToken, err error)
 	FetchJWKKeys(ctx context.Context, projectId string, kid string, realStore ModuleStoreI) (jwk []erursa.JWK, err error)
+	FetchJWKKeySet(ctx context.Context, projectId string, realStore ModuleStoreI) (jwk []erursa.JWK, err error)
+	SetKidStatus(ctx context.Context, projectId string, kid string, status string, realStore ModuleStoreI) error
+	GetSigningKid(ctx context.Context, projectId string, kid string, realStore ModuleStoreI) (erursa.RsaKeyPair, error)
 }
 
 type ModuleStore struct {
@@ -552,6 +556,7 @@ func (ms *ModuleStore) SaveKid(ctx context.Context, kid string, projectId string
 	if err != nil {
 		return erursa.RsaKeyPair{}, err
 	}
+	InvalidateJWKSet(projectId)
 	if persist == true {
 		err = realStore.SaveStore(ctx, projectId, "", realStore)
 		if err != nil {
@@ -571,6 +576,7 @@ func (ms *ModuleStore) RemoveKid(ctx context.Context, kid string, projectId stri
 			if err != nil {
 				return err
 			}
+			InvalidateJWKSet(projectId)
 			err = realStore.UnsetSmValue(ctx, projectId, kid, "public_key")
 			if err != nil {
 				err = errors.New(fmt.Sprint("Kid public key ", kid, " could not be removed"))
@@ -714,6 +720,112 @@ func (ms *ModuleStore) GetKid(ctx context.Context, kid string, projectId string,
 		logs.WithContext(ctx).Info(err.Error())
 		return erursa.RsaKeyPair{}, err
 	}
+}
+
+// jwkSetCache keeps the assembled key set for a short while. Without it every fetch of jwks_uri
+// makes one secret manager call per key, on an endpoint every client polls.
+var (
+	jwkSetCacheMutex sync.RWMutex
+	jwkSetCache      = map[string]jwkSetCacheEntry{}
+)
+
+const jwkSetCacheTtl = 5 * time.Minute
+
+type jwkSetCacheEntry struct {
+	keys      []erursa.JWK
+	expiresAt time.Time
+}
+
+func cachedJWKSet(projectId string) ([]erursa.JWK, bool) {
+	jwkSetCacheMutex.RLock()
+	defer jwkSetCacheMutex.RUnlock()
+	entry, ok := jwkSetCache[projectId]
+	if !ok || time.Now().After(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.keys, true
+}
+
+func cacheJWKSet(projectId string, keys []erursa.JWK) {
+	jwkSetCacheMutex.Lock()
+	defer jwkSetCacheMutex.Unlock()
+	jwkSetCache[projectId] = jwkSetCacheEntry{keys: keys, expiresAt: time.Now().Add(jwkSetCacheTtl)}
+}
+
+// InvalidateJWKSet drops the cached set so a key added, retired or removed is published at once
+// rather than after the ttl.
+func InvalidateJWKSet(projectId string) {
+	jwkSetCacheMutex.Lock()
+	defer jwkSetCacheMutex.Unlock()
+	delete(jwkSetCache, projectId)
+}
+
+// SetKidStatus retires or reactivates a signing key. A retired key still verifies - it is published
+// in the key set until it is removed - but is refused for signing.
+func (ms *ModuleStore) SetKidStatus(ctx context.Context, projectId string, kid string, status string, realStore ModuleStoreI) error {
+	logs.WithContext(ctx).Debug("SetKidStatus - Start")
+	realStore.GetMutex().Lock()
+	defer realStore.GetMutex().Unlock()
+	prj, err := ms.GetProjectConfig(ctx, projectId)
+	if err != nil {
+		return err
+	}
+	if err = prj.SetKidStatus(ctx, kid, status); err != nil {
+		return err
+	}
+	InvalidateJWKSet(projectId)
+	return realStore.SaveStore(ctx, projectId, "", realStore)
+}
+
+// GetSigningKid returns a key pair only if that key is still allowed to sign, so a retired key
+// cannot be used to mint new tokens by leaving stale config pointing at it.
+func (ms *ModuleStore) GetSigningKid(ctx context.Context, projectId string, kid string, realStore ModuleStoreI) (erursa.RsaKeyPair, error) {
+	logs.WithContext(ctx).Debug("GetSigningKid - Start")
+	prj, err := ms.GetProjectConfig(ctx, projectId)
+	if err != nil {
+		return erursa.RsaKeyPair{}, err
+	}
+	if kidInfo, ok := prj.Kids[kid]; ok && kidInfo.Retired() {
+		err = errors.New(fmt.Sprint("kid ", kid, " is retired and may not sign"))
+		logs.WithContext(ctx).Error(err.Error())
+		return erursa.RsaKeyPair{}, err
+	}
+	return ms.GetKid(ctx, kid, projectId, realStore)
+}
+
+// FetchJWKKeySet returns every published key of a project.// FetchJWKKeySet returns every published key of a project. A standard client fetches jwks_uri once
+// and picks the key named by the token header's kid, so the whole set has to be reachable from one
+// url - and that is also what lets a signing key be rotated: tokens signed by the retired key keep
+// verifying until that key is removed.
+func (ms *ModuleStore) FetchJWKKeySet(ctx context.Context, projectId string, realStore ModuleStoreI) (jwks []erursa.JWK, err error) {
+	logs.WithContext(ctx).Debug("FetchJWKKeySet - Start")
+	if keys, ok := cachedJWKSet(projectId); ok {
+		return keys, nil
+	}
+	prj, err := ms.GetProjectConfig(ctx, projectId)
+	if err != nil {
+		return nil, err
+	}
+	for storedKid := range prj.Kids {
+		// Kids are indexed under their stored name; the kid a token carries is the name without the
+		// prefix the store adds.
+		kid := strings.TrimPrefix(storedKid, "ERUAUTH_KID_")
+		keys, keyErr := realStore.FetchJWKKeys(ctx, projectId, kid, realStore)
+		if keyErr != nil {
+			// One unreadable key must not hide the rest, or rotating a key could take every token
+			// down with it.
+			logs.WithContext(ctx).Error(fmt.Sprint("jwk could not be read for kid ", kid, " : ", keyErr.Error()))
+			continue
+		}
+		jwks = append(jwks, keys...)
+	}
+	if len(jwks) == 0 {
+		err = errors.New(fmt.Sprint("no published keys found for project ", projectId))
+		logs.WithContext(ctx).Info(err.Error())
+		return nil, err
+	}
+	cacheJWKSet(projectId, jwks)
+	return jwks, nil
 }
 
 func (ms *ModuleStore) FetchJWKKeys(ctx context.Context, projectId string, kid string, realStore ModuleStoreI) (jwks []erursa.JWK, err error) {

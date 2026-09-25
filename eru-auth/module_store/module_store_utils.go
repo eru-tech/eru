@@ -229,7 +229,7 @@ func UnMarshalStore(ctx context.Context, b []byte, msi ModuleStoreI) error {
 				}
 			}
 
-			var kids map[string]string
+			var kids module_model.Kids
 			if _, ok := prjObjs["kids"]; ok {
 				if prjObjs["kids"] != nil {
 					err = json.Unmarshal(*prjObjs["kids"], &kids)

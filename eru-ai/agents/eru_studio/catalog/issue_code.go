@@ -51,6 +51,17 @@ const (
 	CodeEventNotEmitted              Code = "event_not_emitted"
 	CodeEventMissingId               Code = "event_missing_id"
 
+	// Quality codes never reject an answer. They feed the gate that runs after
+	// validation passes: worth one more attempt, never worth failing the
+	// request. Every one of them is a fault that shipped to a user behind a
+	// page that passed every conformance check.
+	CodeQueryMissing Code = "query_missing"
+
+	CodeQualityRawColumnHeadings Code = "quality_raw_column_headings"
+	CodeQualityUnboundTile       Code = "quality_unbound_tile"
+	CodeQualityChartUntitled     Code = "quality_chart_untitled"
+	CodeQualityCurrencyOnACount  Code = "quality_currency_on_a_count"
+
 	CodeValidationRulesNotList       Code = "validation_rules_not_list"
 	CodeValidationRuleNotObject      Code = "validation_rule_not_object"
 	CodeValidationRuleUnknownKey     Code = "validation_rule_unknown_key"
@@ -114,4 +125,9 @@ const (
 	// A tabs component whose children do not match its tabs.
 	CodeTabsChildNotAPanel Code = "tabs_child_not_a_panel"
 	CodeTabsPanelCount     Code = "tabs_panel_count"
+
+	CodeQueryResultPathWrong Code = "query_result_path_wrong"
+	CodeQueryNotProbed       Code = "query_not_probed"
+	CodeQueryProbedNotBound  Code = "query_probed_not_bound"
+	CodeFieldPathIsRowPath   Code = "field_path_is_row_path"
 )

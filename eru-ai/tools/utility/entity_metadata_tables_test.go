@@ -319,3 +319,44 @@ func buildWideTables(count int) []interface{} {
 	half := count / 2
 	return []interface{}{table("bulky", half, "a"), table("second", count-half, "b")}
 }
+
+// The tables shape is the path the real query takes, and it read "data_type"
+// directly - so fixing the candidate list alone left every attachment still
+// reported as a string. Both paths must agree.
+func TestTablesShapePrefersTheModelDatatype(t *testing.T) {
+	result := map[string]interface{}{
+		"tables": []interface{}{
+			map[string]interface{}{
+				"entity_name": "test",
+				"table_name":  "scf_test",
+				"columns": []interface{}{
+					map[string]interface{}{
+						"json_schema": []interface{}{
+							map[string]interface{}{
+								"key_name": "test_scan", "key_label": "Test Scan",
+								"app_datatype": "attachment", "data_type": "string",
+							},
+							map[string]interface{}{
+								"key_name": "amount", "data_type": "numeric",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	entities, _, _, ok := groupTables(result, nil)
+	if !ok || len(entities) != 1 {
+		t.Fatalf("expected one entity, ok=%v entities=%d", ok, len(entities))
+	}
+	byName := map[string]string{}
+	for _, f := range entities[0].Fields {
+		byName[f.Name] = f.Type
+	}
+	if byName["test_scan"] != "attachment" {
+		t.Errorf("test_scan type = %q, want attachment - the SQL column type must not win", byName["test_scan"])
+	}
+	if byName["amount"] != "numeric" {
+		t.Errorf("amount type = %q, want numeric - the SQL type is still the fallback", byName["amount"])
+	}
+}

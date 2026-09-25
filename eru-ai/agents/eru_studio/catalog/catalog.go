@@ -1,3 +1,27 @@
+// # The frozen kernel
+//
+// This package is part of the code that JUDGES an agent's work, and nothing an
+// agent produces may modify it. The others are agents/eval (the assertions and
+// fixtures), agents/tool_record.go and agents/eru_studio/preflight.go (the
+// instrumentation the judgement reads).
+//
+// The reason is measured, not theoretical. The Darwin Godel Machine
+// (arXiv:2505.22954, Appendix H) had a variant score a perfect 2.0 by deleting
+// the marker tokens its hallucination detector grepped for - "despite
+// instructions not to change the special tokens". The detector found nothing,
+// the score was perfect, the defect untouched, and a human reading diffs caught
+// it. Their scope restriction was an instruction; HarnessX enforced write scope
+// in code and it held.
+//
+// The same shape exists here already, with no self-modification anywhere:
+// CodeQueryNotProbed is satisfiable by not recording the probe, and
+// unboundProbedQueryIssues by not recording the query. Nothing can do that
+// because this is compiled Go, which is the enforcement.
+//
+// If agent-authored validation is ever wanted, the rules become DATA that this
+// package interprets - the interpreter stays here, and a rule never becomes
+// code. That boundary needs a test the day it is built; today it is held by the
+// fact that there is no path from a model's output to this file.
 // Package catalog is the eru-ai side of the eru-studio component library: the
 // generated description of every component type, its properties, its allowed
 // property values, the events it emits and the page/component interfaces the

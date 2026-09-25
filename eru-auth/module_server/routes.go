@@ -40,10 +40,17 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	// Interactive leg of the authorization code grant. The authorization server redirects the
 	// browser here, so these must stay public in the listener rule's authorizer exception.
+	serverRouter.Methods(http.MethodGet).Path(auth.OAuthAuthorizePath).HandlerFunc(module_handlers.AuthorizeHandler(sh))
 	serverRouter.Methods(http.MethodGet).Path(auth.OAuthLoginPath).HandlerFunc(module_handlers.LoginPageHandler(sh))
 	serverRouter.Methods(http.MethodPost).Path(auth.OAuthLoginPath).HandlerFunc(module_handlers.LoginSubmitHandler(sh))
 	serverRouter.Methods(http.MethodGet).Path(auth.OAuthConsentPath).HandlerFunc(module_handlers.ConsentPageHandler(sh))
 	serverRouter.Methods(http.MethodPost).Path(auth.OAuthConsentPath).HandlerFunc(module_handlers.ConsentSubmitHandler(sh))
+	serverRouter.Methods(http.MethodPost).Path(auth.OAuthTokenPath).HandlerFunc(module_handlers.TokenHandler(sh))
+	serverRouter.Methods(http.MethodPost).Path(auth.OAuthRevokePath).HandlerFunc(module_handlers.RevokeTokenHandler(sh))
+	serverRouter.Methods(http.MethodGet).Path(auth.OAuthLogoutPath).HandlerFunc(module_handlers.OAuthLogoutHandler(sh))
+	serverRouter.Methods(http.MethodGet).Path(auth.OAuthJwksPath).HandlerFunc(module_handlers.OAuthJWKSetHandler(sh))
+	serverRouter.Methods(http.MethodGet).Path(auth.OAuthUserInfoPath).HandlerFunc(module_handlers.OAuthUserInfoHandler(sh))
+	serverRouter.Methods(http.MethodPost).Path(auth.OAuthUserInfoPath).HandlerFunc(module_handlers.OAuthUserInfoHandler(sh))
 
 	storeRouter := serverRouter.PathPrefix("/store").Subrouter()
 	storeRouter.Methods(http.MethodGet).Path("/load").HandlerFunc(module_handlers.StoreLoadHandler(sh))
@@ -68,6 +75,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/save/kid").HandlerFunc(module_handlers.KidSaveHandler(sh))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/remove/kid/{kid}").HandlerFunc(module_handlers.KidRemoveHandler(sh))
+	storeRouter.Methods(http.MethodPost).Path("/{project}/kid/{kid}/status/{status}").HandlerFunc(module_handlers.KidStatusHandler(sh))
 
 	storeRouter.Methods(http.MethodPost).Path("/{project}/create/api_token").HandlerFunc(module_handlers.ApiTokenSaveHandler(sh))
 	storeRouter.Methods(http.MethodDelete).Path("/{project}/revoke/api_token/{token_id}").HandlerFunc(module_handlers.ApiTokenRemoveHandler(sh))
@@ -91,7 +99,7 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/idptoken/{renew}").HandlerFunc(module_handlers.IdpTokenHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/idptoken").HandlerFunc(module_handlers.IdpTokenHandler(sh))
 	authRouter.Methods(http.MethodGet).PathPrefix("/{authname}/gettoken").HandlerFunc(module_handlers.GetTokenHandler(sh))
-	authRouter.Methods(http.MethodDelete).PathPrefix("/{authname}/logout").HandlerFunc(module_handlers.LogoutHandler(sh))
+	authRouter.Methods(http.MethodDelete).PathPrefix("/{authname}/logout").HandlerFunc(module_handlers.OAuthLogoutHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/verify/{tokentype}").HandlerFunc(module_handlers.VerifyTokenHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/userinfo").HandlerFunc(module_handlers.UserInfoHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/fetchtokens").HandlerFunc(module_handlers.FetchTokensHandler(sh))
@@ -106,5 +114,6 @@ func AddModuleRoutes(serverRouter *mux.Router, sh *module_store.StoreHolder) {
 	authRouter.Methods(http.MethodGet).PathPrefix("/{authname}/getssourl").HandlerFunc(module_handlers.GetSsoUrlHandler(sh))
 	authRouter.Methods(http.MethodPost).PathPrefix("/{authname}/register").HandlerFunc(module_handlers.RegisterHandler(sh))
 	authRouter.Methods(http.MethodDelete).PathPrefix("/{authname}/removeidentity").HandlerFunc(module_handlers.RemoveIdentityHandler(sh))
+	authRouter.Methods(http.MethodGet).Path("/.well-known/jwks.json").HandlerFunc(module_handlers.JWKSetHandler(sh))
 	authRouter.Methods(http.MethodGet).Path("/.well-known/jwks.json/{kid}").HandlerFunc(module_handlers.JWKHandler(sh))
 }

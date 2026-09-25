@@ -9,6 +9,7 @@ import (
 	"time"
 
 	agents "github.com/eru-tech/eru/eru-ai/agents"
+	ruleset "github.com/eru-tech/eru/eru-ai/agents/ruleset"
 	models "github.com/eru-tech/eru/eru-ai/models"
 	tools "github.com/eru-tech/eru/eru-ai/tools"
 	utility "github.com/eru-tech/eru/eru-ai/tools/utility"
@@ -83,6 +84,42 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	)
 	defer span.End()
 	startTime := time.Now()
+
+	// One record per run, unless a caller already started one - a sub-agent runs
+	// inside its parent's context and should add to the same record rather than
+	// keep a private one nobody reads.
+	// Refuse before doing any work if this call is too deep or revisits an agent
+	// already running. An agent calling itself is not a slow run, it is a
+	// service that keeps calling models until something else runs out.
+	enteredCtx, depthErr := agents.EnterAgent(ctx, ra.AgentName, ra.MaxDelegationDepth)
+	if depthErr != nil {
+		logs.WithContext(ctx).Error(depthErr.Error())
+		return agents.AgentMessage{}, depthErr
+	}
+	ctx = enteredCtx
+
+	if agents.ToolRecordFrom(ctx) == nil {
+		ctx = agents.WithToolRecord(ctx, agents.NewToolRecord())
+	}
+
+	// An agent that declares evidence gets a collector for this run, and the
+	// rules that say what to put in it. Both go in the context because the
+	// collecting happens at the tool boundary, which has no idea which agent it
+	// is serving.
+	// Tools that write get a per-run guard, so a retry cannot repeat a write the
+	// first attempt already made. Installed only when some tool actually says it
+	// writes: an agent that declares nothing behaves exactly as before.
+	if effects := agents.EffectsOf(ra.AgentTools); len(effects) > 0 {
+		ctx = agents.WithToolEffects(ctx, effects)
+		if agents.WriteOnceFrom(ctx) == nil {
+			ctx = agents.WithWriteOnce(ctx, agents.NewWriteOnce())
+		}
+	}
+
+	if len(ra.Evidence) > 0 && agents.EvidenceFrom(ctx) == nil {
+		ctx = agents.WithEvidence(ctx, ruleset.NewEvidence())
+		ctx = agents.WithEvidenceRules(ctx, ra.Evidence)
+	}
 
 	if answers, ok := agentMessage.ClarificationAnswers(); ok {
 		var req agents.ClarificationRequest
@@ -176,6 +213,26 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		toolsMap[utility.AskUserToolName] = askTool
 	}
 
+	// Every tool this agent can reach is wrapped here - the configured ones, the
+	// provider's internal and extra tools, ask_user and structured_output - so
+	// every call is recorded whichever loop makes it.
+	//
+	// AgentTools must be wrapped SEPARATELY even though toolsMap holds the same
+	// tools, because toolExecutor resolves configured tools straight out of
+	// ra.AgentTools and only falls back to toolsMap for the built-ins. Wrapping
+	// the map alone left every configured tool unrecorded: a processo_builder
+	// run showed save_field called twice in the metrics tally and absent from
+	// the record, so Called("save_field") passed while CalledWith(...) reported
+	// it had never been called. An assertion about arguments can only be as
+	// complete as the record, and a record with a hole in it is worse than none
+	// - it reads as evidence of absence.
+	for key, tool := range toolsMap {
+		toolsMap[key] = agents.Recording(tool)
+	}
+	for i := range ra.AgentTools {
+		ra.AgentTools[i].Tool = agents.Recording(ra.AgentTools[i].Tool)
+	}
+
 	toolExecutor := func(ctx context.Context, toolName string, input map[string]interface{}) (map[string]interface{}, error) {
 		// Resolve by the key the model was actually shown, which is the entry's
 		// tool_key. Matching on the tool's own name instead would run the first
@@ -217,6 +274,11 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	sp := ra.SystemPrompt
 	if ra.GetProvider() != nil {
 		sp = ra.GetProvider().GetSystemPrompt() + "\n" + sp
+	}
+	// What the model will be judged on, in the same words it will be judged by -
+	// generated from the declarations, so the prompt and the check cannot drift.
+	if configured := ra.ConfiguredRulesPrompt(); configured != "" {
+		sp = sp + "\n\n" + configured
 	}
 	if ra.EnableClarification {
 		sp = sp + clarificationGuidance
@@ -276,17 +338,73 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 	var response models.Message
 	var traces []models.StepTrace
 	var agentResponse map[string]interface{}
+	// attempt counts every trip round the loop, which is what the client sees
+	// numbered. conformanceRetries counts only the trips a VALIDATION failure
+	// caused, and it alone is measured against RetryCount: a retry spent on
+	// taste must not consume the budget a real defect needs.
 	attempt := 0
+	conformanceRetries := 0
+	qualitySpent := 0
+	var qualityVerdicts []agents.QualityVerdict
+	// shipped is the last answer that passed every conformance check, kept only
+	// when the quality gate chose to send it back. See the fallback below: it is
+	// the difference between the gate costing a little polish and the gate
+	// costing the whole request.
+	var shipped *acceptedAnswer
+	// Why this run ended, decided at whichever exit is taken, and what it has
+	// spent getting there.
+	stopReason := agents.StopEndTurn
+	spend := agents.Spend{Started: startTime}
+	// Every rejection's shape, so a fault the agent has already been shown and
+	// already "fixed" is recognised when it comes back.
+	faults := newFaultTrail()
 	for {
+		// Before the attempt, not after it: checking afterwards means always
+		// paying for the call that crosses the line, and on tokens and minutes
+		// that is the call worth not making. A cancelled caller is checked here
+		// too - the loop used to keep calling the model for a request nobody was
+		// waiting for any more.
+		if reason, why := ra.Budget.Exceeded(ctx, spend); reason != "" {
+			logs.WithContext(ctx).Error(fmt.Sprintf("agent %s stopped: %s", ra.AgentName, why))
+			// Only a VALIDATED answer may be delivered here. agentResponse holds
+			// whatever the last attempt produced, and if the loop is still going
+			// that attempt was rejected - handing it over because a budget
+			// expired would ship an artifact no check ever passed, which is the
+			// failure the delivery seal exists to stop. A budget is a reason to
+			// stop working, never a reason to lower the bar.
+			if shipped == nil {
+				agents.Emit(ctx, agents.StreamEvent{Event: agents.StreamEventAgentFinished,
+					Data: agents.StepPayload{Detail: ra.AgentName, Outcome: agents.OutcomeError, Code: string(reason)}})
+				return agents.AgentMessage{}, fmt.Errorf("agent %s stopped before producing a usable answer: %s", ra.AgentName, why)
+			}
+			// An answer the quality gate had sent back is still an answer that
+			// passed every check. Deliver it, and say plainly that the run was
+			// cut short rather than finished.
+			response, traces, agentResponse = shipped.response, shipped.traces, shipped.output
+			unenforced := shipped.verdict
+			unenforced.Enforced = false
+			qualityVerdicts = append(qualityVerdicts, unenforced)
+			stopReason = reason
+			break
+		}
+
 		stepStarted := time.Now()
 		agents.EmitStepStarted(ctx, agents.StepGenerate, attempt+1)
 		response, traces, err = runModel()
 		if err != nil {
 			logs.WithContext(ctx).Error(err.Error())
 			agents.EmitStepFinished(ctx, agents.StepGenerate, attempt+1, agents.OutcomeError, stepStarted, err.Error(), agents.CodeModelError)
+			stopReason = agents.StopModelError
+			if ctx.Err() != nil {
+				stopReason = agents.StopCancelled
+			}
+			agents.Emit(ctx, agents.StreamEvent{Event: agents.StreamEventAgentFinished,
+				Data: agents.StepPayload{Detail: ra.AgentName, Outcome: agents.OutcomeError, Code: string(stopReason)}})
 			return agents.AgentMessage{}, err
 		}
 		agents.EmitStepFinished(ctx, agents.StepGenerate, attempt+1, agents.OutcomeSuccess, stepStarted, "", "")
+		spend.Attempts++
+		spend.Add(response.Usage)
 
 		agentResponse = parseAgentResponse(response.Content)
 		if normalized, ok := deepUnstringifyJSON(agentResponse, "").(map[string]interface{}); ok {
@@ -295,6 +413,7 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		agentResponse = unwrapOutputEnvelope(agentResponse, outputSchema)
 
 		if response.TerminalTool == models.TerminalToolAskUser {
+			stopReason = agents.StopAskedUser
 			break
 		}
 
@@ -316,16 +435,124 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 				valErr = validator.ValidateOutput(ctx, agentResponse)
 			}
 		}
+		// The rules this agent declares in its configuration, enforced in the
+		// same breath as the ones written in Go. An agent may have both; an
+		// agent built through the product has only these, and without them its
+		// correction loop would retry RetryCount times with nothing checking.
+		if valErr == nil {
+			valErr = ra.CheckConfiguredRules(ctx, agentResponse)
+		}
 		if valErr == nil {
 			agents.EmitStepFinished(ctx, agents.StepValidate, attempt+1, agents.OutcomeSuccess, validationStarted, "", "")
-			break
+
+			// The answer is well formed. The remaining question is whether it is
+			// any good, and no rule in this package can answer that.
+			verdict, judged := ra.judgeQuality(ctx, agentResponse, attempt, qualitySpent < agents.QualityGateBudget)
+			if judged {
+				qualityVerdicts = append(qualityVerdicts, verdict)
+			}
+			if !verdict.Enforced {
+				break
+			}
+			// Hold on to it before gambling it for polish. The gate is about to
+			// discard a DELIVERABLE answer in the hope of a better one, and the
+			// model may return something worse or nothing usable at all.
+			shipped = &acceptedAnswer{response: response, traces: traces, output: agentResponse, verdict: verdict}
+			qualitySpent++
+
+			// Ask for a diff if the agent type can answer one. Improving a
+			// correct answer by rewriting it wholesale is a large bet on a small
+			// change, and twice in a row it lost.
+			qualityPrompt := fmt.Sprintf(agents.QualityRetryPrompt, verdict.Reason)
+			if repairer, ok := ra.GetProvider().(agents.QualityRepairer); ok && repairer != nil {
+				if turn, repairable := repairer.QualityRepairTurn(ctx, agentResponse, verdict); repairable {
+					if turn.Schema.Type != "" && outputTool != nil {
+						outputSchema = turn.Schema
+						outputTool.SetAttribute(ctx, "output_schema", outputSchema)
+						outputTool.SetAttribute(ctx, "parameters", outputSchema)
+					}
+					if strings.TrimSpace(turn.Prompt) != "" {
+						qualityPrompt = turn.Prompt
+					}
+					logs.WithContext(ctx).Info(fmt.Sprintf("agent %s is improving attempt %d as a patch rather than regenerating it", ra.AgentName, attempt+1))
+				}
+			}
+			chatRequest.Messages = append(chatRequest.Messages, models.Message{
+				Role:    "user",
+				Content: qualityPrompt,
+				Name:    ra.AgentName,
+			})
+			attempt++
+			continue
 		}
-		logs.WithContext(ctx).Error(fmt.Sprintf("agent %s output validation failed (attempt %d of %d): %v", ra.AgentName, attempt+1, ra.RetryCount+1, valErr))
-		if attempt >= ra.RetryCount {
+		logs.WithContext(ctx).Error(fmt.Sprintf("agent %s output validation failed (conformance attempt %d of %d): %v", ra.AgentName, conformanceRetries+1, ra.RetryCount+1, valErr))
+		if conformanceRetries >= ra.RetryCount {
+			// The conformance budget is gone. If the quality gate is the reason
+			// we are here at all, take back the answer it rejected.
+			//
+			// This is the constraint the gate was designed around - "it cannot
+			// veto, only annotate" - and without this it is quietly violated.
+			// The first live run made that concrete: attempt 1 produced a valid
+			// dashboard, the gate sent it back over one missing chart title, and
+			// the regenerated answer dropped required keys, invented properties
+			// and finally unbound every query. Four conformance attempts later
+			// the request failed outright. The user asked for a dashboard and
+			// got an error, because we had one with an untitled chart and threw
+			// it away.
+			//
+			// A gate for taste must never be able to do that. The remembered
+			// answer is delivered, its poor verdict recorded and marked
+			// unenforced, which is exactly what it now is.
+			if shipped != nil {
+				logs.WithContext(ctx).Error(fmt.Sprintf("agent %s could not improve on the answer the quality gate rejected and has run out of conformance attempts; delivering that answer as it stood: %v", ra.AgentName, valErr))
+				agents.EmitStepFinished(ctx, agents.StepValidate, attempt+1, agents.OutcomeSuccess, validationStarted,
+					"delivered the earlier valid answer: "+shipped.verdict.Reason, "")
+				response, traces, agentResponse = shipped.response, shipped.traces, shipped.output
+				unenforced := shipped.verdict
+				unenforced.Enforced = false
+				qualityVerdicts = append(qualityVerdicts, unenforced)
+				stopReason = agents.StopRecoveredEarlierAnswer
+				break
+			}
 			agents.EmitStepFinished(ctx, agents.StepValidate, attempt+1, agents.OutcomeError, validationStarted, valErr.Error(), agents.CodeOutputValidation)
+			agents.Emit(ctx, agents.StreamEvent{Event: agents.StreamEventAgentFinished,
+				Data: agents.StepPayload{Detail: ra.AgentName, Outcome: agents.OutcomeError, Code: string(agents.StopValidationExhausted)}})
 			return agents.AgentMessage{}, fmt.Errorf("agent output failed JSON validation after %d attempt(s): %w", attempt+1, valErr)
 		}
 		agents.EmitStepFinished(ctx, agents.StepValidate, attempt+1, agents.OutcomeRetry, validationStarted, valErr.Error(), agents.CodeOutputValidation)
+
+		// Has this exact rejection been given before? If so the agent is trading
+		// one fault for another, and the feedback has to say so - a fourth
+		// "this is wrong" is the one thing that demonstrably does not work.
+		repeats, earlier := faults.note(attempt+1, valErr.Error())
+		if repeats > 0 && faults.distinct() > 1 {
+			logs.WithContext(ctx).Error(fmt.Sprintf(
+				"agent %s is cycling: the rejection on attempt %d was already given on attempt(s) %s, across %d distinct faults",
+				ra.AgentName, attempt+1, describeAttempts(earlier), faults.distinct()))
+		}
+		// Twice round the same circle is enough to know. Spending the rest of the
+		// budget rediscovering it costs minutes and tells nobody anything.
+		//
+		// Both conditions matter. ONE fault repeated is not a cycle - it is an
+		// agent failing to fix something, which the retry budget already exists
+		// for, and cutting its attempts short would take away the tries it might
+		// have succeeded on. A cycle is two or more faults being traded.
+		if repeats >= 2 && faults.distinct() > 1 {
+			if shipped != nil {
+				response, traces, agentResponse = shipped.response, shipped.traces, shipped.output
+				unenforced := shipped.verdict
+				unenforced.Enforced = false
+				qualityVerdicts = append(qualityVerdicts, unenforced)
+				stopReason = agents.StopCycling
+				break
+			}
+			agents.EmitStepFinished(ctx, agents.StepValidate, attempt+1, agents.OutcomeError, validationStarted, valErr.Error(), agents.CodeOutputValidation)
+			agents.Emit(ctx, agents.StreamEvent{Event: agents.StreamEventAgentFinished,
+				Data: agents.StepPayload{Detail: ra.AgentName, Outcome: agents.OutcomeError, Code: string(agents.StopCycling)}})
+			return agents.AgentMessage{}, fmt.Errorf(
+				"agent %s is alternating between %d faults and cannot satisfy them at once - the same rejection was given on attempts %s and again on %d: %w",
+				ra.AgentName, faults.distinct(), describeAttempts(earlier), attempt+1, valErr)
+		}
 
 		// Ask the agent type whether it can answer this rejection with a diff.
 		// Nothing here knows what a diff means - that is entirely the agent's
@@ -344,15 +571,22 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 				logs.WithContext(ctx).Info(fmt.Sprintf("agent %s is repairing attempt %d rather than regenerating it", ra.AgentName, attempt+1))
 			}
 		}
+		if repeats > 0 && faults.distinct() > 1 {
+			retryPrompt = fmt.Sprintf(cycleNote, describeAttempts(earlier)) + "\n" + retryPrompt
+		}
 		chatRequest.Messages = append(chatRequest.Messages, models.Message{
 			Role:    "user",
 			Content: retryPrompt,
 			Name:    ra.AgentName,
 		})
+		conformanceRetries++
 		attempt++
 	}
 
-	metrics := agents.BuildMetrics(traces, startTime, response.Usage)
+	metrics := agents.BuildMetrics(ctx, traces, startTime, response.Usage)
+	if metrics != nil {
+		metrics.Quality = qualityVerdicts
+	}
 
 	actionType := agents.ActionTypeAnswer
 	if response.TerminalTool == models.TerminalToolAskUser {
@@ -372,7 +606,12 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 		MessageId:        agentMessage.MessageId,
 		MessageTimestamp: time.Now(),
 		RetryCount:       attempt,
+		StopReason:       stopReason,
 	}
+
+	// Everything above has judged this artifact. Seal it, so anything that
+	// changes it on the way to the caller is visible rather than silent.
+	agents.SealAnswer(&agentOutput)
 
 	conversation.Messages = append(conversation.Messages, agentOutput)
 	conversation.NewMessages = append(conversation.NewMessages, agentOutput)
@@ -393,6 +632,9 @@ func (ra *ReasoningAgent) Execute(ctx context.Context, agentMessage agents.Agent
 			Detail:     ra.AgentName,
 			Outcome:    outcome,
 			DurationMs: time.Since(startTime).Milliseconds(),
+			// The reason travels with the event, so a client can tell a run that
+			// finished from one that was cut short without reading the answer.
+			Code: string(stopReason),
 		},
 	})
 

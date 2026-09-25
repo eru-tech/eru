@@ -676,7 +676,17 @@ func (ms *ModuleStore) populateAgentTools(ctx context.Context, projectId string,
 		if err != nil {
 			return err
 		}
-		agentTools[i].Tool = tool
+		// Wrapped where the tool is HYDRATED, not where it is called.
+		//
+		// There are at least four places a configured tool gets executed - the
+		// reasoning agent's toolExecutor, generate_structured, Agent.ExecuteTools
+		// and the orchestrator's delegates - and wrapping them one at a time is
+		// how the record acquired a hole: save_field showed twice in the metrics
+		// tally and not once in the record, so an assertion about its arguments
+		// reported it had never been called. Every consumer reads AgentTools[i].Tool,
+		// so wrapping here is the only point that cannot be bypassed by adding a
+		// fifth call site.
+		agentTools[i].Tool = agents.Recording(tool)
 
 		// Recursively populate dependent tools if they exist
 		if len(agentTool.DependentTools) > 0 {
@@ -748,7 +758,9 @@ func (ms *ModuleStore) populateInternalTools(ctx context.Context, projectId stri
 				logs.WithContext(ctx).Info(fmt.Sprint("populateInternalTools - ", toolName, " offers ", action.Name, " but could not be cloned: ", aerr.Error()))
 				continue
 			}
-			resolved[action.Name] = actionTool
+			// Internal tools reach the same recording boundary: they are executed
+			// by provider code that never passes through the agent tool loops.
+			resolved[action.Name] = agents.Recording(actionTool)
 			logs.WithContext(ctx).Info(fmt.Sprint("populateInternalTools - resolved ", action.Name, " from tool ", toolName, " (", request.Why, ")"))
 		}
 	}

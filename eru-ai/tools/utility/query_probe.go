@@ -127,7 +127,16 @@ func (rqTool *RunQueryTool) Execute(ctx context.Context, projectId string, tenan
 	result, _, err := rqTool.Delegate.Execute(ctx, projectId, tenantId, action, call)
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("%s failed for %s: %v", RunQueryToolName, subject, err))
-		studio.LedgerFrom(ctx).RecordFailure(RunQueryToolName, err.Error())
+		// "That query does not exist" is the tool WORKING. Recording it as a tool
+		// failure marks run_query unenforceable for the rest of the turn, which
+		// switches off "do not bind a query you have not probed" at the exact
+		// moment it is most needed - and the page then binds to a name that
+		// answers nothing.
+		if queryName != "" && queryMissing(err.Error(), queryName) {
+			studio.LedgerFrom(ctx).RecordMissingQuery(queryName)
+		} else {
+			studio.LedgerFrom(ctx).RecordFailure(RunQueryToolName, err.Error())
+		}
 		// A failing query is an answer, not a dead end: it is usually the query
 		// that needs fixing, and the agent can say so.
 		out := map[string]interface{}{
@@ -143,13 +152,25 @@ func (rqTool *RunQueryTool) Execute(ctx context.Context, projectId string, tenan
 		return out, false, nil
 	}
 	studio.LedgerFrom(ctx).Record(RunQueryToolName)
+	// Named so a binding to this query can later be told apart from a binding to
+	// one whose shape was only assumed.
+	studio.LedgerFrom(ctx).RecordQuery(queryName)
 
 	path, rows := locateRows(result)
+	// locateRows walked THIS TOOL's return envelope, which carries the query's
+	// response under "result". A component at runtime is handed the response
+	// itself, with no such wrapper - so the path reported here has one segment
+	// too many, and a page that used it verbatim walked into nothing and
+	// rendered blank while its query answered 200.
+	//
+	// The agent is told to use result_path as query_result_path, so result_path
+	// has to be stated in the frame the component sees.
+	componentPath := stripToolEnvelope(path)
 	out := map[string]interface{}{
 		"query_name":  queryName,
 		"ran":         action,
 		"ok":          true,
-		"result_path": path,
+		"result_path": componentPath,
 		"row_count":   len(rows),
 	}
 	if len(rows) == 0 {
@@ -165,7 +186,8 @@ func (rqTool *RunQueryTool) Execute(ctx context.Context, projectId string, tenan
 		sample = sample[:MaxProbeRows]
 	}
 	out["sample_rows"] = sample
-	logs.WithContext(ctx).Info(fmt.Sprintf("%s: %s returned %d row(s) at %q with columns %v", RunQueryToolName, subject, len(rows), path, rowKeys(rows[0])))
+	logs.WithContext(ctx).Info(fmt.Sprintf("%s: %s returned %d row(s) at %q (tool envelope %q) with columns %v",
+		RunQueryToolName, subject, len(rows), componentPath, path, rowKeys(rows[0])))
 	return out, false, nil
 }
 
@@ -228,6 +250,20 @@ func findDeclaredVars(value interface{}) map[string]interface{} {
 // The path is derived rather than assumed because there is no single envelope:
 // an eru-ql sql query answers [{"Results": [...]}], other sources answer a bare
 // array or a named object, and the page has to be told which one it is.
+// toolEnvelopeKey is the key this tool's own result wraps the query response in.
+// It belongs to the tool, not to the response, so it is stripped before the path
+// is handed to a page.
+const toolEnvelopeKey = "result"
+
+// stripToolEnvelope restates a path found in this tool's result as a path into
+// the query response a component receives.
+func stripToolEnvelope(path string) string {
+	if path == toolEnvelopeKey {
+		return ""
+	}
+	return strings.TrimPrefix(path, toolEnvelopeKey+".")
+}
+
 func locateRows(value interface{}) (string, []map[string]interface{}) {
 	// Look inside first. An eru-ql answer is [{"Results": [...]}], and the
 	// envelope is itself an array of one object - indistinguishable from a row
@@ -312,3 +348,30 @@ func sortedKeys(m map[string]interface{}) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+// queryMissing decides whether an error means "no such query" rather than "the
+// query tool is broken".
+//
+// Matching on text is not something to be pleased about, but the alternative is
+// worse: without the distinction, one query that does not exist disables the
+// probe rule for the whole turn. The match is deliberately narrow - the error
+// has to name this query AND say it was not found - so a connection failure
+// mentioning the query name in passing is still treated as a tool failure, which
+// is the safe direction to be wrong in.
+func queryMissing(message, queryName string) bool {
+	lower := strings.ToLower(message)
+	if !strings.Contains(lower, strings.ToLower(queryName)) {
+		return false
+	}
+	for _, phrase := range []string{"not found", "does not exist", "no such query", "unknown query"} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// QueryMissingForTest exposes queryMissing so the rule that decides "absent"
+// from "broken" can be tested directly. The distinction is load-bearing and its
+// edges are where it will go wrong.
+func QueryMissingForTest(message, queryName string) bool { return queryMissing(message, queryName) }

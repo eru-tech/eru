@@ -630,8 +630,19 @@ func validateStudioUpdate(ctx context.Context, output map[string]interface{}, ba
 		if gutted := answerDropsPage(studio.BasePageFrom(ctx), page, studio.ModeFull); gutted != nil {
 			issues = append(issues, *gutted)
 		}
-		if len(basePage) > 0 {
-			return append(issues, introducedPageIssues(ctx, c, basePage, page)...)
+		// Judged against the page the USER has, never against a rejected attempt.
+		//
+		// basePage is the repair base while a repair is running, which is the
+		// answer that was just thrown out. Forgiving what was already wrong
+		// there forgives precisely what the repair was called to fix: the
+		// rejected page keeps its faults, the corrected components arrive
+		// beside them under fresh ids, and the page ships with both.
+		forgiven := basePage
+		if studio.RepairStateFrom(ctx).Active() {
+			forgiven = studio.BasePageFrom(ctx)
+		}
+		if len(forgiven) > 0 {
+			return append(issues, introducedPageIssues(ctx, c, forgiven, page)...)
 		}
 		return append(issues, pageIssuesIn(ctx, c, page)...)
 	case studio.ModePatch:
@@ -738,7 +749,15 @@ func validateNestedPages(ctx context.Context, output map[string]interface{}, bas
 // resolvedRootPage is the page the edit ends up with, so mounts can be checked
 // against what the client will actually render.
 func resolvedRootPage(output map[string]interface{}, basePage map[string]interface{}) map[string]interface{} {
-	if page, ok := output["page"].(map[string]interface{}); ok {
+	// An EMPTY "page" is not an answer, it is a leftover key.
+	//
+	// Taking it at face value throws away the base and everything in it, and the
+	// checks downstream then describe a page nobody wrote: every query reads as
+	// unbound, every mount as missing. The model is told it deleted the whole
+	// dashboard, which is both untrue and unfixable, and the attempts it spends
+	// trying to rebuild are spent against a page that was never gone. If the key
+	// carries nothing, fall through and let the patch decide.
+	if page, ok := output["page"].(map[string]interface{}); ok && len(page) > 0 {
 		return page
 	}
 	patch, err := studio.ParsePatch(output)

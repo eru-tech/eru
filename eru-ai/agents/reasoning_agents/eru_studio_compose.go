@@ -155,8 +155,19 @@ func (eruStudioAgent *EruStudioAgent) composeNestedPages(
 			}
 			stampPlannedIdentity(built, planned)
 
+			// The same checks the root page gets, not a subset.
+			//
+			// This ran only the catalog and the entity check, so every query rule
+			// - probe before you bind, bound but never probed, and a binding to a
+			// query the tool said does not exist - was silently skipped for any
+			// page the planner built. A nested page could bind to a query that
+			// is not there and nothing would object, which is precisely the
+			// failure the query rules exist for. A page the user sees is a page
+			// held to the whole standard, however it came to be built.
 			issues := pageIssuesIn(ctx, catalog.Get(), built)
 			issues = append(issues, entityBindingIssues(ctx, built, nil, nil)...)
+			issues = append(issues, unprobedQueryIssues(ctx, built, nil)...)
+			issues = append(issues, preflightIssues(ctx, built, nil, nil)...)
 			payload = built
 			if len(issues) == 0 {
 				agents.EmitStepFinished(ctx, agents.StepBuildPage, attempt+1, agents.OutcomeSuccess, started, "", "")

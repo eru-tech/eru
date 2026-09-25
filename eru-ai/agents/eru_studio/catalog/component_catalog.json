@@ -3,7 +3,7 @@
   "source": {
     "repo": "eru-studio",
     "lib_path": "projects/eru-studio/src/lib",
-    "fingerprint": "ef13b0e82d755cd28c99b5a035877215"
+    "fingerprint": "2ced23d0f7d7a43309aac1c58eb3e90e"
   },
   "common_properties": [
     {
@@ -1286,7 +1286,7 @@
     "attachment": {
       "name": "Attachment",
       "category": "eru",
-      "allow_children": false,
+      "allow_children": true,
       "class": "AttachmentComponent",
       "icon": "attach_file",
       "properties": [
@@ -1296,6 +1296,71 @@
           "type": "boolean",
           "category": "content",
           "default_value": false
+        },
+        {
+          "key": "icon_name",
+          "label": "Icon Name",
+          "type": "text",
+          "category": "content",
+          "default_value": "attach_file",
+          "description": "Material icon shown on the trigger. Blank falls back to attach_file."
+        },
+        {
+          "key": "icon_font_set",
+          "label": "Icon Style",
+          "type": "select",
+          "category": "content",
+          "default_value": "",
+          "options": [
+            {
+              "label": "Filled (default)",
+              "value": ""
+            },
+            {
+              "label": "Outlined",
+              "value": "material-icons-outlined"
+            },
+            {
+              "label": "Round",
+              "value": "material-icons-round"
+            },
+            {
+              "label": "Sharp",
+              "value": "material-icons-sharp"
+            },
+            {
+              "label": "Two-Tone",
+              "value": "material-icons-two-tone"
+            },
+            {
+              "label": "Symbols Outlined",
+              "value": "material-symbols-outlined"
+            },
+            {
+              "label": "Symbols Rounded",
+              "value": "material-symbols-rounded"
+            },
+            {
+              "label": "Symbols Sharp",
+              "value": "material-symbols-sharp"
+            }
+          ]
+        },
+        {
+          "key": "icon_color",
+          "label": "Icon Color",
+          "type": "color",
+          "category": "content",
+          "default_value": "",
+          "description": "Design token or custom colour. Blank keeps the surface default."
+        },
+        {
+          "key": "show_header",
+          "label": "Panel Header",
+          "type": "boolean",
+          "category": "content",
+          "default_value": false,
+          "description": "Adds a container at the top of the panel that any component can be dropped into. Switching it off hides the header without discarding what is in it."
         },
         {
           "key": "max_files",
@@ -1356,12 +1421,38 @@
           }
         },
         {
+          "key": "clear_and_close_on_upload",
+          "label": "Clear and Close on Upload",
+          "type": "boolean",
+          "category": "behavior",
+          "default_value": false,
+          "description": "Once every file has uploaded without error, empty the list and close the panel. The field keeps the uploaded ids, so reopening shows them again."
+        },
+        {
+          "key": "open_on",
+          "label": "Open Panel On",
+          "type": "select",
+          "category": "behavior",
+          "default_value": "double",
+          "description": "Double click suits a cell inside a grid, where a single click is how a row is picked. Single click suits an attachment standing on its own.",
+          "options": [
+            {
+              "label": "Double Click",
+              "value": "double"
+            },
+            {
+              "label": "Single Click",
+              "value": "single"
+            }
+          ]
+        },
+        {
           "key": "editable",
           "label": "Editable",
           "type": "boolean",
           "category": "behavior",
           "default_value": true,
-          "description": "When off, double-click opens the overlay in view mode (file list + view/download only, no upload or delete)."
+          "description": "When off, opening the overlay shows it in view mode (file list + view/download only, no upload or delete)."
         }
       ],
       "common_property_overrides": [
@@ -1394,7 +1485,18 @@
           }
         }
       ],
-      "styles": [],
+      "styles": [
+        {
+          "key": "icon_size",
+          "label": "Icon Size (px)",
+          "type": "number",
+          "category": "style",
+          "default_value": 20,
+          "min": 12,
+          "max": 128,
+          "step": 2
+        }
+      ],
       "events": [
         "on_upload"
       ]
@@ -4869,6 +4971,7 @@
           "category": "data",
           "section": "Columns",
           "default_value": {},
+          "description": "Per-column settings, keyed by column name: {\"os_amt\": {\"label\": \"Outstanding\"}, \"util\": {\"label\": \"Utilisation\"}}. A query grid derives its columns from the first row and heads each one with the raw column name, so a query selecting terse codes renders headings like \"an\" and \"avg_bal\". Give every such column a label here - the query reported its columns, and the reader has no way to decode them.",
           "responsive": false,
           "visible": false
         },
@@ -10608,6 +10711,30 @@
           "disable_if": {}
         },
         {
+          "key": "api_result_path",
+          "label": "API Result Path",
+          "type": "text",
+          "category": "content",
+          "default_value": "",
+          "description": "Dot path to the rows in the response, e.g. Results.0.files. Use [*] to map over an array — Results.0.files[*].name reads one key from every row. Blank falls back to the first array found in the response.",
+          "visible_if": {
+            "key": "option_type",
+            "equals": "API"
+          }
+        },
+        {
+          "key": "api_payload_fields",
+          "label": "API Payload Fields",
+          "type": "payload_fields",
+          "category": "content",
+          "default_value": [],
+          "description": "Pick state vars / page-data fields of the page. The API receives {field_name: value} for each entry. Type \"= other_name\" alongside an entry to send it under a different key.",
+          "visible_if": {
+            "key": "option_type",
+            "equals": "API"
+          }
+        },
+        {
           "key": "df_fields",
           "label": "Depends On",
           "type": "dependent_fields",
@@ -10952,6 +11079,30 @@
             "equals": "API"
           },
           "disable_if": {}
+        },
+        {
+          "key": "api_result_path",
+          "label": "API Result Path",
+          "type": "text",
+          "category": "content",
+          "default_value": "",
+          "description": "Dot path to the rows in the response, e.g. Results.0.files. Use [*] to map over an array — Results.0.files[*].name reads one key from every row. Blank falls back to the first array found in the response.",
+          "visible_if": {
+            "key": "option_type",
+            "equals": "API"
+          }
+        },
+        {
+          "key": "api_payload_fields",
+          "label": "API Payload Fields",
+          "type": "payload_fields",
+          "category": "content",
+          "default_value": [],
+          "description": "Pick state vars / page-data fields of the page. The API receives {field_name: value} for each entry. Type \"= other_name\" alongside an entry to send it under a different key.",
+          "visible_if": {
+            "key": "option_type",
+            "equals": "API"
+          }
         },
         {
           "key": "df_fields",
@@ -12522,7 +12673,7 @@
           "type": "select",
           "category": "content",
           "default_value": "",
-          "description": "Field holding the value. It may also name a page-state variable, by prefixing the state key with state_ — variable \"er_rows\" is read as \"state_er_rows\" — whatever Data Source is set to. Pair it with Primary Value Path to dig into the value, e.g. path \"0.latest_rate\" for a query result row."
+          "description": "Field holding the value. With Data Source \"query\" this is a column name and the row is already unwrapped, so Primary Value Path stays blank unless that column holds JSON. It may also name a page-state variable, by prefixing the state key with state_ — variable \"er_rows\" is read as \"state_er_rows\" — whatever Data Source is set to; a variable holding an array of rows is the one case that needs an index, e.g. path \"0.latest_rate\"."
         },
         {
           "key": "primary_value_path",
@@ -12686,6 +12837,14 @@
           "type": "text",
           "category": "content",
           "default_value": ""
+        },
+        {
+          "key": "secondary_is_currency",
+          "label": "Secondary Value Is Money",
+          "type": "boolean",
+          "category": "content",
+          "default_value": true,
+          "description": "Whether the currency symbol applies to the secondary value as well as the primary. Turn it off for the commonest KPI tile of all - an amount with its count beside it - where one symbol for the whole tile printed the count as money too."
         },
         {
           "key": "icon",

@@ -38,9 +38,9 @@ type AuthI interface {
 	GetAttribute(ctx context.Context, attributeName string) (attributeValue interface{}, err error)
 	OAuthServer(ctx context.Context) OAuthServerConfig
 	OAuthIssuer(ctx context.Context) string
-	ClientRegistry(ctx context.Context) (ClientRegistryI, error)
+	ClientRegistry(ctx context.Context, projectId string) (ClientRegistryI, error)
 	AuthorizationServerMetadata(ctx context.Context) (OAuthServerMetadata, error)
-	AuthorizationFlow(ctx context.Context) (AuthorizationFlowI, error)
+	AuthorizationFlow(ctx context.Context, projectId string) (AuthorizationFlowI, error)
 	GetUserInfo(ctx context.Context, access_token string) (identity Identity, err error)
 	FetchTokens(ctx context.Context, refresh_token string, userId string) (res interface{}, err error)
 	GetTokens(ctx context.Context, code string) (res interface{}, err error)

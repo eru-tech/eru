@@ -56,7 +56,7 @@ type AuthorizationFlowI interface {
 }
 
 // AuthorizationFlow resolves the backend driving the interactive grant.
-func (auth *Auth) AuthorizationFlow(ctx context.Context) (AuthorizationFlowI, error) {
+func (auth *Auth) AuthorizationFlow(ctx context.Context, projectId string) (AuthorizationFlowI, error) {
 	backend := auth.OAuthServerConfig.Backend
 	if backend == "" {
 		backend = OAuthBackendHydra
@@ -64,6 +64,19 @@ func (auth *Auth) AuthorizationFlow(ctx context.Context) (AuthorizationFlowI, er
 	switch strings.ToUpper(backend) {
 	case OAuthBackendHydra:
 		return HydraAuthorizationFlow{Hydra: auth.Hydra}, nil
+	case OAuthBackendEru:
+		registry, registryErr := auth.ClientRegistry(ctx, projectId)
+		if registryErr != nil {
+			return nil, registryErr
+		}
+		return EruAuthorizationFlow{
+			AuthDb:    auth.AuthDb,
+			ProjectId: projectId,
+			AuthName:  auth.AuthName,
+			Issuer:    auth.OAuthIssuer(ctx),
+			Registry:  registry,
+			Policy:    auth.OAuthServerConfig.ClientPolicy,
+		}, nil
 	default:
 		err := errors.New(fmt.Sprint("unknown oauth server backend : ", backend))
 		logs.WithContext(ctx).Error(err.Error())

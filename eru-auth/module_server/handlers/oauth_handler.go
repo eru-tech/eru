@@ -109,7 +109,7 @@ func RegisterOAuthClientHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			return
 		}
 
-		registry, err := authObj.ClientRegistry(r.Context())
+		registry, err := authObj.ClientRegistry(r.Context(), server.RequestProject(r))
 		if err != nil {
 			writeOAuthError(w, r, auth.NewOAuthError(http.StatusInternalServerError, "server_error", err.Error()))
 			return
@@ -161,7 +161,7 @@ func OAuthClientSaveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			return
 		}
 
-		registry, err := authObj.ClientRegistry(r.Context())
+		registry, err := authObj.ClientRegistry(r.Context(), projectId)
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -197,7 +197,7 @@ func OAuthClientGetHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			return
 		}
 
-		registry, err := authObj.ClientRegistry(r.Context())
+		registry, err := authObj.ClientRegistry(r.Context(), vars["project"])
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -232,7 +232,7 @@ func OAuthClientRemoveHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			return
 		}
 
-		registry, err := authObj.ClientRegistry(r.Context())
+		registry, err := authObj.ClientRegistry(r.Context(), vars["project"])
 		if err != nil {
 			server_handlers.FormatResponse(w, 400)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

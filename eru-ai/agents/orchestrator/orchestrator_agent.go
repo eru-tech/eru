@@ -53,6 +53,41 @@ type OrchestratorAgent struct {
 	SynthesisPrompt    string          `json:"synthesis_prompt"`
 	discoveredAgents   []agents.DiscoveredAgent
 	discoveredTools    []agents.DiscoveredTool
+	internalTools      map[string]tools.Tooling
+}
+
+// InternalToolRequests names the tools the orchestrator needs for itself rather
+// than for a plan.
+//
+// An orchestrator holds no attached tools: it plans, and eru-functions resolves
+// and executes each tool step. That is right for planned work and wrong for the
+// page save, which happens after execution, outside any plan - so it looked for
+// an attached tool, found "no tools at all", and silently saved nothing while
+// telling the user the page was handled.
+//
+// available_tools cannot serve here: it is the planner's allow-list and carries
+// no executable tool. These are resolved from the tenant's configured tools, by
+// action, so an owner does not have to know that keeping a generated page needs
+// the workspace ids first.
+func (oa *OrchestratorAgent) InternalToolRequests() []agents.InternalToolRequest {
+	return []agents.InternalToolRequest{
+		{Action: "save_page", Why: "persisting a page a build produced, which otherwise exists only in the browser"},
+		{Action: "get_processo_context", Why: "the org and process a page is saved against"},
+		{Action: "execute_query", Why: "resolving the workspace ids when the context action is unavailable"},
+	}
+}
+
+// SetInternalTools receives whatever the tenant actually has. A missing action
+// removes that capability, and the run says so rather than going quiet.
+func (oa *OrchestratorAgent) SetInternalTools(resolved map[string]tools.Tooling) {
+	oa.internalTools = resolved
+}
+
+func (oa *OrchestratorAgent) internalTool(action string) tools.Tooling {
+	if oa.internalTools == nil {
+		return nil
+	}
+	return oa.internalTools[action]
 }
 
 func (oa *OrchestratorAgent) AllowedAgentNames() []string {
@@ -133,6 +168,17 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	)
 	defer span.End()
 
+	// Enter the delegation chain before doing anything. The orchestrator is the
+	// agent this guard was written for - it is the only one that calls others -
+	// and leaving it out would have made the limit count only the layers BELOW
+	// it, which is the half that was never going to loop.
+	enteredCtx, depthErr := agents.EnterAgent(ctx, oa.AgentName, oa.MaxDelegationDepth)
+	if depthErr != nil {
+		logs.WithContext(ctx).Error(depthErr.Error())
+		return agents.AgentMessage{}, depthErr
+	}
+	ctx = enteredCtx
+
 	// Attachments go to the file store before anything else sees them, so what
 	// is remembered, planned with, and forwarded to a step is an id rather than
 	// a payload. Nothing downstream should ever carry the bytes.
@@ -146,7 +192,11 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 	if oa.EnableClarification {
 		if answers, ok := agentMessage.ClarificationAnswers(); ok {
 			pendingMsg, qa, found := agents.PendingQuestion(conversation)
-			if pr := loadPendingResume(pendingMsg); found && pr != nil && len(pr.PausedBranches) > 0 {
+			// A checkpoint is worth resuming when it has a step waiting to run OR
+			// pages waiting on a yes/no. Requiring a paused branch dropped the
+			// page question on the floor: the answer was appended to the message
+			// as text and the whole request was planned again from scratch.
+			if pr := loadPendingResume(pendingMsg); found && pr != nil && (len(pr.PausedBranches) > 0 || len(pr.PagesToSave) > 0) {
 				return oa.resumeOrchestration(ctx, pr, agentMessage, conversation, conversationId, projectId, tenantId)
 			}
 			var req agents.ClarificationRequest
@@ -292,6 +342,40 @@ func (oa *OrchestratorAgent) Execute(ctx context.Context, agentMessage agents.Ag
 					conversation, conversationId, projectId, tenantId)
 			}
 			return oa.emitClarification(ctx, resolution.Remaining, &pr, allTraces, agentMessage, conversation, projectId, tenantId)
+		}
+	}
+
+	// A build that produced pages asks whether to keep them before reporting.
+	// The page agent hands pages to the client and never writes them, so without
+	// this the entities of a build are on the server and its pages are only in
+	// the browser - lost on the next navigation, with nothing said.
+	generatedPages := collectGeneratedPages(extractResVars(funcVarsMap))
+	logs.WithContext(ctx).Info(fmt.Sprintf("page save: %d page(s) collected from steps [%s]; save_page delegate present=%t, clarification=%t",
+		len(generatedPages), strings.Join(resVarStepNames(funcVarsMap), ", "), oa.savePageDelegate(ctx) != nil, oa.EnableClarification))
+	logs.WithContext(ctx).Info(fmt.Sprintf("page save: attached tools [%s]", oa.attachedToolNames()))
+	if len(generatedPages) == 0 {
+		logs.WithContext(ctx).Info(fmt.Sprintf("page save: step shapes %s",
+			strings.Join(describeResVars(funcVarsMap), " | ")))
+	}
+	if pages := generatedPages; len(pages) > 0 {
+		switch {
+		// Only worth asking if the answer can be acted on. Asked without a
+		// save_page delegate, the question costs the user a decision, reports
+		// the pages as handled and saves nothing - which is how a dashboard was
+		// checked on screen, navigated away from, and found empty.
+		case oa.savePageDelegate(ctx) == nil:
+			executionResult[pageSaveKey] = []string{fmt.Sprintf(
+				"%d page(s) were built and CANNOT be saved: no tool offering save_page is attached to this orchestrator (it has: %s). "+
+					"They exist only in this browser session and are lost on the next navigation. Attach a tool exposing save_page to persist them.",
+				len(pages), oa.attachedToolNames())}
+		case oa.EnableClarification:
+			pending := PendingResume{
+				RunId:       agentMessage.MessageId,
+				Plan:        decompositionResult,
+				ResVarsJSON: marshalVars(extractResVars(funcVarsMap)),
+				PagesToSave: pages,
+			}
+			return oa.emitClarification(ctx, pageSaveRequest(pages), &pending, allTraces, agentMessage, conversation, projectId, tenantId)
 		}
 	}
 
@@ -511,6 +595,22 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 	merged := unmarshalVars(pr.ResVarsJSON)
 	var allTraces []models.StepTrace
 
+	// The pages question has no step behind it - the plan already finished - so it
+	// is answered here. There are no paused branches and no join step on such a
+	// checkpoint, so the rest of this function falls through to synthesis with
+	// the report carried alongside the results.
+	var pageSaveReport []string
+	if len(pr.PagesToSave) > 0 {
+		answers, _ := agentMessage.ClarificationAnswers()
+		if answeredYesToPageSave(answers) {
+			pageSaveReport = oa.savePages(ctx, pr.PagesToSave, projectId, tenantId)
+		} else {
+			pageSaveReport = []string{fmt.Sprintf(
+				"%d page(s) were built but left unsaved at your request; they are gone once this screen is left.",
+				len(pr.PagesToSave))}
+		}
+	}
+
 	// Questions the orchestrator answered for itself are not re-asked, so they
 	// only reach the sub-agent if they are put back here alongside the user's.
 	agentMessage = withResolvedAnswers(agentMessage, pr.ResolvedAnswers)
@@ -548,6 +648,12 @@ func (oa *OrchestratorAgent) resumeOrchestration(ctx context.Context, pr *Pendin
 		executionResult = res
 	} else {
 		executionResult = resVarsToResult(merged)
+	}
+	if len(pageSaveReport) > 0 {
+		if executionResult == nil {
+			executionResult = map[string]interface{}{}
+		}
+		executionResult[pageSaveKey] = pageSaveReport
 	}
 
 	if newPr, newMerged, paused := buildPendingResumeFromVars(pr.Plan, merged, agentMessage.MessageId); paused {

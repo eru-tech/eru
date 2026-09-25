@@ -12,6 +12,7 @@ import (
 
 const (
 	OAuthBackendHydra = "HYDRA"
+	OAuthBackendEru   = "ERU"
 
 	OAuthRegisterPath  = "/oauth2/register"
 	OAuthAuthorizePath = "/oauth2/auth"
@@ -44,6 +45,14 @@ type OAuthServerConfig struct {
 	ScopesSupported []string          `json:"scopes_supported"`
 	Ui              OAuthServerUi     `json:"ui"`
 	ClientPolicy    OAuthClientPolicy `json:"client_policy"`
+
+	// Only used when Backend is ERU - hydra issues its own tokens with its own configuration.
+	SigningKid           string   `json:"signing_kid"`
+	AccessTokenAudience  []string `json:"access_token_audience"`
+	AccessTokenLifespan  int      `json:"access_token_lifespan_seconds"`
+	IdTokenLifespan      int      `json:"id_token_lifespan_seconds"`
+	RefreshTokenLifespan int      `json:"refresh_token_lifespan_seconds"`
+	SessionLifespan      int      `json:"session_lifespan_seconds"`
 }
 
 // OAuthServerUi points the login and consent steps at an app of your own. Leave LoginUrl empty and
@@ -163,8 +172,10 @@ func (auth *Auth) OAuthIssuer(ctx context.Context) string {
 	return strings.TrimSuffix(auth.Hydra.GetPublicUrl(), "/")
 }
 
-// ClientRegistry resolves the backend holding this auth's clients.
-func (auth *Auth) ClientRegistry(ctx context.Context) (ClientRegistryI, error) {
+// ClientRegistry resolves the backend holding this auth's clients. The project is passed in because
+// a client row is keyed by project and auth, while the auth object itself does not know which
+// project it was loaded for.
+func (auth *Auth) ClientRegistry(ctx context.Context, projectId string) (ClientRegistryI, error) {
 	backend := auth.OAuthServerConfig.Backend
 	if backend == "" {
 		backend = OAuthBackendHydra
@@ -172,6 +183,8 @@ func (auth *Auth) ClientRegistry(ctx context.Context) (ClientRegistryI, error) {
 	switch strings.ToUpper(backend) {
 	case OAuthBackendHydra:
 		return HydraClientRegistry{Hydra: auth.Hydra}, nil
+	case OAuthBackendEru:
+		return EruClientRegistry{AuthDb: auth.AuthDb, ProjectId: projectId, AuthName: auth.AuthName}, nil
 	default:
 		err := errors.New(fmt.Sprint("unknown oauth server backend : ", backend))
 		logs.WithContext(ctx).Error(err.Error())
@@ -190,9 +203,14 @@ func (auth *Auth) AuthorizationServerMetadata(ctx context.Context) (OAuthServerM
 	}
 
 	issuer := auth.OAuthIssuer(ctx)
-	grantBase := strings.TrimSuffix(auth.Hydra.GetPublicUrl(), "/")
+	// With the ERU backend every endpoint is ours. While hydra holds the grants, only discovery and
+	// registration are - the rest of the document points at hydra.
+	grantBase := issuer
+	if !strings.EqualFold(auth.OAuthServerConfig.Backend, OAuthBackendEru) {
+		grantBase = strings.TrimSuffix(auth.Hydra.GetPublicUrl(), "/")
+	}
 	if grantBase == "" {
-		err := errors.New(fmt.Sprint("hydra public url is not set for auth ", auth.AuthName))
+		err := errors.New(fmt.Sprint("no grant endpoint base resolved for auth ", auth.AuthName))
 		logs.WithContext(ctx).Error(err.Error())
 		return OAuthServerMetadata{}, err
 	}

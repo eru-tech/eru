@@ -31,6 +31,11 @@ type PendingResume struct {
 
 	// Assumptions are those same answers in words, to be shown with the result.
 	Assumptions []string `json:"assumptions,omitempty"`
+
+	// PagesToSave are pages a build produced that the user is being asked about.
+	// They ride on the checkpoint because the answer arrives in a new request,
+	// by which time the run that produced them is long gone.
+	PagesToSave []map[string]interface{} `json:"pages_to_save,omitempty"`
 }
 
 // withResolvedAnswers merges the orchestrator's own answers into a message,

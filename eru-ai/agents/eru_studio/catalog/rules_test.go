@@ -83,8 +83,10 @@ func TestEveryRuleHasACodeAndAMessage(t *testing.T) {
 		if rule.Message == "" {
 			t.Errorf("rule %s/%s has no message, so a rejection tells the model nothing", rule.Component, rule.Requires)
 		}
-		if _, known := Get().Component(rule.Component); !known {
-			t.Errorf("rule names component %q, which is not in the library", rule.Component)
+		if rule.Component != AnyComponent {
+			if _, known := Get().Component(rule.Component); !known {
+				t.Errorf("rule names component %q, which is not in the library", rule.Component)
+			}
 		}
 	}
 }
@@ -95,13 +97,41 @@ func TestEveryRuleHasACodeAndAMessage(t *testing.T) {
 // memory rather than from the library.
 func TestEveryRulePointsAtRealProperties(t *testing.T) {
 	c := Get()
-	for _, rule := range Rules() {
-		if rule.When != "" {
-			if _, known := c.Property(rule.Component, rule.When); !known {
-				t.Errorf("rule condition %s.%s is not a property of %s, so the rule can never arm", rule.Component, rule.When, rule.Component)
+	// Both tables. A quality rule naming a property that does not exist is
+	// worse than a conformance one naming it: nothing ever rejects, so the rule
+	// is simply silent and the fault it was written for keeps shipping. This
+	// caught `is_currency`, a property the tile has never had - the real one is
+	// `secondary_is_currency`, and it defaults to true.
+	for _, rule := range append(append([]Rule{}, Rules()...), QualityRules()...) {
+		// KindRequiresAny names a set rather than one property.
+		if len(rule.Properties) > 0 {
+			for _, property := range rule.Properties {
+				if !propertyExists(c, rule.Component, property) {
+					t.Errorf("rule offers %s.%s as an alternative, which is not a property of %s", rule.Component, property, rule.Component)
+				}
+			}
+			continue
+		}
+		for _, property := range rule.WhenSet {
+			if !propertyExists(c, rule.Component, property) {
+				t.Errorf("rule arms on %s.%s being set, which is not a property of %s - it can never arm", rule.Component, property, rule.Component)
 			}
 		}
-		if _, known := c.Property(rule.Component, rule.Requires); !known {
+		if rule.Field != "" && !propertyExists(c, rule.Component, rule.Field) {
+			t.Errorf("rule reads %s.%s, which is not a property of %s", rule.Component, rule.Field, rule.Component)
+		}
+		if rule.When != "" && !propertyExists(c, rule.Component, rule.When) {
+			t.Errorf("rule condition %s.%s is not a property of %s, so the rule can never arm", rule.Component, rule.When, rule.Component)
+		}
+		// A Suffix rule is about a FAMILY of properties, so there is no single
+		// name to look up; the suffix itself is checked below.
+		if rule.Suffix != "" {
+			if !anyPropertyHasSuffix(c, rule.Suffix) {
+				t.Errorf("rule matches properties ending %q, which no component has - it can never fire", rule.Suffix)
+			}
+			continue
+		}
+		if !propertyExists(c, rule.Component, rule.Requires) {
 			t.Errorf("rule requires %s.%s, which is not a property of %s", rule.Component, rule.Requires, rule.Component)
 		}
 		for _, value := range rule.Equals {
@@ -124,4 +154,38 @@ func TestEveryRulePointsAtRealProperties(t *testing.T) {
 			}
 		}
 	}
+}
+
+// propertyExists asks the library, treating AnyComponent as "at least one
+// component has it" - a wildcard rule that names a property nothing has is as
+// invisible as a typo on a single component.
+func propertyExists(c *Catalog, component, property string) bool {
+	if property == "" {
+		return false
+	}
+	if component != AnyComponent {
+		_, known := c.Property(component, property)
+		return known
+	}
+	for _, name := range c.ComponentTypes() {
+		if _, known := c.Property(name, property); known {
+			return true
+		}
+	}
+	return false
+}
+
+func anyPropertyHasSuffix(c *Catalog, suffix string) bool {
+	for _, name := range c.ComponentTypes() {
+		component, known := c.Component(name)
+		if !known {
+			continue
+		}
+		for _, property := range component.Properties {
+			if strings.HasSuffix(property.Key, suffix) {
+				return true
+			}
+		}
+	}
+	return false
 }

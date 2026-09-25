@@ -137,9 +137,17 @@ func groupTables(result map[string]interface{}, wanted []string) (entities []met
 				if label, _ := field["key_label"].(string); strings.TrimSpace(label) != "" {
 					built.Label = label
 				}
-				if dataType, _ := field["data_type"].(string); strings.TrimSpace(dataType) != "" {
-					built.Type = dataType
-				}
+				// app_datatype before data_type: the query returns both, and they
+				// are different things. data_type is the SQL column type, so every
+				// attachment, dropdown, status and rating field reads as "string";
+				// app_datatype is the field's datatype in the data model.
+				//
+				// Reading the SQL type made the agent see an existing attachment
+				// field as a textbox and offer to delete and recreate it to reach
+				// the state it was already in - four runs in five, reasoning
+				// correctly from the wrong column. The candidate list is shared so
+				// the flat fallback below cannot drift from this.
+				built.Type = firstString(field, fieldTypeCandidates)
 				// The query aliases the entity's `mandatory` flag as
 				// "nullable", so the value means mandatory despite the name.
 				built.Mandatory = isTrue(field["nullable"])

@@ -18,15 +18,20 @@ import (
 	utils "github.com/eru-tech/eru/eru-utils"
 )
 
+// ProcessoEntityData is one entity as save_entity sends it.
+//
+// index, exet, allow_single_entry and g_name were removed from the payload: the
+// backend derives them. exet in particular used to be required and was the
+// sharpest edge in the whole tool - getting it wrong on a new entity registered
+// it with no table behind it - so there is nothing to get wrong any more, and
+// nothing here should reintroduce it.
 type ProcessoEntityData struct {
 	Name        string `json:"name" eru:"required" desc:"unique name of the entity"`
-	Index       int    `json:"index" desc:"display order position. Leave it out when creating - the entity goes to the end. Setting it on an edit moves the entity"`
 	IsPeople    string `json:"is_people" enum:"true,false" desc:"whether the entity represents people - \"true\" or \"false\""`
 	DisplayName string `json:"display_name" desc:"display name of the entity"`
 	Description string `json:"description" desc:"description of what the entity stores"`
 	HideEntity  string `json:"hide_entity" enum:"true,false" desc:"whether the entity is hidden - \"true\" or \"false\""`
 	IsConv      bool   `json:"is_conv" desc:"whether the entity is a conversation entity"`
-	Exet        bool   `json:"exet" eru:"required" desc:"whether this entity ALREADY EXISTS. false creates it and builds its table; true edits the existing one. Getting this wrong on a new entity registers it with no table behind it"`
 }
 
 type ProcessoSaveEntityParams struct {
@@ -435,7 +440,7 @@ var processoOwnActions = []tools.ToolAction{
 	{
 		ActionName:   ProcessoSaveEntity,
 		Description:  "allows user to add/edit entities metadata",
-		SystemPrompt: "This tool adds or edits entities metadata under processo for an org and process. Pass org_id, process_id, process_name and entity_data as a list of entities with name, index, is_people, display_name, description, hide_entity, is_conv and exet.",
+		SystemPrompt: "This tool adds or edits entities metadata under processo for an org and process. Pass org_id, process_id, process_name and entity_data as a single-object array holding the one entity being created or edited, with name, display_name, description, hide_entity, is_people and is_conv. Creating and editing take the same payload - the backend works out which it is.",
 		OutputSchema: eru_models.JSONSchema{},
 		Parameters:   eru_models.JSONSchema{},
 		GetParameters: func() eru_models.JSONSchema {

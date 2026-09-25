@@ -29,11 +29,22 @@ const EntityMetadataQuery = "fetch_entity_table_column_metadata"
 // rows come from a stored query that can change shape, and returning ungrouped
 // rows is far better than returning nothing.
 var (
-	entityKeyCandidates      = []string{"entity_name", "entity", "table_name", "table", "entity_id"}
-	entityDisplayCandidates  = []string{"entity_display_name", "entity_label", "display_name_entity"}
-	fieldKeyCandidates       = []string{"field_name", "column_name", "field", "column"}
-	fieldDisplayCandidates   = []string{"display_name", "field_display_name", "label", "column_display_name"}
-	fieldTypeCandidates      = []string{"data_type", "datatype", "field_type", "column_type", "type"}
+	entityKeyCandidates     = []string{"entity_name", "entity", "table_name", "table", "entity_id"}
+	entityDisplayCandidates = []string{"entity_display_name", "entity_label", "display_name_entity"}
+	fieldKeyCandidates      = []string{"field_name", "column_name", "field", "column"}
+	fieldDisplayCandidates  = []string{"display_name", "field_display_name", "label", "column_display_name"}
+	// app_datatype FIRST, deliberately.
+	//
+	// The metadata query returns two types per column and they are not the same
+	// thing: data_type is the SQL column type, app_datatype is the field's
+	// datatype in the data model. Every attachment, dropdown, status and rating
+	// field is stored in a varchar column, so reading data_type reports them all
+	// as "string" - and an agent asked to add an attachment field looks at one
+	// that already IS an attachment, sees "string", and correctly concludes it
+	// must be deleted and recreated. Three runs in five offered to destroy data
+	// to reach a state the workspace was already in, reasoning impeccably from
+	// the wrong column.
+	fieldTypeCandidates      = []string{"app_datatype", "data_type", "datatype", "field_type", "column_type", "type"}
 	fieldMandatoryCandidates = []string{"is_mandatory", "mandatory", "not_null", "is_required"}
 )
 
@@ -124,9 +135,28 @@ func (emTool *EntityMetadataTool) Execute(ctx context.Context, projectId string,
 	}
 
 	// The tenant is taken from the execution context, never from the model.
+	vars := map[string]interface{}{"org_process_id": tenantId}
+
+	// A read used to VERIFY A WRITE must not be served from cache.
+	//
+	// This query is cached for 500 seconds, which is right for the lookups an
+	// agent makes while it works - they are the same question asked repeatedly
+	// and the answer does not move. It is exactly wrong for a read-back taken
+	// seconds after a save: the cache predates the write, so the field is
+	// absent, and confirmWrites tells the agent it failed to write something it
+	// wrote. That produced a 5/5 red on attachment_with_storage_writes and three
+	// wrong diagnoses before the cache_ttl on the query was noticed.
+	//
+	// A verification read is a different question from a working lookup even
+	// though it uses the same query, and only the caller knows which it is
+	// making.
+	if freshRequired(params) {
+		vars["cache_skip"] = true
+	}
+
 	result, _, err := emTool.Delegate.Execute(ctx, projectId, tenantId, "execute_query", map[string]interface{}{
 		"query_name": queryName,
-		"vars":       map[string]interface{}{"org_process_id": tenantId},
+		"vars":       vars,
 	})
 	if err != nil {
 		logs.WithContext(ctx).Error(fmt.Sprintf("%s failed: %v", EntityMetadataToolName, err))
@@ -450,4 +480,14 @@ func unwrapEnvelopeRows(rows []map[string]interface{}) []map[string]interface{} 
 		return nil
 	}
 	return unwrapEnvelopeRows(unwrapped)
+}
+
+// FreshReadParam asks for a read that bypasses the query cache. It is set by a
+// caller verifying its own writes, never by the model - a model that could turn
+// caching off would turn it off always.
+const FreshReadParam = "_fresh"
+
+func freshRequired(params map[string]interface{}) bool {
+	fresh, _ := params[FreshReadParam].(bool)
+	return fresh
 }

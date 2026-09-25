@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/eru-tech/eru/eru-auth/auth"
 	"github.com/eru-tech/eru/eru-auth/gateway"
@@ -421,6 +422,51 @@ func JWKHandler(sh *module_store.StoreHolder) http.HandlerFunc {
 			server_handlers.FormatResponse(w, 200)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"keys": keys})
 		}
+	}
+}
+
+// JWKSetHandler publishes the project's whole key set at the unparameterised jwks_uri that the
+// discovery document advertises.
+// KidStatusHandler retires or reactivates a signing key. Retiring leaves the key published so
+// tokens it already signed keep verifying, which is what makes an overlapping rotation possible.
+func KidStatusHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sh.Lock()
+		defer sh.Unlock()
+
+		logs.WithContext(r.Context()).Debug("KidStatusHandler - Start")
+		vars := mux.Vars(r)
+		status := strings.ToUpper(vars["status"])
+		if status != module_model.KidStatusActive && status != module_model.KidStatusRetired {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "status must be ACTIVE or RETIRED"})
+			return
+		}
+
+		err := sh.Store.SetKidStatus(r.Context(), vars["project"], fmt.Sprint("ERUAUTH_KID_", vars["kid"]), status, sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 400)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"msg": fmt.Sprint("kid ", vars["kid"], " is now ", status)})
+	}
+}
+
+func JWKSetHandler(sh *module_store.StoreHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		logs.WithContext(r.Context()).Debug("JWKSetHandler - Start")
+		vars := mux.Vars(r)
+		keys, err := sh.Store.FetchJWKKeySet(r.Context(), vars["project"], sh.Store)
+		if err != nil {
+			server_handlers.FormatResponse(w, 404)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+			return
+		}
+		server_handlers.FormatResponse(w, 200)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"keys": keys})
 	}
 }
 
